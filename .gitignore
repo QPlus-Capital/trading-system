@@ -216,3 +216,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---------------------------------------------------------------------------
+# QPlus Capital – projektspezifisch
+# Prinzip: Code rein, Daten und Secrets raus.
+# ---------------------------------------------------------------------------
+
+# Marktdaten / Parquet-Catalog – gehören NIE ins Repo
+data/
+catalog/
+
+# Secrets (Ergänzung; .env ist oben bereits abgedeckt)
+.env
+
+# Jupyter-Checkpoints (explizit als Verzeichnis)
+.ipynb_checkpoints/
