@@ -1,81 +1,82 @@
-# QPlus Capital – Quantitatives Handelssystem
+# QPlus Capital – Trading System
 
-Quantitatives Handelssystem von **QPlus Capital** auf Basis von
-[NautilusTrader](https://nautilustrader.io/). Das System dient sowohl dem
-**Backtesting** von Strategien auf historischen Daten als auch dem späteren
-**Live-Trading** über einen Broker.
+Quantitative trading system for **QPlus Capital**, built on
+[NautilusTrader](https://nautilustrader.io/). It is used first for **backtesting**
+strategies on historical data, then **paper trading**, and finally **live trading**.
 
-## Tech-Stack
+Primary markets are **CFDs** via Interactive Brokers (FX, indices such as US30,
+and commodities), starting with daily/swing timeframes and moving to intraday later.
 
-| Komponente        | Verwendung                                            |
-| ----------------- | ----------------------------------------------------- |
-| **Python 3.13**   | Programmiersprache                                    |
-| **uv**            | Paket- und Umgebungsverwaltung                        |
-| **NautilusTrader**| Event-getriebene Engine für Backtest & Live-Trading   |
-| **IBKR**          | Interactive Brokers als Broker und Datenquelle        |
+> New here? Read **[RUN.md](RUN.md)** — it gets you from a fresh clone to a runnable
+> setup. Working with Claude Code? See **[CLAUDE.md](CLAUDE.md)** for the project
+> conventions every session must follow.
 
-## Ordnerstruktur
+## Tech stack
+
+| Component         | Role                                                   |
+| ----------------- | ------------------------------------------------------ |
+| **Python 3.13**   | Implementation language                                |
+| **uv**            | Package & environment management                       |
+| **NautilusTrader**| Event-driven engine for backtesting & live trading     |
+| **IBKR**          | Interactive Brokers – broker and data source           |
+| **ruff / mypy / pytest** | Linting & formatting, type checking, tests      |
+
+## Repository layout
 
 ```
 trading-system/
-├── src/qplus/              # Python-Paket (versionierter Code)
-│   ├── strategies/         # Handelsstrategien (NautilusTrader-Strategien)
-│   ├── backtest/           # Backtest-Konfiguration und -Runner
-│   └── data_ingest/        # Datenbeschaffung & Aufbereitung (z. B. IBKR -> Catalog)
-├── notebooks/              # Jupyter-Notebooks für Research & Analyse
-├── data/                   # Marktdaten / Parquet-Catalog (NIE versioniert)
-├── .env.example            # Vorlage für Secrets (versioniert, nur Platzhalter)
-├── .env                    # Echte Secrets (NIE versioniert)
-├── pyproject.toml          # Projekt- und Abhängigkeitsdefinition
-└── uv.lock                 # Gepinnte Abhängigkeiten
+├── src/qplus/              # Python package (versioned source code)
+│   ├── strategies/         # Strategy classes — single source of truth,
+│   │                       #   shared by both backtest and live
+│   ├── backtest/           # Backtest runners & wiring
+│   ├── live/               # Live trading runners & wiring
+│   └── data_ingest/        # Data acquisition & preparation (IBKR -> catalog)
+├── config/
+│   ├── backtest/           # Backtest configurations
+│   └── live/               # Live configurations (only approved strategies)
+├── tests/                  # Test suite (pytest)
+├── notebooks/              # Jupyter notebooks for research & analysis
+├── data/                   # Market data / Parquet catalog (NEVER versioned)
+├── .env.example            # Secrets template (committed, placeholders only)
+├── pyproject.toml          # Project & dependency definition
+└── uv.lock                 # Pinned dependencies (committed for reproducibility)
 ```
+
+The structure is intentionally lean and will grow as NautilusTrader is integrated.
 
 ## Setup
 
-### (a) Apple Silicon (arm64) oder Linux
-
-Für diese Plattformen existiert ein `nautilus_trader`-Wheel, die Installation
-läuft direkt über uv:
+Requires Apple Silicon (arm64) or Linux. Full step-by-step instructions are in
+**[RUN.md](RUN.md)**. Short version:
 
 ```bash
-uv sync
+uv sync                # install dependencies into .venv
+uv add nautilus_trader && uv sync   # first time only (see RUN.md)
+cp .env.example .env   # then fill in real values in .env
 ```
 
-Anschließend Secrets anlegen:
+## Backtest vs. live
 
-```bash
-cp .env.example .env   # danach echte Werte in .env eintragen
-```
+Strategy code lives once in `src/qplus/strategies/`. The same strategy class is run
+with a **backtest config** or a **live config** — code is never duplicated between
+the two. A strategy only moves to live by adding its configuration under
+`config/live/` once it has been backtested and approved, so it is always clear which
+strategies are live and which are not.
 
-### (b) Intel-Mac (x86_64)
+## Git workflow
 
-**Wichtig:** Für Intel-Macs (x86_64) gibt es **kein** `nautilus_trader`-Wheel —
-ein lokales `uv sync` mit NautilusTrader schlägt hier fehl. Stattdessen wird über
-das offizielle Docker-Image gearbeitet:
+Two-person team. Lightweight by design:
 
-```
-ghcr.io/nautechsystems/jupyterlab:nightly
-```
+- Feature branches + pull requests are the norm; direct pushes to `main` are allowed
+  when it makes sense.
+- No mandatory reviews. `main` is not branch-protected.
+- [Conventional Commits](https://www.conventionalcommits.org/) for commit messages
+  (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:` …).
 
-Beispiel:
+## Principle: code in, data and secrets out
 
-```bash
-docker run --rm -it \
-  -p 8888:8888 \
-  -v "$(pwd)":/workspace \
-  -w /workspace \
-  ghcr.io/nautechsystems/jupyterlab:nightly
-```
-
-Damit steht eine JupyterLab-Umgebung mit vorinstalliertem NautilusTrader zur
-Verfügung; das Repository wird per Volume eingehängt, sodass `src/qplus/`,
-`notebooks/` und `data/` direkt nutzbar sind.
-
-## Prinzip: Code rein, Daten und Secrets raus
-
-- **Code** wird versioniert (alles unter `src/qplus/`, `notebooks/`).
-- **Marktdaten** gehören in `data/` (bzw. `catalog/`) und werden **nie**
-  committet — beide sind via `.gitignore` ausgeschlossen.
-- **Secrets** (IBKR-Zugangsdaten o. Ä.) gehören in `.env` und werden **nie**
-  committet. Als Vorlage dient die versionierte `.env.example` mit reinen
-  Platzhaltern.
+- **Code** is versioned (everything under `src/qplus/`, `config/`, `tests/`, `notebooks/`).
+- **Market data** belongs in `data/` (and `catalog/`) and is **never** committed —
+  both are gitignored.
+- **Secrets** belong in `.env` (template: `.env.example`) and are **never** committed.
+  Real credentials are additionally stored in the shared password manager.

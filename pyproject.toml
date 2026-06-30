@@ -1,7 +1,47 @@
 [project]
-name = "trading-system"
+name = "qplus-trading-system"
 version = "0.1.0"
-description = "Add your description here"
+description = "QPlus Capital quantitative trading system built on NautilusTrader (backtesting and live trading)."
 readme = "README.md"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = [
+    # nautilus_trader is intentionally NOT pinned here yet.
+    # It has no wheel for Intel macOS (x86_64). Add it on the target machine
+    # (Apple Silicon / Linux) as the first setup step — see RUN.md:
+    #   uv add nautilus_trader && uv sync
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/qplus"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# A pragmatic, strict-ish default set: pyflakes, pycodestyle, isort,
+# pyupgrade, bugbear, comprehensions, simplify.
+select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src", "tests"]
+strict = true
+# NautilusTrader is added later and ships partial type info; don't fail on it.
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

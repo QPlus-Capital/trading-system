@@ -231,3 +231,7 @@ catalog/
 
 # Jupyter-Checkpoints (explizit als Verzeichnis)
 .ipynb_checkpoints/
+
+# Backtest / analysis outputs (regenerated, never versioned)
+results/
+reports/

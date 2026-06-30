@@ -1,48 +1,76 @@
-# CLAUDE.md – Projektkontext für QPlus Capital
+# CLAUDE.md
 
-Dieser Hinweis richtet sich an künftige Claude-Code-Sitzungen.
+Guidance for Claude Code (and any AI agent) working in this repository. This file
+is the **single source of project context** — it must be self-contained, so that any
+machine or account running Claude Code produces the same high-quality results without
+relying on prior chat history.
 
-## Zweck
+## Project
 
-Repository für das **quantitative Handelssystem von QPlus Capital**. Es betreibt
-[NautilusTrader](https://nautilustrader.io/) für **Backtesting** auf historischen
-Daten und für **Live-Trading**.
+QPlus Capital's quantitative trading system, built on
+[NautilusTrader](https://nautilustrader.io/). Purpose: **backtesting** strategies on
+historical data first, then **paper trading**, then **live trading**.
 
-## Stack
+- **Markets:** CFDs via Interactive Brokers (FX, indices like US30, commodities).
+  Daily/swing timeframes first, intraday later.
+- **Stack:** Python 3.13, `uv` for packaging, NautilusTrader engine, IBKR as
+  broker/data source. Tooling: `ruff`, `mypy`, `pytest`.
 
-- **Python 3.13**
-- **uv** zur Paket- und Umgebungsverwaltung
-- **NautilusTrader** als Engine (Backtest + Live)
-- **IBKR** (Interactive Brokers) als Broker und Datenquelle
+## Team & roles
 
-## Paketstruktur
+- **Jan** — owns all technical development (system, infrastructure, integration).
+- **Chris** — owns market knowledge and strategy direction; codes as little as
+  possible. Keep strategy-facing surfaces simple and config-driven so he rarely has
+  to touch code. He cannot review technical changes.
 
-- `src/qplus/strategies/` – Handelsstrategien
-- `src/qplus/backtest/` – Backtest-Konfiguration und -Runner
-- `src/qplus/data_ingest/` – Datenbeschaffung & Aufbereitung (IBKR -> Catalog)
-- `notebooks/` – Research-Notebooks
-- `data/` – Marktdaten / Parquet-Catalog (gitignored)
+## Conventions (always follow)
 
-## ⚠️ Plattform-Einschränkung: Intel-Mac (x86_64)
+- **Language:** Everything in the repository — code, identifiers, comments, docs,
+  commit messages — is in **English**. (Conversation with the user may be in German;
+  the repo is not.)
+- **Tests:** Write tests automatically wherever they add value, without being asked.
+  Use `pytest`; tests live in `tests/`.
+- **Types & lint:** Keep code passing `ruff` and `mypy` (strict). Run them before
+  considering a change done.
+- **Money & prices:** Never use `float` for prices, quantities, or money — use
+  `Decimal` (or NautilusTrader's `Price`/`Quantity`/`Money` types). Floating-point
+  rounding is unacceptable in a trading system.
+- **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
+  `test:`). Do **not** add Claude as a co-author.
+- **Git workflow:** Lightweight — feature branches + PRs are the norm, but direct
+  pushes to `main` are fine. `main` is not branch-protected; no mandatory reviews.
 
-Die lokale Entwicklungsmaschine ist ein **Intel-Mac (x86_64)**. Für diese
-Plattform gibt es **kein `nautilus_trader`-Wheel**.
+## Backtest vs. live
 
-**Daher NICHT:**
-- `nautilus_trader` lokal installieren, importieren oder ausführen
-- `uv sync` mit dem Ziel ausführen, NautilusTrader lokal lauffähig zu machen
-- den `nautilus_trader`-Eintrag in `pyproject.toml` verändern (unangetastet lassen)
+A strategy is **one class** in `src/qplus/strategies/`, run with either a backtest or
+a live config. Never duplicate strategy logic across backtest and live. Promotion to
+live = adding the strategy's config under `config/live/` after it is backtested and
+approved. Always keep it unambiguous which strategies are live.
 
-NautilusTrader läuft auf dieser Maschine ausschließlich über das offizielle
-Docker-Image `ghcr.io/nautechsystems/jupyterlab:nightly`. Lokal werden nur
-Struktur, Code und Dateien gepflegt.
+## Secrets
 
-## Prinzip: Code rein, Daten und Secrets raus
+- Secrets go in `.env` (gitignored); `.env.example` holds placeholders only.
+- **Never** commit real credentials, API keys, or account numbers.
+- **Whenever you introduce or generate new credentials, remind the user to store them
+  in the shared password manager** so both teammates can retrieve them later.
 
-- **Code** wird versioniert.
-- **Daten** gehören in `data/` (bzw. `catalog/`) und werden **nie** committet.
-- **Secrets** gehören in `.env` (Vorlage: `.env.example`) und werden **nie**
-  committet.
+## Data
 
-Beim Hinzufügen neuer Dateien stets prüfen, dass weder Marktdaten noch Secrets
-in einen Commit gelangen.
+- Market data and the NautilusTrader Parquet catalog live in `data/` (gitignored).
+  Backtest outputs go in `results/` or `reports/` (also gitignored).
+- Code is versioned; data and secrets never are ("code in, data and secrets out").
+
+## Environment notes
+
+- Target platforms are **Apple Silicon (arm64)** and **Linux**, where
+  `nautilus_trader` wheels exist. Do not add Intel-macOS / Docker workarounds.
+- `nautilus_trader` is intentionally not yet in `pyproject.toml`; it is added on the
+  target machine as the first setup step (see RUN.md). Until then, do not import or
+  execute NautilusTrader — set up structure, code, and docs only.
+- Always use `uv` (`uv sync`, `uv add`, `uv run …`), never bare `pip`.
+
+## Reproducibility
+
+This repo must run identically on any machine/account: keep `uv.lock` committed and
+current, keep `CLAUDE.md` and `RUN.md` accurate and self-contained, and never rely on
+context that exists only in a chat session.
