@@ -37,6 +37,11 @@ historical data first, then **paper trading**, then **live trading**.
   rounding is unacceptable in a trading system.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
   `test:`). Do **not** add Claude as a co-author.
+- **Commit & push when done:** When a unit of work is complete (a feature, a fix, a
+  new or updated strategy, etc.), commit it and **push to the remote immediately** —
+  do not leave finished work unpushed and do not wait to be asked. Jan does not push
+  manually. Only push work that is actually finished and green (`ruff`, `mypy`,
+  `pytest` all pass); never push broken or half-done code.
 - **Git workflow:** Lightweight — feature branches + PRs are the norm, but direct
   pushes to `main` are fine. `main` is not branch-protected; no mandatory reviews.
 
