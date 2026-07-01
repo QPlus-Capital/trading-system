@@ -16,5 +16,9 @@
     "**/.venv": true,
     "**/uv.lock": true,
     "**/catalog": true
-  }
+  },
+  // Don't auto-activate the venv in new terminals (the injected
+  // "Set-ExecutionPolicy ... ; Activate.ps1" line). We run via `uv run`, which
+  // manages the environment itself, so no manual activation is needed.
+  "python.terminal.activateEnvironment": false
 }
