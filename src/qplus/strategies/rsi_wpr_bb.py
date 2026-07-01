@@ -27,10 +27,12 @@ from decimal import Decimal
 from nautilus_trader.config import PositiveInt, StrategyConfig
 from nautilus_trader.indicators.averages import ExponentialMovingAverage, MovingAverageType
 from nautilus_trader.indicators.momentum import RelativeStrengthIndex
+from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderSide, OrderType
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -89,6 +91,14 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     buy_wpr_lookback: PositiveInt = 7
     buy_wpr_threshold: float = -80.0
     buy_rsi_threshold: float = 40.0
+
+    # Risk management (0 disables). stop_loss_pct / take_profit_pct are percent of
+    # the entry price; when both are > 0 a bracket (market entry + stop-loss +
+    # take-profit) is used. risk_per_trade_pct sizes the position so a stop-out
+    # loses that percent of account equity; 0 falls back to the fixed trade_size.
+    stop_loss_pct: float = 0.0
+    take_profit_pct: float = 0.0
+    risk_per_trade_pct: float = 0.0
 
 
 class RsiWprBb(Strategy):  # type: ignore[misc]
@@ -186,9 +196,9 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         sell_signal = self._eval_sell(o, h, low_, c)
 
         if buy_signal and not sell_signal:
-            self._go_long()
+            self._go_long(c)
         elif sell_signal and not buy_signal:
-            self._go_short()
+            self._go_short(c)
 
     def _eval_buy(self, o: float, h: float, low_: float, c: float) -> bool:
         cfg = self.config
@@ -259,30 +269,83 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
 
     # -- position management (long/short reversal) --
 
-    def _go_long(self) -> None:
+    def _go_long(self, ref_price: float) -> None:
         instrument_id = self.config.instrument_id
         if self.portfolio.is_net_long(instrument_id):
             return
         if self.portfolio.is_net_short(instrument_id):
+            self.cancel_all_orders(instrument_id)
             self.close_all_positions(instrument_id)
-        self._submit_market_order(OrderSide.BUY)
+        self._enter(OrderSide.BUY, ref_price)
 
-    def _go_short(self) -> None:
+    def _go_short(self, ref_price: float) -> None:
         instrument_id = self.config.instrument_id
         if self.portfolio.is_net_short(instrument_id):
             return
         if self.portfolio.is_net_long(instrument_id):
+            self.cancel_all_orders(instrument_id)
             self.close_all_positions(instrument_id)
-        self._submit_market_order(OrderSide.SELL)
+        self._enter(OrderSide.SELL, ref_price)
 
-    def _submit_market_order(self, side: OrderSide) -> None:
+    def _risk_managed(self) -> bool:
+        return bool(self.config.stop_loss_pct > 0 and self.config.take_profit_pct > 0)
+
+    def _account_equity(self) -> float | None:
         assert self.instrument is not None
-        order: MarketOrder = self.order_factory.market(
+        account = self.portfolio.account(self.instrument.id.venue)
+        if account is None:
+            return None
+        balance = account.balance_total(USD)
+        if balance is None:
+            return None
+        equity: float = balance.as_double()
+        return equity
+
+    def _position_qty(self, ref_price: float) -> Quantity | None:
+        assert self.instrument is not None
+        cfg = self.config
+        if self._risk_managed() and cfg.risk_per_trade_pct > 0:
+            equity = self._account_equity()
+            sl_distance = ref_price * cfg.stop_loss_pct / 100.0
+            if equity is not None and sl_distance > 0:
+                risk_amount = equity * cfg.risk_per_trade_pct / 100.0
+                risk_qty: Quantity = self.instrument.make_qty(risk_amount / sl_distance)
+                return risk_qty if risk_qty.as_double() >= 1 else None
+        fixed_qty: Quantity = self.instrument.make_qty(cfg.trade_size)
+        return fixed_qty
+
+    def _enter(self, side: OrderSide, ref_price: float) -> None:
+        assert self.instrument is not None
+        qty = self._position_qty(ref_price)
+        if qty is None:
+            return
+
+        if not self._risk_managed():
+            order: MarketOrder = self.order_factory.market(
+                instrument_id=self.config.instrument_id,
+                order_side=side,
+                quantity=qty,
+            )
+            self.submit_order(order)
+            return
+
+        cfg = self.config
+        if side == OrderSide.BUY:
+            sl = ref_price * (1 - cfg.stop_loss_pct / 100.0)
+            tp = ref_price * (1 + cfg.take_profit_pct / 100.0)
+        else:
+            sl = ref_price * (1 + cfg.stop_loss_pct / 100.0)
+            tp = ref_price * (1 - cfg.take_profit_pct / 100.0)
+
+        order_list = self.order_factory.bracket(
             instrument_id=self.config.instrument_id,
             order_side=side,
-            quantity=self.instrument.make_qty(self.config.trade_size),
+            quantity=qty,
+            entry_order_type=OrderType.MARKET,
+            sl_trigger_price=self.instrument.make_price(sl),
+            tp_price=self.instrument.make_price(tp),
         )
-        self.submit_order(order)
+        self.submit_order_list(order_list)
 
     def on_stop(self) -> None:
         """Flatten and clean up when the strategy stops."""

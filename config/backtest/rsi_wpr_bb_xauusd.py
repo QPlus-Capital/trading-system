@@ -45,13 +45,17 @@ STRATEGY = ImportableStrategyConfig(
     config={
         "instrument_id": str(INSTRUMENT.id),
         "bar_type": str(BAR_TYPE),
-        "trade_size": "100",  # ounces (= 1 MT5 lot)
+        "trade_size": "100",  # ounces (fallback if risk sizing is off)
         # Strategy parameters (defaults mirror the Pine script); tune these later.
         "wpr_length": 14,
         "ema_length": 10,
         "rsi_length": 14,
         "bb_length": 20,
         "bb_mult": 2.0,
+        # Risk management: 1% stop, 2% target, risk 1% of equity per trade.
+        "stop_loss_pct": 1.0,
+        "take_profit_pct": 2.0,
+        "risk_per_trade_pct": 1.0,
     },
 )
 
