@@ -77,6 +77,10 @@ def test_backtest_runs_end_to_end(tmp_path: Path) -> None:
                         "instrument_id": str(_INSTRUMENT.id),
                         "bar_type": str(_BAR_TYPE),
                         "trade_size": "100_000",
+                        # Exercise the bracket (SL/TP) + risk-sizing code path.
+                        "stop_loss_pct": 1.0,
+                        "take_profit_pct": 2.0,
+                        "risk_per_trade_pct": 1.0,
                     },
                 )
             ],
