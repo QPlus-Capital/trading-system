@@ -92,9 +92,19 @@ synthetic price series, so it needs no market data or IBKR credentials:
 uv run python -m qplus.backtest.runner
 ```
 
-This loads `config/backtest/ema_cross_demo.py`, runs the backtest, and prints a
-result summary (orders, positions, PnL). Point it at another config to run a
-different setup:
+It uses NautilusTrader's high-level API (`BacktestNode`), and the pieces are cleanly
+separated:
+
+- **Data** lives in a Parquet catalog under `catalog/` (gitignored). On the first
+  run the runner seeds it with the synthetic bars automatically. Delete `catalog/`
+  to force a reseed.
+- **The run recipe** is `config/backtest/ema_cross_demo.py` — it composes the venue,
+  the data (pointing at the catalog) and the strategy (class path + parameters) into
+  one `BacktestRunConfig`. This is the file you edit to experiment.
+- **The strategy code** lives once in `src/qplus/strategies/` and never changes
+  between backtest and live.
+
+Point the runner at another recipe under `config/backtest/` to run a different setup:
 
 ```bash
 uv run python -m qplus.backtest.runner config/backtest/ema_cross_demo.py
