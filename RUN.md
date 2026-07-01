@@ -81,31 +81,26 @@ uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 | Format              | `uv run ruff format .`        |
 | Type-check          | `uv run mypy`                 |
 | Tests               | `uv run pytest`               |
-| Run demo backtest   | `uv run python -m qplus.backtest.runner` |
+| Run a backtest      | `uv run python -m qplus.backtest.runner config/backtest/rsi_wpr_bb_xauusd.py` |
+| Parameter sweep     | `uv run python -m qplus.backtest.sweep config/backtest/sweep_rsi_wpr_bb_xauusd.py` |
+| Monte-Carlo chart   | `uv run python -m qplus.backtest.report config/backtest/rsi_wpr_bb_xauusd.py` |
 
-## Run a backtest
+## Running the strategy
 
-The repo ships a runnable demo — an EMA-crossover strategy on a deterministic
-synthetic price series, so it needs no market data or IBKR credentials:
+The full workflow (single backtest, parameter sweep, Monte-Carlo report) is
+documented step by step in **[docs/WALKTHROUGH.md](docs/WALKTHROUGH.md)**. In short,
+everything uses NautilusTrader's high-level API (`BacktestNode`) with three cleanly
+separated pieces:
 
-```bash
-uv run python -m qplus.backtest.runner
-```
-
-It uses NautilusTrader's high-level API (`BacktestNode`), and the pieces are cleanly
-separated:
-
-- **Data** lives in a Parquet catalog under `catalog/` (gitignored). On the first
-  run the runner seeds it with the synthetic bars automatically. Delete `catalog/`
-  to force a reseed.
-- **The run recipe** is `config/backtest/ema_cross_demo.py` — it composes the venue,
-  the data (pointing at the catalog) and the strategy (class path + parameters) into
-  one `BacktestRunConfig`. This is the file you edit to experiment.
+- **Data** lives in a Parquet catalog under `catalog/` (gitignored). It is imported
+  from the MetaTrader 5 CSV in `data/` (also gitignored); the runner imports it
+  automatically on first use.
+- **A run recipe** under `config/backtest/` composes the venue, the data (pointing
+  at the catalog) and the strategy (class path + parameters) into one
+  `BacktestRunConfig`. This is the file you edit to experiment.
 - **The strategy code** lives once in `src/qplus/strategies/` and never changes
   between backtest and live.
 
-Point the runner at another recipe under `config/backtest/` to run a different setup:
-
 ```bash
-uv run python -m qplus.backtest.runner config/backtest/ema_cross_demo.py
+uv run python -m qplus.backtest.runner config/backtest/rsi_wpr_bb_xauusd.py
 ```
