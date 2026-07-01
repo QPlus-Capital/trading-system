@@ -4,9 +4,8 @@ This is the bootstrap guide: from a fresh clone to a runnable setup. It is writt
 that you can either follow it by hand, or hand it to Claude Code and have it perform
 the steps for you.
 
-**Platform requirement:** any platform with a `nautilus_trader` wheel — Windows
-(x86_64), Linux, or Apple Silicon macOS (arm64). The only exception is Intel macOS
-(x86_64), which has no wheel and cannot run it.
+**Platform requirement:** Apple Silicon macOS (arm64) or Linux, where
+`nautilus_trader` wheels exist. Intel macOS (x86_64) has no wheel and cannot run it.
 
 ## 1. Prerequisites
 
@@ -14,13 +13,7 @@ the steps for you.
 - **uv** — the package/environment manager. Install it if you don't have it:
 
   ```bash
-  # macOS / Linux
   curl -LsSf https://astral.sh/uv/install.sh | sh
-  ```
-
-  ```powershell
-  # Windows (PowerShell)
-  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
   ```
 
   Verify: `uv --version`.
@@ -48,9 +41,9 @@ This creates `.venv/` and installs all locked dependencies (dev tooling + the lo
 extra step is needed.
 
 It was originally added with a one-off `uv add nautilus_trader && uv sync` on a
-machine that has a wheel (Windows, Linux, or Apple Silicon). To bump the version
-later, run `uv lock --upgrade-package nautilus-trader && uv sync` and commit the
-updated `uv.lock`.
+machine that has a wheel (Apple Silicon or Linux). To bump the version later, run
+`uv lock --upgrade-package nautilus-trader && uv sync` and commit the updated
+`uv.lock`.
 
 ## 5. Configure secrets
 
