@@ -4,8 +4,9 @@ This is the bootstrap guide: from a fresh clone to a runnable setup. It is writt
 that you can either follow it by hand, or hand it to Claude Code and have it perform
 the steps for you.
 
-**Platform requirement:** Apple Silicon (arm64) or Linux. `nautilus_trader` has no
-wheel for Intel macOS (x86_64), so it cannot be installed there.
+**Platform requirement:** any platform with a `nautilus_trader` wheel — Windows
+(x86_64), Linux, or Apple Silicon macOS (arm64). The only exception is Intel macOS
+(x86_64), which has no wheel and cannot run it.
 
 ## 1. Prerequisites
 
@@ -13,7 +14,13 @@ wheel for Intel macOS (x86_64), so it cannot be installed there.
 - **uv** — the package/environment manager. Install it if you don't have it:
 
   ```bash
+  # macOS / Linux
   curl -LsSf https://astral.sh/uv/install.sh | sh
+  ```
+
+  ```powershell
+  # Windows (PowerShell)
+  powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
   ```
 
   Verify: `uv --version`.
@@ -34,19 +41,16 @@ uv sync
 This creates `.venv/` and installs all locked dependencies (dev tooling + the local
 `qplus` package in editable mode).
 
-## 4. Add NautilusTrader (first time on a new machine)
+## 4. NautilusTrader
 
-`nautilus_trader` is intentionally not yet pinned in `pyproject.toml`, because it has
-no Intel-macOS wheel. On a supported machine (Apple Silicon / Linux), add it once:
+`nautilus_trader` is already pinned in `pyproject.toml` and `uv.lock` (added
+2026-07-01, currently v1.230.0), so the `uv sync` above already installed it — no
+extra step is needed.
 
-```bash
-uv add nautilus_trader
-uv sync
-```
-
-Commit the resulting `pyproject.toml` and `uv.lock` changes so the dependency is
-locked for everyone from then on. After this step, every later `uv sync` installs
-NautilusTrader automatically and this step is no longer needed.
+It was originally added with a one-off `uv add nautilus_trader && uv sync` on a
+machine that has a wheel (Windows, Linux, or Apple Silicon). To bump the version
+later, run `uv lock --upgrade-package nautilus-trader && uv sync` and commit the
+updated `uv.lock`.
 
 ## 5. Configure secrets
 
