@@ -1,17 +1,20 @@
 {
   // Hide generated / tooling artifacts from the Explorer and search.
   // These are all gitignored and rebuilt automatically (uv sync, ruff, mypy,
-  // pytest); hiding them keeps the tree focused on actual project files.
+  // pytest, and the backtest data catalog); hiding them keeps the tree focused
+  // on actual project files.
   "files.exclude": {
     "**/.venv": true,
     "**/__pycache__": true,
     "**/*.egg-info": true,
     "**/.mypy_cache": true,
     "**/.pytest_cache": true,
-    "**/.ruff_cache": true
+    "**/.ruff_cache": true,
+    "**/catalog": true
   },
   "search.exclude": {
     "**/.venv": true,
-    "**/uv.lock": true
+    "**/uv.lock": true,
+    "**/catalog": true
   }
 }
