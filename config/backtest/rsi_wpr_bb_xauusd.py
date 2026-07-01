@@ -17,6 +17,7 @@ from nautilus_trader.config import (
     BacktestRunConfig,
     BacktestVenueConfig,
     ImportableStrategyConfig,
+    LoggingConfig,
 )
 from nautilus_trader.model.data import BarType
 
@@ -52,9 +53,11 @@ STRATEGY = ImportableStrategyConfig(
         "rsi_length": 14,
         "bb_length": 20,
         "bb_mult": 2.0,
-        # Risk management: 1% stop, 2% target, risk 1% of equity per trade.
-        "stop_loss_pct": 1.0,
-        "take_profit_pct": 2.0,
+        # Risk management. These SL/TP values are the in-sample best from the
+        # parameter sweep (see sweep_rsi_wpr_bb_xauusd.py) -- promising but NOT yet
+        # out-of-sample validated, so treat with caution.
+        "stop_loss_pct": 0.5,
+        "take_profit_pct": 4.0,
         "risk_per_trade_pct": 1.0,
     },
 )
@@ -70,7 +73,11 @@ def seed_catalog(catalog_path: str | Path = CATALOG_PATH) -> int:
     )
 
 
-def build_run_config(catalog_path: str | Path = CATALOG_PATH) -> BacktestRunConfig:
+def build_run_config(
+    catalog_path: str | Path = CATALOG_PATH,
+    *,
+    bypass_logging: bool = False,
+) -> BacktestRunConfig:
     """Compose the XAUUSD backtest run recipe."""
     data = BacktestDataConfig(
         catalog_path=str(catalog_path),
@@ -81,6 +88,9 @@ def build_run_config(catalog_path: str | Path = CATALOG_PATH) -> BacktestRunConf
     return BacktestRunConfig(
         venues=[VENUE],
         data=[data],
-        engine=BacktestEngineConfig(strategies=[STRATEGY]),
+        engine=BacktestEngineConfig(
+            strategies=[STRATEGY],
+            logging=LoggingConfig(bypass_logging=bypass_logging),
+        ),
         dispose_on_completion=False,
     )
