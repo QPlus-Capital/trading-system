@@ -34,9 +34,7 @@ def test_demo_build_run_config_returns_run_config() -> None:
 
 
 def test_run_backtest_produces_trades(tmp_path: Path) -> None:
-    write_synthetic_catalog(
-        tmp_path, instrument=_INSTRUMENT, bar_type=_BAR_TYPE, bar_count=200
-    )
+    write_synthetic_catalog(tmp_path, instrument=_INSTRUMENT, bar_type=_BAR_TYPE, bar_count=200)
     run_config = BacktestRunConfig(
         venues=[
             BacktestVenueConfig(

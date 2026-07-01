@@ -70,14 +70,20 @@ def main(argv: list[str] | None = None) -> None:
 
     module = load_config_module(path)
     run_config = module.build_run_config()
-    catalog_path = run_config.data[0].catalog_path
+    data_config = run_config.data[0]
+    catalog_dir = Path(data_config.catalog_path)
 
-    catalog_dir = Path(catalog_path)
-    has_data = catalog_dir.exists() and bool(ParquetDataCatalog(str(catalog_dir)).instruments())
-    if not has_data:
-        print(f"Catalog {catalog_path} has no data -> seeding synthetic demo data ...")
+    # Seed only if this run's instrument is missing (catalogs may hold several).
+    needed = str(data_config.instrument_id)
+    have = (
+        {str(i.id) for i in ParquetDataCatalog(str(catalog_dir)).instruments()}
+        if catalog_dir.exists()
+        else set()
+    )
+    if needed not in have:
+        print(f"Instrument {needed} not in catalog {catalog_dir} -> seeding ...")
         count = module.seed_catalog()
-        print(f"Wrote {count} synthetic bars.")
+        print(f"Wrote {count} bars.")
 
     result = run_backtest(run_config)
 
