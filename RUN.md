@@ -88,3 +88,21 @@ uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 | Format              | `uv run ruff format .`        |
 | Type-check          | `uv run mypy`                 |
 | Tests               | `uv run pytest`               |
+| Run demo backtest   | `uv run python -m qplus.backtest.runner` |
+
+## Run a backtest
+
+The repo ships a runnable demo — an EMA-crossover strategy on a deterministic
+synthetic price series, so it needs no market data or IBKR credentials:
+
+```bash
+uv run python -m qplus.backtest.runner
+```
+
+This loads `config/backtest/ema_cross_demo.py`, runs the backtest, and prints a
+result summary (orders, positions, PnL). Point it at another config to run a
+different setup:
+
+```bash
+uv run python -m qplus.backtest.runner config/backtest/ema_cross_demo.py
+```
