@@ -67,11 +67,13 @@ approved. Always keep it unambiguous which strategies are live.
 
 ## Environment notes
 
-- Target platforms are **Apple Silicon (arm64)** and **Linux**, where
-  `nautilus_trader` wheels exist. Do not add Intel-macOS / Docker workarounds.
-- `nautilus_trader` is intentionally not yet in `pyproject.toml`; it is added on the
-  target machine as the first setup step (see RUN.md). Until then, do not import or
-  execute NautilusTrader — set up structure, code, and docs only.
+- `nautilus_trader` is **pinned in `pyproject.toml` and `uv.lock`** (added 2026-07-01,
+  currently v1.230.0). It runs on every platform that ships a wheel — **Windows
+  (x86_64)**, **Linux**, and **Apple Silicon macOS (arm64)**. The only unsupported
+  platform is **Intel macOS (x86_64)**, which has no wheel; do not add Intel-macOS /
+  Docker workarounds for it.
+- `uv sync` installs NautilusTrader automatically — there is no separate setup step,
+  and it is safe to import and run NautilusTrader in code.
 - Always use `uv` (`uv sync`, `uv add`, `uv run …`), never bare `pip`.
 
 ## Reproducibility

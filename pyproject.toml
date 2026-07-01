@@ -5,10 +5,10 @@ description = "QPlus Capital quantitative trading system built on NautilusTrader
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    # nautilus_trader is intentionally NOT pinned here yet.
-    # It has no wheel for Intel macOS (x86_64). Add it on the target machine
-    # (Apple Silicon / Linux) as the first setup step — see RUN.md:
-    #   uv add nautilus_trader && uv sync
+    # Event-driven backtesting/live engine. Pinned via uv.lock and installed by
+    # `uv sync`. Runs on any platform with a wheel (Windows, Linux, Apple Silicon
+    # macOS); the only unsupported platform is Intel macOS (x86_64).
+    "nautilus-trader>=1.230.0",
 ]
 
 [dependency-groups]
