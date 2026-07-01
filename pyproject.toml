@@ -6,8 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     # Event-driven backtesting/live engine. Pinned via uv.lock and installed by
-    # `uv sync`. Runs on any platform with a wheel (Windows, Linux, Apple Silicon
-    # macOS); the only unsupported platform is Intel macOS (x86_64).
+    # `uv sync`. Requires a platform with a wheel (Apple Silicon macOS or Linux);
+    # Intel macOS (x86_64) is unsupported.
     "nautilus-trader>=1.230.0",
 ]
 
