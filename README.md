@@ -35,7 +35,6 @@ trading-system/
 │   ├── backtest/           # Backtest configurations
 │   └── live/               # Live configurations (only approved strategies)
 ├── tests/                  # Test suite (pytest)
-├── notebooks/              # Jupyter notebooks for research & analysis
 ├── data/                   # Market data / Parquet catalog (NEVER versioned)
 ├── .env.example            # Secrets template (committed, placeholders only)
 ├── pyproject.toml          # Project & dependency definition
@@ -75,7 +74,7 @@ Two-person team. Lightweight by design:
 
 ## Principle: code in, data and secrets out
 
-- **Code** is versioned (everything under `src/qplus/`, `config/`, `tests/`, `notebooks/`).
+- **Code** is versioned (everything under `src/qplus/`, `config/`, `tests/`).
 - **Market data** belongs in `data/` (and `catalog/`) and is **never** committed —
   both are gitignored.
 - **Secrets** belong in `.env` (template: `.env.example`) and are **never** committed.
