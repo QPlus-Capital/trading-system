@@ -30,7 +30,7 @@ from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 # Repo root: src/qplus/backtest/runner.py -> parents[3]
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_DEFAULT_CONFIG = _REPO_ROOT / "config" / "backtest" / "ema_cross_demo.py"
+_DEFAULT_CONFIG = _REPO_ROOT / "config" / "backtest" / "rsi_wpr_bb_xauusd.py"
 
 
 def run_backtest(run_config: BacktestRunConfig) -> BacktestResult:
