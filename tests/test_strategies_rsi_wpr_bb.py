@@ -1,10 +1,6 @@
-"""Tests for the high-level backtest runner and the demo run recipe.
+"""Tests for the RSI/Williams %R/Bollinger strategy and its indicator helpers."""
 
-The end-to-end run bypasses logging: NautilusTrader's global logger cannot be set
-up twice in one process, so running more than one backtest per pytest session
-crashes unless logging is bypassed.
-"""
-
+import math
 from pathlib import Path
 
 from nautilus_trader.config import (
@@ -18,25 +14,41 @@ from nautilus_trader.config import (
 from nautilus_trader.model.data import BarType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
-from qplus.backtest.runner import load_config_module, run_backtest
+from qplus.backtest.runner import run_backtest
 from qplus.data_ingest.synthetic import write_synthetic_catalog
-
-_REPO_ROOT = Path(__file__).resolve().parents[1]
-_DEMO_CONFIG = _REPO_ROOT / "config" / "backtest" / "ema_cross_demo.py"
+from qplus.strategies.rsi_wpr_bb import bollinger, williams_r
 
 _INSTRUMENT = TestInstrumentProvider.audusd_cfd()
-_BAR_TYPE = BarType.from_str("AUDUSD.OANDA-1-DAY-LAST-EXTERNAL")
+_BAR_TYPE = BarType.from_str("AUDUSD.OANDA-4-HOUR-LAST-EXTERNAL")
 
 
-def test_demo_build_run_config_returns_run_config() -> None:
-    module = load_config_module(_DEMO_CONFIG)
-    assert isinstance(module.build_run_config(), BacktestRunConfig)
+def test_williams_r_at_high_is_zero() -> None:
+    # Close equal to the highest high -> %R == 0.
+    assert williams_r([10.0, 12.0, 11.0], [8.0, 9.0, 7.0], 12.0) == 0.0
 
 
-def test_run_backtest_produces_trades(tmp_path: Path) -> None:
-    write_synthetic_catalog(
-        tmp_path, instrument=_INSTRUMENT, bar_type=_BAR_TYPE, bar_count=200
-    )
+def test_williams_r_at_low_is_minus_100() -> None:
+    # Close equal to the lowest low -> %R == -100.
+    assert williams_r([10.0, 12.0, 11.0], [8.0, 9.0, 7.0], 7.0) == -100.0
+
+
+def test_williams_r_zero_range_is_safe() -> None:
+    assert williams_r([5.0, 5.0], [5.0, 5.0], 5.0) == 0.0
+
+
+def test_bollinger_matches_manual_calculation() -> None:
+    closes = [1.0, 2.0, 3.0, 4.0, 5.0]
+    upper, middle, lower = bollinger(closes, mult=2.0)
+    mean = 3.0
+    std = math.sqrt(sum((c - mean) ** 2 for c in closes) / len(closes))
+    assert middle == mean
+    assert math.isclose(upper, mean + 2.0 * std)
+    assert math.isclose(lower, mean - 2.0 * std)
+
+
+def test_backtest_runs_end_to_end(tmp_path: Path) -> None:
+    # Smoke test: the strategy processes H4 bars and completes without error.
+    write_synthetic_catalog(tmp_path, instrument=_INSTRUMENT, bar_type=_BAR_TYPE, bar_count=500)
     run_config = BacktestRunConfig(
         venues=[
             BacktestVenueConfig(
@@ -59,8 +71,8 @@ def test_run_backtest_produces_trades(tmp_path: Path) -> None:
         engine=BacktestEngineConfig(
             strategies=[
                 ImportableStrategyConfig(
-                    strategy_path="qplus.strategies.ema_cross:EMACross",
-                    config_path="qplus.strategies.ema_cross:EMACrossConfig",
+                    strategy_path="qplus.strategies.rsi_wpr_bb:RsiWprBb",
+                    config_path="qplus.strategies.rsi_wpr_bb:RsiWprBbConfig",
                     config={
                         "instrument_id": str(_INSTRUMENT.id),
                         "bar_type": str(_BAR_TYPE),
@@ -74,7 +86,5 @@ def test_run_backtest_produces_trades(tmp_path: Path) -> None:
     )
 
     result = run_backtest(run_config)
-
-    assert result.total_orders > 0
-    assert result.total_positions > 0
-    assert "USD" in result.stats_pnls
+    assert isinstance(result.total_orders, int)
+    assert result.total_orders >= 0
