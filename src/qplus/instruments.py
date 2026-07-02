@@ -35,8 +35,8 @@ def xauusd_ttp() -> Cfd:
         size_precision=0,
         size_increment=Quantity.from_int(1),
         lot_size=Quantity.from_int(100),
-        margin_init=Decimal("0.05"),
-        margin_maint=Decimal("0.05"),
+        margin_init=Decimal("0.10"),  # ~10:1 leverage (broker margin ~10% of notional)
+        margin_maint=Decimal("0.10"),
         maker_fee=Decimal("0.000007"),  # 0.0007% of notional per side
         taker_fee=Decimal("0.000007"),
         ts_event=0,
