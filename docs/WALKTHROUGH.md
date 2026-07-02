@@ -141,14 +141,23 @@ huge drawdown is not tradeable.
 
 ---
 
-## 8. Honest caveats
+## 8. Validation (the anti-overfitting framework)
 
-- Results so far are **in-sample**: the "best" parameters were chosen on this exact
-  history of one instrument, which risks overfitting. They are not a forecast.
-- The current best combination shows a large drawdown — promising as a mechanism,
-  not yet a usable strategy.
-- Sensible next steps: out-of-sample / walk-forward validation, lowering the risk
-  per trade to tame drawdown, and testing more instruments.
+A single backtest and an in-sample sweep are not enough to trust a strategy. These
+tools grade whether an edge is likely to survive out-of-sample. Costs are honest in
+every run (real per-bar spread via bid/ask, commission, ~10:1 leverage).
+
+| Tool | What it does |
+| --- | --- |
+| `qplus.backtest.walkforward_run <sweep_config>` | **Walk-forward**: re-optimizes on each 2y train window and tests on the next unseen 6-month window. Prints out-of-sample return, % profitable windows, walk-forward efficiency, and a Monte-Carlo fan on the OOS trades. |
+| `qplus.backtest.heatmap <sweep_csv>` | **Parameter sensitivity**: heatmap of a metric over two parameters — look for a broad plateau, not an isolated peak. |
+| `qplus.backtest.validate_overfitting <sweep_config>` | **Deflated Sharpe ratio** and **probability of backtest overfitting** (PBO) — corrects for having tried many combinations. |
+| `qplus.backtest.stress <recipe>` | **Stress test**: higher slippage and historical crisis windows (2013, 2020, 2022). |
+| `qplus.backtest.scorecard reports/metrics.json` | **Scorecard**: grades all metrics against acceptance thresholds and prints an overall verdict. |
+
+Read the metrics honestly: high in-sample returns with a low walk-forward efficiency
+mean overfitting; a strategy is only trustworthy once the **out-of-sample** numbers
+(not the in-sample ones) hold up.
 
 ---
 
