@@ -83,6 +83,7 @@ def _run_task(
     return {
         "instrument": symbol,
         "variation": variation,
+        "train_months": train_months,
         "windows": len(results),
         "mean_oos_pct": round(mean_oos * 100, 2),
         "pct_profitable": round(pct * 100, 0),
@@ -99,28 +100,26 @@ def _save_csv(rows: list[dict[str, Any]], path: Path) -> None:
     pd.DataFrame(clean).to_csv(path, index=False)
 
 
-def _heatmap(df: pd.DataFrame, path: Path) -> None:
-    """Save a variation x instrument heatmap of mean OOS return (good/bad at a glance)."""
+def _plot_heatmap(pivot: pd.DataFrame, path: Path, title: str) -> None:
+    """Save a green/red heatmap of a variation-indexed pivot (mean OOS %)."""
     import matplotlib
 
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import numpy as np
 
-    piv = df.pivot_table(index="variation", columns="instrument", values="mean_oos_pct")
-    piv = piv.loc[piv.mean(axis=1).sort_values(ascending=False).index]  # best variations on top
-    fig, ax = plt.subplots(figsize=(1.0 * len(piv.columns) + 3, 0.5 * len(piv.index) + 2))
-    im = ax.imshow(piv.to_numpy(), cmap="RdYlGn", aspect="auto")
-    ax.set_xticks(range(len(piv.columns)))
-    ax.set_xticklabels(list(piv.columns), rotation=45, ha="right")
-    ax.set_yticks(range(len(piv.index)))
-    ax.set_yticklabels(list(piv.index))
-    for i in range(len(piv.index)):
-        for j in range(len(piv.columns)):
-            val = piv.to_numpy()[i, j]
-            if not np.isnan(val):
-                ax.text(j, i, f"{val:.0f}", ha="center", va="center", fontsize=7)
-    ax.set_title("Mean OOS return % -- variation x instrument")
+    vals = pivot.to_numpy(dtype=float)
+    fig, ax = plt.subplots(figsize=(1.0 * vals.shape[1] + 3, 0.5 * vals.shape[0] + 2))
+    im = ax.imshow(vals, cmap="RdYlGn", aspect="auto")
+    ax.set_xticks(range(vals.shape[1]))
+    ax.set_xticklabels([str(c) for c in pivot.columns], rotation=45, ha="right")
+    ax.set_yticks(range(vals.shape[0]))
+    ax.set_yticklabels(list(pivot.index))
+    for i in range(vals.shape[0]):
+        for j in range(vals.shape[1]):
+            if not np.isnan(vals[i, j]):
+                ax.text(j, i, f"{vals[i, j]:.0f}", ha="center", va="center", fontsize=7)
+    ax.set_title(title)
     fig.colorbar(im, ax=ax, shrink=0.7, label="OOS %")
     fig.tight_layout()
     fig.savefig(path, dpi=120)
@@ -195,8 +194,31 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_var: int) -> Non
     print("\n===== Variation ranking (mean across instruments) =====")
     print(agg.round(3).to_string())
 
-    _heatmap(df, out_dir / "heatmap.png")
-    _top_charts(list(agg.index[:3]), trades_by_var, out_dir)
+    valid = df.dropna(subset=["mean_oos_pct"])
+    order = list(agg.index)  # best variations first
+
+    by_instrument = valid.pivot_table(
+        index="variation", columns="instrument", values="mean_oos_pct"
+    ).reindex(order)
+    _plot_heatmap(
+        by_instrument, out_dir / "heatmap.png", "Mean OOS return % -- variation x instrument"
+    )
+
+    # If several training lengths were run, show how each variation holds up across them.
+    if "train_months" in valid.columns and valid["train_months"].nunique() > 1:
+        by_train = valid.pivot_table(
+            index="variation", columns="train_months", values="mean_oos_pct"
+        ).reindex(order)
+        by_train.round(2).to_csv(out_dir / "ranking_by_train.csv")
+        print("\n===== Mean OOS % by training length (months) =====")
+        print(by_train.round(2).to_string())
+        _plot_heatmap(
+            by_train,
+            out_dir / "heatmap_by_train.png",
+            "Mean OOS return % -- variation x train length",
+        )
+
+    _top_charts(order[:3], trades_by_var, out_dir)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -207,7 +229,8 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_config_module(Path(args[0]))
     max_windows = int(args[1]) if len(args) > 1 else None
     workers = int(getattr(cfg, "MAX_WORKERS", 4))
-    train_m = int(getattr(cfg, "TRAIN_MONTHS", 24))
+    train_cfg = getattr(cfg, "TRAIN_MONTHS", 24)
+    train_list = [int(train_cfg)] if isinstance(train_cfg, int) else [int(t) for t in train_cfg]
     test_m = int(getattr(cfg, "TEST_MONTHS", 6))
     step_m = int(getattr(cfg, "STEP_MONTHS", 6))
 
@@ -244,30 +267,40 @@ def main(argv: list[str] | None = None) -> None:
         )
         for factory, csv, leverage in cfg.INSTRUMENTS
         for name, overrides in cfg.VARIATIONS.items()
+        for train_m in train_list
     ]
     n_inst, n_var = len(cfg.INSTRUMENTS), len(cfg.VARIATIONS)
-    print(f"{len(tasks)} tasks ({n_inst} instruments x {n_var} variations) on {workers} workers")
-    print(f"walk-forward: train {train_m}m / test {test_m}m / step {step_m}m")
+    trains = "/".join(str(t) for t in train_list)
+    print(
+        f"{len(tasks)} tasks ({n_inst} instruments x {n_var} variations x "
+        f"{len(train_list)} train lengths) on {workers} workers"
+    )
+    print(f"walk-forward: train {trains}m / test {test_m}m / step {step_m}m")
     print(f"output -> {out_dir}\n")
 
     rows: list[dict[str, Any]] = []
     out_csv = out_dir / "study.csv"
     started = time.time()
     with ProcessPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(_run_task, *task): (task[6], task[4]) for task in tasks}
+        futures = {executor.submit(_run_task, *task): (task[6], task[4], task[7]) for task in tasks}
         for i, future in enumerate(as_completed(futures), start=1):
-            symbol, variation = futures[future]
+            symbol, variation, train_m = futures[future]
             try:
                 row = future.result()
             except Exception as exc:  # record the failure and continue the batch
-                row = {"instrument": symbol, "variation": variation, "error": str(exc)[:120]}
+                row = {
+                    "instrument": symbol,
+                    "variation": variation,
+                    "train_months": train_m,
+                    "error": str(exc)[:120],
+                }
             rows.append(row)
             _save_csv(rows, out_csv)  # save after every task -> partial results survive a Ctrl-C
             elapsed = time.time() - started
             eta_h = (elapsed / i) * (len(tasks) - i) / 3600
             oos = row.get("mean_oos_pct")
             print(
-                f"[{i}/{len(tasks)}] {symbol}/{variation}: {oos}% "
+                f"[{i}/{len(tasks)}] {symbol}/{variation}@tr{train_m}: {oos}% "
                 f"| elapsed {elapsed / 60:.1f}m | ETA ~{eta_h:.1f}h"
             )
 

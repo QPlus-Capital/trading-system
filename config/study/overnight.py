@@ -28,8 +28,10 @@ from qplus.instruments import (
 MAX_WORKERS = 5
 
 # Walk-forward sizing. A 3-month step (vs the 6-month default) roughly doubles the number
-# of out-of-sample windows -> more OOS observations -> more robust per-variation estimates.
-TRAIN_MONTHS = 24
+# of out-of-sample windows -> more OOS observations. The whole study is repeated across
+# three training-window lengths, which tests whether each variation's edge is robust to the
+# look-back (short vs long history) instead of just spending compute on re-testing noise.
+TRAIN_MONTHS = [18, 24, 36]
 TEST_MONTHS = 6
 STEP_MONTHS = 3
 
