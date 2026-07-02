@@ -51,6 +51,7 @@ class SweepRecipe:
         bar_spec: str = "4-HOUR",
         trade_size: str = "1",
         param_grid: dict[str, list[Any]] | None = None,
+        config_overrides: dict[str, Any] | None = None,
     ) -> None:
         self.INSTRUMENT = instrument
         self.BAR_SPEC = bar_spec
@@ -73,6 +74,7 @@ class SweepRecipe:
             "bar_type": str(self._bid),
             "trade_size": trade_size,
             "risk_per_trade_pct": 1.0,
+            **(config_overrides or {}),  # e.g. long_only, use_rsi_filter for studies
         }
 
     def seed_catalog(self, catalog_path: str | Path | None = None) -> int:
