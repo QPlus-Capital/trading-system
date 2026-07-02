@@ -40,7 +40,7 @@ VENUE = BacktestVenueConfig(
     oms_type="NETTING",
     account_type="MARGIN",
     base_currency="USD",
-    starting_balances=["100_000 USD"],
+    starting_balances=["200_000 USD"],
     default_leverage=10.0,
 )
 
