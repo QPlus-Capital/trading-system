@@ -82,8 +82,14 @@ def build_run_config(
     catalog_path: str | Path = CATALOG_PATH,
     *,
     bypass_logging: bool = False,
+    start: str | None = None,
+    end: str | None = None,
 ) -> BacktestRunConfig:
-    """Compose the XAUUSD backtest run recipe."""
+    """Compose the XAUUSD backtest run recipe.
+
+    ``start`` / ``end`` (ISO datetime strings) restrict the run to a time window --
+    used by the stress runner to isolate crisis periods.
+    """
     data = BacktestDataConfig(
         catalog_path=str(catalog_path),
         data_cls="nautilus_trader.model.data:Bar",
@@ -98,4 +104,6 @@ def build_run_config(
             logging=LoggingConfig(bypass_logging=bypass_logging),
         ),
         dispose_on_completion=False,
+        start=start,
+        end=end,
     )
