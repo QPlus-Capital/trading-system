@@ -25,7 +25,6 @@ import pandas as pd
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.instruments import Instrument
-from nautilus_trader.model.objects import Quantity
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 
@@ -80,7 +79,7 @@ def load_mt5_bid_ask_bars(
         ns = dt_to_unix_nanos(ts)
         spread_pts = spreads[i] if spreads[i] > 0 else fallback
         up = Decimal(spread_pts) * tick + half_slip  # bid -> ask shift
-        volume = Quantity.from_int(int(volumes[i]))
+        volume = instrument.make_qty(int(volumes[i]))  # match instrument size precision
         o, h, low_, c = Decimal(opens[i]), Decimal(highs[i]), Decimal(lows[i]), Decimal(closes[i])
 
         bid_bars.append(
