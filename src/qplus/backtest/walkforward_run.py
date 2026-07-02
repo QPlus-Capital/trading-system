@@ -32,6 +32,7 @@ from qplus.backtest.report import extract_trade_pnls, plot_monte_carlo
 from qplus.backtest.runner import load_config_module
 from qplus.backtest.sweep import expand_grid
 from qplus.backtest.walkforward import (
+    WalkForwardResult,
     calmar_score,
     run_walk_forward,
     walk_forward_efficiency,
@@ -47,6 +48,57 @@ def _data_span(csv_path: str | Path) -> tuple[pd.Timestamp, pd.Timestamp]:
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>"])
     stamps = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S", utc=True)
     return stamps.iloc[0], stamps.iloc[-1]
+
+
+def run_walkforward(
+    recipe: Any,
+    *,
+    train_months: int = _TRAIN_MONTHS,
+    test_months: int = _TEST_MONTHS,
+    step_months: int = _STEP_MONTHS,
+    max_windows: int | None = None,
+) -> list[WalkForwardResult]:
+    """Run the full walk-forward for a recipe (config module or SweepRecipe).
+
+    The recipe must expose ``CSV_PATH``, ``PARAM_GRID`` and ``build_run_config``.
+    Assumes the catalog is already seeded. Returns the per-window results.
+    """
+    start, end = _data_span(recipe.CSV_PATH)
+    windows = walk_forward_windows(
+        start, end, train_months=train_months, test_months=test_months, step_months=step_months
+    )
+    if max_windows is not None:
+        windows = windows[:max_windows]
+    combos = expand_grid(recipe.PARAM_GRID)
+
+    def optimize(
+        train_start: pd.Timestamp, train_end: pd.Timestamp
+    ) -> tuple[dict[str, Any], float]:
+        best_params: dict[str, Any] = combos[0]
+        best_score = float("-inf")
+        best_return = 0.0
+        for params in combos:
+            pnls, start_equity = extract_trade_pnls(
+                recipe.build_run_config(
+                    params, start=train_start.isoformat(), end=train_end.isoformat()
+                )
+            )
+            score = calmar_score(pnls, start_equity)
+            if score > best_score:
+                best_score = score
+                best_params = params
+                curve = equity_curve(pnls, start_equity)
+                best_return = (float(curve[-1]) - start_equity) / start_equity
+        return best_params, best_return
+
+    def evaluate(
+        params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
+    ) -> tuple[list[float], float]:
+        return extract_trade_pnls(
+            recipe.build_run_config(params, start=test_start.isoformat(), end=test_end.isoformat())
+        )
+
+    return run_walk_forward(windows, optimize, evaluate)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -71,45 +123,8 @@ def main(argv: list[str] | None = None) -> None:
         print(f"Instrument {needed} not in catalog -> seeding ...")
         module.seed_catalog()
 
-    start, end = _data_span(module.CSV_PATH)
-    windows = walk_forward_windows(
-        start, end, train_months=_TRAIN_MONTHS, test_months=_TEST_MONTHS, step_months=_STEP_MONTHS
-    )
-    if max_windows is not None:
-        windows = windows[:max_windows]
-    combos = expand_grid(module.PARAM_GRID)
-    print(
-        f"{len(windows)} windows x {len(combos)} combos = {len(windows) * len(combos)} train runs"
-    )
-
-    def optimize(
-        train_start: pd.Timestamp, train_end: pd.Timestamp
-    ) -> tuple[dict[str, Any], float]:
-        best_params: dict[str, Any] = combos[0]
-        best_score = float("-inf")
-        best_return = 0.0
-        for params in combos:
-            pnls, start_equity = extract_trade_pnls(
-                module.build_run_config(
-                    params, start=train_start.isoformat(), end=train_end.isoformat()
-                )
-            )
-            score = calmar_score(pnls, start_equity)
-            if score > best_score:
-                best_score = score
-                best_params = params
-                curve = equity_curve(pnls, start_equity)
-                best_return = (float(curve[-1]) - start_equity) / start_equity
-        return best_params, best_return
-
-    def evaluate(
-        params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
-    ) -> tuple[list[float], float]:
-        return extract_trade_pnls(
-            module.build_run_config(params, start=test_start.isoformat(), end=test_end.isoformat())
-        )
-
-    results = run_walk_forward(windows, optimize, evaluate)
+    results = run_walkforward(module, max_windows=max_windows)
+    print(f"{len(results)} out-of-sample windows evaluated")
 
     rows = [
         {
