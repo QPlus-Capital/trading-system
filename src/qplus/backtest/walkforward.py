@@ -116,6 +116,7 @@ class WalkForwardResult:
     oos_return: float  # out-of-sample return on the test window
     oos_trades: int
     oos_max_dd: float
+    oos_returns: list[float]  # per-trade OOS returns (pnl / window start equity)
 
 
 # Optimize on a train window -> (best params, that set's in-sample return).
@@ -144,6 +145,7 @@ def run_walk_forward(
                 oos_return=oos_return,
                 oos_trades=len(pnls),
                 oos_max_dd=max_drawdown(equity),
+                oos_returns=[p / start_equity for p in pnls] if start_equity else [],
             ),
         )
     return results
