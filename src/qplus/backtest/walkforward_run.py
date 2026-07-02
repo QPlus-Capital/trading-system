@@ -27,8 +27,8 @@ from typing import Any
 import pandas as pd
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from qplus.backtest.montecarlo import equity_curve
-from qplus.backtest.report import extract_trade_pnls
+from qplus.backtest.montecarlo import equity_curve, monte_carlo_paths, summarize
+from qplus.backtest.report import extract_trade_pnls, plot_monte_carlo
 from qplus.backtest.runner import load_config_module
 from qplus.backtest.sweep import expand_grid
 from qplus.backtest.walkforward import (
@@ -136,6 +136,24 @@ def main(argv: list[str] | None = None) -> None:
     print(f"profitable windows:     {pct_profitable:.0%}")
     print(f"walk-forward efficiency: {walk_forward_efficiency(results):.2f}")
     print(f"\nPer-window results: {out_path}")
+
+    # Monte-Carlo on the *out-of-sample* trades (the honest track record).
+    base = float(str(module.VENUE.starting_balances[0]).split()[0].replace("_", ""))
+    oos_returns = [r for result in results for r in result.oos_returns]
+    if oos_returns:
+        dollar_pnls = [r * base for r in oos_returns]
+        paths = monte_carlo_paths(dollar_pnls, n_sims=500, start_equity=base)
+        stats = summarize(paths, base)
+        png = _REPO_ROOT / "reports" / f"walkforward_montecarlo_{path.stem}.png"
+        plot_monte_carlo(
+            paths, equity_curve(dollar_pnls, base), base, png, f"OOS Monte-Carlo -- {path.stem}"
+        )
+        print("\n===== Out-of-sample Monte-Carlo =====")
+        print(f"OOS trades:            {len(oos_returns)}")
+        print(f"probability of profit: {stats['prob_profit']:.0%}")
+        print(f"median max drawdown:   {stats['max_dd_median']:.1%}")
+        print(f"95th pct max drawdown: {stats['max_dd_p95']:.1%}")
+        print(f"Chart: {png}")
 
 
 if __name__ == "__main__":
