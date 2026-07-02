@@ -65,8 +65,17 @@ def seed_catalog(catalog_path: str | Path = CATALOG_PATH) -> int:
     return write_mt5_catalog(CSV_PATH, catalog_path, instrument=INSTRUMENT, bar_spec=BAR_SPEC)
 
 
-def build_run_config(params: dict[str, Any]) -> BacktestRunConfig:
-    """Build a run config with the swept ``params`` merged onto the base config."""
+def build_run_config(
+    params: dict[str, Any],
+    *,
+    start: str | None = None,
+    end: str | None = None,
+) -> BacktestRunConfig:
+    """Build a run config with the swept ``params`` merged onto the base config.
+
+    ``start`` / ``end`` (ISO datetime strings) restrict the run to a time window --
+    used by the walk-forward runner to isolate train and test periods.
+    """
     strategy = ImportableStrategyConfig(
         strategy_path="qplus.strategies.rsi_wpr_bb:RsiWprBb",
         config_path="qplus.strategies.rsi_wpr_bb:RsiWprBbConfig",
@@ -86,4 +95,6 @@ def build_run_config(params: dict[str, Any]) -> BacktestRunConfig:
             logging=LoggingConfig(bypass_logging=True),
         ),
         dispose_on_completion=False,
+        start=start,
+        end=end,
     )
