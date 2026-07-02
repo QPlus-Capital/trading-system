@@ -24,8 +24,14 @@ from qplus.instruments import (
     xauusd_ttp,
 )
 
-# Leave some cores free (old CPU) to keep the machine stable overnight.
+# Leave cores free (old i7-8700, thermals) to keep the machine stable over a long run.
 MAX_WORKERS = 5
+
+# Walk-forward sizing. A 3-month step (vs the 6-month default) roughly doubles the number
+# of out-of-sample windows -> more OOS observations -> more robust per-variation estimates.
+TRAIN_MONTHS = 24
+TEST_MONTHS = 6
+STEP_MONTHS = 3
 
 # (instrument factory, CSV path, leverage). 12 instruments across metals, FX and indices.
 INSTRUMENTS: list[tuple[Any, str, float]] = [
@@ -43,28 +49,33 @@ INSTRUMENTS: list[tuple[Any, str, float]] = [
     (ustec_ttp, "data/USTEC_H4.csv", 15.0),
 ]
 
-# Focused inner grid (buy_rsi_threshold is inert, so it is dropped) -> 6 combos/window.
+# Full inner grid (buy_rsi_threshold is inert, so it is dropped) -> 16 combos/window.
+# A wider grid means the per-window optimizer picks from a more realistic parameter set.
 PARAM_GRID: dict[str, list[Any]] = {
-    "stop_loss_pct": [0.5, 1.0, 1.5],
-    "take_profit_pct": [2.0, 4.0],
+    "stop_loss_pct": [0.5, 1.0, 1.5, 2.0],
+    "take_profit_pct": [1.0, 2.0, 3.0, 4.0],
 }
 
 # Named strategy variations (config overrides). "baseline" is the current strategy.
+# The first eight are the full 2^3 factorial of the three buy-confirmations, so each
+# indicator's marginal contribution can be read off cleanly; the rest probe trade
+# direction, risk level and indicator lengths.
 VARIATIONS: dict[str, dict[str, Any]] = {
-    "baseline": {},
-    "long_only": {"long_only": True},
-    "no_rsi_filter": {"use_rsi_filter": False},
-    "no_wpr_confirm": {"use_wpr_confirm": False},
-    "no_bb_confirm": {"use_bb_confirm": False},
+    "baseline": {},  # all three confirmations on
+    "no_bb": {"use_bb_confirm": False},
+    "no_wpr": {"use_wpr_confirm": False},
+    "no_rsi": {"use_rsi_filter": False},
+    "no_bb_wpr": {"use_bb_confirm": False, "use_wpr_confirm": False},
+    "no_bb_rsi": {"use_bb_confirm": False, "use_rsi_filter": False},
+    "no_wpr_rsi": {"use_wpr_confirm": False, "use_rsi_filter": False},
     "no_confirms": {
-        "use_rsi_filter": False,
-        "use_wpr_confirm": False,
         "use_bb_confirm": False,
+        "use_wpr_confirm": False,
+        "use_rsi_filter": False,
     },
-    "long_only_risk0.5": {"long_only": True, "risk_per_trade_pct": 0.5},
-    "risk0.5": {"risk_per_trade_pct": 0.5},
-    "risk0.25": {"risk_per_trade_pct": 0.25},
-    "ema20": {"ema_length": 20},
-    "bb30": {"bb_length": 30},
-    "wpr21": {"wpr_length": 21},
+    "long_only": {"long_only": True},
+    "risk0.5": {"risk_per_trade_pct": 0.5},  # lower risk -> lower drawdown reference
+    "ema20": {"ema_length": 20},  # default 10
+    "bb30": {"bb_length": 30},  # default 20
+    "wpr21": {"wpr_length": 21},  # default 14
 }
