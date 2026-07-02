@@ -9,10 +9,13 @@ This module only computes the window boundaries; running and scoring them lives 
 the walk-forward runner (built on top of this).
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
+
+from qplus.backtest.montecarlo import equity_curve, max_drawdown
 
 
 @dataclass(frozen=True)
@@ -83,3 +86,77 @@ def describe_windows(windows: Sequence[WalkForwardWindow]) -> str:
         f"  train {w.train_start:%Y-%m}..{w.train_end:%Y-%m}  ->  test {w.label}" for w in windows
     ]
     return "\n".join(lines)
+
+
+def calmar_score(
+    trade_pnls: Sequence[float],
+    start_equity: float,
+    *,
+    min_trades: int = 10,
+) -> float:
+    """Drawdown-adjusted score: total return divided by max drawdown (Calmar-style).
+
+    Returns ``-inf`` if there are fewer than ``min_trades`` trades, so thin, unreliable
+    parameter sets are never selected.
+    """
+    if len(trade_pnls) < min_trades:
+        return float("-inf")
+    equity = equity_curve(trade_pnls, start_equity)
+    total_return = (float(equity[-1]) - start_equity) / start_equity
+    return total_return / max(max_drawdown(equity), 1e-6)
+
+
+@dataclass(frozen=True)
+class WalkForwardResult:
+    """Outcome of one walk-forward window: chosen params and their OOS performance."""
+
+    window: str
+    best_params: dict[str, Any]
+    is_return: float  # in-sample return of the chosen params on the train window
+    oos_return: float  # out-of-sample return on the test window
+    oos_trades: int
+    oos_max_dd: float
+
+
+# Optimize on a train window -> (best params, that set's in-sample return).
+Optimize = Callable[[pd.Timestamp, pd.Timestamp], tuple[dict[str, Any], float]]
+# Evaluate params on a test window -> (out-of-sample trade PnLs, starting equity).
+EvaluateOOS = Callable[[dict[str, Any], pd.Timestamp, pd.Timestamp], tuple[list[float], float]]
+
+
+def run_walk_forward(
+    windows: Sequence[WalkForwardWindow],
+    optimize: Optimize,
+    evaluate: EvaluateOOS,
+) -> list[WalkForwardResult]:
+    """Optimize per train window and score the chosen params on the next test window."""
+    results: list[WalkForwardResult] = []
+    for window in windows:
+        best_params, is_return = optimize(window.train_start, window.train_end)
+        pnls, start_equity = evaluate(best_params, window.test_start, window.test_end)
+        equity = equity_curve(pnls, start_equity)
+        oos_return = (float(equity[-1]) - start_equity) / start_equity
+        results.append(
+            WalkForwardResult(
+                window=window.label,
+                best_params=best_params,
+                is_return=is_return,
+                oos_return=oos_return,
+                oos_trades=len(pnls),
+                oos_max_dd=max_drawdown(equity),
+            ),
+        )
+    return results
+
+
+def walk_forward_efficiency(results: Sequence[WalkForwardResult]) -> float:
+    """Walk-forward efficiency: mean out-of-sample return / mean in-sample return.
+
+    Values near or above ~0.5 suggest the edge generalizes; near zero or negative
+    suggests the in-sample performance was overfit.
+    """
+    if not results:
+        return float("nan")
+    is_mean = sum(r.is_return for r in results) / len(results)
+    oos_mean = sum(r.oos_return for r in results) / len(results)
+    return oos_mean / is_mean if is_mean != 0 else float("nan")

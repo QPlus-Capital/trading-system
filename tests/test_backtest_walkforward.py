@@ -1,8 +1,16 @@
 """Tests for the walk-forward window scheme."""
 
+import math
+from typing import Any
+
 import pandas as pd
 
-from qplus.backtest.walkforward import walk_forward_windows
+from qplus.backtest.walkforward import (
+    calmar_score,
+    run_walk_forward,
+    walk_forward_efficiency,
+    walk_forward_windows,
+)
 
 
 def test_windows_are_contiguous_and_non_anchored() -> None:
@@ -44,3 +52,38 @@ def test_invalid_sizing_raises() -> None:
         except ValueError:
             continue
         raise AssertionError(f"expected ValueError for {bad}")
+
+
+def test_calmar_score_return_over_drawdown() -> None:
+    # equity: 1000 -> 1100 -> 1050 -> 1150; return 0.15, max dd (1100-1050)/1100.
+    score = calmar_score([100.0, -50.0, 100.0], 1000.0, min_trades=1)
+    assert math.isclose(score, 0.15 / (50.0 / 1100.0), rel_tol=1e-9)
+
+
+def test_calmar_score_too_few_trades_is_minus_inf() -> None:
+    assert calmar_score([100.0], 1000.0, min_trades=10) == float("-inf")
+
+
+def test_run_walk_forward_and_efficiency() -> None:
+    windows = walk_forward_windows(
+        "2020-01-01", "2022-01-01", train_months=12, test_months=6, step_months=6
+    )
+    assert len(windows) == 2
+
+    # Fake optimize/evaluate: in-sample return 0.20; OOS +200 on 1000 -> +0.20.
+    def optimize(
+        train_start: pd.Timestamp, train_end: pd.Timestamp
+    ) -> tuple[dict[str, Any], float]:
+        return {"stop_loss_pct": 1.0}, 0.20
+
+    def evaluate(
+        params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
+    ) -> tuple[list[float], float]:
+        return [100.0, 100.0], 1000.0
+
+    results = run_walk_forward(windows, optimize, evaluate)
+    assert len(results) == 2
+    assert all(r.best_params == {"stop_loss_pct": 1.0} for r in results)
+    assert all(math.isclose(r.oos_return, 0.20) for r in results)
+    # OOS return equals IS return here -> efficiency 1.0.
+    assert math.isclose(walk_forward_efficiency(results), 1.0)
