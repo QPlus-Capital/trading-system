@@ -1,7 +1,9 @@
 """Backtest recipe: RSI/Williams %R/Bollinger strategy on REAL XAUUSD H4 data.
 
-Uses gold (XAUUSD) H4 bars exported from The Trading Pit's MetaTrader 5 and
-imported into the Parquet catalog. Run from the repo root::
+Uses gold (XAUUSD) H4 bars exported from The Trading Pit's MetaTrader 5. The import
+writes BID and ASK bars into the catalog, so the simulated exchange fills buys at the
+ask and sells at the bid -- the real per-bar spread is a cost. Commission (0.0007%
+per side) comes from the instrument definition. Run from the repo root::
 
     uv run python -m qplus.backtest.runner config/backtest/rsi_wpr_bb_xauusd.py
 
@@ -25,7 +27,10 @@ from qplus.data_ingest.mt5_csv import write_mt5_catalog
 from qplus.instruments import xauusd_ttp
 
 INSTRUMENT = xauusd_ttp()
-BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-4-HOUR-LAST-EXTERNAL")
+BAR_SPEC = "4-HOUR"
+# The strategy trades on the BID series; the ASK series only feeds realistic fills.
+BID_BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-{BAR_SPEC}-BID-EXTERNAL")
+ASK_BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-{BAR_SPEC}-ASK-EXTERNAL")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATH = _REPO_ROOT / "catalog"
@@ -37,7 +42,7 @@ VENUE = BacktestVenueConfig(
     account_type="MARGIN",
     base_currency="USD",
     starting_balances=["100_000 USD"],
-    default_leverage=20.0,
+    default_leverage=10.0,  # ~10:1, from the broker's margin (~10% of notional)
 )
 
 STRATEGY = ImportableStrategyConfig(
@@ -45,7 +50,7 @@ STRATEGY = ImportableStrategyConfig(
     config_path="qplus.strategies.rsi_wpr_bb:RsiWprBbConfig",
     config={
         "instrument_id": str(INSTRUMENT.id),
-        "bar_type": str(BAR_TYPE),
+        "bar_type": str(BID_BAR_TYPE),
         "trade_size": "100",  # ounces (fallback if risk sizing is off)
         # Strategy parameters (defaults mirror the Pine script); tune these later.
         "wpr_length": 14,
@@ -64,12 +69,12 @@ STRATEGY = ImportableStrategyConfig(
 
 
 def seed_catalog(catalog_path: str | Path = CATALOG_PATH) -> int:
-    """Import the XAUUSD H4 CSV into the catalog."""
+    """Import the XAUUSD H4 CSV (bid + ask bars) into the catalog."""
     return write_mt5_catalog(
         CSV_PATH,
         catalog_path,
         instrument=INSTRUMENT,
-        bar_type=BAR_TYPE,
+        bar_spec=BAR_SPEC,
     )
 
 
@@ -83,7 +88,7 @@ def build_run_config(
         catalog_path=str(catalog_path),
         data_cls="nautilus_trader.model.data:Bar",
         instrument_id=str(INSTRUMENT.id),
-        bar_types=[str(BAR_TYPE)],
+        bar_types=[str(BID_BAR_TYPE), str(ASK_BAR_TYPE)],
     )
     return BacktestRunConfig(
         venues=[VENUE],

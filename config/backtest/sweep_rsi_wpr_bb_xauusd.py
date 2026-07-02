@@ -26,7 +26,9 @@ from qplus.data_ingest.mt5_csv import write_mt5_catalog
 from qplus.instruments import xauusd_ttp
 
 INSTRUMENT = xauusd_ttp()
-BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-4-HOUR-LAST-EXTERNAL")
+BAR_SPEC = "4-HOUR"
+BID_BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-{BAR_SPEC}-BID-EXTERNAL")
+ASK_BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-{BAR_SPEC}-ASK-EXTERNAL")
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_PATH = _REPO_ROOT / "catalog"
@@ -39,13 +41,13 @@ VENUE = BacktestVenueConfig(
     account_type="MARGIN",
     base_currency="USD",
     starting_balances=["100_000 USD"],
-    default_leverage=20.0,
+    default_leverage=10.0,
 )
 
 # Parameters held constant across the sweep.
 BASE_CONFIG: dict[str, Any] = {
     "instrument_id": str(INSTRUMENT.id),
-    "bar_type": str(BAR_TYPE),
+    "bar_type": str(BID_BAR_TYPE),
     "trade_size": "100",
     "risk_per_trade_pct": 1.0,
 }
@@ -59,8 +61,8 @@ PARAM_GRID: dict[str, list[Any]] = {
 
 
 def seed_catalog(catalog_path: str | Path = CATALOG_PATH) -> int:
-    """Import the XAUUSD H4 CSV into the catalog."""
-    return write_mt5_catalog(CSV_PATH, catalog_path, instrument=INSTRUMENT, bar_type=BAR_TYPE)
+    """Import the XAUUSD H4 CSV (bid + ask bars) into the catalog."""
+    return write_mt5_catalog(CSV_PATH, catalog_path, instrument=INSTRUMENT, bar_spec=BAR_SPEC)
 
 
 def build_run_config(params: dict[str, Any]) -> BacktestRunConfig:
@@ -74,7 +76,7 @@ def build_run_config(params: dict[str, Any]) -> BacktestRunConfig:
         catalog_path=str(CATALOG_PATH),
         data_cls="nautilus_trader.model.data:Bar",
         instrument_id=str(INSTRUMENT.id),
-        bar_types=[str(BAR_TYPE)],
+        bar_types=[str(BID_BAR_TYPE), str(ASK_BAR_TYPE)],
     )
     return BacktestRunConfig(
         venues=[VENUE],
