@@ -100,6 +100,13 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     take_profit_pct: float = 0.0
     risk_per_trade_pct: float = 0.0
 
+    # Component switches (for structural ablation studies). Each confirmation filter
+    # can be turned off; long_only ignores short signals (flatten instead).
+    use_bb_confirm: bool = True  # require "was below lower band" on buys
+    use_wpr_confirm: bool = True  # require Williams %R oversold on buys
+    use_rsi_filter: bool = True  # require RSI condition on buys and sells
+    long_only: bool = False
+
 
 class RsiWprBb(Strategy):  # type: ignore[misc]
     """Long/short reversal strategy driven by the ported 4H signals."""
@@ -198,7 +205,10 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         if buy_signal and not sell_signal:
             self._go_long(c)
         elif sell_signal and not buy_signal:
-            self._go_short(c)
+            if self.config.long_only:
+                self._go_flat()
+            else:
+                self._go_short(c)
 
     def _eval_buy(self, o: float, h: float, low_: float, c: float) -> bool:
         cfg = self.config
@@ -214,9 +224,9 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
             c > o  # green candle
             and low_ <= bb_lower
             and h >= bb_lower
-            and was_below_lower_bb
-            and wpr_was_oversold
-            and self._rsi_hist[-1] < cfg.buy_rsi_threshold
+            and (not cfg.use_bb_confirm or was_below_lower_bb)
+            and (not cfg.use_wpr_confirm or wpr_was_oversold)
+            and (not cfg.use_rsi_filter or self._rsi_hist[-1] < cfg.buy_rsi_threshold)
         )
         signal = buy_raw and not self._prev_buy_raw
         self._prev_buy_raw = buy_raw
@@ -247,7 +257,7 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         rsi_condition = rsi_above >= cfg.rsi_min_bars_above
 
         fall_a = base_signal and ema_falling
-        fall_b = base_signal and ema_rising and rsi_condition
+        fall_b = base_signal and ema_rising and (not cfg.use_rsi_filter or rsi_condition)
         pending_trigger = base_signal and ema_rising and not fall_b
 
         from_pending = False
@@ -286,6 +296,13 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
             self.cancel_all_orders(instrument_id)
             self.close_all_positions(instrument_id)
         self._enter(OrderSide.SELL, ref_price)
+
+    def _go_flat(self) -> None:
+        """Close any open position and cancel working orders (used by long_only)."""
+        instrument_id = self.config.instrument_id
+        if not self.portfolio.is_flat(instrument_id):
+            self.cancel_all_orders(instrument_id)
+            self.close_all_positions(instrument_id)
 
     def _risk_managed(self) -> bool:
         return bool(self.config.stop_loss_pct > 0 and self.config.take_profit_pct > 0)
