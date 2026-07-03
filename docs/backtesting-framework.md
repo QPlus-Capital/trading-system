@@ -134,8 +134,22 @@ non-overlapping 6-month test windows, **clean8** universe (USTEC, DE40, US500, U
 EURUSD, XAUUSD, AUDUSD, GBPUSD). Feasible under the (too-strict) MTM model at ~0.15% risk;
 the hybrid rule is more lenient, so the tradeable risk will be higher.
 
+## Audit fixes (2026-07-03)
+- **F3 done** — Stage 5 wired into the runner: `portfolio.scorecard.acceptance_verdict`
+  bootstraps the holdout trades (Monte-Carlo) and gates on trade count, feasible flat risk,
+  positive holdout return and probability of profit; the pipeline prints PASS/FAIL.
+- **F4 done** — the study now uses **non-overlapping** windows (`STEP_MONTHS = TEST_MONTHS`)
+  so per-window returns aren't autocorrelated, making the Sharpe/DSR significance honest
+  (also ~halves the study runtime).
+- **F5 done** — `EMBARGO_DAYS` (7) purges the train/test boundary in `walk_forward_windows`
+  (threaded through study + extraction), preventing boundary leakage.
+- **F6 partial** — PBO via CSCV already gives the combinatorial-CV overfitting probability,
+  and the study yields many OOS paths (instruments x train-lengths) plus Monte-Carlo, which
+  approximates a distribution of outcomes. A full **Combinatorial Purged CV** engine
+  (multiple purged backtest paths -> a Sharpe distribution) remains a larger future build.
+
 ## Open items
-- Rework portfolio DD to the hybrid model; measure the dynamic-throttle benefit under it.
+- Full CPCV engine (F6) for a proper OOS Sharpe distribution.
 - Daily 3% limit basis per product page.
 - Return magnitude still carries model optimism (leverage, walk-forward-selected params,
   ideal fills) — treat headline %/yr as an upper bound until paper-traded.

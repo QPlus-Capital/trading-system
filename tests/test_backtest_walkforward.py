@@ -30,6 +30,14 @@ def test_split_windows_reserves_holdout() -> None:
     assert hold0 == [] and len(sel0) == len(windows)
 
 
+def test_embargo_gaps_train_from_test() -> None:
+    w = walk_forward_windows(
+        "2020-01-01", "2023-01-01", train_months=12, test_months=6, step_months=6, embargo_days=7
+    )[0]
+    assert w.test_start == w.train_end + pd.Timedelta(days=7)  # purged boundary (F5)
+    assert w.test_end == w.test_start + pd.DateOffset(months=6)
+
+
 def test_windows_are_contiguous_and_non_anchored() -> None:
     windows = walk_forward_windows(
         "2020-01-01", "2023-01-01", train_months=12, test_months=6, step_months=6

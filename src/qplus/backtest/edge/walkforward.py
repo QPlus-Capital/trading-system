@@ -40,6 +40,7 @@ def walk_forward_windows(
     train_months: int,
     test_months: int,
     step_months: int,
+    embargo_days: int = 0,
 ) -> list[WalkForwardWindow]:
     """Return rolling walk-forward windows spanning ``start``..``end``.
 
@@ -47,12 +48,18 @@ def walk_forward_windows(
     the window origin advances by ``step_months`` (non-anchored: the train length is
     constant). Windows whose test period would run past ``end`` are dropped.
 
+    ``embargo_days`` inserts a gap between ``train_end`` and ``test_start`` (F5): it purges
+    the boundary so trailing-window indicators / positions straddling the split cannot leak
+    train information into the test (Lopez de Prado, purged/embargoed CV).
+
     Parameters
     ----------
     start, end : str or pd.Timestamp
         The overall data span.
     train_months, test_months, step_months : int
         Window sizing, in whole months. All must be positive.
+    embargo_days : int
+        Gap in days between train and test (>= 0).
 
     Returns
     -------
@@ -60,6 +67,8 @@ def walk_forward_windows(
     """
     if train_months <= 0 or test_months <= 0 or step_months <= 0:
         raise ValueError("train_months, test_months and step_months must be positive")
+    if embargo_days < 0:
+        raise ValueError("embargo_days must be >= 0")
 
     start_ts = pd.Timestamp(start)
     end_ts = pd.Timestamp(end)
@@ -68,7 +77,7 @@ def walk_forward_windows(
     train_start = start_ts
     while True:
         train_end = train_start + pd.DateOffset(months=train_months)
-        test_start = train_end
+        test_start = train_end + pd.Timedelta(days=embargo_days)
         test_end = test_start + pd.DateOffset(months=test_months)
         if test_end > end_ts:
             break

@@ -5,7 +5,35 @@ import math
 import pandas as pd
 
 from qplus.backtest.portfolio.curves import DAY_NS
-from qplus.backtest.portfolio.scorecard import score
+from qplus.backtest.portfolio.scorecard import PortfolioResult, acceptance_verdict, score
+
+
+def _result(**kw: float) -> PortfolioResult:
+    base: dict[str, float] = {
+        "n_trades": 50,
+        "years": 2.0,
+        "flat_risk": 1.0,
+        "flat_return_pct": 20.0,
+        "flat_ann_pct": 10.0,
+        "throttle_base": 1.0,
+        "throttle_return_pct": 25.0,
+        "throttle_ann_pct": 12.5,
+        "throttle_gain_pct": 25.0,
+    }
+    base.update(kw)
+    return PortfolioResult(**base)  # type: ignore[arg-type]
+
+
+def test_acceptance_verdict_pass_and_fail() -> None:
+    trades = pd.DataFrame({"pnl_1pct": [200.0] * 50})  # all-positive -> MC prob ~1
+    ok = acceptance_verdict(_result(), trades, start_balance=200_000.0)
+    assert ok.passed and ok.prob_profit > 0.9
+
+    # An infeasible config (no flat risk fits the DD limit) must fail the gate.
+    bad = acceptance_verdict(
+        _result(flat_risk=0.0, flat_return_pct=0.0), trades, start_balance=200_000.0
+    )
+    assert not bad.passed
 
 
 def _trade(

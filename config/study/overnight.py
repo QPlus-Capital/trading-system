@@ -27,18 +27,22 @@ from qplus.instruments import (
 # Leave cores free (old i7-8700, thermals) to keep the machine stable over a long run.
 MAX_WORKERS = 5
 
-# Walk-forward sizing. A 3-month step (vs the 6-month default) roughly doubles the number
-# of out-of-sample windows -> more OOS observations. The whole study is repeated across
-# three training-window lengths, which tests whether each variation's edge is robust to the
-# look-back (short vs long history) instead of just spending compute on re-testing noise.
+# Walk-forward sizing. Step = test => NON-OVERLAPPING windows (F4): overlapping windows are
+# autocorrelated, so they add no independent information and inflate the Sharpe/DSR
+# significance (Lo 2002). The study is repeated across three training-window lengths to test
+# whether each variation's edge is robust to the look-back (short vs long history).
 TRAIN_MONTHS = [18, 24, 36]
 TEST_MONTHS = 6
-STEP_MONTHS = 3
+STEP_MONTHS = 6
 
 # Reserve the last HOLDOUT_MONTHS: no stage (study/selection) ever sees them, and the
 # chosen config is scored once on them by the pipeline -- the honest guard against
 # selecting on out-of-sample results (F2).
 HOLDOUT_MONTHS = 24
+
+# Purge the train/test boundary: a gap so trailing-window indicators / straddling positions
+# cannot leak train info into the test (F5, Lopez de Prado purged/embargoed CV).
+EMBARGO_DAYS = 7
 
 # (instrument factory, CSV path, leverage). 12 instruments across metals, FX and indices.
 INSTRUMENTS: list[tuple[Any, str, float]] = [
