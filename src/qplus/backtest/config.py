@@ -28,7 +28,7 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-# Repo root: src/qplus/backtest/runner.py -> parents[3]
+# Repo root: src/qplus/backtest/config.py -> parents[3] (subpackage modules use parents[4]).
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _DEFAULT_CONFIG = _REPO_ROOT / "config" / "backtest" / "rsi_wpr_bb_xauusd.py"
 
