@@ -21,7 +21,7 @@ import numpy as np
 
 
 def trailing_floor(
-    realized_balance: Sequence[float], start_balance: float, limit_frac: float
+    realized_balance: Sequence[float] | np.ndarray, start_balance: float, limit_frac: float
 ) -> np.ndarray:
     """Daily drawdown floor: ``min(start, running_max(EOD balance) - limit_frac*start)``.
 
@@ -44,8 +44,8 @@ class DrawdownResult:
 
 
 def evaluate(
-    equity: Sequence[float],
-    realized_balance: Sequence[float],
+    equity: Sequence[float] | np.ndarray,
+    realized_balance: Sequence[float] | np.ndarray,
     start_balance: float,
     limit_frac: float,
 ) -> DrawdownResult:
@@ -65,8 +65,8 @@ def evaluate(
 
 
 def max_flat_risk(
-    realized_excess: Sequence[float],
-    equity_excess: Sequence[float],
+    realized_excess: Sequence[float] | np.ndarray,
+    equity_excess: Sequence[float] | np.ndarray,
     start_balance: float,
     limit_frac: float,
     *,
