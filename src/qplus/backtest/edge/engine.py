@@ -60,6 +60,7 @@ def run_walkforward(
     max_windows: int | None = None,
     holdout_months: int = 0,
     phase: str = "select",
+    embargo_days: int = 0,
 ) -> list[WalkForwardResult]:
     """Run the full walk-forward for a recipe (config module or SweepRecipe).
 
@@ -72,7 +73,12 @@ def run_walkforward(
     """
     start, end = _data_span(recipe.CSV_PATH)
     windows = walk_forward_windows(
-        start, end, train_months=train_months, test_months=test_months, step_months=step_months
+        start,
+        end,
+        train_months=train_months,
+        test_months=test_months,
+        step_months=step_months,
+        embargo_days=embargo_days,
     )
     selection, holdout = split_windows(windows, end, holdout_months)
     windows = holdout if phase == "holdout" else selection

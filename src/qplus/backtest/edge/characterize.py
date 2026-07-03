@@ -69,6 +69,7 @@ def _run_task(
     step_months: int,
     max_windows: int | None,
     holdout_months: int,
+    embargo_days: int,
 ) -> dict[str, Any]:
     """Walk-forward one (instrument, variation) and return its OOS metrics + return series."""
     recipe = SweepRecipe(
@@ -83,6 +84,7 @@ def _run_task(
         max_windows=max_windows,
         holdout_months=holdout_months,
         phase="select",
+        embargo_days=embargo_days,
     )
     oos = [r.oos_return for r in results]
     mean_oos = sum(oos) / len(oos) if oos else 0.0
@@ -254,6 +256,7 @@ def main(argv: list[str] | None = None) -> None:
     test_m = int(getattr(cfg, "TEST_MONTHS", 6))
     step_m = int(getattr(cfg, "STEP_MONTHS", 6))
     holdout_m = int(getattr(cfg, "HOLDOUT_MONTHS", 0))  # reserved final slice, never selected on
+    embargo_d = int(getattr(cfg, "EMBARGO_DAYS", 0))  # purge the train/test boundary (F5)
 
     out_dir = _REPO_ROOT / "reports" / "study" / f"run_{datetime.now():%Y%m%d_%H%M}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -286,6 +289,7 @@ def main(argv: list[str] | None = None) -> None:
             step_m,
             max_windows,
             holdout_m,
+            embargo_d,
         )
         for factory, csv, leverage in cfg.INSTRUMENTS
         for name, overrides in cfg.VARIATIONS.items()

@@ -43,6 +43,7 @@ class PipelineResult:
 
     selection: universe.Selection
     portfolio: scorecard.PortfolioResult
+    verdict: scorecard.Verdict
 
 
 def run_pipeline(
@@ -64,7 +65,8 @@ def run_pipeline(
     result = scorecard.score(
         trades, daily_close, start_balance=start_balance, limit_frac=limit_frac
     )
-    return PipelineResult(selection=selection, portfolio=result)
+    verdict = scorecard.acceptance_verdict(result, trades, start_balance=start_balance)
+    return PipelineResult(selection=selection, portfolio=result, verdict=verdict)
 
 
 def make_extract_fn(
@@ -74,6 +76,7 @@ def make_extract_fn(
     param_grid: dict[str, list[Any]],
     holdout_months: int = 0,
     phase: str = "holdout",
+    embargo_days: int = 0,
 ) -> ExtractFn:
     """Default extractor for the portfolio stream.
 
@@ -95,6 +98,7 @@ def make_extract_fn(
             param_grid=param_grid,
             holdout_months=holdout_months,
             phase=phase,
+            embargo_days=embargo_days,
         )
 
     return extract
@@ -116,6 +120,7 @@ def main(argv: list[str] | None = None) -> None:
         param_grid=cfg.PARAM_GRID,
         holdout_months=holdout_m,
         phase="holdout",
+        embargo_days=int(getattr(cfg, "EMBARGO_DAYS", 0)),
     )
 
     selection = universe.select(study_df)
@@ -133,6 +138,10 @@ def main(argv: list[str] | None = None) -> None:
         f"throttle: base {p.throttle_base}x -> {p.throttle_return_pct}% "
         f"({p.throttle_ann_pct}%/yr), {p.throttle_gain_pct:+}% vs flat"
     )
+    print("\n===== Stage 5 acceptance (holdout) =====")
+    print(f"VERDICT: {'PASS' if result.verdict.passed else 'FAIL'}")
+    for line in result.verdict.reasons:
+        print(f"  {line}")
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from qplus.backtest.foundation.montecarlo import monte_carlo_paths, summarize
 from qplus.backtest.portfolio.curves import align_prices, base_curves, to_day
 from qplus.backtest.portfolio.drawdown import evaluate, max_flat_risk
 from qplus.backtest.portfolio.sizing import throttle, throttle_curves
@@ -84,3 +85,46 @@ def score(
         throttle_ann_pct=round(best_ret / years * 100, 1) if years > 0 else 0.0,
         throttle_gain_pct=round(gain * 100, 1),
     )
+
+
+@dataclass(frozen=True)
+class Verdict:
+    """Stage 5 accept/reject gate on the holdout portfolio result."""
+
+    passed: bool
+    prob_profit: float  # Monte-Carlo probability of profit at the feasible flat risk
+    reasons: list[str]  # one PASS/FAIL line per check
+
+
+def acceptance_verdict(
+    result: PortfolioResult,
+    trades: pd.DataFrame,
+    *,
+    start_balance: float = 200_000.0,
+    min_trades: int = 30,
+    min_prob_profit: float = 0.6,
+    n_sims: int = 1000,
+) -> Verdict:
+    """Stage 5 gate: is the holdout result tradeable? (F3)
+
+    Bootstraps the holdout trades (at the feasible flat risk) for a probability of profit,
+    then requires: enough trades, a flat risk that fits the drawdown limit, a positive
+    holdout return, and a Monte-Carlo profit probability above ``min_prob_profit``.
+    """
+    checks: list[tuple[bool, str]] = [
+        (result.n_trades >= min_trades, f"trades {result.n_trades} >= {min_trades}"),
+        (result.flat_risk > 0.0, f"a flat risk fits the DD limit (flat_risk={result.flat_risk})"),
+        (result.flat_return_pct > 0.0, f"holdout return positive ({result.flat_return_pct}%)"),
+    ]
+    pnls = (trades["pnl_1pct"].to_numpy() * max(result.flat_risk, 0.0)).tolist()
+    if result.flat_risk > 0.0 and len(pnls) >= 2:
+        paths = monte_carlo_paths(pnls, n_sims=n_sims, start_equity=start_balance)
+        prob = float(summarize(paths, start_balance)["prob_profit"])
+    else:
+        prob = 0.0
+    checks.append(
+        (prob >= min_prob_profit, f"MC prob of profit {prob:.0%} >= {min_prob_profit:.0%}")
+    )
+
+    reasons = [f"{'PASS' if ok else 'FAIL'}: {msg}" for ok, msg in checks]
+    return Verdict(passed=all(ok for ok, _ in checks), prob_profit=prob, reasons=reasons)
