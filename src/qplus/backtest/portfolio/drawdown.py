@@ -27,6 +27,12 @@ def trailing_floor(
 
     Trails the realized end-of-day balance high-water mark, capped at the starting
     balance (the floor never rises above ``start_balance``).
+
+    Timing note (F10): the high-water mark includes the *same* day's balance, so on a day
+    that both makes a new balance high and dips in equity, the floor is already raised. That
+    is deliberately **conservative** -- it can only over-state breach risk, never understate
+    it -- so it is the safe side for a feasibility gate (TTP's floor updates at EOD and
+    applies from the next day; using a lagged HWM would be marginally more lenient).
     """
     rb = np.asarray(realized_balance, dtype=float)
     hwm = np.maximum.accumulate(rb)

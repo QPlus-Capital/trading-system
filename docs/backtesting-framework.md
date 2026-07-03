@@ -147,6 +147,14 @@ the hybrid rule is more lenient, so the tradeable risk will be higher.
   and the study yields many OOS paths (instruments x train-lengths) plus Monte-Carlo, which
   approximates a distribution of outcomes. A full **Combinatorial Purged CV** engine
   (multiple purged backtest paths -> a Sharpe distribution) remains a larger future build.
+- **F7 done** — `return_per_dd` floors its denominator at 0.5% so a tiny-drawdown config
+  cannot produce an exploding, unstable ratio (it stays a per-window proxy for Calmar).
+- **F8 done** — clarified: `normalized_wfe` is the *exact* ratio of per-month return rates
+  (constant window lengths), not a linearity assumption.
+- **F9 closed** — verified not a bug: risk-per-trade sizing normalizes each trade's PnL to
+  account-%, so the currency approximation does not distort the one-account combination.
+- **F10 done** — documented: the drawdown floor uses the same-day balance HWM, which is
+  deliberately conservative (can only over-state breach risk), the safe side for the gate.
 
 ## Open items
 - Full CPCV engine (F6) for a proper OOS Sharpe distribution.

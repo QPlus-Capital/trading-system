@@ -202,6 +202,10 @@ def normalized_wfe(
     return over ``train_months``; when train is longer the raw ratio looks too low purely
     because the in-sample period is longer. Scaling by ``train_months / test_months``
     removes that bias, giving the true per-month generalization ratio. ~0.5+ is healthy.
+
+    This is exact for a *per-month total-return rate* (F8): it equals ``mean(oos/test) /
+    mean(is/train)`` since the window lengths are constant -- it does not assume returns
+    compound linearly, only that a per-month return rate is a sensible efficiency unit.
     """
     if test_months <= 0:
         raise ValueError("test_months must be positive")
