@@ -1,9 +1,12 @@
 # QPlus Backtesting Framework — Blueprint
 
-**Build status (2026-07-03):** all analytical stages are now tested modules under
-`qplus.backtest` — `study`+`normalized_wfe` (1), `universe_select` (2), `portfolio_dd`
-+`portfolio_sim`+`portfolio_trades` (3), `sizing`+`portfolio` (3/4). Only the end-to-end
-**runner** (chaining the stages + final scorecard) and the first real full run remain.
+**Build status (2026-07-03):** all stages plus the end-to-end runner are tested modules,
+organized into subpackages under `qplus.backtest` that read as the funnel:
+`foundation/` (recipe, grid, execution, montecarlo, overfitting), `edge/` (walkforward,
+engine, characterize) = Stage 1, `select/` (universe) = Stage 2, `portfolio/` (trades,
+curves, drawdown, sizing, scorecard) = Stages 3-4, `validation/` (stress, heatmap,
+acceptance, validate) = Stage 5, plus `config.py` and `pipeline.py` (the runner). Only the
+first real full run remains (run `edge.characterize` for Stage 1, then `pipeline`).
 
 **Design (2026-07-03), now built into modules.** A new strategy is
 plugged in and run through the staged pipeline below; each stage filters on a
