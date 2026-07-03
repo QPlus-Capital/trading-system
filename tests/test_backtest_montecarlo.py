@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from qplus.backtest.montecarlo import (
+from qplus.backtest.foundation.montecarlo import (
     equity_curve,
     max_drawdown,
     monte_carlo_paths,

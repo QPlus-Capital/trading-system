@@ -3,11 +3,11 @@
 Given a Stage 1 study table (per instrument x variation x training length, with the
 risk-adjusted metrics), the pipeline:
 
-1. **Stage 2** -- picks the global structure + tradeable universe (:mod:`universe_select`);
+1. **Stage 2** -- picks the global structure + tradeable universe (:mod:`select.universe`);
 2. **Stage 1->3** -- extracts the timed OOS trade stream for that structure over the chosen
-   instruments (:mod:`portfolio_trades`);
+   instruments (:mod:`portfolio.trades`);
 3. **Stage 3/4** -- scores portfolio feasibility (flat vs throttle) under the prop-firm
-   hybrid rule (:mod:`portfolio`).
+   hybrid rule (:mod:`portfolio.scorecard`).
 
 Stage 1 (the study) is the heavy compute and is run first, separately, to produce the
 study table this consumes. The per-instrument extraction is injected (``extract_fn``) so
@@ -26,11 +26,12 @@ from typing import Any
 
 import pandas as pd
 
-from qplus.backtest import portfolio, universe_select
-from qplus.backtest.portfolio_sim import load_daily_close
-from qplus.backtest.portfolio_trades import extract_market_trades
-from qplus.backtest.recipe_factory import SweepRecipe
-from qplus.backtest.runner import load_config_module
+from qplus.backtest.config import load_config_module
+from qplus.backtest.foundation.recipe import SweepRecipe
+from qplus.backtest.portfolio import scorecard
+from qplus.backtest.portfolio.curves import load_daily_close
+from qplus.backtest.portfolio.trades import extract_market_trades
+from qplus.backtest.select import universe
 
 # extract_fn(market, config_overrides, train_months) -> timed trades for that instrument.
 ExtractFn = Callable[[str, dict[str, Any], int], pd.DataFrame]
@@ -40,8 +41,8 @@ ExtractFn = Callable[[str, dict[str, Any], int], pd.DataFrame]
 class PipelineResult:
     """The end-to-end outcome: what was selected and how it scores."""
 
-    selection: universe_select.Selection
-    portfolio: portfolio.PortfolioResult
+    selection: universe.Selection
+    portfolio: scorecard.PortfolioResult
 
 
 def run_pipeline(
@@ -55,12 +56,12 @@ def run_pipeline(
     train_months: int | None = None,
 ) -> PipelineResult:
     """Stage 2 -> extraction -> Stage 3/4, returning the selection and the scorecard."""
-    selection = universe_select.select(study_df)
+    selection = universe.select(study_df)
     tm = train_months if train_months is not None else selection.train_months
     overrides = variations[selection.variation]
     frames = [extract_fn(market, overrides, tm) for market in selection.instruments]
     trades = pd.concat(frames, ignore_index=True)
-    result = portfolio.score(
+    result = scorecard.score(
         trades, daily_close, start_balance=start_balance, limit_frac=limit_frac
     )
     return PipelineResult(selection=selection, portfolio=result)
@@ -107,7 +108,7 @@ def main(argv: list[str] | None = None) -> None:
         param_grid=cfg.PARAM_GRID,
     )
 
-    selection = universe_select.select(study_df)
+    selection = universe.select(study_df)
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in selection.instruments}
     print(f"Stage 2 -> structure '{selection.variation}' @ train {selection.train_months}m")
     print(f"          universe: {', '.join(selection.instruments)}")

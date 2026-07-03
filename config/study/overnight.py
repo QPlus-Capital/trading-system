@@ -4,7 +4,7 @@ Runs the clean walk-forward for every (instrument x variation). Ranked by variat
 averaged across instruments, so a change only wins if it helps out-of-sample across
 many markets. Add more instruments to the list as their data + specs arrive.
 
-    uv run python -m qplus.backtest.study config/study/overnight.py
+    uv run python -m qplus.backtest.edge.characterize config/study/overnight.py
 """
 
 from typing import Any

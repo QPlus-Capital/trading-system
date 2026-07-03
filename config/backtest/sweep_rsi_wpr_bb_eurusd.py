@@ -1,6 +1,6 @@
 """Parameter sweep for RsiWprBb on real EURUSD H4 data (The Trading Pit)."""
 
-from qplus.backtest.recipe_factory import SweepRecipe
+from qplus.backtest.foundation.recipe import SweepRecipe
 from qplus.instruments import eurusd_ttp
 
 _R = SweepRecipe(eurusd_ttp(), "data/EURUSD_H4.csv", leverage=50.0)

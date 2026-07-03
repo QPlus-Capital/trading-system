@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from qplus.backtest.universe_select import select, select_structure, select_universe
+from qplus.backtest.select.universe import select, select_structure, select_universe
 
 
 def _df() -> pd.DataFrame:

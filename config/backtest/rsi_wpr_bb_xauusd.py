@@ -5,7 +5,7 @@ writes BID and ASK bars into the catalog, so the simulated exchange fills buys a
 ask and sells at the bid -- the real per-bar spread is a cost. Commission (0.0007%
 per side) comes from the instrument definition. Run from the repo root::
 
-    uv run python -m qplus.backtest.runner config/backtest/rsi_wpr_bb_xauusd.py
+    uv run python -m qplus.backtest.config config/backtest/rsi_wpr_bb_xauusd.py
 
 The CSV lives in the gitignored ``data/`` folder; if the catalog does not yet
 contain XAUUSD, the runner imports it via ``seed_catalog()``.

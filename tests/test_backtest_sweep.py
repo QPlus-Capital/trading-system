@@ -6,7 +6,7 @@ from typing import Any, cast
 
 from nautilus_trader.backtest.results import BacktestResult
 
-from qplus.backtest.sweep import expand_grid, result_row, run_sweep
+from qplus.backtest.foundation.grid import expand_grid, result_row, run_sweep
 
 
 def test_expand_grid_cartesian_product() -> None:

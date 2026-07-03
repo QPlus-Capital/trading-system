@@ -16,11 +16,11 @@ from typing import Any
 
 import pandas as pd
 
-from qplus.backtest.recipe_factory import SweepRecipe
-from qplus.backtest.report import extract_trade_pnls
-from qplus.backtest.sweep import expand_grid
-from qplus.backtest.walkforward import calmar_score, walk_forward_windows
-from qplus.backtest.walkforward_run import _data_span
+from qplus.backtest.edge.engine import _data_span
+from qplus.backtest.edge.walkforward import calmar_score, walk_forward_windows
+from qplus.backtest.foundation.execution import extract_trade_pnls
+from qplus.backtest.foundation.grid import expand_grid
+from qplus.backtest.foundation.recipe import SweepRecipe
 
 _COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_1pct", "entry", "exit"]
 

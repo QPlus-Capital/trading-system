@@ -1,6 +1,6 @@
 """Tests for the validation scorecard."""
 
-from qplus.backtest.scorecard import build_scorecard, verdict
+from qplus.backtest.validation.acceptance import build_scorecard, verdict
 
 
 def _metrics(**overrides: float) -> dict[str, float]:

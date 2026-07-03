@@ -2,7 +2,7 @@
 
 import math
 
-from qplus.backtest.portfolio_dd import evaluate, max_flat_risk, trailing_floor
+from qplus.backtest.portfolio.drawdown import evaluate, max_flat_risk, trailing_floor
 
 
 def test_floor_trails_balance_and_caps_at_start() -> None:

@@ -13,7 +13,7 @@ Metrics are read from a JSON file (default ``reports/metrics.json``), e.g.::
 
 Usage::
 
-    uv run python -m qplus.backtest.scorecard reports/metrics.json
+    uv run python -m qplus.backtest.validation.acceptance reports/metrics.json
 """
 
 import json

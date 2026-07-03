@@ -1,6 +1,6 @@
 """Parameter sweep for RsiWprBb on real GBPUSD H4 data (The Trading Pit)."""
 
-from qplus.backtest.recipe_factory import SweepRecipe
+from qplus.backtest.foundation.recipe import SweepRecipe
 from qplus.instruments import gbpusd_ttp
 
 _R = SweepRecipe(gbpusd_ttp(), "data/GBPUSD_H4.csv", leverage=50.0)

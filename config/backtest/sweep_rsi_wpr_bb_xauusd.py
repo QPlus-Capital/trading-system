@@ -3,7 +3,7 @@
 Varies the risk-management exits and the buy RSI threshold -- the highest-impact
 knobs -- and records a metrics row per combination. Run from the repo root::
 
-    uv run python -m qplus.backtest.sweep config/backtest/sweep_rsi_wpr_bb_xauusd.py
+    uv run python -m qplus.backtest.foundation.grid config/backtest/sweep_rsi_wpr_bb_xauusd.py
 
 Results are written to ``reports/`` (gitignored). Edit ``PARAM_GRID`` to explore
 different ranges; the grid size is the product of the list lengths.

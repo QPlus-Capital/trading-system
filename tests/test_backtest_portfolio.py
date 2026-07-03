@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from qplus.backtest.portfolio import score
-from qplus.backtest.portfolio_sim import DAY_NS
+from qplus.backtest.portfolio.curves import DAY_NS
+from qplus.backtest.portfolio.scorecard import score
 
 
 def _trade(

@@ -16,8 +16,8 @@ start=, end=)``, ``INSTRUMENT``, ``CATALOG_PATH``, ``CSV_PATH`` and ``seed_catal
 
 Usage (optionally limit the number of windows for a quick check)::
 
-    uv run python -m qplus.backtest.walkforward_run config/backtest/sweep_rsi_wpr_bb_xauusd.py
-    uv run python -m qplus.backtest.walkforward_run config/backtest/sweep_rsi_wpr_bb_xauusd.py 2
+    uv run python -m qplus.backtest.edge.engine config/backtest/sweep_rsi_wpr_bb_xauusd.py
+    uv run python -m qplus.backtest.edge.engine config/backtest/sweep_rsi_wpr_bb_xauusd.py 2
 """
 
 import sys
@@ -27,17 +27,17 @@ from typing import Any
 import pandas as pd
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from qplus.backtest.montecarlo import equity_curve, monte_carlo_paths, summarize
-from qplus.backtest.report import extract_trade_pnls, plot_monte_carlo
-from qplus.backtest.runner import load_config_module
-from qplus.backtest.sweep import expand_grid
-from qplus.backtest.walkforward import (
+from qplus.backtest.config import load_config_module
+from qplus.backtest.edge.walkforward import (
     WalkForwardResult,
     calmar_score,
     run_walk_forward,
     walk_forward_efficiency,
     walk_forward_windows,
 )
+from qplus.backtest.foundation.execution import extract_trade_pnls, plot_monte_carlo
+from qplus.backtest.foundation.grid import expand_grid
+from qplus.backtest.foundation.montecarlo import equity_curve, monte_carlo_paths, summarize
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _TRAIN_MONTHS, _TEST_MONTHS, _STEP_MONTHS = 24, 6, 6
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> None:
     args = sys.argv[1:] if argv is None else argv
     if not args:
         raise SystemExit(
-            "usage: python -m qplus.backtest.walkforward_run <sweep_config.py> [max_windows]"
+            "usage: python -m qplus.backtest.edge.engine <sweep_config.py> [max_windows]"
         )
     path = Path(args[0])
     module = load_config_module(path)

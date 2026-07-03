@@ -12,7 +12,7 @@ A robust strategy degrades gracefully; a collapse under mild stress is a warning
 
 Usage::
 
-    uv run python -m qplus.backtest.stress config/backtest/rsi_wpr_bb_xauusd.py
+    uv run python -m qplus.backtest.validation.stress config/backtest/rsi_wpr_bb_xauusd.py
 """
 
 import sys
@@ -22,9 +22,9 @@ from typing import Any
 
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from qplus.backtest.montecarlo import equity_curve, max_drawdown
-from qplus.backtest.report import extract_trade_pnls
-from qplus.backtest.runner import load_config_module
+from qplus.backtest.config import load_config_module
+from qplus.backtest.foundation.execution import extract_trade_pnls
+from qplus.backtest.foundation.montecarlo import equity_curve, max_drawdown
 from qplus.data_ingest.mt5_csv import write_mt5_catalog
 
 # (name, ISO start, ISO end) crisis windows.
@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> None:
     """CLI: run baseline, slippage and crisis-window stress scenarios."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
-        raise SystemExit("usage: python -m qplus.backtest.stress <recipe.py>")
+        raise SystemExit("usage: python -m qplus.backtest.validation.stress <recipe.py>")
     module = load_config_module(Path(args[0]))
 
     # Seed the main catalog only if the instrument is missing (avoid duplicate bars).

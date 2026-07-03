@@ -6,8 +6,8 @@ poor values is a hallmark of overfitting. Other swept parameters are averaged ou
 
 Usage::
 
-    uv run python -m qplus.backtest.heatmap reports/sweep_rsi_wpr_bb_xauusd.csv
-    uv run python -m qplus.backtest.heatmap <csv> stop_loss_pct take_profit_pct profit_factor
+    uv run python -m qplus.backtest.validation.heatmap <sweep.csv>
+    uv run python -m qplus.backtest.validation.heatmap <sweep.csv> stop_loss_pct take_profit_pct pf
 """
 
 import sys
@@ -56,7 +56,9 @@ def main(argv: list[str] | None = None) -> None:
     """CLI: read a sweep CSV and save a parameter-sensitivity heatmap."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
-        raise SystemExit("usage: python -m qplus.backtest.heatmap <sweep_csv> [x] [y] [metric]")
+        raise SystemExit(
+            "usage: python -m qplus.backtest.validation.heatmap <sweep_csv> [x] [y] [metric]"
+        )
     csv_path = Path(args[0])
     x_param = args[1] if len(args) > 1 else "stop_loss_pct"
     y_param = args[2] if len(args) > 2 else "take_profit_pct"
