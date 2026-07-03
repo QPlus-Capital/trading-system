@@ -68,17 +68,21 @@ def _run_task(
     test_months: int,
     step_months: int,
     max_windows: int | None,
+    holdout_months: int,
 ) -> dict[str, Any]:
     """Walk-forward one (instrument, variation) and return its OOS metrics + return series."""
     recipe = SweepRecipe(
         factory(), csv, leverage=leverage, param_grid=param_grid, config_overrides=overrides
     )
+    # Selection runs on the pre-holdout data only, so the reserved slice stays untouched (F2).
     results = run_walkforward(
         recipe,
         train_months=train_months,
         test_months=test_months,
         step_months=step_months,
         max_windows=max_windows,
+        holdout_months=holdout_months,
+        phase="select",
     )
     oos = [r.oos_return for r in results]
     mean_oos = sum(oos) / len(oos) if oos else 0.0
@@ -158,7 +162,7 @@ def _top_charts(
         )
 
 
-def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_var: int) -> None:
+def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> None:
     """Build the ranking (with DSR), the heatmap and top-variation Monte-Carlo charts."""
     import numpy as np
 
@@ -197,7 +201,7 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_var: int) -> Non
     )
     agg["oos_sharpe"] = agg.index.map(variation_sharpe)
     agg["dsr"] = agg.index.map(
-        lambda v: deflated_sharpe_ratio(win_by_var[v], n_var, sharpe_variance)
+        lambda v: deflated_sharpe_ratio(win_by_var[v], n_trials, sharpe_variance)
     )
     # Risk lens: rank by risk-adjusted return-per-drawdown, NOT raw return.
     agg = agg.sort_values("return_per_dd", ascending=False)
@@ -249,6 +253,7 @@ def main(argv: list[str] | None = None) -> None:
     train_list = [int(train_cfg)] if isinstance(train_cfg, int) else [int(t) for t in train_cfg]
     test_m = int(getattr(cfg, "TEST_MONTHS", 6))
     step_m = int(getattr(cfg, "STEP_MONTHS", 6))
+    holdout_m = int(getattr(cfg, "HOLDOUT_MONTHS", 0))  # reserved final slice, never selected on
 
     out_dir = _REPO_ROOT / "reports" / "study" / f"run_{datetime.now():%Y%m%d_%H%M}"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -280,6 +285,7 @@ def main(argv: list[str] | None = None) -> None:
             test_m,
             step_m,
             max_windows,
+            holdout_m,
         )
         for factory, csv, leverage in cfg.INSTRUMENTS
         for name, overrides in cfg.VARIATIONS.items()
@@ -320,7 +326,10 @@ def main(argv: list[str] | None = None) -> None:
                 f"| elapsed {elapsed / 60:.1f}m | ETA ~{eta_h:.1f}h"
             )
 
-    _write_reports(rows, out_dir, n_var)
+    # DSR must deflate by the total configs the winner was selected among, not just the
+    # variation count: variations x training lengths (F2). The per-window grid adds further
+    # degrees of freedom, so this is still a floor on the true trial count.
+    _write_reports(rows, out_dir, n_var * len(train_list))
     print(f"\nDone in {(time.time() - started) / 60:.1f} min. Full results: {out_dir}")
 
 

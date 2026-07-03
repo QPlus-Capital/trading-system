@@ -9,9 +9,25 @@ from qplus.backtest.edge.walkforward import (
     calmar_score,
     normalized_wfe,
     run_walk_forward,
+    split_windows,
     walk_forward_efficiency,
     walk_forward_windows,
 )
+
+
+def test_split_windows_reserves_holdout() -> None:
+    windows = walk_forward_windows(
+        "2018-01-01", "2024-01-01", train_months=12, test_months=6, step_months=6
+    )
+    data_end = pd.Timestamp("2024-01-01")
+    cutoff = data_end - pd.DateOffset(months=12)  # 2023-01-01
+    selection, holdout = split_windows(windows, data_end, holdout_months=12)
+    assert selection and holdout
+    assert all(w.test_end <= cutoff for w in selection)  # selection never touches the holdout
+    assert all(w.test_start >= cutoff for w in holdout)
+    # holdout_months = 0 -> everything is selection, nothing reserved
+    sel0, hold0 = split_windows(windows, data_end, 0)
+    assert hold0 == [] and len(sel0) == len(windows)
 
 
 def test_windows_are_contiguous_and_non_anchored() -> None:
