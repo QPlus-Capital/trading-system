@@ -70,7 +70,9 @@ PARAM_GRID: dict[str, list[Any]] = {
 # Named strategy variations (config overrides). "baseline" is the current strategy.
 # The first eight are the full 2^3 factorial of the three buy-confirmations, so each
 # indicator's marginal contribution can be read off cleanly; the rest probe trade
-# direction, risk level and indicator lengths.
+# direction and indicator lengths. Position-sizing risk is NOT a variation here -- it only
+# scales PnL (return and drawdown alike), so it is neutral in the risk-adjusted ranking and
+# belongs in Stage 4 (sizing), not Stage 1.
 VARIATIONS: dict[str, dict[str, Any]] = {
     "baseline": {},  # all three confirmations on
     "no_bb": {"use_bb_confirm": False},
@@ -85,7 +87,6 @@ VARIATIONS: dict[str, dict[str, Any]] = {
         "use_rsi_filter": False,
     },
     "long_only": {"long_only": True},
-    "risk0.5": {"risk_per_trade_pct": 0.5},  # lower risk -> lower drawdown reference
     "ema20": {"ema_length": 20},  # default 10
     "bb30": {"bb_length": 30},  # default 20
     "wpr21": {"wpr_length": 21},  # default 14
