@@ -1,6 +1,11 @@
 # QPlus Backtesting Framework — Blueprint
 
-**Status: agreed design (2026-07-03), now being built into modules.** A new strategy is
+**Build status (2026-07-03):** all analytical stages are now tested modules under
+`qplus.backtest` — `study`+`normalized_wfe` (1), `universe_select` (2), `portfolio_dd`
++`portfolio_sim`+`portfolio_trades` (3), `sizing`+`portfolio` (3/4). Only the end-to-end
+**runner** (chaining the stages + final scorecard) and the first real full run remain.
+
+**Design (2026-07-03), now built into modules.** A new strategy is
 plugged in and run through the staged pipeline below; each stage filters on a
 risk-adjusted criterion, so what survives is a genuinely tradeable, prop-firm compliant
 configuration — not a curve-fit. The exploratory work on the RSI/WPR/BB strategy proved
