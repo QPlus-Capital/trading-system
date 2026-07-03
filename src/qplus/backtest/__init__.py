@@ -1,5 +1,5 @@
 """Backtest runners and wiring."""
 
-from qplus.backtest.runner import run_backtest
+from qplus.backtest.config import run_backtest
 
 __all__ = ["run_backtest"]

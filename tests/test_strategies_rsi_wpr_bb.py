@@ -14,7 +14,7 @@ from nautilus_trader.config import (
 from nautilus_trader.model.data import BarType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
-from qplus.backtest.runner import run_backtest
+from qplus.backtest.config import run_backtest
 from qplus.data_ingest.synthetic import write_synthetic_catalog
 from qplus.strategies.rsi_wpr_bb import bollinger, williams_r
 

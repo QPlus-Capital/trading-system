@@ -11,11 +11,11 @@ if it is empty (used by the synthetic demo).
 
 Run the bundled demo from the repo root::
 
-    uv run python -m qplus.backtest.runner
+    uv run python -m qplus.backtest.config
 
 or point it at another config module::
 
-    uv run python -m qplus.backtest.runner config/backtest/ema_cross_demo.py
+    uv run python -m qplus.backtest.config config/backtest/ema_cross_demo.py
 """
 
 import importlib.util

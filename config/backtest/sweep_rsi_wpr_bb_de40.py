@@ -3,7 +3,7 @@
 Note: DE40 is EUR-settled but modelled USD-quoted for now (see instruments.py).
 """
 
-from qplus.backtest.recipe_factory import SweepRecipe
+from qplus.backtest.foundation.recipe import SweepRecipe
 from qplus.instruments import de40_ttp
 
 _R = SweepRecipe(de40_ttp(), "data/DE40_H4.csv", leverage=15.0)

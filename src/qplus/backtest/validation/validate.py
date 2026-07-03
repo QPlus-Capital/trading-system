@@ -9,7 +9,7 @@ Runs every parameter combination over the full history, then:
 
 Usage::
 
-    uv run python -m qplus.backtest.validate_overfitting config/backtest/sweep_rsi_wpr_bb_xauusd.py
+    uv run python -m qplus.backtest.validation.validate config/backtest/sweep_rsi_wpr_bb_xauusd.py
 """
 
 import sys
@@ -21,10 +21,10 @@ from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from qplus.backtest.overfitting import deflated_sharpe_ratio, pbo, sharpe_ratio
-from qplus.backtest.runner import load_config_module
-from qplus.backtest.sweep import expand_grid
-from qplus.backtest.walkforward import calmar_score
+from qplus.backtest.config import load_config_module
+from qplus.backtest.edge.walkforward import calmar_score
+from qplus.backtest.foundation.grid import expand_grid
+from qplus.backtest.foundation.overfitting import deflated_sharpe_ratio, pbo, sharpe_ratio
 
 _N_SLICES = 20
 _N_SPLITS = 10
@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> None:
     """CLI: compute deflated Sharpe ratio and PBO for a sweep config module."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
-        raise SystemExit("usage: python -m qplus.backtest.validate_overfitting <sweep_config.py>")
+        raise SystemExit("usage: python -m qplus.backtest.validation.validate <sweep_config.py>")
     module = load_config_module(Path(args[0]))
 
     catalog_dir = Path(module.CATALOG_PATH)

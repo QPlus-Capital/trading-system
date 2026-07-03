@@ -26,7 +26,7 @@ from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from qplus.backtest.runner import load_config_module, run_backtest
+from qplus.backtest.config import load_config_module, run_backtest
 
 Factory = Callable[[dict[str, Any]], BacktestRunConfig]
 Runner = Callable[[BacktestRunConfig], BacktestResult]
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> None:
     """CLI entry point: load a sweep config module, run it, print the ranking."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
-        raise SystemExit("usage: python -m qplus.backtest.sweep <sweep_config.py>")
+        raise SystemExit("usage: python -m qplus.backtest.foundation.grid <sweep_config.py>")
     module = load_config_module(Path(args[0]))
 
     catalog_dir = Path(module.CATALOG_PATH)

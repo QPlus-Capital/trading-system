@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from qplus.backtest.portfolio_sim import DAY_NS, align_prices, base_curves, to_day
+from qplus.backtest.portfolio.curves import DAY_NS, align_prices, base_curves, to_day
 
 
 def test_to_day() -> None:

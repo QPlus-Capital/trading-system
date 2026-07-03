@@ -4,7 +4,7 @@ from pathlib import Path
 
 from nautilus_trader.config import BacktestRunConfig
 
-from qplus.backtest.runner import load_config_module
+from qplus.backtest.config import load_config_module
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _RECIPE = _REPO_ROOT / "config" / "backtest" / "rsi_wpr_bb_xauusd.py"

@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from qplus.backtest.walkforward import (
+from qplus.backtest.edge.walkforward import (
     calmar_score,
     normalized_wfe,
     run_walk_forward,

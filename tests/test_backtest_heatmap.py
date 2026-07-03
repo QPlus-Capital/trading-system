@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from qplus.backtest.heatmap import pivot_metric
+from qplus.backtest.validation.heatmap import pivot_metric
 
 
 def test_pivot_metric_averages_over_other_columns() -> None:

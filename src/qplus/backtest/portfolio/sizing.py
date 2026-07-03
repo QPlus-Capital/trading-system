@@ -4,14 +4,14 @@ Position sizing only *scales* trade PnL, so it is applied last, against the prop
 drawdown limit (Stage 3). Two policies:
 
 * **flat** -- one risk multiple for every trade. The largest safe multiple follows directly
-  from the base curves (see :func:`qplus.backtest.portfolio_dd.max_flat_risk`).
+  from the base curves (see :func:`qplus.backtest.portfolio.drawdown.max_flat_risk`).
 * **throttle** (Jan's idea) -- size each trade when it opens from how much of the drawdown
   budget is already used: full risk with a fresh buffer, tapering toward the floor. This
   protects the hard limit while running higher base risk, and matters most in the early
   phase before the +limit% buffer is banked (where the hybrid floor still binds).
 
 ``throttle_curves`` runs the path-dependent daily simulation and returns absolute daily
-realized-balance and equity series to hand to :mod:`qplus.backtest.portfolio_dd`. A
+realized-balance and equity series to hand to :mod:`qplus.backtest.portfolio.drawdown`. A
 constant throttle reproduces flat sizing exactly (covered by tests).
 """
 
@@ -25,9 +25,7 @@ import pandas as pd
 def _events(trades: pd.DataFrame) -> tuple[dict[int, list[int]], dict[int, list[int]]]:
     openers: dict[int, list[int]] = defaultdict(list)
     closers: dict[int, list[int]] = defaultdict(list)
-    for i, (o, c) in enumerate(
-        zip(trades["od"].to_numpy(), trades["cd"].to_numpy(), strict=True)
-    ):
+    for i, (o, c) in enumerate(zip(trades["od"].to_numpy(), trades["cd"].to_numpy(), strict=True)):
         openers[int(o)].append(i)
         closers[int(c)].append(i)
     return openers, closers

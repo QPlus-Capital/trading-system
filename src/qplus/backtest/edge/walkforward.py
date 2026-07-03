@@ -15,7 +15,7 @@ from typing import Any
 
 import pandas as pd
 
-from qplus.backtest.montecarlo import equity_curve, max_drawdown
+from qplus.backtest.foundation.montecarlo import equity_curve, max_drawdown
 
 
 @dataclass(frozen=True)

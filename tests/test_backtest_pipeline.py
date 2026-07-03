@@ -5,7 +5,7 @@ from typing import Any
 import pandas as pd
 
 from qplus.backtest.pipeline import run_pipeline
-from qplus.backtest.portfolio_sim import DAY_NS
+from qplus.backtest.portfolio.curves import DAY_NS
 
 
 def _study_df() -> pd.DataFrame:

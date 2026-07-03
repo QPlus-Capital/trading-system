@@ -29,8 +29,8 @@ A study config module must define ``INSTRUMENTS`` (list of ``(factory, csv, leve
 
 Usage (append a number to limit windows for a quick test)::
 
-    uv run python -m qplus.backtest.study config/study/overnight.py
-    uv run python -m qplus.backtest.study config/study/overnight.py 1
+    uv run python -m qplus.backtest.edge.characterize config/study/overnight.py
+    uv run python -m qplus.backtest.edge.characterize config/study/overnight.py 1
 """
 
 import sys
@@ -44,10 +44,10 @@ from typing import Any
 import pandas as pd
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from qplus.backtest.recipe_factory import SweepRecipe
-from qplus.backtest.runner import load_config_module
-from qplus.backtest.walkforward import normalized_wfe, walk_forward_efficiency
-from qplus.backtest.walkforward_run import run_walkforward
+from qplus.backtest.config import load_config_module
+from qplus.backtest.edge.engine import run_walkforward
+from qplus.backtest.edge.walkforward import normalized_wfe, walk_forward_efficiency
+from qplus.backtest.foundation.recipe import SweepRecipe
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _START_EQUITY = 200_000.0  # matches SweepRecipe.VENUE starting balance
@@ -139,8 +139,8 @@ def _top_charts(
     top_variations: list[str], trades_by_var: dict[str, list[float]], out_dir: Path
 ) -> None:
     """Save an OOS Monte-Carlo fan chart for the top few variations only."""
-    from qplus.backtest.montecarlo import equity_curve, monte_carlo_paths
-    from qplus.backtest.report import plot_monte_carlo
+    from qplus.backtest.foundation.execution import plot_monte_carlo
+    from qplus.backtest.foundation.montecarlo import equity_curve, monte_carlo_paths
 
     for variation in top_variations:
         trades = trades_by_var.get(variation, [])
@@ -162,7 +162,7 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_var: int) -> Non
     """Build the ranking (with DSR), the heatmap and top-variation Monte-Carlo charts."""
     import numpy as np
 
-    from qplus.backtest.overfitting import deflated_sharpe_ratio, sharpe_ratio
+    from qplus.backtest.foundation.overfitting import deflated_sharpe_ratio, sharpe_ratio
 
     df = pd.DataFrame([{k: v for k, v in r.items() if k not in _LIST_KEYS} for r in rows])
     good = [r for r in rows if "mean_oos_pct" in r and "window_oos" in r]
@@ -239,7 +239,9 @@ def main(argv: list[str] | None = None) -> None:
     """CLI: run the study defined in a config module across processes."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
-        raise SystemExit("usage: python -m qplus.backtest.study <study_config.py> [max_windows]")
+        raise SystemExit(
+            "usage: python -m qplus.backtest.edge.characterize <study_config.py> [max_windows]"
+        )
     cfg = load_config_module(Path(args[0]))
     max_windows = int(args[1]) if len(args) > 1 else None
     workers = int(getattr(cfg, "MAX_WORKERS", 4))

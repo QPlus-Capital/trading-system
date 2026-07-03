@@ -17,9 +17,9 @@ from dataclasses import dataclass
 
 import pandas as pd
 
-from qplus.backtest.portfolio_dd import evaluate, max_flat_risk
-from qplus.backtest.portfolio_sim import align_prices, base_curves, to_day
-from qplus.backtest.sizing import throttle, throttle_curves
+from qplus.backtest.portfolio.curves import align_prices, base_curves, to_day
+from qplus.backtest.portfolio.drawdown import evaluate, max_flat_risk
+from qplus.backtest.portfolio.sizing import throttle, throttle_curves
 
 _DEFAULT_BASES = (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
 

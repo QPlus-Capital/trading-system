@@ -70,7 +70,7 @@ symbol and timeframe, set the date range, **Request**, then **Export Bars** to a
 ## 4. Run a single backtest
 
 ```bash
-uv run python -m qplus.backtest.runner config/backtest/rsi_wpr_bb_xauusd.py
+uv run python -m qplus.backtest.config config/backtest/rsi_wpr_bb_xauusd.py
 ```
 
 This runs the strategy once and prints a summary at the very end (scroll to the
@@ -111,7 +111,7 @@ Edit the `PARAM_GRID` in
 (the grid size is the product of the list lengths), then:
 
 ```bash
-uv run python -m qplus.backtest.sweep config/backtest/sweep_rsi_wpr_bb_xauusd.py
+uv run python -m qplus.backtest.foundation.grid config/backtest/sweep_rsi_wpr_bb_xauusd.py
 ```
 
 It prints progress, then a **Top 10 ranking**, and writes the full results table to
@@ -126,7 +126,7 @@ For a chosen recipe, this bootstraps the trade sequence many times to show how m
 the result depends on luck, and saves the "many lines" fan chart:
 
 ```bash
-uv run python -m qplus.backtest.report config/backtest/rsi_wpr_bb_xauusd.py
+uv run python -m qplus.backtest.foundation.execution config/backtest/rsi_wpr_bb_xauusd.py
 ```
 
 It prints a summary (probability of profit, drawdown percentiles) and saves
@@ -149,11 +149,11 @@ every run (real per-bar spread via bid/ask, commission, ~10:1 leverage).
 
 | Tool | What it does |
 | --- | --- |
-| `qplus.backtest.walkforward_run <sweep_config>` | **Walk-forward**: re-optimizes on each 2y train window and tests on the next unseen 6-month window. Prints out-of-sample return, % profitable windows, walk-forward efficiency, and a Monte-Carlo fan on the OOS trades. |
-| `qplus.backtest.heatmap <sweep_csv>` | **Parameter sensitivity**: heatmap of a metric over two parameters — look for a broad plateau, not an isolated peak. |
-| `qplus.backtest.validate_overfitting <sweep_config>` | **Deflated Sharpe ratio** and **probability of backtest overfitting** (PBO) — corrects for having tried many combinations. |
-| `qplus.backtest.stress <recipe>` | **Stress test**: higher slippage and historical crisis windows (2013, 2020, 2022). |
-| `qplus.backtest.scorecard reports/metrics.json` | **Scorecard**: grades all metrics against acceptance thresholds and prints an overall verdict. |
+| `qplus.backtest.edge.engine <sweep_config>` | **Walk-forward**: re-optimizes on each 2y train window and tests on the next unseen 6-month window. Prints out-of-sample return, % profitable windows, walk-forward efficiency, and a Monte-Carlo fan on the OOS trades. |
+| `qplus.backtest.validation.heatmap <sweep_csv>` | **Parameter sensitivity**: heatmap of a metric over two parameters — look for a broad plateau, not an isolated peak. |
+| `qplus.backtest.validation.validate <sweep_config>` | **Deflated Sharpe ratio** and **probability of backtest overfitting** (PBO) — corrects for having tried many combinations. |
+| `qplus.backtest.validation.stress <recipe>` | **Stress test**: higher slippage and historical crisis windows (2013, 2020, 2022). |
+| `qplus.backtest.validation.acceptance reports/metrics.json` | **Scorecard**: grades all metrics against acceptance thresholds and prints an overall verdict. |
 
 Read the metrics honestly: high in-sample returns with a low walk-forward efficiency
 mean overfitting; a strategy is only trustworthy once the **out-of-sample** numbers

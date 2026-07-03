@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from qplus.backtest.portfolio_trades import timed_trades_from_report
+from qplus.backtest.portfolio.trades import timed_trades_from_report
 
 
 def test_extraction_keeps_snapshots_and_skips_open() -> None:

@@ -1,6 +1,6 @@
 """Parameter sweep for RsiWprBb on real US30 (Dow) H4 data (The Trading Pit)."""
 
-from qplus.backtest.recipe_factory import SweepRecipe
+from qplus.backtest.foundation.recipe import SweepRecipe
 from qplus.instruments import us30_ttp
 
 _R = SweepRecipe(us30_ttp(), "data/US30_H4.csv", leverage=15.0)

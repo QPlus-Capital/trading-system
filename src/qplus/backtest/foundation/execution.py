@@ -8,7 +8,7 @@ Runs a recipe once, extracts the realized PnL of each closed trade, and produces
 
 Run from the repo root::
 
-    uv run python -m qplus.backtest.report config/backtest/rsi_wpr_bb_xauusd.py
+    uv run python -m qplus.backtest.foundation.execution config/backtest/rsi_wpr_bb_xauusd.py
 
 Note: the paths are bootstrapped from the *in-sample* trades, so the fan shows how
 sensitive the result is to trade order/selection -- not an out-of-sample forecast.
@@ -26,12 +26,12 @@ from nautilus_trader.backtest.node import BacktestNode  # noqa: E402
 from nautilus_trader.config import BacktestRunConfig  # noqa: E402
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog  # noqa: E402
 
-from qplus.backtest.montecarlo import (  # noqa: E402
+from qplus.backtest.config import load_config_module  # noqa: E402
+from qplus.backtest.foundation.montecarlo import (  # noqa: E402
     equity_curve,
     monte_carlo_paths,
     summarize,
 )
-from qplus.backtest.runner import load_config_module  # noqa: E402
 
 _N_SIMS = 500
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -94,7 +94,7 @@ def main(argv: list[str] | None = None) -> None:
     """CLI entry point: run a recipe, Monte-Carlo its trades, save the chart."""
     args = sys.argv[1:] if argv is None else argv
     if not args:
-        raise SystemExit("usage: python -m qplus.backtest.report <recipe.py>")
+        raise SystemExit("usage: python -m qplus.backtest.foundation.execution <recipe.py>")
     path = Path(args[0])
     module = load_config_module(path)
 

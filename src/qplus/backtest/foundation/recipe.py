@@ -4,7 +4,7 @@ Every instrument needs the same recipe shape (venue, bid/ask data, strategy conf
 parameter grid, seed + build_run_config). Rather than copy ~90 lines per instrument,
 a config module builds a :class:`SweepRecipe` and re-exports its attributes::
 
-    from qplus.backtest.recipe_factory import SweepRecipe
+    from qplus.backtest.foundation.recipe import SweepRecipe
     from qplus.instruments import eurusd_ttp
 
     _R = SweepRecipe(eurusd_ttp(), "data/EURUSD_H4.csv", leverage=50.0)
