@@ -49,7 +49,7 @@ from qplus.backtest.edge.engine import run_walkforward
 from qplus.backtest.edge.walkforward import normalized_wfe, walk_forward_efficiency
 from qplus.backtest.foundation.recipe import SweepRecipe
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _START_EQUITY = 200_000.0  # matches SweepRecipe.VENUE starting balance
 
 # Per-task list payloads kept in memory for reporting but dropped from the CSV.

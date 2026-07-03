@@ -40,7 +40,7 @@ from qplus.backtest.foundation.execution import extract_trade_pnls, plot_monte_c
 from qplus.backtest.foundation.grid import expand_grid
 from qplus.backtest.foundation.montecarlo import equity_curve, monte_carlo_paths, summarize
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 _TRAIN_MONTHS, _TEST_MONTHS, _STEP_MONTHS = 24, 6, 6
 
 

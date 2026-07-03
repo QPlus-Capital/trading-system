@@ -29,7 +29,7 @@ from nautilus_trader.model.instruments import Instrument
 
 from qplus.data_ingest.mt5_csv import write_mt5_catalog
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 # Default parameter grid swept for every instrument (4 x 4 x 3 = 48 combinations).
 DEFAULT_PARAM_GRID: dict[str, list[Any]] = {

@@ -34,7 +34,7 @@ from qplus.backtest.foundation.montecarlo import (  # noqa: E402
 )
 
 _N_SIMS = 500
-_REPO_ROOT = Path(__file__).resolve().parents[3]
+_REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _parse_money(value: object) -> float:
