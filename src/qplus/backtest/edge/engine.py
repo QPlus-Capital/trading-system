@@ -32,6 +32,7 @@ from qplus.backtest.edge.walkforward import (
     WalkForwardResult,
     calmar_score,
     run_walk_forward,
+    split_windows,
     walk_forward_efficiency,
     walk_forward_windows,
 )
@@ -57,16 +58,24 @@ def run_walkforward(
     test_months: int = _TEST_MONTHS,
     step_months: int = _STEP_MONTHS,
     max_windows: int | None = None,
+    holdout_months: int = 0,
+    phase: str = "select",
 ) -> list[WalkForwardResult]:
     """Run the full walk-forward for a recipe (config module or SweepRecipe).
 
     The recipe must expose ``CSV_PATH``, ``PARAM_GRID`` and ``build_run_config``.
     Assumes the catalog is already seeded. Returns the per-window results.
+
+    With ``holdout_months > 0`` the last ``holdout_months`` are reserved: ``phase="select"``
+    runs only the pre-holdout windows (for study/selection), ``phase="holdout"`` runs only
+    the reserved windows (the honest final evaluation of an already-chosen config).
     """
     start, end = _data_span(recipe.CSV_PATH)
     windows = walk_forward_windows(
         start, end, train_months=train_months, test_months=test_months, step_months=step_months
     )
+    selection, holdout = split_windows(windows, end, holdout_months)
+    windows = holdout if phase == "holdout" else selection
     if max_windows is not None:
         windows = windows[:max_windows]
     combos = expand_grid(recipe.PARAM_GRID)

@@ -110,7 +110,13 @@ period reserved from all selection.
   return. Normalize per month (`normalized_wfe = raw_wfe * train_months / test_months`).
 - **Overlapping walk-forward windows** (step < test) smooth the mean but inflate
   significance and **double-count** pooled trades. Use non-overlapping (step = test) for
-  drawdown / portfolio work.
+  drawdown / portfolio work. *(F1 fixed 2026-07-03: the pipeline extraction now forces
+  step = test; the study still uses step 3 for the selection mean — F4 open.)*
+- **Holdout + trial counting (F2 fixed 2026-07-03):** `HOLDOUT_MONTHS` (24) reserves the
+  last two years; the study/selection runs only on the pre-holdout data (`phase="select"`)
+  and the pipeline scores the chosen config once on the untouched holdout
+  (`phase="holdout"`). The DSR now deflates by `variations x training-lengths` (a floor on
+  the true trial count; the per-window grid adds more — F-note).
 - **NautilusTrader NETTING:** every closed round-trip except the last is flagged
   `is_snapshot=True` but is a **real trade** — do not filter it out.
 - **TTP drawdown = hybrid** (resolved): realized-balance floor capped at start, equity

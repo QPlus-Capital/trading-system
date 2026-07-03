@@ -77,6 +77,25 @@ def walk_forward_windows(
     return windows
 
 
+def split_windows(
+    windows: Sequence[WalkForwardWindow], data_end: pd.Timestamp, holdout_months: int
+) -> tuple[list[WalkForwardWindow], list[WalkForwardWindow]]:
+    """Split windows into (selection, holdout) at ``data_end - holdout_months``.
+
+    Selection windows lie fully before the cutoff (``test_end <= cutoff``); holdout windows
+    test on/after it (``test_start >= cutoff``). With ``holdout_months <= 0`` everything is
+    selection and the holdout is empty. Reserving a holdout that no stage ever uses for
+    selection is what lets the final chosen config be scored once on genuinely untouched
+    data -- the honest guard against selecting on out-of-sample results.
+    """
+    if holdout_months <= 0:
+        return list(windows), []
+    cutoff = data_end - pd.DateOffset(months=holdout_months)
+    selection = [w for w in windows if w.test_end <= cutoff]
+    holdout = [w for w in windows if w.test_start >= cutoff]
+    return selection, holdout
+
+
 def describe_windows(windows: Sequence[WalkForwardWindow]) -> str:
     """Return a short multi-line summary of the windows (for logging)."""
     if not windows:

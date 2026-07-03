@@ -35,6 +35,11 @@ TRAIN_MONTHS = [18, 24, 36]
 TEST_MONTHS = 6
 STEP_MONTHS = 3
 
+# Reserve the last HOLDOUT_MONTHS: no stage (study/selection) ever sees them, and the
+# chosen config is scored once on them by the pipeline -- the honest guard against
+# selecting on out-of-sample results (F2).
+HOLDOUT_MONTHS = 24
+
 # (instrument factory, CSV path, leverage). 12 instruments across metals, FX and indices.
 INSTRUMENTS: list[tuple[Any, str, float]] = [
     (xauusd_ttp, "data/XAUUSD_H4.csv", 10.0),

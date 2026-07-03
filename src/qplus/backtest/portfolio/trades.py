@@ -17,7 +17,7 @@ from typing import Any
 import pandas as pd
 
 from qplus.backtest.edge.engine import _data_span
-from qplus.backtest.edge.walkforward import calmar_score, walk_forward_windows
+from qplus.backtest.edge.walkforward import calmar_score, split_windows, walk_forward_windows
 from qplus.backtest.foundation.execution import extract_trade_pnls
 from qplus.backtest.foundation.grid import expand_grid
 from qplus.backtest.foundation.recipe import SweepRecipe
@@ -52,11 +52,18 @@ def extract_market_trades(
     test_months: int,
     step_months: int,
     param_grid: dict[str, list[Any]] | None = None,
+    holdout_months: int = 0,
+    phase: str = "select",
 ) -> pd.DataFrame:
     """Walk-forward one instrument and return every OOS trade with timestamps + prices.
 
     Assumes the catalog is already seeded. Per window, optimizes on train by the
     drawdown-adjusted Calmar score, then records the timed trades of the test window.
+
+    For a clean portfolio stream the caller MUST pass non-overlapping windows
+    (``step_months == test_months``); otherwise trades in the overlap are recorded in two
+    windows and double-counted (F1). ``holdout_months`` / ``phase`` reserve/select the
+    final untouched slice (F2), mirroring :func:`qplus.backtest.edge.engine.run_walkforward`.
     """
     from nautilus_trader.backtest.node import BacktestNode
 
@@ -66,6 +73,8 @@ def extract_market_trades(
     windows = walk_forward_windows(
         start, end, train_months=train_months, test_months=test_months, step_months=step_months
     )
+    selection, holdout = split_windows(windows, end, holdout_months)
+    windows = holdout if phase == "holdout" else selection
     market = str(recipe.INSTRUMENT.raw_symbol)
 
     rows: list[dict[str, Any]] = []

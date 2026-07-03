@@ -71,10 +71,16 @@ def make_extract_fn(
     instrument_specs: dict[str, tuple[Any, str, float]],
     *,
     test_months: int,
-    step_months: int,
     param_grid: dict[str, list[Any]],
+    holdout_months: int = 0,
+    phase: str = "holdout",
 ) -> ExtractFn:
-    """Default extractor: build the per-market recipe and run the timed walk-forward."""
+    """Default extractor for the portfolio stream.
+
+    Enforces **non-overlapping** windows (``step = test``) so no trade is double-counted
+    (F1), and extracts the reserved-**holdout** slice by default so the portfolio is scored
+    once on data no stage selected on (F2).
+    """
 
     def extract(market: str, overrides: dict[str, Any], train_months: int) -> pd.DataFrame:
         factory, csv, leverage = instrument_specs[market]
@@ -85,8 +91,10 @@ def make_extract_fn(
             recipe,
             train_months=train_months,
             test_months=test_months,
-            step_months=step_months,
+            step_months=test_months,  # F1: non-overlapping -> no double-counted trades
             param_grid=param_grid,
+            holdout_months=holdout_months,
+            phase=phase,
         )
 
     return extract
@@ -100,22 +108,25 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_config_module(Path(args[0]))
     study_df = pd.read_csv(args[1])
 
+    holdout_m = int(getattr(cfg, "HOLDOUT_MONTHS", 0))
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
     extract_fn = make_extract_fn(
         specs,
         test_months=int(getattr(cfg, "TEST_MONTHS", 6)),
-        step_months=int(getattr(cfg, "STEP_MONTHS", 6)),
         param_grid=cfg.PARAM_GRID,
+        holdout_months=holdout_m,
+        phase="holdout",
     )
 
     selection = universe.select(study_df)
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in selection.instruments}
     print(f"Stage 2 -> structure '{selection.variation}' @ train {selection.train_months}m")
     print(f"          universe: {', '.join(selection.instruments)}")
+    print(f"Stage 3/4 scored on the reserved {holdout_m}-month holdout (untouched by selection)")
 
     result = run_pipeline(study_df, extract_fn, daily_close, variations=cfg.VARIATIONS)
     p = result.portfolio
-    print("\n===== Stage 3/4 portfolio feasibility (hybrid TTP drawdown) =====")
+    print("\n===== Stage 3/4 portfolio feasibility (hybrid TTP drawdown, HOLDOUT) =====")
     print(f"trades: {p.n_trades}   span: {p.years} years")
     print(f"flat:     risk {p.flat_risk}x -> {p.flat_return_pct}% ({p.flat_ann_pct}%/yr)")
     print(
