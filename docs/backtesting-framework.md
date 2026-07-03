@@ -51,18 +51,35 @@ throwaway analysis scripts and need to be formalized (marked ⚙️ = to formali
 - **Status:** ⚙️ analysis scripts only (`dd_budget.py`).
 
 ### Stage 5 — Portfolio drawdown vs the prop-firm rule (the feasibility gate)
-- **Method:** ONE account trading the chosen markets. Rebuild **daily mark-to-market
-  equity = start + realized PnL + unrealized PnL of every open position** (unrealized is
-  exact and linear in price for a fixed-size position). Measure the **trailing max
-  drawdown** the way the prop firm does.
-- **The Trading Pit rules (on a 200k account):** **max drawdown 6% (12,000) trailing on
-  end-of-day; daily drawdown 3% (6,000).**
-- **Accept rule:** trailing MTM drawdown ≤ limit (with margin, e.g. target ≤5%).
-- **Status:** ⚙️ analysis scripts only (`mtm2.py`, validated against `diag_mtm.py`).
-- **Finding:** realized-only DD (~13%) badly understates nothing here — the *portfolio*
-  MTM DD at flat 1% is ~13% (diversification keeps it below the worst single market). To
-  fit ≤6% MTM DD, the **clean8** universe (drop the currency-approximated FX + silver) at
-  ~0.15% risk yields ~35%/yr (an upper estimate — see caveats).
+- **The Trading Pit rule (confirmed 2026-07-03, 200k account) is a HYBRID** — this is the
+  exact model to implement:
+  - **Floor (the drawdown limit line):** trails the **high-water mark of end-of-day
+    BALANCE (closed/realized P&L only)** minus 6% (12,000). It **stops rising once it
+    reaches the starting balance** — so after you have locked in +6% realized, the floor
+    is static at the starting balance (200k) forever.
+  - **Breach test:** if **EQUITY (realized + floating unrealized of open positions)** ever
+    falls to/below the floor → account breached. So floating losses *can* breach.
+  - Daily drawdown 3% (6,000) is a secondary intraday limit (basis per product page —
+    still to confirm; screenshot says "Kontostand"/balance).
+- **Method:** ONE account. Track (a) the realized EOD-balance high-water-mark → floor
+  (capped at start), and (b) the daily mark-to-market **equity** = start + realized +
+  unrealized of open positions (unrealized is exact, linear in price for a fixed-size
+  position). Breach if equity ≤ floor at any time.
+- **Accept rule:** equity never breaches the floor over the whole OOS path (with margin).
+- **Key consequence:** because the floor **caps at the starting balance**, the binding
+  risk is entirely the **early phase** (before +6% realized is banked); afterwards you
+  only must keep equity above the starting balance, which a grown account clears easily.
+  This makes **dynamic drawdown-throttled sizing (Stage 6) the central tool** — be
+  conservative early, scale up once the buffer is banked.
+- **Status:** ⚙️ analysis scripts (`mtm2.py` computes the equity curve, validated vs
+  `diag_mtm.py`) — but they used a *strict trailing-equity-peak* floor, which is TOO
+  STRICT. Must be reworked to the hybrid model above (realized-balance floor capped at
+  start, equity-based breach).
+- **Findings so far (with the too-strict model, so pessimistic):** portfolio MTM DD at
+  flat 1% ≈ 13% (diversification keeps it below the worst single market USTEC 15.6%).
+  Under the correct hybrid model the feasible risk will be **higher** than the ~0.06–0.15%
+  those runs implied. Best universe candidate: **clean8** (drop currency-approx FX +
+  silver).
 
 ### Stage 6 — Position-sizing policy: *flat vs dynamic*
 - **Idea (Jan):** drawdown-throttled sizing — full risk near equity highs, taper down as
@@ -85,9 +102,10 @@ throwaway analysis scripts and need to be formalized (marked ⚙️ = to formali
   for drawdown / portfolio work.
 - **NautilusTrader NETTING:** every closed round-trip except the last is flagged
   `is_snapshot=True` but is a **real trade** — do not filter it out.
-- **Realized vs mark-to-market drawdown:** realized-only (balance) can hide large
-  drawdowns from open positions; MTM (equity) captures them. **OPEN QUESTION:** does TTP's
-  trailing limit use end-of-day *balance* or *equity*? This flips feasibility — confirm.
+- **Realized vs mark-to-market drawdown (RESOLVED for TTP, 2026-07-03):** the drawdown
+  *floor* trails end-of-day **balance** (realized) and caps at the starting balance; the
+  *breach* is tested on **equity** (incl. floating). It is a hybrid — model both. The
+  practical upshot: the binding constraint is the early phase before +6% is banked.
 - **datetime unit:** MT5 CSV parses to `datetime64[us]`; `.astype(int64)//DAY_NS` (ns)
   gives wrong days. Use unit-safe `((ts - epoch)//Timedelta(days=1))`.
 - **Currency approximation:** USDCHF/USDJPY/USDCAD and DE40 are modelled USD-quoted.
@@ -97,11 +115,14 @@ throwaway analysis scripts and need to be formalized (marked ⚙️ = to formali
   its stop. Real tail risk; account for it in the risk model.
 
 ## Open questions / next
-1. TTP trailing DD basis (balance vs equity) — confirm from the rules.
-2. Dynamic drawdown-throttle benefit under the corrected MTM model.
+1. ~~TTP trailing DD basis~~ — RESOLVED: hybrid (realized-balance floor capped at start,
+   equity breach). See Stage 5. Next: rework `mtm2.py` to this hybrid model.
+2. Dynamic drawdown-throttle benefit under the *hybrid* model (should be large, since the
+   binding risk is the early phase).
 3. Compounding vs fixed-notional sizing (fixed-notional makes early drawdowns bind
    hardest, forcing low risk).
-4. Daily 3% drawdown limit — not yet checked.
+4. Daily 3% drawdown limit — basis (balance vs equity) per product page; model as a
+   secondary intraday guard.
 5. Return magnitude still carries model optimism (leverage, walk-forward-selected params,
    ideal fills). Treat headline %/yr as an upper bound until paper-traded.
 
