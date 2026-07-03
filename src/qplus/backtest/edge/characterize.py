@@ -91,7 +91,9 @@ def _run_task(
     pct = sum(1 for x in oos if x > 0) / len(oos) if oos else 0.0
     mean_dd = sum(r.oos_max_dd for r in results) / len(results) if results else 0.0
     # Risk-adjusted ranking key (the "risk lens"): OOS return per unit of OOS drawdown.
-    ret_per_dd = mean_oos / mean_dd if mean_dd > 1e-9 else 0.0
+    # Floor the denominator at a realistic minimum (0.5%) so a tiny-drawdown config cannot
+    # produce an exploding, unstable ratio (F7). It is a per-window proxy for account Calmar.
+    ret_per_dd = mean_oos / max(mean_dd, 0.005) if results else 0.0
     return {
         "instrument": symbol,
         "variation": variation,
