@@ -5,11 +5,14 @@ a different risk level), this runs the full clean walk-forward and records the
 out-of-sample metrics. Tasks run across several processes; the catalog is seeded once
 up front (workers then only read it).
 
-The result is ranked by variation *averaged across instruments* -- so a change only
-"wins" if it helps out-of-sample across many markets, which guards against picking a
-per-instrument fluke. On top of the raw ranking it reports, per variation:
+The result is ranked by variation **risk-adjusted** (out-of-sample return per unit of
+drawdown, ``return_per_dd``) and *averaged across instruments* -- so a change only "wins"
+if it improves the risk-adjusted OOS across many markets (the framework's risk lens; raw
+return is never the ranking key). It also reports, per variation:
 
+* ``oos_maxdd_pct`` -- mean out-of-sample max drawdown per window,
 * ``worst_market_pct`` -- the weakest instrument (robustness floor),
+* ``wfe_norm`` -- length-normalized walk-forward efficiency (~0.5+ generalizes),
 * ``oos_sharpe`` -- Sharpe of the pooled per-window OOS returns,
 * ``dsr`` -- deflated Sharpe, correcting for how many variations were tried, so an
   edge that is really just multiple-testing noise shows up as a low DSR.
@@ -43,7 +46,7 @@ from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 from qplus.backtest.recipe_factory import SweepRecipe
 from qplus.backtest.runner import load_config_module
-from qplus.backtest.walkforward import walk_forward_efficiency
+from qplus.backtest.walkforward import normalized_wfe, walk_forward_efficiency
 from qplus.backtest.walkforward_run import run_walkforward
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -80,14 +83,20 @@ def _run_task(
     oos = [r.oos_return for r in results]
     mean_oos = sum(oos) / len(oos) if oos else 0.0
     pct = sum(1 for x in oos if x > 0) / len(oos) if oos else 0.0
+    mean_dd = sum(r.oos_max_dd for r in results) / len(results) if results else 0.0
+    # Risk-adjusted ranking key (the "risk lens"): OOS return per unit of OOS drawdown.
+    ret_per_dd = mean_oos / mean_dd if mean_dd > 1e-9 else 0.0
     return {
         "instrument": symbol,
         "variation": variation,
         "train_months": train_months,
         "windows": len(results),
         "mean_oos_pct": round(mean_oos * 100, 2),
+        "oos_maxdd_pct": round(mean_dd * 100, 2),
+        "return_per_dd": round(ret_per_dd, 3),
         "pct_profitable": round(pct * 100, 0),
         "wfe": round(walk_forward_efficiency(results), 3),
+        "wfe_norm": round(normalized_wfe(results, train_months, test_months), 3),
         "oos_trades": sum(r.oos_trades for r in results),
         "window_oos": oos,  # per-window OOS returns (for Sharpe / DSR)
         "trade_oos": [x for r in results for x in r.oos_returns],  # per-trade (for Monte-Carlo)
@@ -177,10 +186,12 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_var: int) -> Non
         df.dropna(subset=["mean_oos_pct"])
         .groupby("variation")
         .agg(
+            return_per_dd=("return_per_dd", "mean"),
             mean_oos_pct=("mean_oos_pct", "mean"),
+            oos_maxdd_pct=("oos_maxdd_pct", "mean"),
             worst_market_pct=("mean_oos_pct", "min"),
             pct_profitable=("pct_profitable", "mean"),
-            wfe=("wfe", "mean"),
+            wfe_norm=("wfe_norm", "mean"),
             trades=("oos_trades", "sum"),
         )
     )
@@ -188,10 +199,13 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_var: int) -> Non
     agg["dsr"] = agg.index.map(
         lambda v: deflated_sharpe_ratio(win_by_var[v], n_var, sharpe_variance)
     )
-    agg = agg.sort_values("mean_oos_pct", ascending=False)
+    # Risk lens: rank by risk-adjusted return-per-drawdown, NOT raw return.
+    agg = agg.sort_values("return_per_dd", ascending=False)
     agg.round(4).to_csv(out_dir / "ranking.csv")
 
-    print("\n===== Variation ranking (mean across instruments) =====")
+    print(
+        "\n===== Variation ranking (risk-adjusted: return per drawdown, across instruments) ====="
+    )
     print(agg.round(3).to_string())
 
     valid = df.dropna(subset=["mean_oos_pct"])

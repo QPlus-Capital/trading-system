@@ -154,11 +154,27 @@ def run_walk_forward(
 def walk_forward_efficiency(results: Sequence[WalkForwardResult]) -> float:
     """Walk-forward efficiency: mean out-of-sample return / mean in-sample return.
 
-    Values near or above ~0.5 suggest the edge generalizes; near zero or negative
-    suggests the in-sample performance was overfit.
+    Note this raw ratio is biased low whenever the train window is longer than the test
+    window (the in-sample return spans more months): use :func:`normalized_wfe` to judge
+    generalization. Values near/above ~0.5 (normalized) suggest the edge generalizes.
     """
     if not results:
         return float("nan")
     is_mean = sum(r.is_return for r in results) / len(results)
     oos_mean = sum(r.oos_return for r in results) / len(results)
     return oos_mean / is_mean if is_mean != 0 else float("nan")
+
+
+def normalized_wfe(
+    results: Sequence[WalkForwardResult], train_months: int, test_months: int
+) -> float:
+    """Length-normalized walk-forward efficiency (per-month), unbiased by window lengths.
+
+    The raw WFE compares an out-of-sample return over ``test_months`` against an in-sample
+    return over ``train_months``; when train is longer the raw ratio looks too low purely
+    because the in-sample period is longer. Scaling by ``train_months / test_months``
+    removes that bias, giving the true per-month generalization ratio. ~0.5+ is healthy.
+    """
+    if test_months <= 0:
+        raise ValueError("test_months must be positive")
+    return walk_forward_efficiency(results) * train_months / test_months

@@ -7,6 +7,7 @@ import pandas as pd
 
 from qplus.backtest.walkforward import (
     calmar_score,
+    normalized_wfe,
     run_walk_forward,
     walk_forward_efficiency,
     walk_forward_windows,
@@ -87,3 +88,11 @@ def test_run_walk_forward_and_efficiency() -> None:
     assert all(math.isclose(r.oos_return, 0.20) for r in results)
     # OOS return equals IS return here -> efficiency 1.0.
     assert math.isclose(walk_forward_efficiency(results), 1.0)
+    # Normalized per month: raw 1.0 scaled by train/test = 12/6 = 2.0.
+    assert math.isclose(normalized_wfe(results, train_months=12, test_months=6), 2.0)
+    try:
+        normalized_wfe(results, train_months=12, test_months=0)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected ValueError for test_months=0")
