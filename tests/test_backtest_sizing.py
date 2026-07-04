@@ -10,17 +10,18 @@ from qplus.backtest.portfolio.sizing import flat, throttle, throttle_curves
 
 _TRADES = pd.DataFrame(
     {
-        "market": ["A", "B"],
-        "od": [1, 1],
-        "cd": [3, 3],
-        "pnl_1pct": [200.0, -100.0],
-        "entry": [100.0, 50.0],
-        "exit": [102.0, 49.0],
+        "market": ["A", "B", "C"],
+        "od": [1, 1, 2],
+        "cd": [3, 3, 2],  # C opens AND closes on day 2 (same-day -> must not corrupt the sim)
+        "pnl_1pct": [200.0, -100.0, 75.0],
+        "entry": [100.0, 50.0, 20.0],
+        "exit": [102.0, 49.0, 20.5],
     }
 )
 _PRICES = {
     "A": np.array([100.0, 99.0, 99.0, 102.0]),
     "B": np.array([50.0, 50.5, 50.5, 49.0]),
+    "C": np.array([20.0, 20.0, 20.5, 20.5]),
 }
 
 
