@@ -49,7 +49,7 @@ def throttle_curves(
     """
     openers, closers = _events(trades)
     mk = trades["market"].to_numpy()
-    pnl = trades["pnl_1pct"].to_numpy(dtype=float)
+    pnl = trades["pnl_base"].to_numpy(dtype=float)
     entry = trades["entry"].to_numpy(dtype=float)
     exit_ = trades["exit"].to_numpy(dtype=float)
     span = np.where(np.abs(exit_ - entry) < 1e-12, 1.0, exit_ - entry)

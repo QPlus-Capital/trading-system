@@ -13,7 +13,7 @@ _TRADES = pd.DataFrame(
         "market": ["A", "B", "C"],
         "od": [1, 1, 2],
         "cd": [3, 3, 2],  # C opens AND closes on day 2 (same-day -> must not corrupt the sim)
-        "pnl_1pct": [200.0, -100.0, 75.0],
+        "pnl_base": [200.0, -100.0, 75.0],
         "entry": [100.0, 50.0, 20.0],
         "exit": [102.0, 49.0, 20.5],
     }
