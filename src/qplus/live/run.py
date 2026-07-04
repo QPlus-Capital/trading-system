@@ -33,14 +33,19 @@ from qplus.live.runner import (
 
 log = logging.getLogger("qplus.live")
 
+# Anchor all state/log paths to the REPO ROOT, not the current working directory: a relative
+# risk_state.json would silently start with FRESH risk references (losing the K1 protection)
+# whenever the runner is launched from a different directory.
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_LIVE_DIR = _REPO_ROOT / "reports" / "live"
+
 
 def _setup_logging() -> None:
-    log_dir = Path("reports/live")
-    log_dir.mkdir(parents=True, exist_ok=True)
+    _LIVE_DIR.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler(log_dir / "live.log")],
+        handlers=[logging.StreamHandler(), logging.FileHandler(_LIVE_DIR / "live.log")],
     )
 
 
@@ -72,7 +77,7 @@ def main(argv: list[str] | None = None) -> None:
 
     _setup_logging()
     mode = Mode(args.mode.upper())
-    state_path = Path("reports/live/risk_state.json")
+    state_path = _LIVE_DIR / "risk_state.json"
 
     bridge = Mt5Bridge()
     bridge.connect()  # attach to the already-logged-in terminal (no credentials in code)
