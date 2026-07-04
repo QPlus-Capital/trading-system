@@ -66,12 +66,12 @@ def throttle_curves(
     equity_series = np.empty(d1 - d0 + 1)
 
     for k, day in enumerate(range(d0, d1 + 1)):
-        for i in closers.get(day, ()):  # 1. realize closers
-            realized += pnl[i] * size[i]
-            open_set.discard(i)
-        peak_bal = max(peak_bal, start_balance + realized)
-        floor = min(start_balance, peak_bal - budget)
-        if openers.get(day):  # 2. size openers from the used-budget fraction
+        # 1. size & open today's openers FIRST (before closers), so a trade that opens and
+        # closes the same day is sized before it is realized -- otherwise it would book at
+        # size 0 and linger in open_set forever with bogus unrealized PnL.
+        if openers.get(day):
+            peak_bal = max(peak_bal, start_balance + realized)
+            floor = min(start_balance, peak_bal - budget)
             unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)
             equity = start_balance + realized + unreal
             used = min(1.0, max(0.0, 1.0 - (equity - floor) / budget))
@@ -79,6 +79,10 @@ def throttle_curves(
             for i in openers[day]:
                 size[i] = r
                 open_set.add(i)
+        for i in closers.get(day, ()):  # 2. realize closers (now correctly sized)
+            realized += pnl[i] * size[i]
+            open_set.discard(i)
+        peak_bal = max(peak_bal, start_balance + realized)
         unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)  # 3. EOD mark
         realized_series[k] = start_balance + realized
         equity_series[k] = start_balance + realized + unreal
