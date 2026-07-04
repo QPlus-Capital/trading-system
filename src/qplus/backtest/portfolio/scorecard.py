@@ -22,7 +22,10 @@ from qplus.backtest.portfolio.curves import align_prices, base_curves, to_day
 from qplus.backtest.portfolio.drawdown import evaluate, max_flat_risk
 from qplus.backtest.portfolio.sizing import throttle, throttle_curves
 
-_DEFAULT_BASES = (0.5, 1.0, 1.5, 2.0, 2.5, 3.0)
+# Throttle base multipliers, RELATIVE to the feasible flat risk: the throttle's whole point
+# is to run a higher base at the highs and taper near the wall, so absolute bases would miss
+# it entirely when the feasible flat risk is small (e.g. 0.2x).
+_DEFAULT_MULTS = (1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 
 
 @dataclass(frozen=True)
@@ -46,7 +49,7 @@ def score(
     *,
     start_balance: float = 200_000.0,
     limit_frac: float = 0.06,
-    throttle_bases: tuple[float, ...] = _DEFAULT_BASES,
+    throttle_base_mults: tuple[float, ...] = _DEFAULT_MULTS,
     throttle_floor: float = 0.15,
 ) -> PortfolioResult:
     """Score a trade stream (columns: market, ts_opened, ts_closed, pnl_1pct, entry, exit)."""
@@ -63,7 +66,8 @@ def score(
     flat_ret = flat_m * float(realized[-1]) / start_balance
 
     best_base, best_ret = 0.0, 0.0
-    for base in throttle_bases:
+    for mult in throttle_base_mults:
+        base = flat_m * mult  # base risk at the highs, tapered toward the wall
         rb, eq = throttle_curves(
             t, prices, d0, d1, start_balance, limit_frac, throttle(base, throttle_floor)
         )

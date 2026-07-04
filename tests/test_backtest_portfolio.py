@@ -53,7 +53,7 @@ def test_monotonic_winner_hits_the_risk_cap() -> None:
     # A trade that is never underwater can never breach -> flat risk hits the bisection cap.
     trades = pd.DataFrame([_trade("X", 0, 2, 100.0, 10.0, 11.0)])
     prices = {"X": pd.Series({0: 10.0, 1: 10.5, 2: 11.0})}
-    res = score(trades, prices, throttle_bases=(1.0, 3.0))
+    res = score(trades, prices)
     assert res.n_trades == 1
     assert math.isclose(res.flat_risk, 4.0)  # default bisection cap, never breaches
     assert math.isclose(res.flat_return_pct, round(4.0 * 100 / 200_000 * 100, 1))
@@ -64,6 +64,6 @@ def test_deep_floating_dip_forces_low_risk() -> None:
     # breach when m*50,000 >= 12,000 -> max safe m ~ 0.24.
     trades = pd.DataFrame([_trade("Y", 0, 2, 10_000.0, 10.0, 11.0)])
     prices = {"Y": pd.Series({0: 10.0, 1: 5.0, 2: 11.0})}
-    res = score(trades, prices, throttle_bases=(0.1, 0.2, 0.3))
+    res = score(trades, prices)
     assert math.isclose(res.flat_risk, 0.24, abs_tol=0.01)
     assert 0.0 < res.flat_risk < 1.0
