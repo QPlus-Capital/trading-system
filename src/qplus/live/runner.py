@@ -24,7 +24,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 
@@ -107,9 +107,15 @@ def size_order(
 
 
 def position_risk(pos: Position, info: SymbolInfo) -> float:
-    """Money at risk for an open position from its entry-to-stop distance (0 if no stop set)."""
+    """Money at risk for an open position from its entry-to-stop distance.
+
+    H5: a position with NO stop-loss has unbounded downside, so it must never count as zero
+    risk (that would understate ``open_risk`` and loosen the cap). We charge the worst case --
+    the loss if price ran to zero -- so any stop-less position saturates the open-risk cap and
+    blocks new entries around it. The runner also logs a warning when it sees one.
+    """
     if pos.sl <= 0:
-        return 0.0
+        return pos.volume * (pos.price_open / info.tick_size) * info.tick_value
     distance = abs(pos.price_open - pos.sl)
     return pos.volume * (distance / info.tick_size) * info.tick_value
 
@@ -182,7 +188,10 @@ class LiveRunner:
         """Process one polling cycle: day roll, safety check, then each market."""
         if self._halted:
             return
-        now = now or datetime.now(UTC)
+        # H3: the daily-limit boundary must follow the BROKER's server day (TTP resets at
+        # server midnight), not the client's UTC date -- otherwise the daily reference resets
+        # at the wrong hour and our budget can disagree with TTP's.
+        now = now or self._bridge.server_time()
         account = self._bridge.account()
 
         # Day roll: bank the prior day's HWM, reset the daily reference. Persist so a restart
@@ -217,6 +226,12 @@ class LiveRunner:
         for spec in self._markets:
             info = self._bridge.symbol_info(spec.name)
             for pos in self._bridge.positions(spec.name):
+                if pos.sl <= 0:  # H5: unbounded downside -> loud warning + worst-case charge
+                    log.warning(
+                        "[%s] open position %s has NO stop-loss -> charged at worst case",
+                        spec.name,
+                        pos.ticket,
+                    )
                 total += position_risk(pos, info)
         return total
 
@@ -247,7 +262,7 @@ class LiveRunner:
             spec.stop_loss_pct,
             spec.take_profit_pct,
             info,
-            self._risk_amount(equity),
+            self._risk_amount(),
         )
         if sized is None:
             log.info("[%s] %s signal but not sizable (min-lot/stop) -> skip", spec.name, desired)
@@ -267,8 +282,14 @@ class LiveRunner:
             buy, sell = engine.update(b.open, b.high, b.low, b.close)
         return buy, sell
 
-    def _risk_amount(self, equity: float) -> float:
-        return equity * self._risk.limits.risk_per_trade
+    def _risk_amount(self) -> float:
+        """Money risked per trade -- FLAT off the fixed initial reference (H2).
+
+        The study validated the drawdown feasibility under *flat* sizing (a fixed fraction of
+        the starting balance). Sizing off live equity would compound after gains and drift
+        outside that validated envelope, so we size off ``start_balance`` instead.
+        """
+        return self._risk.start_balance * self._risk.limits.risk_per_trade
 
     def _act(self, spec: MarketSpec, pos: Position | None, sized: SizedOrder) -> None:
         """Log the decision and, in EXECUTE mode, (reverse and) open the position."""
@@ -284,11 +305,13 @@ class LiveRunner:
             sized.risk_amount,
             self._mode.value,
         )
-        if self._mode is not Mode.EXECUTE:
-            return
-        if pos is not None:
-            self._bridge.close_position(pos)
-        self._bridge.place_order(spec.name, sized.side, sized.volume, sl=sized.sl, tp=sized.tp)
+        if self._mode is Mode.EXECUTE:
+            if pos is not None:
+                self._bridge.close_position(pos)
+            self._bridge.place_order(spec.name, sized.side, sized.volume, sl=sized.sl, tp=sized.tp)
+        # Account for the new open risk in BOTH modes so a SIGNAL_ONLY dry-run exercises the
+        # open-risk cap exactly like EXECUTE would (H4). open_risk is recomputed from live
+        # positions each cycle, so this within-cycle increment self-heals next cycle.
         self._risk.on_open(sized.risk_amount)
 
     def _halt_and_flatten(self, reason: str) -> None:

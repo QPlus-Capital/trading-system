@@ -64,9 +64,19 @@ def test_position_risk_from_stop_distance() -> None:
     assert abs(position_risk(pos, _GOLD) - 400.0) < 1e-6
 
 
-def test_position_risk_zero_without_stop() -> None:
+def test_position_risk_without_stop_is_worst_case() -> None:
+    # H5: no stop-loss -> charged the worst case (price to zero), never 0.
     pos = Position(1, "XAUUSD", "BUY", 0.20, 2000.0, 0.0, 0.0, 0.0)
-    assert position_risk(pos, _GOLD) == 0.0
+    # (2000/0.01)*1 * 0.20 lots = 200000 * 0.20 = 40_000.
+    assert position_risk(pos, _GOLD) == 40_000.0
+
+
+def test_risk_amount_is_flat_off_start_balance() -> None:
+    # H2: sizing risk is a fixed fraction of the INITIAL balance, not live equity.
+    bridge = cast(Mt5Bridge, object())
+    risk = RiskController(RiskLimits(), 100_000)  # default risk_per_trade = 0.20%
+    runner = LiveRunner(bridge, [], SignalParams(), risk)
+    assert runner._risk_amount() == 200.0  # 0.002 * 100_000, regardless of live equity
 
 
 def test_markets_from_paper_config_maps_all_nine() -> None:
