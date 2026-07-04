@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 try:  # pragma: no cover - Windows-only dependency; pure helpers stay importable without it
@@ -194,6 +195,22 @@ class Mt5Bridge:
         if name not in self._resolved:
             raise Mt5Error(f"symbol {name} was not resolved at connect time")
         return self._resolved[name]
+
+    # -- time --
+
+    def server_time(self) -> datetime:
+        """Broker server wall-clock time (for the daily-limit day boundary, H3).
+
+        MT5 encodes a symbol tick's ``time`` as the server's wall clock in Unix seconds, so
+        ``fromtimestamp(.., UTC)`` recovers the server calendar day (TTP resets at server
+        midnight). Falls back to real UTC now if no resolved symbol has a tick yet.
+        """
+        m = self._require()
+        for terminal in self._resolved.values():
+            tick = m.symbol_info_tick(terminal)
+            if tick is not None and tick.time:
+                return datetime.fromtimestamp(int(tick.time), tz=UTC)
+        return datetime.now(tz=UTC)
 
     # -- market data --
 
