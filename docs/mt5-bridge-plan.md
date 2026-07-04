@@ -94,3 +94,25 @@ item.)
 Phase 1 (extract signals + verify) -> Phase 3 (risk control, pure, testable) ->
 Phase 2 (bridge, needs the terminal) -> Phase 4 (runner) -> Phase 5 dry-run.
 Phases 1 and 3 are pure Python and unit-testable without the terminal, so start there.
+
+---
+
+## Status (built)
+- **Phase 1 DONE** — `qplus.strategies.rsi_wpr_bb_signals` (pure engine); strategy delegates to
+  it, so live == backtest.
+- **Phase 3 DONE** — `qplus.live.risk_control`: daily 2.5% / trailing 5% floors, 1.5% open-risk
+  cap, worst-case pre-trade gate, `position_volume` sizing. Unit-tested.
+- **Phase 2 DONE** — `qplus.live.mt5_bridge`: attach to a logged-in terminal, resolve symbols
+  (USTEC->UT100, broker suffixes), H4 bars, account/positions, place/close orders.
+- **Phase 4 DONE** — `qplus.live.runner.LiveRunner`: per-H4-bar signal -> risk -> order/notify;
+  SIGNAL_ONLY | EXECUTE; recomputes open-risk from live positions; must_flatten -> halt.
+- **Phase 5 IN PROGRESS** — `qplus.live.run` entry point (default SIGNAL_ONLY). Next: run the
+  dry-run on the demo terminal, verify signals/sizing, then a supervised EXECUTE run.
+
+### To launch (Jan, on this Windows PC)
+1. Open the MT5 terminal, log into the MEX Atlantic demo (creds from the password manager).
+2. Enable **Algo Trading** (toolbar) and confirm all 9 symbols incl. **UT100** are in Market
+   Watch. Verify DE40 is the **cash** index.
+3. `uv run python -m qplus.live.run --once` (one cycle, logs only) to sanity-check the wiring,
+   then `uv run python -m qplus.live.run` to loop in SIGNAL_ONLY. Logs -> `reports/live/live.log`.
+4. Only after the dry-run looks right: `--mode execute` for paper orders on the demo.
