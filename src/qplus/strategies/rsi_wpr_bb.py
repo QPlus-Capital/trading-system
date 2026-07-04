@@ -19,14 +19,9 @@ stay faithful. Indicator maths use ``float`` (as NautilusTrader's own indicators
 do); order sizing still uses ``Decimal`` / ``Quantity``.
 """
 
-import math
-from collections import deque
-from collections.abc import Sequence
 from decimal import Decimal
 
 from nautilus_trader.config import PositiveInt, StrategyConfig
-from nautilus_trader.indicators.averages import ExponentialMovingAverage, MovingAverageType
-from nautilus_trader.indicators.momentum import RelativeStrengthIndex
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide, OrderType
@@ -36,32 +31,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
-
-def williams_r(highs: Sequence[float], lows: Sequence[float], close: float) -> float:
-    """Return Williams %R (range -100..0) over the given high/low window.
-
-    ``%R = 100 * (close - highest_high) / (highest_high - lowest_low)``.
-    Returns 0.0 if the window has no range (to avoid division by zero).
-    """
-    highest = max(highs)
-    lowest = min(lows)
-    span = highest - lowest
-    if span == 0:
-        return 0.0
-    return 100.0 * (close - highest) / span
-
-
-def bollinger(closes: Sequence[float], mult: float) -> tuple[float, float, float]:
-    """Return (upper, middle, lower) Bollinger Bands over ``closes``.
-
-    Uses a simple moving average and the population standard deviation (matching
-    TradingView's ``ta.stdev`` default), computed on the close price.
-    """
-    n = len(closes)
-    mean = math.fsum(closes) / n
-    variance = math.fsum((c - mean) ** 2 for c in closes) / n
-    std = math.sqrt(variance)
-    return mean + mult * std, mean, mean - mult * std
+from qplus.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
 
 class RsiWprBbConfig(StrategyConfig, frozen=True):
@@ -114,39 +84,8 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
     def __init__(self, config: RsiWprBbConfig) -> None:
         super().__init__(config)
         self.instrument: Instrument | None = None
-
-        self._ema = ExponentialMovingAverage(config.ema_length)
-        self._rsi = RelativeStrengthIndex(config.rsi_length, ma_type=MovingAverageType.WILDER)
-
-        # How many bars of history we need before any signal can be evaluated.
-        self._warmup = (
-            max(
-                config.buy_lookback_below_bb + config.bb_length,
-                config.buy_wpr_lookback + config.wpr_length,
-                config.pending_lookback + 2,
-                config.ema_length + 2,
-                config.rsi_length + 2,
-            )
-            + 2
-        )
-        maxlen = self._warmup + 2
-        self._open: deque[float] = deque(maxlen=maxlen)
-        self._high: deque[float] = deque(maxlen=maxlen)
-        self._low: deque[float] = deque(maxlen=maxlen)
-        self._close: deque[float] = deque(maxlen=maxlen)
-        self._wpr: deque[float] = deque(maxlen=maxlen)
-        self._ema_hist: deque[float] = deque(maxlen=maxlen)
-        self._rsi_hist: deque[float] = deque(maxlen=maxlen)
-
-        # Rising-edge detection ("raw and not raw[1]" in Pine).
-        self._prev_buy_raw = False
-        self._prev_sell_base_raw = False
-
-        # Deferred "Fall C" sell state machine.
-        self._pending_high = 0.0
-        self._pending_low = 0.0
-        self._pending_bars_left = 0
-        self._pending_low_breached = False
+        # The pure signal engine (shared with the live MT5 runner -> live == backtest).
+        self._signals = RsiWprBbSignals(SignalParams.from_config(config))
 
     def on_start(self) -> None:
         """Resolve the instrument and subscribe to bars."""
@@ -157,51 +96,12 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
             return
         self.subscribe_bars(self.config.bar_type)
 
-    # -- helpers over the rolling history (index 0 = current bar, i = i bars ago) --
-
-    def _wpr_at(self, i: int) -> float:
-        n = self.config.wpr_length
-        highs = [self._high[-1 - (i + j)] for j in range(n)]
-        lows = [self._low[-1 - (i + j)] for j in range(n)]
-        return williams_r(highs, lows, self._close[-1 - i])
-
-    def _bb_at(self, i: int) -> tuple[float, float, float]:
-        n = self.config.bb_length
-        closes = [self._close[-1 - (i + j)] for j in range(n)]
-        return bollinger(closes, self.config.bb_mult)
-
     def on_bar(self, bar: Bar) -> None:
-        """Update indicators, evaluate the 4H signals and trade the reversal."""
-        o, h, low_, c = (
-            bar.open.as_double(),
-            bar.high.as_double(),
-            bar.low.as_double(),
-            bar.close.as_double(),
+        """Feed the bar to the signal engine and trade the reversal."""
+        c = bar.close.as_double()
+        buy_signal, sell_signal = self._signals.update(
+            bar.open.as_double(), bar.high.as_double(), bar.low.as_double(), c
         )
-        self._open.append(o)
-        self._high.append(h)
-        self._low.append(low_)
-        self._close.append(c)
-
-        self._ema.update_raw(c)
-        self._rsi.update_raw(c)
-        self._ema_hist.append(self._ema.value)
-        self._rsi_hist.append(self._rsi.value)
-        self._wpr.append(
-            self._wpr_at(0) if len(self._close) >= self.config.wpr_length else 0.0,
-        )
-
-        # Wait until fully warmed up so every lookback index is valid.
-        if (
-            len(self._close) < self._warmup
-            or not self._ema.initialized
-            or not self._rsi.initialized
-        ):
-            return
-
-        buy_signal = self._eval_buy(o, h, low_, c)
-        sell_signal = self._eval_sell(o, h, low_, c)
-
         if buy_signal and not sell_signal:
             self._go_long(c)
         elif sell_signal and not buy_signal:
@@ -209,73 +109,6 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
                 self._go_flat()
             else:
                 self._go_short(c)
-
-    def _eval_buy(self, o: float, h: float, low_: float, c: float) -> bool:
-        cfg = self.config
-        _, _, bb_lower = self._bb_at(0)
-
-        was_below_lower_bb = any(
-            self._low[-1 - k] < self._bb_at(k)[2] for k in range(1, cfg.buy_lookback_below_bb + 1)
-        )
-        wpr_was_oversold = any(
-            self._wpr[-1 - k] < cfg.buy_wpr_threshold for k in range(cfg.buy_wpr_lookback)
-        )
-        buy_raw = (
-            c > o  # green candle
-            and low_ <= bb_lower
-            and h >= bb_lower
-            and (not cfg.use_bb_confirm or was_below_lower_bb)
-            and (not cfg.use_wpr_confirm or wpr_was_oversold)
-            and (not cfg.use_rsi_filter or self._rsi_hist[-1] < cfg.buy_rsi_threshold)
-        )
-        signal = buy_raw and not self._prev_buy_raw
-        self._prev_buy_raw = buy_raw
-        return signal
-
-    def _eval_sell(self, o: float, h: float, low_: float, c: float) -> bool:
-        cfg = self.config
-        wpr0, wpr1 = self._wpr[-1], self._wpr[-2]
-        ema0, ema1 = self._ema_hist[-1], self._ema_hist[-2]
-        ema_falling, ema_rising = ema0 < ema1, ema0 > ema1
-        candle_pct = abs(c - o) / o * 100.0 if o != 0 else 0.0
-
-        base_raw = (
-            c < o  # red candle
-            and wpr0 < wpr1
-            and wpr0 < -20
-            and wpr1 > -20
-            and candle_pct >= cfg.min_candle_size_pct
-        )
-        base_signal = base_raw and not self._prev_sell_base_raw
-        self._prev_sell_base_raw = base_raw
-
-        rsi_above = sum(
-            1
-            for k in range(1, cfg.pending_lookback + 1)
-            if self._rsi_hist[-1 - k] > cfg.rsi_overbought_level
-        )
-        rsi_condition = rsi_above >= cfg.rsi_min_bars_above
-
-        fall_a = base_signal and ema_falling
-        fall_b = base_signal and ema_rising and (not cfg.use_rsi_filter or rsi_condition)
-        pending_trigger = base_signal and ema_rising and not fall_b
-
-        from_pending = False
-        if pending_trigger:
-            self._pending_high = h
-            self._pending_low = low_
-            self._pending_bars_left = cfg.pending_lookback
-            self._pending_low_breached = False
-        elif self._pending_bars_left > 0:
-            if low_ < self._pending_low:
-                self._pending_low_breached = True
-            if c < o and ema_falling and c < self._pending_high and self._pending_low_breached:
-                from_pending = True
-                self._pending_bars_left = 0
-            else:
-                self._pending_bars_left -= 1
-
-        return bool(fall_a or fall_b or from_pending)
 
     # -- position management (long/short reversal) --
 
@@ -371,6 +204,5 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         self.unsubscribe_bars(self.config.bar_type)
 
     def on_reset(self) -> None:
-        """Reset indicators so the strategy can be re-run."""
-        self._ema.reset()
-        self._rsi.reset()
+        """Reset the signal engine so the strategy can be re-run."""
+        self._signals.reset()

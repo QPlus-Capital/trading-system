@@ -16,7 +16,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from qplus.backtest.config import run_backtest
 from qplus.data_ingest.synthetic import write_synthetic_catalog
-from qplus.strategies.rsi_wpr_bb import bollinger, williams_r
+from qplus.strategies.rsi_wpr_bb_signals import bollinger, williams_r
 
 _INSTRUMENT = TestInstrumentProvider.audusd_cfd()
 _BAR_TYPE = BarType.from_str("AUDUSD.OANDA-4-HOUR-LAST-EXTERNAL")
@@ -44,6 +44,19 @@ def test_bollinger_matches_manual_calculation() -> None:
     assert middle == mean
     assert math.isclose(upper, mean + 2.0 * std)
     assert math.isclose(lower, mean - 2.0 * std)
+
+
+def test_signal_engine_warms_up_and_resets() -> None:
+    from qplus.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
+
+    engine = RsiWprBbSignals(SignalParams())
+    for i in range(60):  # feed enough bars to warm up
+        buy, sell = engine.update(100.0 + i * 0.1, 100.6 + i * 0.1, 99.4 + i * 0.1, 100.3 + i * 0.1)
+        assert isinstance(buy, bool) and isinstance(sell, bool)
+    assert engine.warmed_up
+    engine.reset()
+    assert not engine.warmed_up  # back to the pre-warmup state
+    assert engine.update(100.0, 100.6, 99.4, 100.3) == (False, False)
 
 
 def test_backtest_runs_end_to_end(tmp_path: Path) -> None:
