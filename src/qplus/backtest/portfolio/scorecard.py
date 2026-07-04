@@ -18,7 +18,7 @@ from dataclasses import dataclass
 import pandas as pd
 
 from qplus.backtest.foundation.montecarlo import monte_carlo_paths, summarize
-from qplus.backtest.portfolio.curves import align_prices, base_curves, to_day
+from qplus.backtest.portfolio.curves import align_prices, base_curves, to_day, worst_unrealized
 from qplus.backtest.portfolio.drawdown import daily_breach, evaluate, max_flat_risk
 from qplus.backtest.portfolio.sizing import throttle, throttle_curves
 
@@ -47,6 +47,8 @@ def score(
     trades: pd.DataFrame,
     daily_close: dict[str, pd.Series],
     *,
+    daily_high: dict[str, pd.Series] | None = None,
+    daily_low: dict[str, pd.Series] | None = None,
     start_balance: float = 200_000.0,
     limit_frac: float = 0.06,
     day_loss_frac: float = 0.03,
@@ -56,7 +58,10 @@ def score(
     """Score a trade stream (columns: market, ts_opened, ts_closed, pnl_1pct, entry, exit).
 
     Respects both the trailing max drawdown (``limit_frac``) and the daily loss limit
-    (``day_loss_frac``, TTP's 3%).
+    (``day_loss_frac``, TTP's 3%). When ``daily_high``/``daily_low`` are given, the drawdown
+    breach test marks open positions at each day's *adverse* extreme (intraday-worst equity,
+    H1) instead of the close -- the honest, stricter feasibility. Without them it falls back to
+    the close-based equity (EOD resolution, which can miss an intraday breach).
     """
     t = trades.copy()
     t["od"] = [to_day(x) for x in t["ts_opened"]]
@@ -67,7 +72,16 @@ def score(
     realized, unrealized = base_curves(t, prices, d0, d1)
     equity = realized + unrealized
 
-    flat_m = max_flat_risk(realized, equity, start_balance, limit_frac, day_loss_frac=day_loss_frac)
+    if daily_high is not None and daily_low is not None:
+        highs = {m: align_prices(daily_high[m], d0, d1) for m in t["market"].unique()}
+        lows = {m: align_prices(daily_low[m], d0, d1) for m in t["market"].unique()}
+        equity_breach = realized + worst_unrealized(t, highs, lows, d0, d1)  # intraday-worst (H1)
+    else:
+        equity_breach = equity  # EOD close-based fallback
+
+    flat_m = max_flat_risk(
+        realized, equity_breach, start_balance, limit_frac, day_loss_frac=day_loss_frac
+    )
     flat_ret = flat_m * float(realized[-1]) / start_balance
 
     best_base, best_ret = 0.0, 0.0

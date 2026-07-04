@@ -29,7 +29,7 @@ import pandas as pd
 from qplus.backtest.config import load_config_module
 from qplus.backtest.foundation.recipe import SweepRecipe
 from qplus.backtest.portfolio import scorecard
-from qplus.backtest.portfolio.curves import load_daily_close
+from qplus.backtest.portfolio.curves import load_daily_close, load_daily_extremes
 from qplus.backtest.portfolio.trades import extract_market_trades
 from qplus.backtest.select import universe
 
@@ -52,18 +52,29 @@ def run_pipeline(
     daily_close: dict[str, pd.Series],
     *,
     variations: dict[str, dict[str, Any]],
+    daily_high: dict[str, pd.Series] | None = None,
+    daily_low: dict[str, pd.Series] | None = None,
     start_balance: float = 200_000.0,
     limit_frac: float = 0.06,
     train_months: int | None = None,
 ) -> PipelineResult:
-    """Stage 2 -> extraction -> Stage 3/4, returning the selection and the scorecard."""
+    """Stage 2 -> extraction -> Stage 3/4, returning the selection and the scorecard.
+
+    Passing ``daily_high``/``daily_low`` makes the drawdown feasibility use the intraday-worst
+    equity (H1) rather than the EOD close.
+    """
     selection = universe.select(study_df)
     tm = train_months if train_months is not None else selection.train_months
     overrides = variations[selection.variation]
     frames = [extract_fn(market, overrides, tm) for market in selection.instruments]
     trades = pd.concat(frames, ignore_index=True)
     result = scorecard.score(
-        trades, daily_close, start_balance=start_balance, limit_frac=limit_frac
+        trades,
+        daily_close,
+        daily_high=daily_high,
+        daily_low=daily_low,
+        start_balance=start_balance,
+        limit_frac=limit_frac,
     )
     verdict = scorecard.acceptance_verdict(result, trades, start_balance=start_balance)
     return PipelineResult(selection=selection, portfolio=result, verdict=verdict)
@@ -125,11 +136,21 @@ def main(argv: list[str] | None = None) -> None:
 
     selection = universe.select(study_df)
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in selection.instruments}
+    extremes = {m: load_daily_extremes(str(specs[m][1])) for m in selection.instruments}
+    daily_high = {m: hl[0] for m, hl in extremes.items()}
+    daily_low = {m: hl[1] for m, hl in extremes.items()}
     print(f"Stage 2 -> structure '{selection.variation}' @ train {selection.train_months}m")
     print(f"          universe: {', '.join(selection.instruments)}")
     print(f"Stage 3/4 scored on the reserved {holdout_m}-month holdout (untouched by selection)")
 
-    result = run_pipeline(study_df, extract_fn, daily_close, variations=cfg.VARIATIONS)
+    result = run_pipeline(
+        study_df,
+        extract_fn,
+        daily_close,
+        variations=cfg.VARIATIONS,
+        daily_high=daily_high,
+        daily_low=daily_low,
+    )
     p = result.portfolio
     print("\n===== Stage 3/4 portfolio feasibility (hybrid TTP drawdown, HOLDOUT) =====")
     print(f"trades: {p.n_trades}   span: {p.years} years")
