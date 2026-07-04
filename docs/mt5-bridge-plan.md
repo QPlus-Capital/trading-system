@@ -1,7 +1,8 @@
 # MT5 Live/Paper Bridge — Implementation Plan
 
-**Goal:** run the frozen strategy (`config/live/paper_rsi_wpr_bb.py`) on a small
-(~$5,000) The Trading Pit MT5 account, automated (Option 1) or signal-only (Option 2).
+**Goal:** run the frozen strategy (`config/live/paper_rsi_wpr_bb.py`) on The Trading Pit MT5,
+automated (Option 1) or signal-only (Option 2). Prove the bridge + risk layer on a cheap
+**$5,000** account first, then run the real test on a **$200,000** account.
 Both share the same base; only the last step differs (send order vs send notification).
 **Risk control to enforce: the daily 3% limit and the 6% trailing limit — nothing else**
 (news/gap/volume rules intentionally out of scope).
@@ -18,11 +19,14 @@ the strategy's signal logic (not NautilusTrader live). His machine is Windows ->
    ambiguity.)
 2. Create the $5,000 TTP account, install the MT5 terminal, log in. Credentials -> password
    manager (never committed).
-3. **Small-account reality check (important):** the whole research (0.2% risk, 9 markets) was
-   on $200k. On $5,000 the limits are tiny (3% = $150, 6% = $300, 0.2% = $10/trade), and the
-   broker's **minimum lot (0.01)** may already risk MORE than 0.2% (e.g. gold 0.01 lot ~ $20
-   stop = 0.4% of $5k). => decide: trade **fewer markets** and/or accept a higher per-trade
-   risk on the small account, or scale risk to the min-lot floor. Resolve in Phase 3.
+3. **Two accounts, two roles (decided):**
+   - **$5,000 account = plumbing + risk-layer PROVING GROUND.** Cheap way to prove the bridge,
+     signals, orders AND the risk cut-offs work with real (tiny) money. Do NOT judge strategy
+     performance here — min-lot forces >0.2% risk and the tiny limits ($150 daily) can't hold
+     9 markets, so it would trip the limits for mechanical reasons.
+   - **$200,000 account = the real strategy test** (matches the research: 0.2% achievable,
+     min-lot non-binding, limits $6,000 daily / $12,000 trailing). Costs ~1,000 EUR, so it
+     goes live ONLY after the risk layer is proven on the $5k account.
 
 ## Phase 1 — Single source of truth for the signal (the linchpin)
 The signal logic currently lives inside the NautilusTrader `RsiWprBb` strategy. Live must be
@@ -42,15 +46,26 @@ The signal logic currently lives inside the NautilusTrader `RsiWprBb` strategy. 
 - **Symbol map**: our names (XAUUSD, US30, ...) -> the broker's MT5 symbol names (may carry a
   suffix). A small table, verified against the live terminal.
 
-## Phase 3 — Risk-control layer
-`qplus/live/risk_control.py`, driven by the **actual account size** (not $200k):
-- **Position sizing**: volume from (equity, SL distance, target risk %). Respect the min lot;
-  if the min lot exceeds the target risk, either skip the trade or flag it (Phase 0 decision).
-- **Daily 3% limit**: track the day-start balance; **block new entries** (and optionally
-  flatten) once the day's loss reaches a safety fraction of 3% (e.g. 2.5%).
-- **Trailing 6% limit**: track the EOD-balance high-water mark (capped at start); block new
-  entries / flatten as equity approaches the floor.
-- **Kill switch**: on any limit hit, stop trading for the day/session and log loudly.
+## Phase 3 — Risk-control layer (THE #1 PRIORITY — keep the account alive)
+`qplus/live/risk_control.py`, driven by the **actual account size**. Multiple layered
+safeguards, each conservative:
+1. **Own, stricter limits (margin):** stop well before TTP's hard limits — e.g. ~2.5% daily /
+   ~4.5-5% trailing — so their server-side auto-liquidation never triggers.
+2. **Total-open-risk cap (the key guarantee):** cap the SUM of all open positions' stop-risk
+   to a fraction of the daily limit (e.g. <= 1.5%). Then even if EVERY open position stops out
+   the same day, the loss stays under the daily limit (modulo gaps).
+3. **Pre-trade worst-case check:** before every order, compute "this trade + all open
+   positions at their stops" — if that would breach a (margined) limit, DON'T open.
+4. **Real-time monitoring + auto-flatten:** track equity vs the trailing floor; as it
+   approaches, close positions and halt.
+5. **Fail-safe defaults:** on disconnect / error / uncertainty -> open nothing (doing nothing
+   is safe).
+6. **Position sizing:** volume from (equity, SL distance, target risk %); respect the min lot.
+7. **Kill switch:** on any limit hit, stop for the day/session and log loudly.
+
+> **NUMBERS: ask Jan first.** Before hard-coding any figure — per-trade risk %, the daily /
+> trailing safety margins, the total-open-risk cap — STOP and ask Jan for the exact values he
+> wants. Do not just pick them.
 
 ## Phase 4 — Live runner
 `qplus/live/runner.py` (or script), mode `EXECUTE` | `SIGNAL_ONLY`:
@@ -59,11 +74,14 @@ The signal logic currently lives inside the NautilusTrader `RsiWprBb` strategy. 
   notification (Telegram/log). Uses `config/live/paper_rsi_wpr_bb.py` for the per-market
   params (SL/TP/risk/switches).
 
-## Phase 5 — Test & dry-run
-1. Unit-test the signal module (Phase 1) and risk control (Phase 3) with synthetic data.
+## Phase 5 — Test & dry-run (prove the risk layer before the 200k account)
+1. Unit-test the signal module (Phase 1) and risk control (Phase 3) with synthetic data —
+   include cases that MUST block trades / flatten / hit the open-risk cap.
 2. Run the bridge in `SIGNAL_ONLY` for a few days -> sanity-check signals + sizing vs the live
    market (no orders).
-3. Switch to `EXECUTE` on the $5,000 account; watch the first sessions closely.
+3. `EXECUTE` on the **$5,000** account; explicitly verify the risk cut-offs fire correctly
+   (block, flatten, cap) with real money.
+4. ONLY after the risk layer is proven on $5k -> go live on the **$200,000** account.
 
 ## Phase 6 — Monitoring
 Log every signal, order, account state and limit status. (A dashboard is the later roadmap
