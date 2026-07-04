@@ -21,8 +21,9 @@ def test_match_terminal_symbol_suffix() -> None:
     assert match_terminal_symbol("EURUSD", ["EURUSD.r", "EURUSD.raw", "GBPUSD.r"]) == "EURUSD.r"
 
 
-def test_match_terminal_symbol_contains_fallback() -> None:
-    assert match_terminal_symbol("US30", ["mUS30", "US500"]) == "mUS30"
+def test_match_terminal_symbol_rejects_contains_only() -> None:
+    # M1: "merely contains the base" no longer resolves (could pick the wrong instrument).
+    assert match_terminal_symbol("US30", ["mUS30", "US500"]) is None
 
 
 def test_match_terminal_symbol_none_when_absent() -> None:

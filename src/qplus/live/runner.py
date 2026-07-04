@@ -34,6 +34,8 @@ from qplus.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
 log = logging.getLogger("qplus.live")
 
+_H4_SECONDS = 4 * 3600  # an H4 bar with open time t is closed once server time >= t + 4h
+
 
 class Mode(StrEnum):
     """Runner mode: dry-run (log only) or place real orders."""
@@ -133,6 +135,7 @@ class LiveRunner:
         mode: Mode = Mode.SIGNAL_ONLY,
         history_bars: int = 300,
         state_path: Path | None = None,
+        long_only: bool = False,
     ) -> None:
         self._bridge = bridge
         self._markets = markets
@@ -140,6 +143,7 @@ class LiveRunner:
         self._risk = risk
         self._mode = mode
         self._history = history_bars
+        self._long_only = long_only  # N2: a sell signal flattens instead of going short
         self._last_bar_time: dict[str, int] = {}  # our name -> epoch of last acted bar
         self._day: date | None = None
         self._halted = False
@@ -215,9 +219,10 @@ class LiveRunner:
             self._halt_and_flatten(flat.reason)
             return
 
+        now_epoch = now.timestamp()  # server epoch, for deciding which bars have closed (M5)
         for spec in self._markets:
             try:
-                self._process_market(spec, account.equity)
+                self._process_market(spec, account.equity, now_epoch)
             except Exception:  # one market's failure must not abort the others
                 log.exception("market %s failed this cycle", spec.name)
 
@@ -235,9 +240,11 @@ class LiveRunner:
                 total += position_risk(pos, info)
         return total
 
-    def _process_market(self, spec: MarketSpec, equity: float) -> None:
+    def _process_market(self, spec: MarketSpec, equity: float, now_epoch: float) -> None:
         bars = self._bridge.latest_bars(spec.name, self._history)
-        closed = bars[:-1]  # drop the still-forming bar
+        # M5: keep only bars that have actually CLOSED by the server clock, rather than assuming
+        # the last element is the forming bar (wrong at market close / weekends / boundaries).
+        closed = [b for b in bars if b.time + _H4_SECONDS <= now_epoch]
         if len(closed) < 2:
             return
         last = closed[-1]
@@ -252,6 +259,12 @@ class LiveRunner:
 
         current = self._bridge.positions(spec.name)
         pos = current[0] if current else None
+
+        if self._long_only and desired == "SELL":
+            # N2: long_only mirrors the backtest -- a sell signal flattens a long, never shorts.
+            if pos is not None and pos.side == "BUY":
+                self._flatten(spec, pos)
+            return
         if pos is not None and pos.side == desired:
             return  # already positioned the way the signal wants
 
@@ -268,7 +281,10 @@ class LiveRunner:
             log.info("[%s] %s signal but not sizable (min-lot/stop) -> skip", spec.name, desired)
             return
 
-        check = self._risk.check_open(sized.risk_amount, equity)
+        # M2: on a reversal the opposite position is about to be closed, so exclude its stop-risk
+        # from the open total -- don't block the replacement trade on risk we're removing.
+        exclude = position_risk(pos, info) if pos is not None else 0.0
+        check = self._risk.check_open(sized.risk_amount, equity, exclude_risk=exclude)
         if not check.allowed:
             log.warning("[%s] %s BLOCKED by risk: %s", spec.name, desired, check.reason)
             return
@@ -313,6 +329,18 @@ class LiveRunner:
         # open-risk cap exactly like EXECUTE would (H4). open_risk is recomputed from live
         # positions each cycle, so this within-cycle increment self-heals next cycle.
         self._risk.on_open(sized.risk_amount)
+
+    def _flatten(self, spec: MarketSpec, pos: Position) -> None:
+        """Close an open position without opening a new one (N2: long_only sell signal)."""
+        log.info(
+            "[%s] FLATTEN %s vol=%s (long_only sell, %s)",
+            spec.name,
+            pos.side,
+            pos.volume,
+            self._mode.value,
+        )
+        if self._mode is Mode.EXECUTE:
+            self._bridge.close_position(pos)
 
     def _halt_and_flatten(self, reason: str) -> None:
         self._halted = True
@@ -371,3 +399,9 @@ def signal_params_from_paper_config() -> SignalParams:
         if k != "long_only"
     }
     return SignalParams(**switches)
+
+
+def long_only_from_paper_config() -> bool:
+    """Read the frozen ``long_only`` switch (N2: not a SignalParam; applied by the runner)."""
+    module = _paper_config()
+    return bool(module.STRATEGY_SWITCHES.get("long_only", False))  # type: ignore[attr-defined]

@@ -52,3 +52,11 @@ def test_check_open_blocks_on_daily_worst_case() -> None:
     c.open_risk = 900  # within the 3000 cap
     d = c.check_open(400, 196_000)  # worst 196000-1300=194700 < daily floor 195000
     assert not d.allowed and "daily" in d.reason
+
+
+def test_check_open_exclude_risk_allows_reversal() -> None:
+    # M2: the position being closed on a reversal must not count against its replacement.
+    c = RiskController(RiskLimits(), 200_000)
+    c.open_risk = 2_800  # near the 3000 cap; e.g. a large opposite position we will close
+    assert not c.check_open(400, 200_000).allowed  # 2800 + 400 > 3000 -> blocked
+    assert c.check_open(400, 200_000, exclude_risk=2_800).allowed  # excluded -> 0 + 400, fine

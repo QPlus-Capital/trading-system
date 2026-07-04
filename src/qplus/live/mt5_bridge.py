@@ -16,6 +16,7 @@ is resolved against the live terminal's symbol list at connect time.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -25,6 +26,8 @@ try:  # pragma: no cover - Windows-only dependency; pure helpers stay importable
     import MetaTrader5 as mt5
 except ImportError:  # pragma: no cover
     mt5 = None
+
+log = logging.getLogger("qplus.live")
 
 # Orders placed by this bot carry this magic number, so we can tell them apart from any
 # manual trades in the same terminal.
@@ -103,21 +106,22 @@ def base_symbol(name: str, symbol_map: dict[str, str] = SYMBOL_MAP) -> str:
     return symbol_map.get(name, name)
 
 
-def match_terminal_symbol(base: str, available: Sequence[str]) -> str | None:
-    """Find the terminal's actual symbol for ``base`` (exact, else shortest suffix match).
-
-    Brokers often append a suffix (e.g. ``EURUSD.r``); we pick the shortest symbol that starts
-    with ``base``, falling back to the shortest that merely contains it. ``None`` if no match.
-    """
+def prefix_matches(base: str, available: Sequence[str]) -> list[str]:
+    """Terminal symbols that equal ``base`` or start with it (broker suffix, e.g. ``EURUSD.r``)."""
     if base in available:
-        return base
-    prefixed = [s for s in available if s.startswith(base)]
-    if prefixed:
-        return min(prefixed, key=len)
-    contained = [s for s in available if base in s]
-    if contained:
-        return min(contained, key=len)
-    return None
+        return [base]
+    return sorted((s for s in available if s.startswith(base)), key=len)
+
+
+def match_terminal_symbol(base: str, available: Sequence[str]) -> str | None:
+    """The terminal's symbol for ``base``: exact, else the shortest suffixed match, else ``None``.
+
+    M1: only exact/suffix matches are accepted -- the old "merely contains ``base``" fallback
+    could silently pick the WRONG instrument (e.g. ``base`` appearing inside an unrelated name),
+    which is unacceptable for order routing. An unresolved symbol fails loudly at connect time.
+    """
+    matches = prefix_matches(base, available)
+    return matches[0] if matches else None
 
 
 class Mt5Bridge:
@@ -180,13 +184,23 @@ class Mt5Bridge:
         available = [s.name for s in symbols]
         missing = []
         for name in self._map:
-            terminal = match_terminal_symbol(base_symbol(name, self._map), available)
+            base = base_symbol(name, self._map)
+            candidates = prefix_matches(base, available)
+            terminal = candidates[0] if candidates else None
             if terminal is None:
                 missing.append(name)
                 continue
+            if len(candidates) > 1:  # M1: surface an ambiguous match instead of silently guessing
+                log.warning(
+                    "symbol %s -> %s is AMBIGUOUS (candidates: %s); using the shortest -- verify!",
+                    name,
+                    terminal,
+                    candidates,
+                )
             if not m.symbol_select(terminal, True):  # ensure it's in Market Watch
                 raise Mt5Error(f"could not select symbol {terminal} in Market Watch")
             self._resolved[name] = terminal
+            log.info("symbol resolved: %s -> %s", name, terminal)  # M1: verifiable mapping
         if missing:
             raise Mt5Error(f"symbols not found in the terminal: {missing}")
 
@@ -302,7 +316,10 @@ class Mt5Bridge:
             return int(m.ORDER_FILLING_IOC)
         if modes & m.SYMBOL_FILLING_FOK:
             return int(m.ORDER_FILLING_FOK)
-        return int(m.ORDER_FILLING_RETURN)
+        # N4: brokers typically reject ORDER_FILLING_RETURN for market DEALs; fall back to FOK
+        # (fill-or-kill) instead, and warn so the mismatch surfaces on the first order.
+        log.warning("%s advertises no IOC/FOK filling mode; falling back to FOK", sym)
+        return int(m.ORDER_FILLING_FOK)
 
     def place_order(
         self,

@@ -125,13 +125,21 @@ class RiskController:
             )
         return Decision(False, "")
 
-    def check_open(self, trade_risk: float, equity: float) -> Decision:
-        """Pre-trade gate: block the entry if its worst case could breach a safety limit."""
-        if self.open_risk + trade_risk > self.limits.open_risk_cap * equity:
+    def check_open(
+        self, trade_risk: float, equity: float, *, exclude_risk: float = 0.0
+    ) -> Decision:
+        """Pre-trade gate: block the entry if its worst case could breach a safety limit.
+
+        ``exclude_risk`` (M2) is the stop-risk of a position being CLOSED as part of this action
+        (a reversal): it is removed from the open total so a valid reversal is not blocked by the
+        risk of the very position it replaces.
+        """
+        effective_open = max(0.0, self.open_risk - exclude_risk)
+        if effective_open + trade_risk > self.limits.open_risk_cap * equity:
             return Decision(
                 False, f"open-risk cap {self.limits.open_risk_cap:.1%} would be exceeded"
             )
-        worst = equity - (self.open_risk + trade_risk)  # everything open + this trade stops out
+        worst = equity - (effective_open + trade_risk)  # everything still open + this trade stops
         if worst <= self.daily_floor():
             return Decision(False, "worst case would breach the daily stop")
         if worst <= self.trailing_floor():

@@ -26,6 +26,7 @@ from qplus.live.risk_control import RiskController, RiskLimits
 from qplus.live.runner import (
     LiveRunner,
     Mode,
+    long_only_from_paper_config,
     markets_from_paper_config,
     signal_params_from_paper_config,
 )
@@ -53,7 +54,13 @@ def main(argv: list[str] | None = None) -> None:
         help="signal_only (default, no orders) or execute (place orders).",
     )
     parser.add_argument("--once", action="store_true", help="run a single cycle, then exit.")
-    parser.add_argument("--poll", type=int, default=60, help="seconds between cycles (loop mode).")
+    parser.add_argument(
+        "--poll",
+        type=int,
+        default=30,
+        help="seconds between cycles (loop mode). Tighter than the H4 bar so the account-level "
+        "safety cut-off reacts sooner; each order's server-side SL/TP is the intrabar backstop.",
+    )
     parser.add_argument(
         "--start-balance",
         type=float,
@@ -88,9 +95,13 @@ def main(argv: list[str] | None = None) -> None:
             RiskController(RiskLimits(), start_balance),
             mode=mode,
             state_path=state_path,
+            long_only=long_only_from_paper_config(),
         )
         if args.once:
-            runner.run_once()
+            try:  # N3: a single cycle must not crash with a bare traceback on a transient error
+                runner.run_once()
+            except Exception:
+                log.exception("run_once failed")
         else:
             runner.run_forever(poll_seconds=args.poll)
     finally:
