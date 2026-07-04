@@ -15,6 +15,7 @@ numbers and acts on the decisions (size / block / flatten).
 """
 
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 
@@ -72,6 +73,21 @@ class RiskController:
         self.day_start_balance = start_balance  # balance at the start of the trading day
         self.hwm_balance = start_balance  # realized end-of-day balance high-water mark
         self.open_risk = 0.0  # sum of the $ stop-risk of all currently open positions
+
+    # -- persistence (survive a runner restart without losing the risk references) --
+    def snapshot(self) -> dict[str, float]:
+        """The durable references (start / HWM / day-start balance) for saving to disk."""
+        return {
+            "start_balance": self.start_balance,
+            "hwm_balance": self.hwm_balance,
+            "day_start_balance": self.day_start_balance,
+        }
+
+    def restore(self, snap: Mapping[str, float]) -> None:
+        """Reload the durable references from a saved :meth:`snapshot`."""
+        self.start_balance = snap["start_balance"]
+        self.hwm_balance = snap["hwm_balance"]
+        self.day_start_balance = snap["day_start_balance"]
 
     # -- references the runner keeps updated --
     def on_new_day(self, balance: float) -> None:
