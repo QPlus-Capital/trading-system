@@ -9,6 +9,7 @@ dependencies = [
     # Event-driven backtesting/live engine. Pinned via uv.lock and installed by
     # `uv sync`. Requires a platform with a wheel (Apple Silicon macOS or Linux);
     # Intel macOS (x86_64) is unsupported.
+    "metatrader5>=5.0.5735",
     "nautilus-trader>=1.230.0",
 ]
 

@@ -353,6 +353,18 @@ wheels = [
 ]
 
 [[package]]
+name = "metatrader5"
+version = "5.0.5735"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/87/2c/7ffc362d84f402b97773be5c6b37f1a0ab9882244c987bbb224c379d17d8/metatrader5-5.0.5735-cp313-cp313-win_amd64.whl", hash = "sha256:0933ea4a9a52b32adcf5590df00f9f75ff380a02bad7b62e23cbd757f34fbb12", size = 48071, upload-time = "2026-04-04T16:44:11.09Z" },
+    { url = "https://files.pythonhosted.org/packages/33/51/4a70004f8af537393861c31a3c211f818b8199fea8baf8c0b1f571d67c56/metatrader5-5.0.5735-cp314-cp314-win_amd64.whl", hash = "sha256:b69765be2eece9f884b60b6d008c7608ad77d7bfc5fbfbb8c23e3e3bb8dc88ba", size = 49590, upload-time = "2026-04-04T16:44:12.306Z" },
+]
+
+[[package]]
 name = "msgspec"
 version = "0.21.1"
 source = { registry = "https://pypi.org/simple" }
@@ -740,6 +752,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },
+    { name = "metatrader5" },
     { name = "nautilus-trader" },
 ]
 
@@ -753,6 +766,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "matplotlib", specifier = ">=3.11.0" },
+    { name = "metatrader5", specifier = ">=5.0.5735" },
     { name = "nautilus-trader", specifier = ">=1.230.0" },
 ]
 
