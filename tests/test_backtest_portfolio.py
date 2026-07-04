@@ -67,3 +67,18 @@ def test_deep_floating_dip_forces_low_risk() -> None:
     res = score(trades, prices, day_loss_frac=0.0)  # isolate the trailing limit
     assert math.isclose(res.flat_risk, 0.24, abs_tol=0.01)
     assert 0.0 < res.flat_risk < 1.0
+
+
+def test_intraday_extremes_make_feasibility_stricter() -> None:
+    # Close never underwater -> EOD feasibility hits the cap. But an intraday LOW dips deep,
+    # so the intraday-worst equity (H1) binds the drawdown budget and lowers the flat risk.
+    trades = pd.DataFrame([_trade("X", 0, 2, 10_000.0, 10.0, 11.0)])
+    close = {"X": pd.Series({0: 10.0, 1: 10.5, 2: 11.0})}  # never below entry at EOD
+    res_eod = score(trades, close, day_loss_frac=0.0)
+    assert math.isclose(res_eod.flat_risk, 4.0)  # close-based misses the intraday dip
+
+    high = {"X": pd.Series({0: 10.0, 1: 10.5, 2: 11.0})}
+    low = {"X": pd.Series({0: 10.0, 1: 5.0, 2: 11.0})}  # intraday dip to 5.0 on day 1
+    res_intra = score(trades, close, daily_high=high, daily_low=low, day_loss_frac=0.0)
+    assert math.isclose(res_intra.flat_risk, 0.24, abs_tol=0.01)  # breach when m*50k >= 12k
+    assert res_intra.flat_risk < res_eod.flat_risk  # stricter, never more lenient
