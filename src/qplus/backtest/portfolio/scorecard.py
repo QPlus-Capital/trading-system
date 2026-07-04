@@ -19,7 +19,7 @@ import pandas as pd
 
 from qplus.backtest.foundation.montecarlo import monte_carlo_paths, summarize
 from qplus.backtest.portfolio.curves import align_prices, base_curves, to_day
-from qplus.backtest.portfolio.drawdown import evaluate, max_flat_risk
+from qplus.backtest.portfolio.drawdown import daily_breach, evaluate, max_flat_risk
 from qplus.backtest.portfolio.sizing import throttle, throttle_curves
 
 # Throttle base multipliers, RELATIVE to the feasible flat risk: the throttle's whole point
@@ -49,10 +49,15 @@ def score(
     *,
     start_balance: float = 200_000.0,
     limit_frac: float = 0.06,
+    day_loss_frac: float = 0.03,
     throttle_base_mults: tuple[float, ...] = _DEFAULT_MULTS,
     throttle_floor: float = 0.15,
 ) -> PortfolioResult:
-    """Score a trade stream (columns: market, ts_opened, ts_closed, pnl_1pct, entry, exit)."""
+    """Score a trade stream (columns: market, ts_opened, ts_closed, pnl_1pct, entry, exit).
+
+    Respects both the trailing max drawdown (``limit_frac``) and the daily loss limit
+    (``day_loss_frac``, TTP's 3%).
+    """
     t = trades.copy()
     t["od"] = [to_day(x) for x in t["ts_opened"]]
     t["cd"] = [to_day(x) for x in t["ts_closed"]]
@@ -62,7 +67,7 @@ def score(
     realized, unrealized = base_curves(t, prices, d0, d1)
     equity = realized + unrealized
 
-    flat_m = max_flat_risk(realized, equity, start_balance, limit_frac)
+    flat_m = max_flat_risk(realized, equity, start_balance, limit_frac, day_loss_frac=day_loss_frac)
     flat_ret = flat_m * float(realized[-1]) / start_balance
 
     best_base, best_ret = 0.0, 0.0
@@ -71,10 +76,11 @@ def score(
         rb, eq = throttle_curves(
             t, prices, d0, d1, start_balance, limit_frac, throttle(base, throttle_floor)
         )
-        if not evaluate(eq, rb, start_balance, limit_frac).breached:
-            ret = (float(rb[-1]) - start_balance) / start_balance
-            if ret > best_ret:
-                best_ret, best_base = ret, base
+        if evaluate(eq, rb, start_balance, limit_frac).breached or daily_breach(eq, day_loss_frac):
+            continue  # breaches the trailing max or the daily loss limit
+        ret = (float(rb[-1]) - start_balance) / start_balance
+        if ret > best_ret:
+            best_ret, best_base = ret, base
 
     years = (d1 - d0) / 365.25
     gain = (best_ret - flat_ret) / flat_ret if flat_ret > 0 else 0.0

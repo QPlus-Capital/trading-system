@@ -64,6 +64,6 @@ def test_deep_floating_dip_forces_low_risk() -> None:
     # breach when m*50,000 >= 12,000 -> max safe m ~ 0.24.
     trades = pd.DataFrame([_trade("Y", 0, 2, 10_000.0, 10.0, 11.0)])
     prices = {"Y": pd.Series({0: 10.0, 1: 5.0, 2: 11.0})}
-    res = score(trades, prices)
+    res = score(trades, prices, day_loss_frac=0.0)  # isolate the trailing limit
     assert math.isclose(res.flat_risk, 0.24, abs_tol=0.01)
     assert 0.0 < res.flat_risk < 1.0

@@ -70,12 +70,28 @@ def evaluate(
     )
 
 
+def daily_breach(equity: Sequence[float] | np.ndarray, day_loss_frac: float) -> bool:
+    """True if any day-over-day equity drop exceeds ``day_loss_frac`` of the prior EOD equity.
+
+    A daily-resolution proxy for the prop-firm daily loss limit (TTP: 3%). It compares
+    consecutive end-of-day equities; the true intraday low can be lower, so this is a *lower
+    bound* on the daily drawdown (it can miss an intraday-only breach). ``day_loss_frac <= 0``
+    disables the check.
+    """
+    eq = np.asarray(equity, dtype=float)
+    if eq.size < 2 or day_loss_frac <= 0:
+        return False
+    losses = eq[:-1] - eq[1:]  # positive on a down day
+    return bool((losses > day_loss_frac * eq[:-1]).any())
+
+
 def max_flat_risk(
     realized_excess: Sequence[float] | np.ndarray,
     equity_excess: Sequence[float] | np.ndarray,
     start_balance: float,
     limit_frac: float,
     *,
+    day_loss_frac: float = 0.0,
     hi: float = 4.0,
     iters: int = 50,
 ) -> float:
@@ -85,6 +101,7 @@ def max_flat_risk(
     *excess over the starting balance* (realized-only, and equity incl. floating). Because
     both scale linearly with the risk multiple while the starting balance does not, the
     breach condition is monotonic in the multiple, so we bisect for the largest safe one.
+    ``day_loss_frac > 0`` additionally enforces the daily loss limit (:func:`daily_breach`).
     """
     r = np.asarray(realized_excess, dtype=float)
     e = np.asarray(equity_excess, dtype=float)
@@ -92,7 +109,8 @@ def max_flat_risk(
 
     def breaches(m: float) -> bool:
         floor_excess = np.minimum(0.0, m * r_hwm - limit_frac * start_balance)  # floor - start
-        return bool((m * e - floor_excess <= 0.0).any())  # equity_excess - floor_excess <= 0
+        trailing = bool((m * e - floor_excess <= 0.0).any())  # equity_excess - floor_excess <= 0
+        return trailing or daily_breach(start_balance + m * e, day_loss_frac)
 
     if not breaches(hi):
         return hi
