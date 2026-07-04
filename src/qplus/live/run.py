@@ -54,10 +54,18 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--once", action="store_true", help="run a single cycle, then exit.")
     parser.add_argument("--poll", type=int, default=60, help="seconds between cycles (loop mode).")
+    parser.add_argument(
+        "--start-balance",
+        type=float,
+        default=None,
+        help="pin the account's INITIAL balance (the trailing/daily reference). Only used on the "
+        "first run; afterwards the saved risk state wins. Default: the balance at first launch.",
+    )
     args = parser.parse_args(argv)
 
     _setup_logging()
     mode = Mode(args.mode.upper())
+    state_path = Path("reports/live/risk_state.json")
 
     bridge = Mt5Bridge()
     bridge.connect()  # attach to the already-logged-in terminal (no credentials in code)
@@ -70,12 +78,16 @@ def main(argv: list[str] | None = None) -> None:
             account.currency,
             mode.value,
         )
+        # Provisional reference for the FIRST run only; if a saved state exists the runner
+        # restores it and this is ignored (K1: restarts must not reset the risk references).
+        start_balance = args.start_balance if args.start_balance is not None else account.balance
         runner = LiveRunner(
             bridge,
             markets_from_paper_config(),
             signal_params_from_paper_config(),
-            RiskController(RiskLimits(), account.balance),
+            RiskController(RiskLimits(), start_balance),
             mode=mode,
+            state_path=state_path,
         )
         if args.once:
             runner.run_once()

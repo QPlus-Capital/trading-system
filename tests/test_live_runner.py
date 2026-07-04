@@ -1,12 +1,18 @@
-"""Tests for the pure runner helpers and the paper-config factories."""
+"""Tests for the pure runner helpers, the paper-config factories, and risk-state persistence."""
 
-from qplus.live.mt5_bridge import Position, SymbolInfo
+from pathlib import Path
+from typing import cast
+
+from qplus.live.mt5_bridge import Mt5Bridge, Position, SymbolInfo
+from qplus.live.risk_control import RiskController, RiskLimits
 from qplus.live.runner import (
+    LiveRunner,
     markets_from_paper_config,
     position_risk,
     signal_params_from_paper_config,
     size_order,
 )
+from qplus.strategies.rsi_wpr_bb_signals import SignalParams
 
 # A gold-like symbol: 0.01 tick, $1 per tick per lot, 0.01..100 lots.
 _GOLD = SymbolInfo(
@@ -77,3 +83,34 @@ def test_signal_params_from_paper_config_is_no_bb_wpr() -> None:
     assert p.use_bb_confirm is False
     assert p.use_wpr_confirm is False
     assert p.use_rsi_filter is True
+
+
+def test_risk_snapshot_restore_roundtrip() -> None:
+    c = RiskController(RiskLimits(), 100_000)
+    c.on_eod(105_000)  # HWM banked at 105k
+    c.on_new_day(103_000)  # a new trading day started at 103k
+    other = RiskController(RiskLimits(), 1.0)
+    other.restore(c.snapshot())
+    assert other.start_balance == 100_000
+    assert other.hwm_balance == 105_000
+    assert other.day_start_balance == 103_000
+
+
+def test_risk_state_survives_restart(tmp_path: Path) -> None:
+    # K1: a restart must NOT reset the trailing HWM / start balance to the current balance.
+    state = tmp_path / "risk_state.json"
+    # The runner only touches the bridge during cycles, not on load/persist.
+    bridge = cast(Mt5Bridge, object())
+
+    r1 = RiskController(RiskLimits(), 100_000)
+    run1 = LiveRunner(bridge, [], SignalParams(), r1, state_path=state)  # persists initial 100k
+    r1.on_eod(105_000)  # account grew during the day -> true HWM 105k
+    run1._persist()  # a live day-roll persists this
+
+    # Restart while in drawdown at 102k; the SAVED state must win over the provisional balance.
+    r2 = RiskController(RiskLimits(), 102_000)
+    LiveRunner(bridge, [], SignalParams(), r2, state_path=state)
+    assert r2.start_balance == 100_000  # not the 102k restart balance
+    assert r2.hwm_balance == 105_000  # true HWM preserved
+    # Trailing floor stays at the true reference (capped at start), not the reset-down value.
+    assert r2.trailing_floor() == 100_000  # min(100k, 105k - 5% of 100k); buggy reset gave 96_900

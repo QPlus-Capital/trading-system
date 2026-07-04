@@ -19,11 +19,14 @@ Design choices that keep it safe and restart-proof:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import time
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from enum import StrEnum
+from pathlib import Path
 
 from qplus.live.mt5_bridge import Bar, Mt5Bridge, Position, Side, SymbolInfo
 from qplus.live.risk_control import RiskController, position_volume
@@ -123,6 +126,7 @@ class LiveRunner:
         *,
         mode: Mode = Mode.SIGNAL_ONLY,
         history_bars: int = 300,
+        state_path: Path | None = None,
     ) -> None:
         self._bridge = bridge
         self._markets = markets
@@ -134,6 +138,43 @@ class LiveRunner:
         self._day: date | None = None
         self._halted = False
         self._halt_reason = ""
+        self._state_path = state_path
+        self._load_state()
+
+    # -- risk-state persistence (K1: a restart must NOT reset the risk references) --
+
+    def _load_state(self) -> None:
+        """Restore the risk references + trading day from disk, or persist the initial set.
+
+        Without this, restarting the runner would reset the trailing HWM and the daily
+        reference to the current balance -- silently discarding the drawdown protection.
+        """
+        if self._state_path is None:
+            return
+        if self._state_path.exists():
+            blob = json.loads(self._state_path.read_text())
+            self._risk.restore(blob)
+            day = blob.get("day")
+            self._day = date.fromisoformat(day) if day else None
+            log.info(
+                "restored risk state: start=%.2f hwm=%.2f day_start=%.2f day=%s",
+                self._risk.start_balance,
+                self._risk.hwm_balance,
+                self._risk.day_start_balance,
+                self._day,
+            )
+        else:
+            self._persist()  # capture the initial references so the next restart finds them
+
+    def _persist(self) -> None:
+        """Atomically write the risk references + current trading day to disk."""
+        if self._state_path is None:
+            return
+        blob = {**self._risk.snapshot(), "day": self._day.isoformat() if self._day else None}
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(blob, indent=2))
+        os.replace(tmp, self._state_path)  # atomic on POSIX and Windows
 
     # -- per-cycle orchestration --
 
@@ -144,14 +185,17 @@ class LiveRunner:
         now = now or datetime.now(UTC)
         account = self._bridge.account()
 
-        # Day roll: bank the prior day's HWM, reset the daily reference.
+        # Day roll: bank the prior day's HWM, reset the daily reference. Persist so a restart
+        # keeps the true HWM / day-start rather than resetting to the current balance (K1).
         today = now.date()
         if self._day is None:
             self._day = today
+            self._persist()
         elif today != self._day:
             self._risk.on_eod(account.balance)
             self._risk.on_new_day(account.balance)
             self._day = today
+            self._persist()
 
         # Recompute total open risk from the live positions (source of truth).
         self._risk.open_risk = self._total_open_risk()
