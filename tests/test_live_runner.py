@@ -7,6 +7,7 @@ from qplus.live.mt5_bridge import Mt5Bridge, Position, SymbolInfo
 from qplus.live.risk_control import RiskController, RiskLimits
 from qplus.live.runner import (
     LiveRunner,
+    long_only_from_paper_config,
     markets_from_paper_config,
     position_risk,
     signal_params_from_paper_config,
@@ -93,6 +94,11 @@ def test_signal_params_from_paper_config_is_no_bb_wpr() -> None:
     assert p.use_bb_confirm is False
     assert p.use_wpr_confirm is False
     assert p.use_rsi_filter is True
+
+
+def test_long_only_from_paper_config_is_false() -> None:
+    # The frozen config trades both directions (long/short reversal).
+    assert long_only_from_paper_config() is False
 
 
 def test_risk_snapshot_restore_roundtrip() -> None:
