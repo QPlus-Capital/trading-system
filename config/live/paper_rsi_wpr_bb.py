@@ -63,8 +63,7 @@ def strategy_config(stop_loss_pct: float, take_profit_pct: float) -> dict[str, A
     }
 
 
-# TODO (paper trading -- awaiting the live wiring decision):
-#   Attach the 9 strategy configs (one RsiWprBb per market, built from strategy_config(...))
-#   to a NautilusTrader live TradingNode with the MT5 / The Trading Pit adapter and the
-#   funded/paper account. Enforce the 6% trailing + 3% daily drawdown limits as live risk
-#   cut-offs. The market data feed must deliver the same 4H bars the backtest used.
+# Live wiring: NautilusTrader has no MT5 adapter, so live runs through the MT5 bridge instead
+# of a TradingNode. The runner (qplus.live.run) reads MARKETS + STRATEGY_SWITCHES from here,
+# reuses the pure signal engine (live == backtest), and enforces the daily/trailing limits via
+# qplus.live.risk_control. Start it with: uv run python -m qplus.live.run  (SIGNAL_ONLY dry-run).
