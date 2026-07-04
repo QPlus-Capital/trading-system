@@ -166,6 +166,9 @@ class LiveRunner:
             self._risk.restore(blob)
             day = blob.get("day")
             self._day = date.fromisoformat(day) if day else None
+            # Restore which bar was last acted on per market, so a restart does not re-process
+            # (and potentially re-enter on) a signal bar that was already handled.
+            self._last_bar_time = {str(k): int(v) for k, v in blob.get("last_bars", {}).items()}
             log.info(
                 "restored risk state: start=%.2f hwm=%.2f day_start=%.2f day=%s",
                 self._risk.start_balance,
@@ -180,7 +183,11 @@ class LiveRunner:
         """Atomically write the risk references + current trading day to disk."""
         if self._state_path is None:
             return
-        blob = {**self._risk.snapshot(), "day": self._day.isoformat() if self._day else None}
+        blob = {
+            **self._risk.snapshot(),
+            "day": self._day.isoformat() if self._day else None,
+            "last_bars": self._last_bar_time,
+        }
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
         tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
         tmp.write_text(json.dumps(blob, indent=2))
@@ -253,6 +260,7 @@ class LiveRunner:
 
         buy, sell = self._replay_signal(closed)
         self._last_bar_time[spec.name] = last.time
+        self._persist()  # remember the handled bar, so a restart cannot act on it twice
         if buy == sell:  # no signal (or contradictory) -> hold
             return
         desired: Side = "BUY" if buy else "SELL"

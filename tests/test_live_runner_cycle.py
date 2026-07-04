@@ -5,6 +5,7 @@ replay, sizing, risk gate) without a terminal -- the wiring that must work on Mo
 """
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 
 from qplus.live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, SymbolInfo
@@ -106,6 +107,30 @@ def test_run_once_halts_below_trailing_floor() -> None:
     runner2 = _runner(stub2, mode=Mode.EXECUTE)
     runner2.run_once()
     assert runner2._halted and stub2.closed == [8]  # EXECUTE flattens for real
+
+
+def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
+    # The handled-bar marker is persisted: a restarted runner must not re-act on the same
+    # signal bar (it could re-enter a position that was already stopped out in between).
+    state = tmp_path / "risk_state.json"
+    stub = StubBridge()
+    r1 = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        state_path=state,
+    )
+    r1.run_once()
+    handled = r1._last_bar_time["XAUUSD"]
+    r2 = LiveRunner(  # fresh process, same state file
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        state_path=state,
+    )
+    assert r2._last_bar_time == {"XAUUSD": handled}  # restored -> the bar is already marked
 
 
 def test_run_once_rolls_the_trading_day() -> None:
