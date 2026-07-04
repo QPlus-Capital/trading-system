@@ -67,7 +67,7 @@ def base_curves(
 ) -> tuple[np.ndarray, np.ndarray]:
     """Daily (realized_excess, unrealized) at risk multiple 1.0, over ``[d0, d1]``.
 
-    ``trades`` needs columns ``market, od, cd, pnl_1pct, entry, exit`` where ``od``/``cd``
+    ``trades`` needs columns ``market, od, cd, pnl_base, entry, exit`` where ``od``/``cd``
     are open/close day numbers. ``prices[market]`` is that market's daily close aligned to
     ``[d0, d1]`` (see :func:`align_prices`). ``equity_excess = realized_excess +
     unrealized``.
@@ -75,7 +75,7 @@ def base_curves(
     n = d1 - d0 + 1
     od = trades["od"].to_numpy()
     cd = trades["cd"].to_numpy()
-    pnl = trades["pnl_1pct"].to_numpy(dtype=float)
+    pnl = trades["pnl_base"].to_numpy(dtype=float)
     entry = trades["entry"].to_numpy(dtype=float)
     exit_ = trades["exit"].to_numpy(dtype=float)
     mk = trades["market"].to_numpy()
@@ -111,7 +111,7 @@ def worst_unrealized(
     n = d1 - d0 + 1
     od = trades["od"].to_numpy()
     cd = trades["cd"].to_numpy()
-    pnl = trades["pnl_1pct"].to_numpy(dtype=float)
+    pnl = trades["pnl_base"].to_numpy(dtype=float)
     entry = trades["entry"].to_numpy(dtype=float)
     exit_ = trades["exit"].to_numpy(dtype=float)
     mk = trades["market"].to_numpy()

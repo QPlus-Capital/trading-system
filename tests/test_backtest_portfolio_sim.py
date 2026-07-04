@@ -29,7 +29,7 @@ def test_base_curves_single_trade() -> None:
             "market": ["X"],
             "od": [0],
             "cd": [2],
-            "pnl_1pct": [100.0],
+            "pnl_base": [100.0],
             "entry": [10.0],
             "exit": [11.0],
         }
@@ -49,7 +49,7 @@ def test_base_curves_two_markets_open_together() -> None:
             "market": ["A", "B"],
             "od": [1, 1],
             "cd": [3, 3],
-            "pnl_1pct": [200.0, -100.0],
+            "pnl_base": [200.0, -100.0],
             "entry": [100.0, 50.0],
             "exit": [102.0, 49.0],
         }
@@ -68,7 +68,7 @@ def test_worst_unrealized_marks_adverse_extreme() -> None:
             "market": ["X"],
             "od": [0],
             "cd": [2],
-            "pnl_1pct": [100.0],  # k = 100/(11-10) = 100 > 0 -> long
+            "pnl_base": [100.0],  # k = 100/(11-10) = 100 > 0 -> long
             "entry": [10.0],
             "exit": [11.0],
         }
@@ -87,7 +87,7 @@ def test_worst_unrealized_short_uses_high() -> None:
             "market": ["S"],
             "od": [0],
             "cd": [2],
-            "pnl_1pct": [100.0],  # k = 100/(98-100) = -50 < 0 -> short
+            "pnl_base": [100.0],  # k = 100/(98-100) = -50 < 0 -> short
             "entry": [100.0],
             "exit": [98.0],
         }

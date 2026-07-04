@@ -22,7 +22,10 @@ from qplus.backtest.foundation.execution import extract_trade_pnls
 from qplus.backtest.foundation.grid import expand_grid
 from qplus.backtest.foundation.recipe import SweepRecipe
 
-_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_1pct", "entry", "exit"]
+# ``pnl_base`` is the realized PnL in the account currency at the extraction's BASE risk
+# (risk_per_trade=1%), i.e. money -- not a percentage. The portfolio stage rescales it linearly
+# by the flat-risk multiple. (Renamed from the misleading ``pnl_1pct``; audit N1.)
+_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit"]
 
 
 def timed_trades_from_report(pos: pd.DataFrame, market: str) -> list[dict[str, Any]]:
@@ -37,7 +40,7 @@ def timed_trades_from_report(pos: pd.DataFrame, market: str) -> list[dict[str, A
                 "market": market,
                 "ts_opened": int(pd.Timestamp(row["ts_opened"]).value),
                 "ts_closed": int(pd.Timestamp(row["ts_closed"]).value),
-                "pnl_1pct": pnl,
+                "pnl_base": pnl,
                 "entry": float(row["avg_px_open"]),
                 "exit": float(row["avg_px_close"]),
             }
@@ -68,6 +71,13 @@ def extract_market_trades(
     """
     from nautilus_trader.backtest.node import BacktestNode
 
+    if step_months < test_months:
+        # N5: overlapping test windows would record the same trade in two windows and
+        # double-count it in the portfolio stream. Require non-overlapping windows.
+        raise ValueError(
+            f"step_months ({step_months}) < test_months ({test_months}) -> overlapping test "
+            "windows would double-count trades; pass step_months == test_months"
+        )
     grid = param_grid if param_grid is not None else recipe.PARAM_GRID
     combos = expand_grid(grid)
     start, end = _data_span(recipe.CSV_PATH)

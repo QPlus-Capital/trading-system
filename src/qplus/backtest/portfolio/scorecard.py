@@ -55,7 +55,7 @@ def score(
     throttle_base_mults: tuple[float, ...] = _DEFAULT_MULTS,
     throttle_floor: float = 0.15,
 ) -> PortfolioResult:
-    """Score a trade stream (columns: market, ts_opened, ts_closed, pnl_1pct, entry, exit).
+    """Score a trade stream (columns: market, ts_opened, ts_closed, pnl_base, entry, exit).
 
     Respects both the trailing max drawdown (``limit_frac``) and the daily loss limit
     (``day_loss_frac``, TTP's 3%). When ``daily_high``/``daily_low`` are given, the drawdown
@@ -140,7 +140,7 @@ def acceptance_verdict(
         (result.flat_risk > 0.0, f"a flat risk fits the DD limit (flat_risk={result.flat_risk})"),
         (result.flat_return_pct > 0.0, f"holdout return positive ({result.flat_return_pct}%)"),
     ]
-    pnls = (trades["pnl_1pct"].to_numpy() * max(result.flat_risk, 0.0)).tolist()
+    pnls = (trades["pnl_base"].to_numpy() * max(result.flat_risk, 0.0)).tolist()
     if result.flat_risk > 0.0 and len(pnls) >= 2:
         paths = monte_carlo_paths(pnls, n_sims=n_sims, start_equity=start_balance)
         prob = float(summarize(paths, start_balance)["prob_profit"])

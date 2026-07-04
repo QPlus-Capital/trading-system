@@ -25,7 +25,7 @@ def _result(**kw: float) -> PortfolioResult:
 
 
 def test_acceptance_verdict_pass_and_fail() -> None:
-    trades = pd.DataFrame({"pnl_1pct": [200.0] * 50})  # all-positive -> MC prob ~1
+    trades = pd.DataFrame({"pnl_base": [200.0] * 50})  # all-positive -> MC prob ~1
     ok = acceptance_verdict(_result(), trades, start_balance=200_000.0)
     assert ok.passed and ok.prob_profit > 0.9
 
@@ -43,7 +43,7 @@ def _trade(
         "market": market,
         "ts_opened": open_day * DAY_NS,
         "ts_closed": close_day * DAY_NS,
-        "pnl_1pct": pnl,
+        "pnl_base": pnl,
         "entry": entry,
         "exit": exit_,
     }

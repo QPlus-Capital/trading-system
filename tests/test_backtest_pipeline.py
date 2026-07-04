@@ -41,7 +41,7 @@ def test_run_pipeline_selects_then_scores() -> None:
                     "market": market,
                     "ts_opened": 0,
                     "ts_closed": 2 * DAY_NS,
-                    "pnl_1pct": 100.0,
+                    "pnl_base": 100.0,
                     "entry": 10.0,
                     "exit": 11.0,
                 }
