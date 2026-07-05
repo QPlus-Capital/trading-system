@@ -76,9 +76,9 @@ def test_position_risk_without_stop_is_worst_case() -> None:
 def test_risk_amount_is_flat_off_start_balance() -> None:
     # H2: sizing risk is a fixed fraction of the INITIAL balance, not live equity.
     bridge = cast(Mt5Bridge, object())
-    risk = RiskController(RiskLimits(), 100_000)  # default risk_per_trade = 0.12%
+    risk = RiskController(RiskLimits(), 100_000)  # default risk_per_trade = 0.15%
     runner = LiveRunner(bridge, [], SignalParams(), risk)
-    assert abs(runner._risk_amount() - 120.0) < 1e-6  # 0.0012 * 100_000, regardless of live equity
+    assert abs(runner._risk_amount() - 150.0) < 1e-6  # 0.0015 * 100_000, regardless of live equity
 
 
 def test_markets_from_paper_config_maps_all_nine() -> None:
@@ -105,8 +105,8 @@ def test_long_only_from_paper_config_is_false() -> None:
 def test_risk_per_trade_from_paper_config() -> None:
     # M3: the config is the single source; validated below the intraday DD ceiling (0.175%).
     r = risk_per_trade_from_paper_config()
-    assert r == 0.0012  # 0.12%
-    assert 0 < r < 0.00175  # safely under the feasible ceiling
+    assert abs(r - 0.0015) < 1e-9  # 0.15%
+    assert 0 < r < 0.00175  # under the feasible ceiling
 
 
 def test_risk_snapshot_restore_roundtrip() -> None:
