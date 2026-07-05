@@ -413,3 +413,9 @@ def long_only_from_paper_config() -> bool:
     """Read the frozen ``long_only`` switch (N2: not a SignalParam; applied by the runner)."""
     module = _paper_config()
     return bool(module.STRATEGY_SWITCHES.get("long_only", False))  # type: ignore[attr-defined]
+
+
+def risk_per_trade_from_paper_config() -> float:
+    """Per-trade risk FRACTION from the frozen config (M3: the config is the single source)."""
+    module = _paper_config()
+    return float(module.RISK_PER_TRADE_PCT) / 100.0  # type: ignore[attr-defined]

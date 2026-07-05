@@ -10,6 +10,7 @@ from qplus.live.runner import (
     long_only_from_paper_config,
     markets_from_paper_config,
     position_risk,
+    risk_per_trade_from_paper_config,
     signal_params_from_paper_config,
     size_order,
 )
@@ -75,9 +76,9 @@ def test_position_risk_without_stop_is_worst_case() -> None:
 def test_risk_amount_is_flat_off_start_balance() -> None:
     # H2: sizing risk is a fixed fraction of the INITIAL balance, not live equity.
     bridge = cast(Mt5Bridge, object())
-    risk = RiskController(RiskLimits(), 100_000)  # default risk_per_trade = 0.20%
+    risk = RiskController(RiskLimits(), 100_000)  # default risk_per_trade = 0.12%
     runner = LiveRunner(bridge, [], SignalParams(), risk)
-    assert runner._risk_amount() == 200.0  # 0.002 * 100_000, regardless of live equity
+    assert abs(runner._risk_amount() - 120.0) < 1e-6  # 0.0012 * 100_000, regardless of live equity
 
 
 def test_markets_from_paper_config_maps_all_nine() -> None:
@@ -99,6 +100,13 @@ def test_signal_params_from_paper_config_is_no_bb_wpr() -> None:
 def test_long_only_from_paper_config_is_false() -> None:
     # The frozen config trades both directions (long/short reversal).
     assert long_only_from_paper_config() is False
+
+
+def test_risk_per_trade_from_paper_config() -> None:
+    # M3: the config is the single source; validated below the intraday DD ceiling (0.175%).
+    r = risk_per_trade_from_paper_config()
+    assert r == 0.0012  # 0.12%
+    assert 0 < r < 0.00175  # safely under the feasible ceiling
 
 
 def test_risk_snapshot_restore_roundtrip() -> None:
