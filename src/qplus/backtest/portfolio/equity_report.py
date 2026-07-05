@@ -176,29 +176,70 @@ def plot_monte_carlo(r: np.ndarray, risk_amount: float, out: Path, n_sims: int =
 
 def daily_equity(
     trades: pd.DataFrame,
-    risk_amount: float,
+    flat_pnl: np.ndarray,
     daily_close: dict[str, pd.Series],
     *,
     start_balance: float = _START_BALANCE,
 ) -> pd.Series:
     """Daily mark-to-market equity (flat sizing), INCLUDING open positions' floating PnL.
 
-    Uses the tested ``base_curves`` machinery: each trade's flat contribution (risk_amount * R)
-    is booked as realized on close and marked to the daily price while open. The result -- unlike
-    the realized-only trade curve -- shows the real intraday swings, so Sharpe / drawdown computed
-    on it are honest (not flattered by ignoring floating losses).
+    ``flat_pnl`` is each trade's flat EUR contribution (aligned to ``trades``' rows). Uses the
+    tested ``base_curves`` machinery: booked as realized on close and marked to the daily price
+    while open. Unlike the realized-only trade curve, this shows the real intraday swings, so
+    Sharpe / drawdown computed on it are honest (not flattered by ignoring floating losses).
     """
     from qplus.backtest.portfolio.curves import DAY_NS, align_prices, base_curves, to_day
 
     t = trades.copy()
     t["od"] = [to_day(x) for x in t["ts_opened"]]
     t["cd"] = [to_day(x) for x in t["ts_closed"]]
-    t["pnl_base"] = risk_amount * t["r"]  # flat EUR contribution per trade
+    t["pnl_base"] = np.asarray(flat_pnl, dtype=float)  # base_curves reads 'pnl_base'
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
     realized, unrealized = base_curves(t, prices, d0, d1)
     idx = pd.to_datetime(np.arange(d0, d1 + 1) * DAY_NS)
     return pd.Series(start_balance + realized + unrealized, index=idx)
+
+
+def extract_holdout_trades(risk_amount: float) -> tuple[pd.DataFrame, np.ndarray]:
+    """Re-run the walk-forward HOLDOUT for the frozen config -> (trades, flat EUR pnl per trade).
+
+    Reproduces the pipeline's genuine out-of-sample stream (no_bb_wpr, 36-month train, per-window
+    re-optimised SL/TP over the study grid, on the reserved 24 months). Slow: this is the real
+    validation, not the fast fixed-parameter illustration. ``pnl_base`` is at the 1% base risk, so
+    the flat contribution at our live risk is ``pnl_base * risk_amount / (base_risk * start)``.
+    """
+    from qplus.backtest.portfolio.trades import extract_market_trades
+
+    live = load_config_module(_REPO_ROOT / "config" / "live" / "paper_rsi_wpr_bb.py")
+    study = load_config_module(_REPO_ROOT / "config" / "study" / "overnight.py")
+    switches = {k: v for k, v in dict(live.STRATEGY_SWITCHES).items() if k != "long_only"}
+
+    frames = []
+    for factory, csv, leverage, _sl, _tp in live.MARKETS:
+        name = str(factory().raw_symbol)
+        print(f"holdout walk-forward: {name} ...")
+        recipe = SweepRecipe(
+            factory(),
+            csv,
+            leverage=leverage,
+            param_grid=study.PARAM_GRID,
+            config_overrides=switches,
+        )
+        frames.append(
+            extract_market_trades(
+                recipe,
+                train_months=36,
+                test_months=int(study.TEST_MONTHS),
+                step_months=int(study.STEP_MONTHS),
+                holdout_months=int(study.HOLDOUT_MONTHS),
+                phase="holdout",
+                embargo_days=int(study.EMBARGO_DAYS),
+            )
+        )
+    trades = pd.concat(frames, ignore_index=True)
+    scale = risk_amount / (_BASE_RISK * _START_BALANCE)  # 1% base -> our flat live risk
+    return trades, trades["pnl_base"].to_numpy(dtype=float) * scale
 
 
 def edge_stats(pnl: np.ndarray) -> dict[str, float]:
@@ -239,42 +280,62 @@ def risk_stats(equity: pd.Series, *, start_balance: float = _START_BALANCE) -> d
     }
 
 
-# The ONE genuine out-of-sample result: the pipeline's walk-forward holdout (per-window
-# re-fitting on the reserved 24 months, which yields ~1.48 years of test data). Source:
-# reports/pipeline_no_bb_wpr.log (2026-07-05). The equity_report below is only an ILLUSTRATION
-# of the frozen config's character over the full history -- it is NOT an out-of-sample test.
-_PIPELINE_HOLDOUT = {"trades": 1186, "years": 1.48, "return_pct": 95.4, "risk_pct": 0.175}
-
-
-def plot_scorecard(stats: dict[str, float], out: Path) -> None:
-    """Render the illustration metrics (full history) + the real pipeline-holdout validation."""
-    rows = [
-        ("Zeitraum", f"{stats['years']:.1f} Jahre"),
-        ("Trades", f"{stats['trades']:,.0f}"),
-        ("Trefferquote", f"{stats['hit_rate']:.1%}"),
-        ("Payoff (Chance/Risiko)", f"{stats['payoff']:.2f} : 1"),
-        ("Profit-Faktor", f"{stats['profit_factor']:.2f}"),
-        ("Durchschn. Gewinn", f"{stats['avg_win']:,.0f} EUR"),
-        ("Durchschn. Verlust", f"{stats['avg_loss']:,.0f} EUR"),
-        ("Erwartung / Trade", f"{stats['expectancy']:,.0f} EUR"),
-        ("Gesamtrendite", f"{stats['total_return']:+.1%}"),
-        ("Rendite p.a.", f"{stats['annual_return']:+.1%}"),
-        ("Max Drawdown (% vom Hoch)", f"{stats['max_drawdown']:.1%}"),
-        ("Sharpe (annualisiert)", f"{stats['sharpe']:.2f}"),
+def _fmt(s: dict[str, float]) -> list[str]:
+    """The 12 metric values of one stats dict, formatted for the scorecard column."""
+    return [
+        f"{s['years']:.2f} Jahre",
+        f"{s['trades']:,.0f}",
+        f"{s['hit_rate']:.1%}",
+        f"{s['payoff']:.2f} : 1",
+        f"{s['profit_factor']:.2f}",
+        f"{s['avg_win']:,.0f} EUR",
+        f"{s['avg_loss']:,.0f} EUR",
+        f"{s['expectancy']:,.0f} EUR",
+        f"{s['total_return']:+.1%}",
+        f"{s['annual_return']:+.1%}",
+        f"{s['max_drawdown']:.1%}",
+        f"{s['sharpe']:.2f}",
     ]
-    fig, ax = plt.subplots(figsize=(11, 7.5))
+
+
+_METRIC_LABELS = [
+    "Zeitraum",
+    "Trades",
+    "Trefferquote",
+    "Payoff (Chance/Risiko)",
+    "Profit-Faktor",
+    "Durchschn. Gewinn",
+    "Durchschn. Verlust",
+    "Erwartung / Trade",
+    "Gesamtrendite",
+    "Rendite p.a.",
+    "Max Drawdown (% vom Hoch)",
+    "Sharpe (annualisiert)",
+]
+
+
+def plot_scorecard(illus: dict[str, float], holdout: dict[str, float] | None, out: Path) -> None:
+    """Render the metrics: illustration (full history) and, if given, the walk-forward holdout."""
+    cols = ["Illustration (volle Historie)"]
+    data = [_fmt(illus)]
+    if holdout is not None:
+        cols.append("Holdout (Walk-Forward, unberuehrt)")
+        data.append(_fmt(holdout))
+    cell_text = [[data[c][r] for c in range(len(cols))] for r in range(len(_METRIC_LABELS))]
+
+    fig, ax = plt.subplots(figsize=(6 + 3.2 * len(cols), 7.5))
     ax.axis("off")
     ax.set_title(
         "Kennzahlen -- no_bb_wpr, 9 Maerkte, flach 0.15% Risiko (Start EUR 200,000)\n"
-        "ILLUSTRATION ueber die volle Historie (feste Parameter, enthaelt In-Sample -- "
-        "keine Out-of-Sample-Aussage). Sharpe/DD auf Mark-to-Market-Equity.",
+        "Illustration = volle Historie, feste Parameter (enthaelt In-Sample). "
+        "Holdout = Walk-Forward auf unberuehrten Daten (echte OOS-Aussage).",
         fontsize=11,
         pad=16,
     )
     table = ax.table(
-        cellText=[[r[1]] for r in rows],
-        rowLabels=[r[0] for r in rows],
-        colLabels=["Illustration (volle Historie)"],
+        cellText=cell_text,
+        rowLabels=_METRIC_LABELS,
+        colLabels=cols,
         cellLoc="center",
         rowLoc="left",
         loc="upper center",
@@ -282,22 +343,23 @@ def plot_scorecard(stats: dict[str, float], out: Path) -> None:
     table.auto_set_font_size(False)
     table.set_fontsize(12)
     table.scale(1, 1.7)
-    for (row, _col), cell in table.get_celld().items():
+    for (row, col), cell in table.get_celld().items():
         if row == 0:
             cell.set_facecolor("#2b5c8a")
             cell.set_text_props(color="white", fontweight="bold")
-    p = _PIPELINE_HOLDOUT
-    fig.text(
-        0.5,
-        0.045,
-        "BELASTBARE VALIDIERUNG -- Walk-Forward Holdout (Pipeline, unberuehrte Daten):\n"
-        f"{p['trades']:,} Trades  |  {p['years']} Jahre  |  +{p['return_pct']}% bei "
-        f"{p['risk_pct']}% Risiko  |  alle Freigabe-Checks PASS",
-        ha="center",
-        va="bottom",
-        fontsize=11,
-        bbox={"boxstyle": "round", "facecolor": "#eef4fb", "edgecolor": "#2b5c8a"},
-    )
+        elif col == len(cols) - 1 and holdout is not None:  # highlight the holdout column
+            cell.set_facecolor("#eef4fb")
+    if holdout is not None:
+        fig.text(
+            0.5,
+            0.04,
+            "Holdout bestand die Freigabe sogar bis 0.175% Risiko (+95.4%); "
+            "hier zum Vergleich bei den live genutzten 0.15% gezeigt.",
+            ha="center",
+            va="bottom",
+            fontsize=9.5,
+            style="italic",
+        )
     fig.savefig(out, dpi=120, bbox_inches="tight")
     plt.close(fig)
 
@@ -319,57 +381,79 @@ def plot_market_contributions(trades: pd.DataFrame, risk_amount: float, out: Pat
     plt.close(fig)
 
 
-def main() -> None:
-    """Run all 9 markets, build the flat portfolio, and save the charts + the trade stream."""
+def _stats(
+    trades: pd.DataFrame, flat_pnl: np.ndarray, daily_close: dict[str, pd.Series]
+) -> dict[str, float]:
+    """Edge + risk metrics for a flat-sized trade stream (trade PnL + mark-to-market equity)."""
+    return {**edge_stats(flat_pnl), **risk_stats(daily_equity(trades, flat_pnl, daily_close))}
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Build the illustration (fast); with --holdout also run the walk-forward validation."""
+    import argparse
+
+    from qplus.backtest.portfolio.curves import load_daily_close
+
+    parser = argparse.ArgumentParser(description="QPlus equity report (illustration + holdout).")
+    parser.add_argument(
+        "--holdout",
+        action="store_true",
+        help="also run the walk-forward holdout (SLOW, ~30-60 min); adds a scorecard column.",
+    )
+    args = parser.parse_args(argv)
+
     cfg = load_config_module(_REPO_ROOT / "config" / "live" / "paper_rsi_wpr_bb.py")
     risk_pct = float(cfg.RISK_PER_TRADE_PCT)
     risk_amount = risk_pct / 100.0 * _START_BALANCE
     switches = dict(cfg.STRATEGY_SWITCHES)
+    out_dir = _REPO_ROOT / "reports" / "equity"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    daily_close = {str(f().raw_symbol): load_daily_close(c) for f, c, _l, _s, _t in cfg.MARKETS}
 
+    # -- Illustration: fast fixed-parameter full-history backtest of each market --
     frames = []
     for factory, csv, leverage, sl, tp in cfg.MARKETS:
-        name = str(factory().raw_symbol)
-        print(f"backtesting {name} (full history, SL {sl}% / TP {tp}%) ...")
+        print(f"backtesting {factory().raw_symbol} (full history, SL {sl}% / TP {tp}%) ...")
         frames.append(_market_trades(factory, csv, leverage, sl, tp, switches))
     trades = pd.concat(frames, ignore_index=True)
-
-    from qplus.backtest.portfolio.curves import load_daily_close
-
+    illus_pnl = risk_amount * trades["r"].to_numpy(dtype=float)
     curve = flat_portfolio(trades, risk_amount=risk_amount)
     curve["pnl"] = np.diff(
         np.concatenate([[_START_BALANCE], curve["equity"].to_numpy(dtype=float)])
     )
     holdout_start = curve["date"].max() - pd.DateOffset(months=_HOLDOUT_MONTHS)
+    illus = _stats(trades, illus_pnl, daily_close)
 
-    # Honest risk view: daily equity WITH floating PnL of open positions (full history only).
-    # NOTE: a "last 24 months" slice of this fixed-parameter run is NOT a valid out-of-sample
-    # test (the frozen params were fit on recent data, and the grown account distorts %-DD) --
-    # the genuine OOS number is the pipeline's walk-forward holdout, shown on the scorecard.
-    daily_close = {str(f().raw_symbol): load_daily_close(c) for f, c, _l, _s, _t in cfg.MARKETS}
-    eq_full = daily_equity(trades, risk_amount, daily_close)
-    full = {**edge_stats(curve["pnl"].to_numpy()), **risk_stats(eq_full)}
+    # -- Holdout: slow walk-forward on the reserved 24 months (--holdout regenerates, else cache) --
+    hold_csv = out_dir / "holdout_trades.csv"
+    if args.holdout:
+        h_trades, h_pnl = extract_holdout_trades(risk_amount)
+        h_trades = h_trades.assign(flat_pnl=h_pnl)
+        h_trades.to_csv(hold_csv, index=False)
+    holdout = None
+    if hold_csv.exists():
+        h = pd.read_csv(hold_csv)
+        holdout = _stats(h, h["flat_pnl"].to_numpy(dtype=float), daily_close)
 
-    out_dir = _REPO_ROOT / "reports" / "equity"
-    out_dir.mkdir(parents=True, exist_ok=True)
     curve.to_csv(out_dir / "portfolio_trades.csv", index=False)
     plot_equity(curve, holdout_start, risk_pct, out_dir / "equity_over_time.png")
     plot_monte_carlo(trades["r"].to_numpy(dtype=float), risk_amount, out_dir / "monte_carlo.png")
     plot_market_contributions(trades, risk_amount, out_dir / "market_contributions.png")
-    plot_scorecard(full, out_dir / "scorecard.png")
+    plot_scorecard(illus, holdout, out_dir / "scorecard.png")
 
-    p = _PIPELINE_HOLDOUT
-    print("\n===== ILLUSTRATION (full history, fixed params, incl. in-sample) =====")
-    print(f"trades:        {full['trades']:,.0f}   ({full['years']:.1f} years)")
-    print(f"hit rate:      {full['hit_rate']:.1%}   payoff {full['payoff']:.2f}:1")
-    print(f"profit factor: {full['profit_factor']:.2f}   expectancy EUR {full['expectancy']:,.0f}")
-    print(f"Sharpe (ann.): {full['sharpe']:.2f}   max DD {full['max_drawdown']:.1%} (of peak)")
-    print("\n===== VALIDATION (pipeline walk-forward holdout, genuine out-of-sample) =====")
-    print(
-        f"{p['trades']:,} trades | {p['years']} years | +{p['return_pct']}% @ {p['risk_pct']}% "
-        f"risk | PASS   (source: reports/pipeline_no_bb_wpr.log)"
-    )
-    print(f"\nrisk/trade:    {risk_pct:.2f}% of start (EUR {risk_amount:,.0f})")
-    print(f"charts:        {out_dir}")
+    print("\n===== ILLUSTRATION (full history) | HOLDOUT (walk-forward OOS) =====")
+    h_txt = holdout or {}
+    for key, label in [
+        ("trades", "trades"),
+        ("hit_rate", "hit rate"),
+        ("profit_factor", "profit factor"),
+        ("expectancy", "expectancy"),
+        ("sharpe", "Sharpe"),
+        ("max_drawdown", "max DD"),
+    ]:
+        hv = f"{h_txt[key]:,.2f}" if holdout else "-- (run with --holdout)"
+        print(f"{label:14s} {illus[key]:>12,.2f} | {hv}")
+    print(f"\nrisk/trade:    {risk_pct:.2f}% of start (EUR {risk_amount:,.0f})   charts: {out_dir}")
 
 
 if __name__ == "__main__":
