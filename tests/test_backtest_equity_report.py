@@ -2,7 +2,12 @@
 
 import pandas as pd
 
-from qplus.backtest.portfolio.equity_report import _START_BALANCE, flat_portfolio, r_multiples
+from qplus.backtest.portfolio.equity_report import (
+    _START_BALANCE,
+    edge_stats,
+    flat_portfolio,
+    r_multiples,
+)
 
 
 def test_r_multiples_recover_size_invariant_return() -> None:
@@ -35,3 +40,15 @@ def test_flat_portfolio_books_risk_times_r_in_close_order() -> None:
         _START_BALANCE - 150.0,
         _START_BALANCE + 450.0,
     ]
+
+
+def test_edge_stats_count_metrics() -> None:
+    import numpy as np
+
+    # 4 trades: +100, -50, +200, -50 -> 2 wins / 2 losses.
+    s = edge_stats(np.array([100.0, -50.0, 200.0, -50.0]))
+    assert s["trades"] == 4.0
+    assert abs(s["hit_rate"] - 0.5) < 1e-9
+    assert abs(s["payoff"] - 3.0) < 1e-9  # avg win 150 / avg loss 50
+    assert abs(s["profit_factor"] - 3.0) < 1e-9  # 300 won / 100 lost
+    assert abs(s["expectancy"] - 50.0) < 1e-9  # (100-50+200-50)/4
