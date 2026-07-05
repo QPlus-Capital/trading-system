@@ -174,6 +174,116 @@ def plot_monte_carlo(r: np.ndarray, risk_amount: float, out: Path, n_sims: int =
     plt.close(fig)
 
 
+def daily_equity(
+    trades: pd.DataFrame,
+    risk_amount: float,
+    daily_close: dict[str, pd.Series],
+    *,
+    start_balance: float = _START_BALANCE,
+) -> pd.Series:
+    """Daily mark-to-market equity (flat sizing), INCLUDING open positions' floating PnL.
+
+    Uses the tested ``base_curves`` machinery: each trade's flat contribution (risk_amount * R)
+    is booked as realized on close and marked to the daily price while open. The result -- unlike
+    the realized-only trade curve -- shows the real intraday swings, so Sharpe / drawdown computed
+    on it are honest (not flattered by ignoring floating losses).
+    """
+    from qplus.backtest.portfolio.curves import DAY_NS, align_prices, base_curves, to_day
+
+    t = trades.copy()
+    t["od"] = [to_day(x) for x in t["ts_opened"]]
+    t["cd"] = [to_day(x) for x in t["ts_closed"]]
+    t["pnl_base"] = risk_amount * t["r"]  # flat EUR contribution per trade
+    d0, d1 = int(t["od"].min()), int(t["cd"].max())
+    prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
+    realized, unrealized = base_curves(t, prices, d0, d1)
+    idx = pd.to_datetime(np.arange(d0, d1 + 1) * DAY_NS)
+    return pd.Series(start_balance + realized + unrealized, index=idx)
+
+
+def edge_stats(pnl: np.ndarray) -> dict[str, float]:
+    """Trade-level edge metrics: hit rate, payoff, profit factor, expectancy, avg win/loss."""
+    wins, losses = pnl[pnl > 0], pnl[pnl < 0]
+    n = len(pnl)
+    return {
+        "trades": float(n),
+        "hit_rate": len(wins) / n if n else 0.0,
+        "payoff": (wins.mean() / -losses.mean()) if len(wins) and len(losses) else 0.0,
+        "profit_factor": (wins.sum() / -losses.sum()) if losses.sum() < 0 else float("inf"),
+        "avg_win": float(wins.mean()) if len(wins) else 0.0,
+        "avg_loss": float(losses.mean()) if len(losses) else 0.0,
+        "expectancy": float(pnl.mean()) if n else 0.0,
+    }
+
+
+def risk_stats(equity: pd.Series, *, start_balance: float = _START_BALANCE) -> dict[str, float]:
+    """Return / drawdown / Sharpe from the floating-inclusive daily equity (honest risk view).
+
+    Returns use the fixed ``start_balance`` base (correct for flat sizing); Sharpe is annualised
+    from daily returns; max drawdown is the worst peak-to-trough of the mark-to-market equity.
+    """
+    ret = equity.diff().dropna().to_numpy() / start_balance
+    years = max((equity.index[-1] - equity.index[0]).days / 365.25, 1e-9)
+    total_return = float(equity.iloc[-1] - equity.iloc[0]) / start_balance
+    peak = equity.cummax()
+    std = float(ret.std(ddof=1)) if len(ret) > 1 else 0.0
+    return {
+        "years": years,
+        "total_return": total_return,
+        "annual_return": total_return / years,
+        "max_drawdown": float(((equity - peak) / peak).min()),
+        "sharpe": float(ret.mean() / std * np.sqrt(252)) if std > 0 else 0.0,
+    }
+
+
+def plot_scorecard(full: dict[str, float], oos: dict[str, float], out: Path) -> None:
+    """Render the key metrics as a table: full history vs. out-of-sample (holdout)."""
+    rows = [
+        ("Zeitraum", f"{full['years']:.1f} Jahre", f"{oos['years']:.1f} Jahre"),
+        ("Trades", f"{full['trades']:,.0f}", f"{oos['trades']:,.0f}"),
+        ("Trefferquote", f"{full['hit_rate']:.1%}", f"{oos['hit_rate']:.1%}"),
+        ("Payoff (Chance/Risiko)", f"{full['payoff']:.2f} : 1", f"{oos['payoff']:.2f} : 1"),
+        ("Profit-Faktor", f"{full['profit_factor']:.2f}", f"{oos['profit_factor']:.2f}"),
+        ("Durchschn. Gewinn", f"{full['avg_win']:,.0f} EUR", f"{oos['avg_win']:,.0f} EUR"),
+        ("Durchschn. Verlust", f"{full['avg_loss']:,.0f} EUR", f"{oos['avg_loss']:,.0f} EUR"),
+        ("Erwartung / Trade", f"{full['expectancy']:,.0f} EUR", f"{oos['expectancy']:,.0f} EUR"),
+        ("Gesamtrendite", f"{full['total_return']:+.1%}", f"{oos['total_return']:+.1%}"),
+        ("Rendite p.a.", f"{full['annual_return']:+.1%}", f"{oos['annual_return']:+.1%}"),
+        ("Max Drawdown (Equity)", f"{full['max_drawdown']:.1%}", f"{oos['max_drawdown']:.1%}"),
+        ("Sharpe (annualisiert)", f"{full['sharpe']:.2f}", f"{oos['sharpe']:.2f}"),
+    ]
+    fig, ax = plt.subplots(figsize=(11, 7))
+    ax.axis("off")
+    ax.set_title(
+        "Kennzahlen -- no_bb_wpr, 9 Maerkte, flach 0.15% Risiko (Start EUR 200,000)\n"
+        "volle Historie enthaelt In-Sample; Out-of-Sample = unberuehrter Holdout. "
+        "Sharpe/DD auf Mark-to-Market-Equity (inkl. offener Buchverluste).",
+        fontsize=11,
+        pad=18,
+    )
+    table = ax.table(
+        cellText=[[r[1], r[2]] for r in rows],
+        rowLabels=[r[0] for r in rows],
+        colLabels=["volle Historie", "Out-of-Sample (Holdout)"],
+        cellLoc="center",
+        rowLoc="left",
+        loc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(12)
+    table.scale(1, 1.9)
+    for (row, col), cell in table.get_celld().items():
+        if row == 0:  # header
+            cell.set_facecolor("#2b5c8a")
+            cell.set_text_props(color="white", fontweight="bold")
+        elif col == 1:  # out-of-sample column highlighted
+            cell.set_facecolor("#eef4fb")
+    fig.tight_layout()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_market_contributions(trades: pd.DataFrame, risk_amount: float, out: Path) -> None:
     """Bar chart: each market's total flat PnL contribution (risk_amount * sum of its R)."""
     by_market = (trades.groupby("market")["r"].sum() * risk_amount).sort_values()
@@ -205,8 +315,22 @@ def main() -> None:
         frames.append(_market_trades(factory, csv, leverage, sl, tp, switches))
     trades = pd.concat(frames, ignore_index=True)
 
+    from qplus.backtest.portfolio.curves import load_daily_close
+
     curve = flat_portfolio(trades, risk_amount=risk_amount)
+    curve["pnl"] = np.diff(
+        np.concatenate([[_START_BALANCE], curve["equity"].to_numpy(dtype=float)])
+    )
     holdout_start = curve["date"].max() - pd.DateOffset(months=_HOLDOUT_MONTHS)
+
+    # Honest risk view: daily equity WITH floating PnL of open positions.
+    daily_close = {str(f().raw_symbol): load_daily_close(c) for f, c, _l, _s, _t in cfg.MARKETS}
+    eq_full = daily_equity(trades, risk_amount, daily_close)
+    eq_oos = eq_full[eq_full.index >= holdout_start]
+
+    full = {**edge_stats(curve["pnl"].to_numpy()), **risk_stats(eq_full)}
+    oos_pnl = curve.loc[curve["date"] >= holdout_start, "pnl"].to_numpy()
+    oos = {**edge_stats(oos_pnl), **risk_stats(eq_oos)}
 
     out_dir = _REPO_ROOT / "reports" / "equity"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -214,12 +338,15 @@ def main() -> None:
     plot_equity(curve, holdout_start, risk_pct, out_dir / "equity_over_time.png")
     plot_monte_carlo(trades["r"].to_numpy(dtype=float), risk_amount, out_dir / "monte_carlo.png")
     plot_market_contributions(trades, risk_amount, out_dir / "market_contributions.png")
+    plot_scorecard(full, oos, out_dir / "scorecard.png")
 
-    final = float(curve["equity"].iloc[-1])
-    gain = final / _START_BALANCE - 1
-    print("\n===== flat portfolio (illustrative, full history) =====")
-    print(f"trades:        {len(trades)}")
-    print(f"start / final: EUR {_START_BALANCE:,.0f} -> EUR {final:,.0f}  ({gain:+.1%})")
+    print("\n===== flat portfolio (illustrative) -- full history | out-of-sample =====")
+    print(f"trades:        {full['trades']:,.0f} | {oos['trades']:,.0f}")
+    print(f"hit rate:      {full['hit_rate']:.1%} | {oos['hit_rate']:.1%}")
+    print(f"profit factor: {full['profit_factor']:.2f} | {oos['profit_factor']:.2f}")
+    print(f"expectancy:    EUR {full['expectancy']:,.0f} | {oos['expectancy']:,.0f} per trade")
+    print(f"Sharpe (ann.): {full['sharpe']:.2f} | {oos['sharpe']:.2f}")
+    print(f"max drawdown:  {full['max_drawdown']:.1%} | {oos['max_drawdown']:.1%}")
     print(f"risk/trade:    {risk_pct:.2f}% of start (EUR {risk_amount:,.0f})")
     print(f"charts:        {out_dir}")
 
