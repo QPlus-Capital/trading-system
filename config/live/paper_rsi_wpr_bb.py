@@ -27,11 +27,11 @@ from qplus.instruments import (
 
 # Flat risk per trade -- the SINGLE source of truth (the live runner builds RiskLimits from
 # this; M3). Under the stricter intraday-worst drawdown model the holdout tolerated up to
-# ~0.175% for no_bb_wpr against the HARD 6%/3% TTP limits. We size well below that: our own
-# safety layer halts earlier at 5%/2.5%, the holdout is now "used" (two configs compared on
-# it), and swaps/gaps are unmodelled -- so 0.12% keeps natural drawdowns comfortably inside
-# the internal limits. Revisit upward only after the demo phase confirms the drawdown profile.
-RISK_PER_TRADE_PCT = 0.12
+# ~0.175% for no_bb_wpr against the HARD 6%/3% TTP limits. We size below that: 0.15% leaves a
+# margin under the ceiling while our own safety layer halts earlier at 5%/2.5%. (0.12% is the
+# more conservative option given the now-"used" holdout and unmodelled swaps/gaps; Jan chose
+# 0.15%.) Revisit after the demo phase confirms the live drawdown profile.
+RISK_PER_TRADE_PCT = 0.15
 
 # The chosen structure (no_bb_wpr): drop the Bollinger + Williams-%R buy-confirmations, keep
 # the RSI filter; long/short reversal (not long-only).
