@@ -28,6 +28,7 @@ from qplus.live.runner import (
     Mode,
     long_only_from_paper_config,
     markets_from_paper_config,
+    risk_per_trade_from_paper_config,
     signal_params_from_paper_config,
 )
 
@@ -93,11 +94,13 @@ def main(argv: list[str] | None = None) -> None:
         # Provisional reference for the FIRST run only; if a saved state exists the runner
         # restores it and this is ignored (K1: restarts must not reset the risk references).
         start_balance = args.start_balance if args.start_balance is not None else account.balance
+        limits = RiskLimits(risk_per_trade=risk_per_trade_from_paper_config())  # M3: from config
+        log.info("risk per trade: %.3f%% of the initial balance", limits.risk_per_trade * 100)
         runner = LiveRunner(
             bridge,
             markets_from_paper_config(),
             signal_params_from_paper_config(),
-            RiskController(RiskLimits(), start_balance),
+            RiskController(limits, start_balance),
             mode=mode,
             state_path=state_path,
             long_only=long_only_from_paper_config(),
