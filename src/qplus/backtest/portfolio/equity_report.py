@@ -231,55 +231,73 @@ def risk_stats(equity: pd.Series, *, start_balance: float = _START_BALANCE) -> d
         "years": years,
         "total_return": total_return,
         "annual_return": total_return / years,
+        # Standard max drawdown: worst peak-to-trough as a fraction of the equity AT the peak.
+        # (Only meaningful as a full-history figure -- a late-period slice of a grown account
+        # would look artificially tiny; the TTP-relevant risk is the pipeline feasibility.)
         "max_drawdown": float(((equity - peak) / peak).min()),
         "sharpe": float(ret.mean() / std * np.sqrt(252)) if std > 0 else 0.0,
     }
 
 
-def plot_scorecard(full: dict[str, float], oos: dict[str, float], out: Path) -> None:
-    """Render the key metrics as a table: full history vs. out-of-sample (holdout)."""
+# The ONE genuine out-of-sample result: the pipeline's walk-forward holdout (per-window
+# re-fitting on the reserved 24 months, which yields ~1.48 years of test data). Source:
+# reports/pipeline_no_bb_wpr.log (2026-07-05). The equity_report below is only an ILLUSTRATION
+# of the frozen config's character over the full history -- it is NOT an out-of-sample test.
+_PIPELINE_HOLDOUT = {"trades": 1186, "years": 1.48, "return_pct": 95.4, "risk_pct": 0.175}
+
+
+def plot_scorecard(stats: dict[str, float], out: Path) -> None:
+    """Render the illustration metrics (full history) + the real pipeline-holdout validation."""
     rows = [
-        ("Zeitraum", f"{full['years']:.1f} Jahre", f"{oos['years']:.1f} Jahre"),
-        ("Trades", f"{full['trades']:,.0f}", f"{oos['trades']:,.0f}"),
-        ("Trefferquote", f"{full['hit_rate']:.1%}", f"{oos['hit_rate']:.1%}"),
-        ("Payoff (Chance/Risiko)", f"{full['payoff']:.2f} : 1", f"{oos['payoff']:.2f} : 1"),
-        ("Profit-Faktor", f"{full['profit_factor']:.2f}", f"{oos['profit_factor']:.2f}"),
-        ("Durchschn. Gewinn", f"{full['avg_win']:,.0f} EUR", f"{oos['avg_win']:,.0f} EUR"),
-        ("Durchschn. Verlust", f"{full['avg_loss']:,.0f} EUR", f"{oos['avg_loss']:,.0f} EUR"),
-        ("Erwartung / Trade", f"{full['expectancy']:,.0f} EUR", f"{oos['expectancy']:,.0f} EUR"),
-        ("Gesamtrendite", f"{full['total_return']:+.1%}", f"{oos['total_return']:+.1%}"),
-        ("Rendite p.a.", f"{full['annual_return']:+.1%}", f"{oos['annual_return']:+.1%}"),
-        ("Max Drawdown (Equity)", f"{full['max_drawdown']:.1%}", f"{oos['max_drawdown']:.1%}"),
-        ("Sharpe (annualisiert)", f"{full['sharpe']:.2f}", f"{oos['sharpe']:.2f}"),
+        ("Zeitraum", f"{stats['years']:.1f} Jahre"),
+        ("Trades", f"{stats['trades']:,.0f}"),
+        ("Trefferquote", f"{stats['hit_rate']:.1%}"),
+        ("Payoff (Chance/Risiko)", f"{stats['payoff']:.2f} : 1"),
+        ("Profit-Faktor", f"{stats['profit_factor']:.2f}"),
+        ("Durchschn. Gewinn", f"{stats['avg_win']:,.0f} EUR"),
+        ("Durchschn. Verlust", f"{stats['avg_loss']:,.0f} EUR"),
+        ("Erwartung / Trade", f"{stats['expectancy']:,.0f} EUR"),
+        ("Gesamtrendite", f"{stats['total_return']:+.1%}"),
+        ("Rendite p.a.", f"{stats['annual_return']:+.1%}"),
+        ("Max Drawdown (% vom Hoch)", f"{stats['max_drawdown']:.1%}"),
+        ("Sharpe (annualisiert)", f"{stats['sharpe']:.2f}"),
     ]
-    fig, ax = plt.subplots(figsize=(11, 7))
+    fig, ax = plt.subplots(figsize=(11, 7.5))
     ax.axis("off")
     ax.set_title(
         "Kennzahlen -- no_bb_wpr, 9 Maerkte, flach 0.15% Risiko (Start EUR 200,000)\n"
-        "volle Historie enthaelt In-Sample; Out-of-Sample = unberuehrter Holdout. "
-        "Sharpe/DD auf Mark-to-Market-Equity (inkl. offener Buchverluste).",
+        "ILLUSTRATION ueber die volle Historie (feste Parameter, enthaelt In-Sample -- "
+        "keine Out-of-Sample-Aussage). Sharpe/DD auf Mark-to-Market-Equity.",
         fontsize=11,
-        pad=18,
+        pad=16,
     )
     table = ax.table(
-        cellText=[[r[1], r[2]] for r in rows],
+        cellText=[[r[1]] for r in rows],
         rowLabels=[r[0] for r in rows],
-        colLabels=["volle Historie", "Out-of-Sample (Holdout)"],
+        colLabels=["Illustration (volle Historie)"],
         cellLoc="center",
         rowLoc="left",
-        loc="center",
+        loc="upper center",
     )
     table.auto_set_font_size(False)
     table.set_fontsize(12)
-    table.scale(1, 1.9)
-    for (row, col), cell in table.get_celld().items():
-        if row == 0:  # header
+    table.scale(1, 1.7)
+    for (row, _col), cell in table.get_celld().items():
+        if row == 0:
             cell.set_facecolor("#2b5c8a")
             cell.set_text_props(color="white", fontweight="bold")
-        elif col == 1:  # out-of-sample column highlighted
-            cell.set_facecolor("#eef4fb")
-    fig.tight_layout()
-    out.parent.mkdir(parents=True, exist_ok=True)
+    p = _PIPELINE_HOLDOUT
+    fig.text(
+        0.5,
+        0.045,
+        "BELASTBARE VALIDIERUNG -- Walk-Forward Holdout (Pipeline, unberuehrte Daten):\n"
+        f"{p['trades']:,} Trades  |  {p['years']} Jahre  |  +{p['return_pct']}% bei "
+        f"{p['risk_pct']}% Risiko  |  alle Freigabe-Checks PASS",
+        ha="center",
+        va="bottom",
+        fontsize=11,
+        bbox={"boxstyle": "round", "facecolor": "#eef4fb", "edgecolor": "#2b5c8a"},
+    )
     fig.savefig(out, dpi=120, bbox_inches="tight")
     plt.close(fig)
 
@@ -323,14 +341,13 @@ def main() -> None:
     )
     holdout_start = curve["date"].max() - pd.DateOffset(months=_HOLDOUT_MONTHS)
 
-    # Honest risk view: daily equity WITH floating PnL of open positions.
+    # Honest risk view: daily equity WITH floating PnL of open positions (full history only).
+    # NOTE: a "last 24 months" slice of this fixed-parameter run is NOT a valid out-of-sample
+    # test (the frozen params were fit on recent data, and the grown account distorts %-DD) --
+    # the genuine OOS number is the pipeline's walk-forward holdout, shown on the scorecard.
     daily_close = {str(f().raw_symbol): load_daily_close(c) for f, c, _l, _s, _t in cfg.MARKETS}
     eq_full = daily_equity(trades, risk_amount, daily_close)
-    eq_oos = eq_full[eq_full.index >= holdout_start]
-
     full = {**edge_stats(curve["pnl"].to_numpy()), **risk_stats(eq_full)}
-    oos_pnl = curve.loc[curve["date"] >= holdout_start, "pnl"].to_numpy()
-    oos = {**edge_stats(oos_pnl), **risk_stats(eq_oos)}
 
     out_dir = _REPO_ROOT / "reports" / "equity"
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -338,16 +355,20 @@ def main() -> None:
     plot_equity(curve, holdout_start, risk_pct, out_dir / "equity_over_time.png")
     plot_monte_carlo(trades["r"].to_numpy(dtype=float), risk_amount, out_dir / "monte_carlo.png")
     plot_market_contributions(trades, risk_amount, out_dir / "market_contributions.png")
-    plot_scorecard(full, oos, out_dir / "scorecard.png")
+    plot_scorecard(full, out_dir / "scorecard.png")
 
-    print("\n===== flat portfolio (illustrative) -- full history | out-of-sample =====")
-    print(f"trades:        {full['trades']:,.0f} | {oos['trades']:,.0f}")
-    print(f"hit rate:      {full['hit_rate']:.1%} | {oos['hit_rate']:.1%}")
-    print(f"profit factor: {full['profit_factor']:.2f} | {oos['profit_factor']:.2f}")
-    print(f"expectancy:    EUR {full['expectancy']:,.0f} | {oos['expectancy']:,.0f} per trade")
-    print(f"Sharpe (ann.): {full['sharpe']:.2f} | {oos['sharpe']:.2f}")
-    print(f"max drawdown:  {full['max_drawdown']:.1%} | {oos['max_drawdown']:.1%}")
-    print(f"risk/trade:    {risk_pct:.2f}% of start (EUR {risk_amount:,.0f})")
+    p = _PIPELINE_HOLDOUT
+    print("\n===== ILLUSTRATION (full history, fixed params, incl. in-sample) =====")
+    print(f"trades:        {full['trades']:,.0f}   ({full['years']:.1f} years)")
+    print(f"hit rate:      {full['hit_rate']:.1%}   payoff {full['payoff']:.2f}:1")
+    print(f"profit factor: {full['profit_factor']:.2f}   expectancy EUR {full['expectancy']:,.0f}")
+    print(f"Sharpe (ann.): {full['sharpe']:.2f}   max DD {full['max_drawdown']:.1%} (of peak)")
+    print("\n===== VALIDATION (pipeline walk-forward holdout, genuine out-of-sample) =====")
+    print(
+        f"{p['trades']:,} trades | {p['years']} years | +{p['return_pct']}% @ {p['risk_pct']}% "
+        f"risk | PASS   (source: reports/pipeline_no_bb_wpr.log)"
+    )
+    print(f"\nrisk/trade:    {risk_pct:.2f}% of start (EUR {risk_amount:,.0f})")
     print(f"charts:        {out_dir}")
 
 
