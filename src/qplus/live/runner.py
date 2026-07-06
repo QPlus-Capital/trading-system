@@ -29,6 +29,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from qplus.live.mt5_bridge import Bar, Mt5Bridge, Position, Side, SymbolInfo
+from qplus.live.notify import Notifier
 from qplus.live.risk_control import RiskController, position_volume
 from qplus.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
@@ -136,6 +137,7 @@ class LiveRunner:
         history_bars: int = 300,
         state_path: Path | None = None,
         long_only: bool = False,
+        notifier: Notifier | None = None,
     ) -> None:
         self._bridge = bridge
         self._markets = markets
@@ -144,11 +146,15 @@ class LiveRunner:
         self._mode = mode
         self._history = history_bars
         self._long_only = long_only  # N2: a sell signal flattens instead of going short
+        self._notify = notifier or Notifier()  # default: log-only (no beep / telegram)
         self._last_bar_time: dict[str, int] = {}  # our name -> epoch of last acted bar
         self._day: date | None = None
         self._halted = False
         self._halt_reason = ""
         self._state_path = state_path
+        self._last_equity = 0.0  # remembered for the heartbeat
+        self._cycle_bars = 0  # new closed bars processed this cycle
+        self._cycle_signals = 0  # signals fired this cycle
         self._load_state()
 
     # -- risk-state persistence (K1: a restart must NOT reset the risk references) --
@@ -219,6 +225,7 @@ class LiveRunner:
 
         # Recompute total open risk from the live positions (source of truth).
         self._risk.open_risk = self._total_open_risk()
+        self._last_equity = account.equity
 
         # Safety cut-off first.
         flat = self._risk.must_flatten(account.equity)
@@ -227,11 +234,20 @@ class LiveRunner:
             return
 
         now_epoch = now.timestamp()  # server epoch, for deciding which bars have closed (M5)
+        self._cycle_bars = self._cycle_signals = 0
         for spec in self._markets:
             try:
                 self._process_market(spec, account.equity, now_epoch)
             except Exception:  # one market's failure must not abort the others
                 log.exception("market %s failed this cycle", spec.name)
+        if self._cycle_bars:  # a new H4 bar closed -> log a summary even when nothing traded
+            log.info(
+                "H4 cycle: %d new bar(s) processed, %d signal(s), equity=%.0f %s",
+                self._cycle_bars,
+                self._cycle_signals,
+                account.equity,
+                self._day,
+            )
 
     def _total_open_risk(self) -> float:
         total = 0.0
@@ -260,9 +276,11 @@ class LiveRunner:
 
         buy, sell = self._replay_signal(closed)
         self._last_bar_time[spec.name] = last.time
+        self._cycle_bars += 1
         self._persist()  # remember the handled bar, so a restart cannot act on it twice
         if buy == sell:  # no signal (or contradictory) -> hold
             return
+        self._cycle_signals += 1
         desired: Side = "BUY" if buy else "SELL"
 
         current = self._bridge.positions(spec.name)
@@ -333,6 +351,10 @@ class LiveRunner:
             if pos is not None:
                 self._bridge.close_position(pos)
             self._bridge.place_order(spec.name, sized.side, sized.volume, sl=sized.sl, tp=sized.tp)
+        self._notify.signal(
+            f"[{spec.name}] {verb} {sized.side} vol={sized.volume} sl={sized.sl} "
+            f"tp={sized.tp} risk={sized.risk_amount:.0f} EUR ({self._mode.value})"
+        )
         # Account for the new open risk in BOTH modes so a SIGNAL_ONLY dry-run exercises the
         # open-risk cap exactly like EXECUTE would (H4). open_risk is recomputed from live
         # positions each cycle, so this within-cycle increment self-heals next cycle.
@@ -349,11 +371,15 @@ class LiveRunner:
         )
         if self._mode is Mode.EXECUTE:
             self._bridge.close_position(pos)
+        self._notify.signal(
+            f"[{spec.name}] FLATTEN {pos.side} vol={pos.volume} ({self._mode.value})"
+        )
 
     def _halt_and_flatten(self, reason: str) -> None:
         self._halted = True
         self._halt_reason = reason
         log.critical("SAFETY HALT: %s -- flattening all positions and stopping.", reason)
+        self._notify.alert(f"SAFETY HALT: {reason} -- flattening & stopping")
         if self._mode is Mode.EXECUTE:
             for spec in self._markets:
                 for pos in self._bridge.positions(spec.name):
@@ -364,16 +390,29 @@ class LiveRunner:
 
     # -- loop --
 
-    def run_forever(self, poll_seconds: int = 60) -> None:
-        """Poll every ``poll_seconds`` and process; ``run_once`` skips already-handled bars."""
+    def run_forever(self, poll_seconds: int = 60, heartbeat_seconds: int = 1800) -> None:
+        """Poll every ``poll_seconds``; log an 'alive' heartbeat every ``heartbeat_seconds``.
+
+        The heartbeat proves the runner is still working during quiet stretches (no signals ->
+        no other log lines). ``run_once`` skips already-handled bars, so polling is idempotent.
+        """
         log.info(
             "live runner started in %s mode (%d markets)", self._mode.value, len(self._markets)
         )
+        last_heartbeat = time.monotonic()
         while not self._halted:
             try:
                 self.run_once()
             except Exception:
                 log.exception("run_once failed; retrying next poll")
+            if time.monotonic() - last_heartbeat >= heartbeat_seconds:
+                log.info(
+                    "heartbeat: alive, %s mode, equity=%.0f, day=%s",
+                    self._mode.value,
+                    self._last_equity,
+                    self._day,
+                )
+                last_heartbeat = time.monotonic()
             time.sleep(poll_seconds)
         log.warning("live runner stopped (halted: %s)", self._halt_reason)
 
