@@ -22,6 +22,7 @@ import logging
 from pathlib import Path
 
 from qplus.live.mt5_bridge import Mt5Bridge
+from qplus.live.notify import Notifier
 from qplus.live.risk_control import RiskController, RiskLimits
 from qplus.live.runner import (
     LiveRunner,
@@ -96,6 +97,7 @@ def main(argv: list[str] | None = None) -> None:
         start_balance = args.start_balance if args.start_balance is not None else account.balance
         limits = RiskLimits(risk_per_trade=risk_per_trade_from_paper_config())  # M3: from config
         log.info("risk per trade: %.3f%% of the initial balance", limits.risk_per_trade * 100)
+        notifier = Notifier(_LIVE_DIR / "signals.log", beep=True)  # +Telegram if env vars set
         runner = LiveRunner(
             bridge,
             markets_from_paper_config(),
@@ -104,6 +106,7 @@ def main(argv: list[str] | None = None) -> None:
             mode=mode,
             state_path=state_path,
             long_only=long_only_from_paper_config(),
+            notifier=notifier,
         )
         if args.once:
             try:  # N3: a single cycle must not crash with a bare traceback on a transient error
