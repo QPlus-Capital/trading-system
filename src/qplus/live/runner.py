@@ -152,7 +152,6 @@ class LiveRunner:
         self._halted = False
         self._halt_reason = ""
         self._state_path = state_path
-        self._last_equity = 0.0  # remembered for the heartbeat
         self._cycle_bars = 0  # new closed bars processed this cycle
         self._cycle_signals = 0  # signals fired this cycle
         self._load_state()
@@ -225,7 +224,6 @@ class LiveRunner:
 
         # Recompute total open risk from the live positions (source of truth).
         self._risk.open_risk = self._total_open_risk()
-        self._last_equity = account.equity
 
         # Safety cut-off first.
         flat = self._risk.must_flatten(account.equity)
@@ -390,29 +388,20 @@ class LiveRunner:
 
     # -- loop --
 
-    def run_forever(self, poll_seconds: int = 60, heartbeat_seconds: int = 1800) -> None:
-        """Poll every ``poll_seconds``; log an 'alive' heartbeat every ``heartbeat_seconds``.
+    def run_forever(self, poll_seconds: int = 60) -> None:
+        """Poll every ``poll_seconds`` and process; ``run_once`` skips already-handled bars.
 
-        The heartbeat proves the runner is still working during quiet stretches (no signals ->
-        no other log lines). ``run_once`` skips already-handled bars, so polling is idempotent.
+        The only routine log line is the per-H4-close cycle summary (from ``run_once``); there is
+        no periodic heartbeat, to keep the log to connection info, cycle summaries and trades.
         """
         log.info(
             "live runner started in %s mode (%d markets)", self._mode.value, len(self._markets)
         )
-        last_heartbeat = time.monotonic()
         while not self._halted:
             try:
                 self.run_once()
             except Exception:
                 log.exception("run_once failed; retrying next poll")
-            if time.monotonic() - last_heartbeat >= heartbeat_seconds:
-                log.info(
-                    "heartbeat: alive, %s mode, equity=%.0f, day=%s",
-                    self._mode.value,
-                    self._last_equity,
-                    self._day,
-                )
-                last_heartbeat = time.monotonic()
             time.sleep(poll_seconds)
         log.warning("live runner stopped (halted: %s)", self._halt_reason)
 
