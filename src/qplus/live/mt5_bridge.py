@@ -310,6 +310,33 @@ class Mt5Bridge:
             )
         return out
 
+    def history_deals(self, since: datetime) -> list[dict[str, Any]]:
+        """Raw closed deals since ``since`` (for monitoring); empty list if none.
+
+        Returns the fields needed to reconstruct round-trip trades + the realized equity curve:
+        time (epoch s), type (0=buy,1=sell,2=balance), entry (0=in,1=out), position_id, symbol,
+        volume, price, and the money legs profit / swap / commission.
+        """
+        m = self._require()
+        raw = m.history_deals_get(since, datetime.now(tz=UTC))
+        if raw is None:
+            return []
+        return [
+            {
+                "time": int(d.time),
+                "type": int(d.type),
+                "entry": int(d.entry),
+                "position_id": int(d.position_id),
+                "symbol": str(d.symbol),
+                "volume": float(d.volume),
+                "price": float(d.price),
+                "profit": float(d.profit),
+                "swap": float(d.swap),
+                "commission": float(d.commission),
+            }
+            for d in raw
+        ]
+
     # -- orders --
 
     def _filling_mode(self, sym: str) -> int:

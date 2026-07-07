@@ -1,0 +1,51 @@
+"""Load the backtest reference and its Monte-Carlo expectation band for the live comparison.
+
+The reference is the equity report's flat-0.15% trade stream (``reports/equity/portfolio_trades``).
+Everything is expressed in **R-multiples** (PnL / per-trade risk) so the live account (any size /
+broker) is comparable to the backtest without a currency/scale mismatch.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from qplus.backtest.portfolio.equity_report import edge_stats
+
+_BACKTEST_RISK = 300.0  # 0.15% of the equity-report's 200k base -> R = pnl / 300
+
+
+def load_reference(trades_csv: str | Path) -> dict[str, Any]:
+    """Backtest edge metrics (overall + per market) + per-trade R-multiples from the report CSV."""
+    df = pd.read_csv(trades_csv)  # columns: date, equity, market, pnl
+    pnl = df["pnl"].to_numpy(dtype=float)
+    return {
+        "trades": len(df),
+        "overall": edge_stats(pnl),
+        "per_market": {
+            str(m): edge_stats(g["pnl"].to_numpy(dtype=float)) for m, g in df.groupby("market")
+        },
+        "r_multiples": pnl / _BACKTEST_RISK,
+    }
+
+
+def mc_band(r: np.ndarray, n_trades: int, *, n_sims: int = 2000, seed: int = 7) -> pd.DataFrame:
+    """Expected cumulative-R path band (5th / median / 95th) over ``n_trades`` trades.
+
+    Bootstraps the backtest R-multiples: 'if the backtest edge held, where should a live account
+    of this many trades be?'. Overlay the live cumulative R on it to see if live tracks expectation.
+    """
+    n = max(int(n_trades), 1)
+    rng = np.random.default_rng(seed)
+    paths = np.cumsum(rng.choice(r, size=(n_sims, n), replace=True), axis=1)
+    return pd.DataFrame(
+        {
+            "trade": np.arange(1, n + 1),
+            "p5": np.percentile(paths, 5, axis=0),
+            "p50": np.percentile(paths, 50, axis=0),
+            "p95": np.percentile(paths, 95, axis=0),
+        }
+    )
