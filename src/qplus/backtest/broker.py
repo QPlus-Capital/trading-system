@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass, field, replace
 from datetime import timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +31,19 @@ from nautilus_trader.backtest.config import ImportableFillModelConfig
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _INT_YEAR = 360.0  # standard bank year for interest-mode swaps
+
+
+# --------------------------------------------------------------------------------------------
+# Per-instrument broker terms (commission + margin) -- the broker-specific half of an instrument
+# --------------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class InstrumentSpec:
+    """The broker-specific terms of one instrument (the market-intrinsic specs -- tick, contract
+    size, precision, currency -- stay in ``qplus.instruments``; these are what a broker sets)."""
+
+    maker_fee: Decimal  # commission per side, as a fraction of notional
+    taker_fee: Decimal
+    margin_init: Decimal  # initial margin fraction (== maintenance here); ~1/leverage
 
 
 # --------------------------------------------------------------------------------------------
@@ -122,6 +136,7 @@ class BrokerProfile:
     prob_slippage: float = 0.0  # P(a fill slips one tick); 0 = frictionless (baseline)
     random_seed: int = 13
     swap_specs: dict[str, SwapSpec] = field(default_factory=dict)
+    instrument_specs: dict[str, InstrumentSpec] = field(default_factory=dict)
 
     def fill_model_config(self) -> ImportableFillModelConfig | None:
         """The venue's fill model for this broker's slippage, or ``None`` if frictionless."""
@@ -141,18 +156,54 @@ class BrokerProfile:
         """A copy of this profile carrying the given swap-rate snapshot."""
         return replace(self, swap_specs=swap_specs)
 
+    def with_instruments(self, instrument_specs: dict[str, InstrumentSpec]) -> BrokerProfile:
+        """A copy of this profile carrying the given per-instrument broker terms."""
+        return replace(self, instrument_specs=instrument_specs)
+
     def swap_spec(self, symbol: str) -> SwapSpec | None:
         """The swap spec for ``symbol`` (raw), or ``None`` if not in the snapshot."""
         return self.swap_specs.get(symbol)
 
+    def instrument_spec(self, symbol: str) -> InstrumentSpec:
+        """The broker terms (commission + margin) for ``symbol`` (raw). Fail-fast if missing."""
+        try:
+            return self.instrument_specs[symbol]
+        except KeyError:
+            raise KeyError(
+                f"broker profile '{self.name}' has no instrument spec for '{symbol}'"
+            ) from None
+
+
+# Per-symbol commission + margin for the current MT5 feed (The Trading Pit / MEX Atlantic).
+# Metals: ~0.0007% per side, ~10:1. FX: ~2 USD per 100k lot per side, ~50:1. Indices: no
+# commission (cost is in the spread), ~15:1. Switching broker = a different table here.
+_METAL = InstrumentSpec(Decimal("0.000007"), Decimal("0.000007"), Decimal("0.10"))
+_FX = InstrumentSpec(Decimal("0.00002"), Decimal("0.00002"), Decimal("0.02"))
+_INDEX = InstrumentSpec(Decimal("0"), Decimal("0"), Decimal("0.0667"))
+_TTP_SPECS: dict[str, InstrumentSpec] = {
+    "XAUUSD": _METAL,
+    "XAGUSD": _METAL,
+    "EURUSD": _FX,
+    "GBPUSD": _FX,
+    "AUDUSD": _FX,
+    "USDCHF": _FX,
+    "USDJPY": _FX,
+    "USDCAD": _FX,
+    "US30": _INDEX,
+    "DE40": _INDEX,
+    "USTEC": _INDEX,
+    "US500": _INDEX,
+}
 
 # Frictionless reference (matches the historical baseline: spread + commission only, no slippage).
-FRICTIONLESS = BrokerProfile(name="frictionless", prob_slippage=0.0)
+FRICTIONLESS = BrokerProfile(name="frictionless", prob_slippage=0.0, instrument_specs=_TTP_SPECS)
 
 # The current prop-firm brokers. prob_slippage is a starting estimate for H4 CFDs -- calibrate it
 # against the live demo's actual fills once enough trades have closed (see docs/roadmap.md).
-MEX_ATLANTIC = BrokerProfile(name="mex_atlantic", prob_slippage=0.15)
-TTP_MARKETS = BrokerProfile(name="ttp_markets", prob_slippage=0.15)
+MEX_ATLANTIC = BrokerProfile(
+    name="mex_atlantic", prob_slippage=0.15, instrument_specs=_TTP_SPECS
+)
+TTP_MARKETS = BrokerProfile(name="ttp_markets", prob_slippage=0.15, instrument_specs=_TTP_SPECS)
 
 
 # --------------------------------------------------------------------------------------------
