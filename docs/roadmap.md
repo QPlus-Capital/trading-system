@@ -1,136 +1,106 @@
 # QPlus — Development Roadmap
 
-Living plan for developing the trading system between now and the GmbH transition.
-Ordered by what we do next; update the `[STATUS]` markers as we go. This is the
-single reference for "what are we building and why".
+Living plan for developing the trading system. Ordered by what we do next; update the
+`[STATUS]` markers as we go. This is the single reference for "what are we building and why".
+
+## End-state vision
+
+- **Phased broker path:** now a prop-firm demo (MEX Atlantic, MT5) to learn the mechanics →
+  interim prop accounts (The Trading Pit) to earn while the GmbH is set up → long-term **own
+  broker, own accounts, no prop firm**.
+- **One server runs everything:** backtesting, live monitoring, and 24/7 trade execution on a
+  VPS — broker-independent, always on.
+- The constant across all of it is the **research framework + strategies + signal engine**;
+  only the broker layer swaps. So the framework is where durable value compounds.
 
 ## Guiding principles
 
-- **Durable vs ephemeral.** The current prop-firm / MetaTrader 5 setup is an *interim
-  bridge* until the GmbH is founded — the broker layer will change. Invest in the durable
-  parts (research framework, strategies/edges, analytics/dashboard, the pure signal engine)
-  and keep the ephemeral parts (MT5 bridge, prop-firm risk limits, VPS/hosting) minimal.
-- **Live data is out-of-sample — monitor, do NOT retune.** Continuously tweaking parameters
-  from live results is live curve-fitting and the classic way systematic edges break. Live
-  data measures whether the edge still holds; it never feeds back into tuning except via a
-  disciplined, walk-forward-validated re-fit (Phase 3).
-- **No overfitting.** Any parameter change goes through the same staged validation
-  (walk-forward + untouched holdout) that produced the current live config.
-- **Broker-agnostic core.** The signal engine and research are broker-independent; only the
-  bridge is swappable.
+- **Durable vs ephemeral.** Invest in the durable core (research framework, strategies/edges,
+  signal engine, analytics); keep the ephemeral broker-specific parts (MT5 bridge, prop-firm
+  limits, VPS wiring) minimal and swappable.
+- **Broker-agnostic keystone.** All broker/rule-specific assumptions (specs, spread, commission,
+  swap, slippage) live behind ONE swappable profile — switching broker/prop/own-account is a
+  config change, not a code change.
+- **Live data is out-of-sample — monitor & calibrate, do NOT retune.** Live results measure
+  whether the edge still holds and calibrate the framework's cost assumptions; they never feed
+  back into parameter tuning except via a disciplined, validated re-fit.
+- **No overfitting, no gold-plating.** Every parameter change goes through the same staged
+  validation (walk-forward + untouched holdout). The methodology goal is *no material blind
+  spots + swappable* — not theoretical perfection (a bottomless pit).
 
-## Workstreams (in order)
+## Current focus
 
-### Phase 1 — Swap-cost quantification   `[DONE 2026-07-07]`
+### Framework hardening — the swappable broker/market model   `[CURRENT FOCUS]`
 
-**Result:** swaps cost **~7% of gross profit / ~2 pp of annual return** (full history, flat
-0.15%); the edge survives comfortably (profit factor 1.80 → 1.73, expectancy €118 → €110). No
-market becomes unprofitable. Swap-heaviest: USDJPY (-17.9%) and AUDUSD (-15.7%) — the FX carry;
-index shorts even earn a *credit*, so indices are only ~5-6%. Tool: `swap_analysis.py`. Nothing
-to drop; if ever optimised, capping holding time on USDJPY/AUDUSD is the lever.
+**Goal:** a methodically complete, broker-agnostic backtesting framework — a swappable **market
+model** (specs + ALL costs) so switching broker / prop / instrument is a config change, and
+every metric is automatically net of every real cost. No material blind spots.
 
+**Keystone:** one swappable **broker/market profile** carrying instrument specs (tick, contract,
+leverage, min-lot) AND all costs applied *net-in-backtest*: spread, commission, swap, slippage,
+gap-through-stop.
 
-**Goal:** measure how much overnight swap/financing costs erode the backtest edge. The
-strategy holds positions over multiple days, and swaps are the one real cost NOT modelled in
-the backtest.
+**Sub-steps (ordered by leverage):**
+1. **Unify all costs, net-in-backtest.** Today: spread + commission are in the engine, swap is
+   post-hoc (done in the swap phase), slippage only in the stress test. Bring swap + slippage
+   into the backtest so every metric is automatically net. Introduce a `BrokerProfile` /
+   `MarketModel` abstraction as the single home for all cost/spec params.
+2. **Broker profile as a swappable config.** Extract the hardcoded specs (`instruments.py`) +
+   costs into a per-broker profile; "switch broker" = swap the profile and re-run the study net
+   of that broker's costs. Enables prop → TTP Markets → own broker with one change.
+3. **Execution realism, standard (not just stress).** Model gap-through-stop (weekend/news gaps
+   that jump the SL — the risk flagged on the live runner) and partial fills, in every backtest.
+4. **Multiple-testing budget.** Track the running count of everything ever tried and deflate
+   (DSR/PBO) accordingly — as instruments/variants/params grow, the selection-bias burden grows.
+5. **Regime robustness.** Break the edge down by volatility/trend regime + crisis windows: is it
+   a broad plateau or a fragile peak?
+6. **Close the fixed-vs-walk-forward gap.** We validate walk-forward-optimised params but trade
+   fixed SL/TP — validate the actually-traded config directly (or trade the re-fitted params).
+7. **Portfolio-level modelling.** Correlation / concurrent-drawdown across the simultaneously-
+   traded markets in sizing (partly in the DD feasibility already).
 
-**Why:** the last honest gap between backtest and live before real money — could meaningfully
-reduce the edge, especially on indices and gold.
+**Guardrail:** calibrate the cost assumptions against the live demo's actual fills/swaps as they
+arrive (the one reason to keep the monitor alive). Close material blind spots, not chase
+completeness.
 
-**Approach:**
-1. Pull per-symbol swap rates from the MT5 terminal (`symbol_info`: `swap_long`,
-   `swap_short`, `swap_mode`, `swap_rollover3days`) via the bridge; snapshot to a small table.
-2. For each backtest trade (equity-report / holdout stream), compute nights held (from
-   `ts_opened`→`ts_closed`, including the triple-swap rollover day) and the swap cost =
-   nights × swap-per-lot × volume, per side.
-3. Deduct swaps from each trade's PnL and re-compute the key metrics (total/annual return,
-   profit factor, expectancy, Sharpe) — with vs without swaps.
-4. Report the impact per market + overall.
+**Done when:** you can drop in a new instrument / training length / variant / SL-TP AND swap the
+broker profile, and get a fully net-of-cost, multiple-testing-honest, regime-checked verdict —
+without touching framework code.
 
-**Done when:** a clear number exists — "swaps cost ~X%/yr; the edge survives / is marginal on
-markets Y" — and we know whether any market should be dropped or its holding time capped.
+**Start with:** sub-steps 1 + 2 (the unified cost layer + broker profile) — the keystone that
+closes the two most material gaps and delivers the swappability.
 
-**Notes:** swap rates change over time and are broker-specific (TTP Markets ≠ MEX Atlantic);
-treat as an order-of-magnitude estimate, not a precise historical cost.
+## Done
 
-### Phase 2 — Live-vs-backtest monitoring dashboard   `[v0 BUILT 2026-07-07]`
+### Swap-cost quantification   `[DONE 2026-07-07]`
+Swaps cost **~7% of gross profit / ~2 pp of annual return** (full history), **~4.7% on the
+holdout**; the edge survives comfortably (PF 1.80→1.73). No market becomes unprofitable; index
+shorts even earn a credit. Tool: `swap_analysis.py`. (Feeds sub-step 1 above — the swap logic
+becomes part of the unified cost layer.)
 
-**v0 done:** `qplus.monitoring` package + Streamlit dashboard
-(`uv run streamlit run src/qplus/monitoring/dashboard.py`) — account/risk header, live-vs-
-backtest KPI tiles, realized equity, cumulative-R vs the Monte-Carlo band, per-market table,
-open positions + safety-floor headroom. Fills with data as the demo trades.
+### Live-vs-backtest monitoring dashboard   `[PAUSED at v1 — enough for now]`
+Streamlit dashboard (`uv run streamlit run src/qplus/monitoring/dashboard.py`): **v0** live-vs-
+backtest monitor (equity, KPI tiles, cumulative-R vs Monte-Carlo band, per-market table, risk
+floors) + **v1** research explorer (variation × instrument heatmap, variation ranking, over the
+study results). Paused deliberately — low value until the demo has traded and the real server
+exists. Its live-data feed stays useful as the **calibration** input for the framework's costs.
 
-**v1 done:** a "Research Explorer" view (sidebar mode switch) over the study results — pick
-training length / metric / instruments → a variation × instrument heatmap (blue=better,
-red=worse) + a variation ranking bar + the data table. `qplus.monitoring.research`.
-**v2 (freshness / saved snapshots) still to build; a "run a new study from the UI" button is a
-later, heavier item.**
+## Later
 
-
-**Goal:** an interactive dashboard that shows how live/paper trading tracks the backtest
-expectation, and is the seed of the broader analytics dashboard.
-
-**Why:** turns the demo phase into structured learning, catches edge decay early, and is the
-trigger signal for Phase 3 (re-fit). Durable — survives the GmbH transition.
-
-**Tech:** **Streamlit** (Python-native, fast to iterate, no web stack needed; `streamlit run`).
-Reads the existing backtest artifacts + live data; needs no changes to the live runner.
-
-**Data sources:**
-- *Live:* closed trades from MT5 (`history_deals_get` via the bridge) + the runner's
-  `reports/live/signals.log`; current open positions + account state.
-- *Backtest reference:* the equity-report artifacts (`reports/equity/`), the holdout stats,
-  and the Monte-Carlo distribution.
-
-**Build (incremental):**
-- **v0 — the core comparison:**
-  - Live equity curve overlaid on the backtest Monte-Carlo fan (is live inside the band?).
-  - Live vs backtest table: hit rate, payoff, profit factor, expectancy — overall + per market.
-  - Per-market drift flags (which markets under/over-perform their backtest expectation).
-  - Current risk usage: open-risk vs the 1.5% cap, equity vs the daily/trailing floors.
-- **v1 — the research selector (the dashboard vision):** pick strategy / variant / training
-  length / instrument → render that config's backtest charts (equity, scorecard, market
-  contributions, heatmaps). Reuses `equity_report` + the `validation/` tools as backends.
-- **v2 — freshness:** on-demand refresh of live data; optional scheduled snapshot so history
-  persists across runs.
-
-**Done when:** the dashboard shows live-vs-backtest at a glance and lets you drill into any
-market / config — without touching code.
-
-**Plumbing to build first:** a clean reader for the MT5 deal history (bridge method) and a
-loader that packages the backtest reference into a comparable form.
-
-### Phase 3 — Disciplined re-fit automation   `[LATER]`
-
-**Goal:** periodically (≈ every 6 months, matching the validated 6-month test-window length)
-re-fit the per-market SL/TP on the most recent 36 months, walk-forward-validated, triggered
-when Phase-2 monitoring shows real drift.
-
-**Why:** markets' volatility/regime shift; a stop optimal on old data may not be on new data.
-Keeps the config current WITHOUT live curve-fitting.
-
-**Guardrails (critical):**
-- Never tune on live / forward-test data — that is the monitoring signal, not training data.
-- Re-fit only on the disciplined rolling window via the existing study pipeline; re-validate
-  on a fresh, untouched holdout.
-- Human-in-the-loop: the pipeline proposes new params + evidence; a person approves the swap.
-  No silent auto-deploy.
-
-**Approach (sketch):** re-seed the catalog with updated data → run `edge.characterize` +
-`pipeline` on the trailing window → diff new vs current SL/TP → if materially better AND
-validated, present for approval.
-
-**Done when:** re-fitting is a one-command, validated, reviewable process — not a manual re-run.
+- **Disciplined re-fit automation.** Periodic (~6mo) walk-forward re-fit of SL/TP on the trailing
+  36 months, triggered by monitoring drift; never live-tuned, always validated, human-approved.
+- **Dashboard v2.** Freshness / saved snapshots; a "run a new study from the UI" button (heavy).
 
 ## Parked / future
 
-- **Second, uncorrelated strategy (trend-following complement).** The biggest structural
-  upgrade — diversifies the single-strategy risk and smooths combined equity. Pending Jan's
-  discussion with his partner. The pipeline is already built to plug a new strategy in.
-- **24/7 hosting (VPS).** Needed for real-money operation, but ephemeral (prop phase) — defer
-  until live on a real account.
+- **Second, uncorrelated strategy (trend-following complement).** The biggest structural upgrade
+  — diversifies the single-strategy risk. Pending Jan's discussion with his partner. The pipeline
+  is built to plug a new strategy in.
+- **24/7 hosting (VPS).** Part of the end-state, but defer the setup until live on a real account.
 
 ## Status log
 
-- **2026-07-07** — Plan created. Live paper-trading (EXECUTE) running on the MEX Atlantic demo;
-  strategy = `no_bb_wpr`, 9 markets, 0.15% flat risk. Next up: Phase 1 (swaps).
+- **2026-07-07** — Swap phase done; dashboard v0+v1 built then PAUSED. Reprioritised (Jan): the
+  swappable broker/market cost model is now the focus — durable, broker-agnostic, closes the
+  material gaps. Live paper-trading (EXECUTE) running on the MEX Atlantic demo (`no_bb_wpr`,
+  9 markets, 0.15% flat). Next up: unified net-in-backtest cost layer + broker profile.
