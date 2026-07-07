@@ -1,12 +1,13 @@
 # QPlus Backtesting Framework — Blueprint
 
-**Build status (2026-07-03):** all stages plus the end-to-end runner are tested modules,
-organized into subpackages under `qplus.backtest` that read as the funnel:
+**Build status:** all stages plus the end-to-end runner are tested modules, organized into
+subpackages under `qplus.backtest` that read as the funnel:
 `foundation/` (recipe, grid, execution, montecarlo, overfitting), `edge/` (walkforward,
 engine, characterize) = Stage 1, `select/` (universe) = Stage 2, `portfolio/` (trades,
-curves, drawdown, sizing, scorecard) = Stages 3-4, `validation/` (stress, heatmap,
-acceptance, validate) = Stage 5, plus `config.py` and `pipeline.py` (the runner). Only the
-first real full run remains (run `edge.characterize` for Stage 1, then `pipeline`).
+curves, drawdown, sizing, scorecard) = Stages 3-4, plus `config.py` and `pipeline.py` (the
+runner). `validation/` (stress, heatmap, acceptance, validate) are standalone analysis tools.
+The full study has been run and selected + validated the live config — see
+`config/live/paper_rsi_wpr_bb.py`. To reproduce: `edge.characterize` for Stage 1, then `pipeline`.
 
 **Design (2026-07-03), now built into modules.** A new strategy is
 plugged in and run through the staged pipeline below; each stage filters on a

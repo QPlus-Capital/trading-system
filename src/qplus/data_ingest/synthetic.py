@@ -1,14 +1,13 @@
 """Deterministic synthetic market data for offline backtests.
 
-Until real IBKR data is wired in, backtests run on a reproducible synthetic price
-series: a sine wave around a baseline price. The wave guarantees the fast and slow
-EMAs cross repeatedly (so the strategy trades), and it is fully deterministic (no
-randomness) so backtests are reproducible.
+Used by the tests / smoke checks: a reproducible synthetic price series (a sine wave
+around a baseline price). The wave guarantees the fast and slow EMAs cross repeatedly
+(so the strategy trades), and it is fully deterministic (no randomness) so backtests are
+reproducible. Real backtests use the MetaTrader 5 CSV data (see ``mt5_csv``).
 
 The data is written into a NautilusTrader ``ParquetDataCatalog`` -- the same catalog
-format that real IBKR data will later be ingested into. This keeps the "data lives
-in the catalog, config points at it" separation identical for synthetic and real
-data.
+format the real MT5 CSV data is ingested into. This keeps the "data lives in the catalog,
+config points at it" separation identical for synthetic and real data.
 
 Prices are built as :class:`~decimal.Decimal` and rounded to the instrument's
 precision via ``make_price``; the sine term is only a shape function.

@@ -11,10 +11,11 @@ QPlus Capital's quantitative trading system, built on
 [NautilusTrader](https://nautilustrader.io/). Purpose: **backtesting** strategies on
 historical data first, then **paper trading**, then **live trading**.
 
-- **Markets:** CFDs via Interactive Brokers (FX, indices like US30, commodities).
-  Daily/swing timeframes first, intraday later.
-- **Stack:** Python 3.13, `uv` for packaging, NautilusTrader engine, IBKR as
-  broker/data source. Tooling: `ruff`, `mypy`, `pytest`.
+- **Markets:** CFDs (FX, indices like US30, commodities) on the 4H timeframe. Live/paper
+  execution runs via MetaTrader 5 — interim prop-firm phase (MEX Atlantic demo / TTP Markets
+  live); the broker layer changes in a later phase.
+- **Stack:** Python 3.13, `uv` for packaging, NautilusTrader (backtest engine), MetaTrader5
+  (live bridge). Tooling: `ruff`, `mypy`, `pytest`.
 
 ## Team & roles
 

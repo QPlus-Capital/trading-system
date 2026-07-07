@@ -1,14 +1,13 @@
-"""Paper/live configuration for the selected strategy on The Trading Pit.
+"""Paper/live configuration for the selected strategy (prop-firm phase, via MetaTrader 5).
 
-The research pipeline (see docs/paper-trading-spec.md) selected: **RsiWprBb** with the
-Bollinger and Williams-%R buy-confirmations OFF (the RSI filter kept), a 36-month parameter
-fit, **flat** position sizing (the drawdown-throttle added nothing once the daily limit is
-enforced), on **9 markets**, under The Trading Pit's 6% trailing / 3% daily drawdown limits.
+The research pipeline selected: **RsiWprBb** with the Bollinger and Williams-%R buy-
+confirmations OFF (the RSI filter kept), a 36-month parameter fit, **flat** position sizing
+(the drawdown-throttle added nothing once the daily limit is enforced), on **9 markets**,
+under the prop firm's 6% trailing / 3% daily drawdown limits.
 
 Stop-loss / take-profit are FIXED per market (fit on the most recent 36 months; re-fit
-periodically). This module is the single source of truth for those decisions; wiring it to a
-live NautilusTrader TradingNode (MT5 / The Trading Pit adapter + account) is the remaining
-step -- see the TODO at the bottom.
+periodically). This module is the single source of truth for those decisions; the live MT5
+runner (qplus.live.run) reads it and enforces the drawdown limits -- see the note at the bottom.
 """
 
 from typing import Any

@@ -1,11 +1,13 @@
 # QPlus Capital – Trading System
 
-Quantitative trading system for **QPlus Capital**, built on
-[NautilusTrader](https://nautilustrader.io/). It is used first for **backtesting**
-strategies on historical data, then **paper trading**, and finally **live trading**.
+Quantitative trading system for **QPlus Capital**. It is used first for **backtesting**
+strategies on historical data (via [NautilusTrader](https://nautilustrader.io/)), then
+**paper trading**, and finally **live trading**.
 
-Primary markets are **CFDs** via Interactive Brokers (FX, indices such as US30,
-and commodities), starting with daily/swing timeframes and moving to intraday later.
+Primary markets are **CFDs** (FX, indices such as US30, and commodities) on the **4H**
+timeframe. Live/paper execution currently runs through **MetaTrader 5** — this is the
+interim setup for the prop-firm phase (MEX Atlantic demo / TTP Markets live); the broker
+layer will change in a later phase.
 
 > New here? Read **[RUN.md](RUN.md)** — it gets you from a fresh clone to a runnable
 > setup. Working with Claude Code? See **[CLAUDE.md](CLAUDE.md)** for the project
@@ -17,8 +19,8 @@ and commodities), starting with daily/swing timeframes and moving to intraday la
 | ----------------- | ------------------------------------------------------ |
 | **Python 3.13**   | Implementation language                                |
 | **uv**            | Package & environment management                       |
-| **NautilusTrader**| Event-driven engine for backtesting & live trading     |
-| **IBKR**          | Interactive Brokers – broker and data source           |
+| **NautilusTrader**| Event-driven engine for backtesting                    |
+| **MetaTrader 5**  | Live/paper broker connection (interim, prop-firm phase)|
 | **ruff / mypy / pytest** | Linting & formatting, type checking, tests      |
 
 ## Repository layout
@@ -28,9 +30,9 @@ trading-system/
 ├── src/qplus/              # Python package (versioned source code)
 │   ├── strategies/         # Strategy classes — single source of truth,
 │   │                       #   shared by both backtest and live
-│   ├── backtest/           # Backtest runners & wiring
-│   ├── live/               # Live trading runners & wiring
-│   └── data_ingest/        # Data acquisition & preparation (IBKR -> catalog)
+│   ├── backtest/           # Backtest runners & wiring (staged study pipeline)
+│   ├── live/               # Live/paper runner + MT5 bridge + risk control
+│   └── data_ingest/        # Data acquisition & preparation (MT5 CSV -> catalog)
 ├── config/
 │   ├── backtest/           # Backtest configurations
 │   └── live/               # Live configurations (only approved strategies)
@@ -45,13 +47,13 @@ The structure is intentionally lean and will grow as NautilusTrader is integrate
 
 ## Setup
 
-Requires Apple Silicon (arm64) or Linux. Full step-by-step instructions are in
-**[RUN.md](RUN.md)**. Short version:
+Live/paper trading runs on **Windows** (MetaTrader 5 is Windows-only); the backtest also
+runs on macOS/Linux. Full step-by-step instructions are in **[RUN.md](RUN.md)**. Short
+version:
 
 ```bash
-uv sync                # install dependencies into .venv
-uv add nautilus_trader && uv sync   # first time only (see RUN.md)
-cp .env.example .env   # then fill in real values in .env
+uv sync                # install dependencies (incl. NautilusTrader) into .venv
+cp .env.example .env   # optional: only for Telegram notifications
 ```
 
 ## Backtest vs. live
