@@ -73,8 +73,13 @@ gap-through-stop.
    gold-plating).
 4. **Multiple-testing budget.** Track the running count of everything ever tried and deflate
    (DSR/PBO) accordingly — as instruments/variants/params grow, the selection-bias burden grows.
-5. **Regime robustness.** Break the edge down by volatility/trend regime + crisis windows: is it
-   a broad plateau or a fragile peak?
+5. **Regime robustness.** `[DONE]` `portfolio/regime.py` classifies each trade by its instrument's
+   volatility + trend regime (per-instrument terciles, self-calibrating) and by named crisis
+   windows, then reports the edge (in R) per bucket. Result: a **broad plateau** — expectancy is
+   positive across all vol regimes (0.18/0.39/0.49 R, stronger in high vol) and all trend regimes
+   (0.40/0.40/0.30 R, weaker but still positive in strong trends, the expected mean-reversion
+   signature), and net-positive in every crisis (China/Q4-2018/COVID/2022). Honest caveat: crises
+   carry fat single-trade tails (worst −20 R in COVID = a gap-through-stop, now captured).
 6. **Close the fixed-vs-walk-forward gap.** `[DONE]` The holdout now runs BOTH over the same
    reserved windows: the **frozen live SL/TP** (what we actually trade) and per-window **re-optimised**
    (the process). `extract_holdout_trades(..., fixed=True)` skips the per-window optimisation and
@@ -144,6 +149,8 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
 - **2026-07-07** — Sub-step 6 (fixed-vs-walk-forward gap) done: the holdout runs the frozen live
   SL/TP and the per-window re-optimised params over the same windows; the scorecard shows both so
   the freezing cost is explicit. `extract_holdout_trades(fixed=...)` + a generic N-column
-  scorecard. XAUUSD smoke: freezing not harmful (optimiser converges to the same SL). Next:
-  sub-step 4 (multiple-testing budget) or 5 (regime robustness); slippage calibration blocked on
-  live fills.
+  scorecard. XAUUSD smoke: freezing not harmful (optimiser converges to the same SL).
+- **2026-07-07** — Sub-step 5 (regime robustness) done: `portfolio/regime.py` + regime.png. Edge
+  is a broad plateau across vol + trend regimes and net-positive in every named crisis; the one
+  caveat is fat crisis tails (−20 R COVID gap). Only sub-steps 4 (multiple-testing budget) and 7
+  (portfolio correlation) remain; slippage calibration still blocked on live fills.
