@@ -48,6 +48,7 @@ from qplus.backtest.config import load_config_module
 from qplus.backtest.edge.engine import run_walkforward
 from qplus.backtest.edge.walkforward import normalized_wfe, walk_forward_efficiency
 from qplus.backtest.foundation.recipe import SweepRecipe
+from qplus.backtest.foundation.trial_budget import study_trial_budget
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _START_EQUITY = 200_000.0  # matches SweepRecipe.VENUE starting balance
@@ -332,11 +333,12 @@ def main(argv: list[str] | None = None) -> None:
                 f"| elapsed {elapsed / 60:.1f}m | ETA ~{eta_h:.1f}h"
             )
 
-    # DSR must deflate by the total configs the winner was selected among, not just the
-    # variation count: variations x training lengths (F2). The per-window grid adds further
-    # degrees of freedom, so this is still a floor on the true trial count.
-    _write_reports(rows, out_dir, n_var * len(train_list))
-    print(f"\nDone in {(time.time() - started) / 60:.1f} min. Full results: {out_dir}")
+    # DSR must deflate by the total configs the winner was selected among (F2): the honest breadth
+    # is variations x training-lengths x per-window param-combos, not just one dimension.
+    budget = study_trial_budget(cfg)
+    print(f"\nmultiple-testing budget: {budget.summary()}")
+    _write_reports(rows, out_dir, budget.total)
+    print(f"Done in {(time.time() - started) / 60:.1f} min. Full results: {out_dir}")
 
 
 if __name__ == "__main__":

@@ -71,8 +71,13 @@ gap-through-stop.
    real weekend/news-gap opens, the flagged gap risk is captured in every backtest — no code
    needed. Partial fills are immaterial at our lot sizes on these liquid CFDs (skipped, no
    gold-plating).
-4. **Multiple-testing budget.** Track the running count of everything ever tried and deflate
-   (DSR/PBO) accordingly — as instruments/variants/params grow, the selection-bias burden grows.
+4. **Multiple-testing budget.** `[DONE]` The DSR/PBO machinery already existed
+   (`foundation/overfitting.py`); the gap was an honest trial count. `foundation/trial_budget.py`
+   computes the effective budget = variations × train-lengths × param-combos (576 for the current
+   study, vs the 36 the ranking used before), wired into `characterize.py` so the DSR deflates by
+   the full search breadth and grows automatically as variants/params are added. Documented the
+   caveats: the product is a conservative upper bound (correlated trials) and the DSR is only as
+   honest as the trial-Sharpe variance fed with it (the study computes that correctly).
 5. **Regime robustness.** `[DONE]` `portfolio/regime.py` classifies each trade by its instrument's
    volatility + trend regime (per-instrument terciles, self-calibrating) and by named crisis
    windows, then reports the edge (in R) per bucket. Result: a **broad plateau** — expectancy is
@@ -152,5 +157,9 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
   scorecard. XAUUSD smoke: freezing not harmful (optimiser converges to the same SL).
 - **2026-07-07** — Sub-step 5 (regime robustness) done: `portfolio/regime.py` + regime.png. Edge
   is a broad plateau across vol + trend regimes and net-positive in every named crisis; the one
-  caveat is fat crisis tails (−20 R COVID gap). Only sub-steps 4 (multiple-testing budget) and 7
-  (portfolio correlation) remain; slippage calibration still blocked on live fills.
+  caveat is fat crisis tails (−20 R COVID gap).
+- **2026-07-07** — Sub-step 4 (multiple-testing budget) done: `foundation/trial_budget.py` +
+  wired into `characterize.py` (DSR now deflates by the honest 576, not 36). Verified the
+  fixed-config holdout separately: net of all costs +58.2% / PF 1.70 / Sharpe 3.55 / −2.3% DD
+  (vs re-opt +78.3% / 2.92 / −4.4%) — the traded config is OOS-validated and lower-risk. Only
+  sub-step 7 (portfolio correlation) remains; slippage calibration still blocked on live fills.

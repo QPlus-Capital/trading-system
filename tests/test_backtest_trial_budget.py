@@ -1,0 +1,38 @@
+"""Tests for the honest multiple-testing budget."""
+
+from types import SimpleNamespace
+
+from qplus.backtest.config import load_config_module
+from qplus.backtest.foundation.trial_budget import TrialBudget, study_trial_budget
+
+_REPO_ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
+
+
+def test_total_is_the_product_of_dimensions() -> None:
+    assert TrialBudget(12, 3, 16).total == 576
+
+
+def test_study_budget_from_the_real_overnight_config() -> None:
+    cfg = load_config_module(_REPO_ROOT / "config" / "study" / "overnight.py")
+    budget = study_trial_budget(cfg)
+    # 12 variations x 3 train-lengths x 16 param-combos (SL 4 x TP 4).
+    assert budget.variations == 12
+    assert budget.train_lengths == 3
+    assert budget.param_combos == 16
+    assert budget.total == 576
+
+
+def test_scalar_train_months_counts_as_one_length() -> None:
+    cfg = SimpleNamespace(
+        VARIATIONS={"a": {}, "b": {}},
+        TRAIN_MONTHS=24,  # scalar, not a list
+        PARAM_GRID={"stop_loss_pct": [0.5, 1.0]},
+    )
+    budget = study_trial_budget(cfg)
+    assert budget.train_lengths == 1
+    assert budget.total == 4  # 2 variations x 1 x 2 combos
+
+
+def test_missing_fields_fall_back_to_one() -> None:
+    budget = study_trial_budget(SimpleNamespace())
+    assert budget.total == 1  # 1 variation x 1 train-length x 1 (empty grid)
