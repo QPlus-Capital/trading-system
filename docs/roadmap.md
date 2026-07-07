@@ -45,6 +45,19 @@ gap-through-stop.
    post-hoc (done in the swap phase), slippage only in the stress test. Bring swap + slippage
    into the backtest so every metric is automatically net. Introduce a `BrokerProfile` /
    `MarketModel` abstraction as the single home for all cost/spec params.
+   - `[DONE]` `BrokerProfile` (`src/qplus/backtest/broker.py`) + **slippage** wired natively via
+     NautilusTrader's `FillModel` from the profile into the venue (`recipe.py`). Validated:
+     zero-slippage == the frictionless baseline exactly; slippage moves realised PnL against us
+     (fill price, not trigger). `FRICTIONLESS` / `MEX_ATLANTIC` / `TTP_MARKETS` profiles.
+   - `[DONE]` **Swap** as the exact delta, netted onto the R-multiple stream
+     (`swap_r_per_trade`), so every equity-report metric (illustration + holdout) is net of swap.
+     Per-trade SL is now recorded (`trades.py`) so the cost is exact even where the holdout
+     re-optimises SL per window. Rates are a **persisted snapshot** (`config/broker/*_swaps.json`,
+     pulled from the terminal by `swap_analysis`) so backtests are reproducible + offline.
+     Validated end-to-end on XAUUSD (same trades, ~4% R drag; native profile == frictionless).
+   - `[NEXT]` fold instrument specs into the profile (sub-step 2) and calibrate `prob_slippage`
+     against the live demo's actual fills. Then re-run `equity_report --holdout` for the
+     net-of-all-cost headline (needs the terminal once to write the swap snapshot).
 2. **Broker profile as a swappable config.** Extract the hardcoded specs (`instruments.py`) +
    costs into a per-broker profile; "switch broker" = swap the profile and re-run the study net
    of that broker's costs. Enables prop → TTP Markets → own broker with one change.
@@ -104,3 +117,6 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
   swappable broker/market cost model is now the focus — durable, broker-agnostic, closes the
   material gaps. Live paper-trading (EXECUTE) running on the MEX Atlantic demo (`no_bb_wpr`,
   9 markets, 0.15% flat). Next up: unified net-in-backtest cost layer + broker profile.
+- **2026-07-07** — Sub-step 1 started: `BrokerProfile` built + **slippage** wired natively
+  (`FillModel`) from the profile into the venue, validated end-to-end (frictionless baseline
+  preserved; slippage moves PnL). Next: swap as the exact in-backtest delta.
