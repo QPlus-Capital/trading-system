@@ -26,6 +26,7 @@ from qplus.live.mt5_bridge import Mt5Bridge
 from qplus.live.runner import position_risk
 from qplus.monitoring.live import deals_to_trades, equity_curve, live_stats
 from qplus.monitoring.reference import load_reference, mc_band
+from qplus.monitoring.research import METRICS, latest_study_csv, load_study, variant_ranking
 
 _REPO = Path(__file__).resolve().parents[3]
 _LIVE_RISK_PCT = 0.0015  # 0.15% flat, matches the live config
@@ -91,12 +92,10 @@ def _stat_row(label: str, live: float, ref: float, fmt: str, higher_better: bool
     )
 
 
-def main() -> None:
-    st.set_page_config(page_title="QPlus Monitor", layout="wide")
+def _live_view() -> None:
     st.title("QPlus — Live vs. Backtest Monitor")
 
     with st.sidebar:
-        st.header("Controls")
         days = st.slider("History window (days)", 7, 365, 90)
         if st.button("Refresh now"):
             st.cache_data.clear()
@@ -241,6 +240,82 @@ def main() -> None:
         f2.metric(
             "Daily floor (2.5%)", f"{daily:,.0f}", delta=f"{live['equity'] - daily:+,.0f} headroom"
         )
+
+
+def _research_view() -> None:
+    st.title("QPlus — Research Explorer")
+    csv = latest_study_csv(_REPO / "reports")
+    if csv is None:
+        st.warning("No study found under reports/study/. Run `qplus.backtest.edge.characterize`.")
+        return
+    df = load_study(csv)
+
+    with st.sidebar:
+        trains = sorted(df["train_months"].unique())
+        train = int(st.selectbox("Training length (months)", trains, index=len(trains) - 1))
+        metric_label = st.selectbox("Metric", list(METRICS.keys()))
+        instruments = sorted(df["instrument"].unique())
+        picked = st.multiselect("Instruments", instruments, default=instruments)
+
+    col, mid, higher = METRICS[metric_label]
+    sub = df[(df["train_months"] == train) & (df["instrument"].isin(picked))]
+    st.caption(
+        f"Study: {csv.parent.name} · {len(df)} rows · frozen live config = no_bb_wpr @ 36m. "
+        "Colour: blue = better, red = worse."
+    )
+    if sub.empty:
+        st.info("Select at least one instrument.")
+        return
+
+    # -- heatmap: variation x instrument --
+    st.subheader(f"{metric_label} — variation × instrument (train {train}m)")
+    lo, hi = ("#d03b3b", "#2a78d6") if higher else ("#2a78d6", "#d03b3b")
+    scale = (
+        alt.Scale(range=[lo, "#f0efec", hi], domainMid=mid)
+        if mid is not None
+        else alt.Scale(range=[lo, hi])
+    )
+    heat = (
+        alt.Chart(sub)
+        .mark_rect(stroke="#fcfcfb", strokeWidth=2)
+        .encode(
+            x=alt.X("instrument:N", title=None, sort=picked),
+            y=alt.Y("variation:N", title=None),
+            color=alt.Color(f"{col}:Q", title=metric_label, scale=scale),
+            tooltip=["instrument", "variation", alt.Tooltip(f"{col}:Q", format=".2f")],
+        )
+        .properties(height=28 * sub["variation"].nunique() + 40)
+    )
+    st.altair_chart(heat, use_container_width=True)
+
+    # -- variation ranking (mean across markets) --
+    st.subheader(f"Variation ranking — mean {metric_label} across markets (train {train}m)")
+    rank = variant_ranking(sub, train, col)
+    bars = (
+        alt.Chart(rank)
+        .mark_bar(color="#2a78d6", cornerRadius=3)
+        .encode(
+            x=alt.X(f"{col}:Q", title=metric_label),
+            y=alt.Y("variation:N", sort="-x", title=None),
+            tooltip=["variation", alt.Tooltip(f"{col}:Q", format=".2f")],
+        )
+        .properties(height=28 * len(rank) + 40)
+    )
+    st.altair_chart(bars, use_container_width=True)
+
+    st.subheader("Data")
+    st.dataframe(sub.round(3), use_container_width=True, hide_index=True)
+
+
+def main() -> None:
+    st.set_page_config(page_title="QPlus Monitor", layout="wide")
+    with st.sidebar:
+        view = st.radio("View", ["Live Monitor", "Research Explorer"])
+        st.divider()
+    if view == "Live Monitor":
+        _live_view()
+    else:
+        _research_view()
 
 
 main()  # Streamlit executes the module top-to-bottom
