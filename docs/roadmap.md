@@ -53,7 +53,14 @@ markets Y" — and we know whether any market should be dropped or its holding t
 **Notes:** swap rates change over time and are broker-specific (TTP Markets ≠ MEX Atlantic);
 treat as an order-of-magnitude estimate, not a precise historical cost.
 
-### Phase 2 — Live-vs-backtest monitoring dashboard   `[NEXT]`
+### Phase 2 — Live-vs-backtest monitoring dashboard   `[v0 BUILT 2026-07-07]`
+
+**v0 done:** `qplus.monitoring` package + Streamlit dashboard
+(`uv run streamlit run src/qplus/monitoring/dashboard.py`) — account/risk header, live-vs-
+backtest KPI tiles, realized equity, cumulative-R vs the Monte-Carlo band, per-market table,
+open positions + safety-floor headroom. Fills with data as the demo trades. **v1 (research
+selector) + v2 (freshness) still to build.**
+
 
 **Goal:** an interactive dashboard that shows how live/paper trading tracks the backtest
 expectation, and is the seed of the broader analytics dashboard.
