@@ -21,7 +21,14 @@ single reference for "what are we building and why".
 
 ## Workstreams (in order)
 
-### Phase 1 — Swap-cost quantification   `[NEXT]`
+### Phase 1 — Swap-cost quantification   `[DONE 2026-07-07]`
+
+**Result:** swaps cost **~7% of gross profit / ~2 pp of annual return** (full history, flat
+0.15%); the edge survives comfortably (profit factor 1.80 → 1.73, expectancy €118 → €110). No
+market becomes unprofitable. Swap-heaviest: USDJPY (-17.9%) and AUDUSD (-15.7%) — the FX carry;
+index shorts even earn a *credit*, so indices are only ~5-6%. Tool: `swap_analysis.py`. Nothing
+to drop; if ever optimised, capping holding time on USDJPY/AUDUSD is the lever.
+
 
 **Goal:** measure how much overnight swap/financing costs erode the backtest edge. The
 strategy holds positions over multiple days, and swaps are the one real cost NOT modelled in
@@ -46,7 +53,7 @@ markets Y" — and we know whether any market should be dropped or its holding t
 **Notes:** swap rates change over time and are broker-specific (TTP Markets ≠ MEX Atlantic);
 treat as an order-of-magnitude estimate, not a precise historical cost.
 
-### Phase 2 — Live-vs-backtest monitoring dashboard   `[AFTER P1]`
+### Phase 2 — Live-vs-backtest monitoring dashboard   `[NEXT]`
 
 **Goal:** an interactive dashboard that shows how live/paper trading tracks the backtest
 expectation, and is the seed of the broader analytics dashboard.
