@@ -217,14 +217,21 @@ def daily_equity(
 
 
 def extract_holdout_trades(
-    risk_amount: float, broker: BrokerProfile | None = None
+    risk_amount: float, broker: BrokerProfile | None = None, *, fixed: bool = False
 ) -> tuple[pd.DataFrame, np.ndarray]:
     """Re-run the walk-forward HOLDOUT for the frozen config -> (trades, flat EUR pnl per trade).
 
-    Reproduces the pipeline's genuine out-of-sample stream (no_bb_wpr, 36-month train, per-window
-    re-optimised SL/TP over the study grid, on the reserved 24 months). Slow: this is the real
-    validation, not the fast fixed-parameter illustration. ``pnl_base`` is at the 1% base risk, so
-    the flat contribution at our live risk is ``pnl_base * risk_amount / (base_risk * start)``.
+    Reproduces the pipeline's genuine out-of-sample stream (no_bb_wpr, 36-month train, on the
+    reserved 24 months). Slow: this is the real validation, not the fast fixed-parameter
+    illustration. ``pnl_base`` is at the 1% base risk, so the flat contribution at our live risk
+    is ``pnl_base * risk_amount / (base_risk * start)``.
+
+    ``fixed`` selects what is validated over those windows:
+    - ``False`` (default): SL/TP are **re-optimised per window** over the study grid -- validates
+      the re-fitting *process*.
+    - ``True``: the **frozen live SL/TP** are held constant every window -- validates the config we
+      actually trade. Run over the identical windows, the gap between the two is exactly the cost
+      of not re-optimising (sub-step 6: close the fixed-vs-walk-forward gap).
 
     If ``broker`` carries swap specs, the per-window SL recorded on each trade prices its exact
     overnight swap, which is netted into the returned flat EUR pnl (and slippage is applied in the
@@ -237,9 +244,10 @@ def extract_holdout_trades(
     switches = {k: v for k, v in dict(live.STRATEGY_SWITCHES).items() if k != "long_only"}
 
     frames = []
-    for factory, csv, leverage, _sl, _tp in live.MARKETS:
+    for factory, csv, leverage, sl, tp in live.MARKETS:
         name = str(factory().raw_symbol)
-        print(f"holdout walk-forward: {name} ...")
+        fixed_params = {"stop_loss_pct": sl, "take_profit_pct": tp} if fixed else None
+        print(f"holdout walk-forward ({'fixed' if fixed else 're-optimised'}): {name} ...")
         recipe = SweepRecipe(
             factory(),
             csv,
@@ -257,6 +265,7 @@ def extract_holdout_trades(
                 holdout_months=int(study.HOLDOUT_MONTHS),
                 phase="holdout",
                 embargo_days=int(study.EMBARGO_DAYS),
+                fixed_params=fixed_params,
             )
         )
     trades = pd.concat(frames, ignore_index=True)
@@ -343,28 +352,30 @@ _METRIC_LABELS = [
 ]
 
 
-def plot_scorecard(illus: dict[str, float], holdout: dict[str, float] | None, out: Path) -> None:
-    """Render the metrics: illustration (full history) and, if given, the walk-forward holdout."""
-    cols = ["Illustration (volle Historie)"]
-    data = [_fmt(illus)]
-    if holdout is not None:
-        cols.append("Holdout (Walk-Forward, unberuehrt)")
-        data.append(_fmt(holdout))
-    cell_text = [[data[c][r] for c in range(len(cols))] for r in range(len(_METRIC_LABELS))]
+def plot_scorecard(columns: list[tuple[str, dict[str, float]]], out: Path) -> None:
+    """Render the metric table: one column per ``(label, stats)`` pair, metrics down the rows.
 
-    fig, ax = plt.subplots(figsize=(6 + 3.2 * len(cols), 7.5))
+    Columns are the illustration and (when computed) the two holdouts -- the fixed-config one (what
+    we actually trade) and the re-optimised one (the re-fitting process) -- so the fixed-vs-walk-
+    forward gap is read off directly. The last column is highlighted.
+    """
+    labels = [c[0] for c in columns]
+    data = [_fmt(stats) for _, stats in columns]
+    cell_text = [[data[c][r] for c in range(len(columns))] for r in range(len(_METRIC_LABELS))]
+
+    fig, ax = plt.subplots(figsize=(6 + 3.2 * len(columns), 7.5))
     ax.axis("off")
     ax.set_title(
         "Kennzahlen -- no_bb_wpr, 9 Maerkte, flach 0.15% Risiko (Start EUR 200,000)\n"
-        "Illustration = volle Historie, feste Parameter (enthaelt In-Sample). "
-        "Holdout = Walk-Forward auf unberuehrten Daten (echte OOS-Aussage).",
+        "Illustration = volle Historie, feste Parameter (enthaelt In-Sample). Holdout = "
+        "Walk-Forward auf unberuehrten Daten: 'fest' = live-Parameter, 're-opt' = pro Fenster neu.",
         fontsize=11,
         pad=16,
     )
     table = ax.table(
         cellText=cell_text,
         rowLabels=_METRIC_LABELS,
-        colLabels=cols,
+        colLabels=labels,
         cellLoc="center",
         rowLoc="left",
         loc="upper center",
@@ -376,19 +387,8 @@ def plot_scorecard(illus: dict[str, float], holdout: dict[str, float] | None, ou
         if row == 0:
             cell.set_facecolor("#2b5c8a")
             cell.set_text_props(color="white", fontweight="bold")
-        elif col == len(cols) - 1 and holdout is not None:  # highlight the holdout column
+        elif col == len(columns) - 1 and len(columns) > 1:  # highlight the last column
             cell.set_facecolor("#eef4fb")
-    if holdout is not None:
-        fig.text(
-            0.5,
-            0.04,
-            "Holdout bestand die Freigabe sogar bis 0.175% Risiko (+95.4%); "
-            "hier zum Vergleich bei den live genutzten 0.15% gezeigt.",
-            ha="center",
-            va="bottom",
-            fontsize=9.5,
-            style="italic",
-        )
     fig.savefig(out, dpi=120, bbox_inches="tight")
     plt.close(fig)
 
@@ -463,25 +463,36 @@ def main(argv: list[str] | None = None) -> None:
     holdout_start = curve["date"].max() - pd.DateOffset(months=_HOLDOUT_MONTHS)
     illus = _stats(trades, illus_pnl, daily_close)
 
-    # -- Holdout: slow walk-forward on the reserved 24 months (--holdout regenerates, else cache) --
-    hold_csv = out_dir / "holdout_trades.csv"
-    if args.holdout:
-        h_trades, h_pnl = extract_holdout_trades(risk_amount)
-        h_trades = h_trades.assign(flat_pnl=h_pnl)
-        h_trades.to_csv(hold_csv, index=False)
-    holdout = None
-    if hold_csv.exists():
-        h = pd.read_csv(hold_csv)
-        holdout = _stats(h, h["flat_pnl"].to_numpy(dtype=float), daily_close)
+    # -- Holdouts: slow walk-forward on the reserved 24 months (--holdout regenerates, else cache).
+    # Two runs over the SAME windows: the frozen live SL/TP (what we trade) and per-window
+    # re-optimised (the process). Their gap is the cost of not re-optimising (sub-step 6). --
+    def _holdout(name: str, *, fixed: bool) -> dict[str, float] | None:
+        csv_path = out_dir / f"holdout_{name}_trades.csv"
+        if args.holdout:
+            h_trades, h_pnl = extract_holdout_trades(risk_amount, broker, fixed=fixed)
+            h_trades.assign(flat_pnl=h_pnl).to_csv(csv_path, index=False)
+        if not csv_path.exists():
+            return None
+        h = pd.read_csv(csv_path)
+        return _stats(h, h["flat_pnl"].to_numpy(dtype=float), daily_close)
+
+    fixed_holdout = _holdout("fixed", fixed=True)
+    reopt_holdout = _holdout("reopt", fixed=False)
+
+    columns: list[tuple[str, dict[str, float]]] = [("Illustration (volle Historie)", illus)]
+    if fixed_holdout is not None:
+        columns.append(("Holdout fest (live-Parameter)", fixed_holdout))
+    if reopt_holdout is not None:
+        columns.append(("Holdout re-opt (pro Fenster)", reopt_holdout))
 
     curve.to_csv(out_dir / "portfolio_trades.csv", index=False)
     plot_equity(curve, holdout_start, risk_pct, out_dir / "equity_over_time.png")
     plot_monte_carlo(trades["r"].to_numpy(dtype=float), risk_amount, out_dir / "monte_carlo.png")
     plot_market_contributions(trades, risk_amount, out_dir / "market_contributions.png")
-    plot_scorecard(illus, holdout, out_dir / "scorecard.png")
+    plot_scorecard(columns, out_dir / "scorecard.png")
 
-    print("\n===== ILLUSTRATION (full history) | HOLDOUT (walk-forward OOS) =====")
-    h_txt = holdout or {}
+    print("\n===== ILLUSTRATION | HOLDOUT fixed (live) | HOLDOUT re-opt (process) =====")
+    fx, ro = fixed_holdout or {}, reopt_holdout or {}
     for key, label in [
         ("trades", "trades"),
         ("hit_rate", "hit rate"),
@@ -490,8 +501,9 @@ def main(argv: list[str] | None = None) -> None:
         ("sharpe", "Sharpe"),
         ("max_drawdown", "max DD"),
     ]:
-        hv = f"{h_txt[key]:,.2f}" if holdout else "-- (run with --holdout)"
-        print(f"{label:14s} {illus[key]:>12,.2f} | {hv}")
+        fxv = f"{fx[key]:,.2f}" if fixed_holdout else "-- (--holdout)"
+        rov = f"{ro[key]:,.2f}" if reopt_holdout else "-- (--holdout)"
+        print(f"{label:14s} {illus[key]:>12,.2f} | {fxv:>14} | {rov:>14}")
     print(f"\nrisk/trade:    {risk_pct:.2f}% of start (EUR {risk_amount:,.0f})   charts: {out_dir}")
 
 
