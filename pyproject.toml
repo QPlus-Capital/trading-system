@@ -11,6 +11,7 @@ dependencies = [
     # Intel macOS (x86_64) is unsupported.
     "metatrader5>=5.0.5735",
     "nautilus-trader>=1.230.0",
+    "streamlit>=1.59.0",
 ]
 
 [dependency-groups]
