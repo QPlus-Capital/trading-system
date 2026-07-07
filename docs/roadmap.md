@@ -58,8 +58,13 @@ treat as an order-of-magnitude estimate, not a precise historical cost.
 **v0 done:** `qplus.monitoring` package + Streamlit dashboard
 (`uv run streamlit run src/qplus/monitoring/dashboard.py`) — account/risk header, live-vs-
 backtest KPI tiles, realized equity, cumulative-R vs the Monte-Carlo band, per-market table,
-open positions + safety-floor headroom. Fills with data as the demo trades. **v1 (research
-selector) + v2 (freshness) still to build.**
+open positions + safety-floor headroom. Fills with data as the demo trades.
+
+**v1 done:** a "Research Explorer" view (sidebar mode switch) over the study results — pick
+training length / metric / instruments → a variation × instrument heatmap (blue=better,
+red=worse) + a variation ranking bar + the data table. `qplus.monitoring.research`.
+**v2 (freshness / saved snapshots) still to build; a "run a new study from the UI" button is a
+later, heavier item.**
 
 
 **Goal:** an interactive dashboard that shows how live/paper trading tracks the backtest
