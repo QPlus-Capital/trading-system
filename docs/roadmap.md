@@ -75,8 +75,12 @@ gap-through-stop.
    (DSR/PBO) accordingly — as instruments/variants/params grow, the selection-bias burden grows.
 5. **Regime robustness.** Break the edge down by volatility/trend regime + crisis windows: is it
    a broad plateau or a fragile peak?
-6. **Close the fixed-vs-walk-forward gap.** We validate walk-forward-optimised params but trade
-   fixed SL/TP — validate the actually-traded config directly (or trade the re-fitted params).
+6. **Close the fixed-vs-walk-forward gap.** `[DONE]` The holdout now runs BOTH over the same
+   reserved windows: the **frozen live SL/TP** (what we actually trade) and per-window **re-optimised**
+   (the process). `extract_holdout_trades(..., fixed=True)` skips the per-window optimisation and
+   holds the live params; the scorecard shows both columns so the cost of freezing is read off
+   directly. Smoke (XAUUSD): freezing was not harmful — the re-optimiser converges to the same
+   SL, and the fixed config held up OOS. Full 9-market run: `equity_report --holdout`.
 7. **Portfolio-level modelling.** Correlation / concurrent-drawdown across the simultaneously-
    traded markets in sizing (partly in the DD feasibility already).
 
@@ -136,4 +140,10 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
 - **2026-07-07** — Sub-step 3 (gap-through-stop) resolved by verification: NautilusTrader already
   fills stops at the gapped price on a gap-through and at the trigger on a trade-through (empirical
   test + regression `tests/test_gap_through_stop.py`). The flagged gap risk is already in every
-  backtest. Next material step: sub-step 4 (multiple-testing budget) or slippage calibration.
+  backtest.
+- **2026-07-07** — Sub-step 6 (fixed-vs-walk-forward gap) done: the holdout runs the frozen live
+  SL/TP and the per-window re-optimised params over the same windows; the scorecard shows both so
+  the freezing cost is explicit. `extract_holdout_trades(fixed=...)` + a generic N-column
+  scorecard. XAUUSD smoke: freezing not harmful (optimiser converges to the same SL). Next:
+  sub-step 4 (multiple-testing budget) or 5 (regime robustness); slippage calibration blocked on
+  live fills.

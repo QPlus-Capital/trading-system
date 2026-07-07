@@ -66,11 +66,17 @@ def extract_market_trades(
     holdout_months: int = 0,
     phase: str = "select",
     embargo_days: int = 0,
+    fixed_params: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     """Walk-forward one instrument and return every OOS trade with timestamps + prices.
 
     Assumes the catalog is already seeded. Per window, optimizes on train by the
     drawdown-adjusted Calmar score, then records the timed trades of the test window.
+
+    If ``fixed_params`` is given, the per-window optimization is SKIPPED and those parameters
+    are used in every window instead -- the frozen-config walk-forward. Run over the same
+    windows as the optimized version it isolates one effect: the cost of trading fixed SL/TP
+    (as we do live) versus re-optimising each window (what the holdout otherwise validates).
 
     For a clean portfolio stream the caller MUST pass non-overlapping windows
     (``step_months == test_months``); otherwise trades in the overlap are recorded in two
@@ -103,16 +109,21 @@ def extract_market_trades(
 
     rows: list[dict[str, Any]] = []
     for window in windows:
-        best, best_score = combos[0], float("-inf")
-        for params in combos:
-            pnls, equity = extract_trade_pnls(
-                recipe.build_run_config(
-                    params, start=window.train_start.isoformat(), end=window.train_end.isoformat()
+        if fixed_params is not None:
+            best = fixed_params  # frozen config: no per-window optimization
+        else:
+            best, best_score = combos[0], float("-inf")
+            for params in combos:
+                pnls, equity = extract_trade_pnls(
+                    recipe.build_run_config(
+                        params,
+                        start=window.train_start.isoformat(),
+                        end=window.train_end.isoformat(),
+                    )
                 )
-            )
-            score = calmar_score(pnls, equity)
-            if score > best_score:
-                best_score, best = score, params
+                score = calmar_score(pnls, equity)
+                if score > best_score:
+                    best_score, best = score, params
         cfg = recipe.build_run_config(
             best, start=window.test_start.isoformat(), end=window.test_end.isoformat()
         )
