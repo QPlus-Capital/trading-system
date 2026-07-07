@@ -33,6 +33,11 @@ log = logging.getLogger("qplus.live")
 # manual trades in the same terminal.
 MAGIC = 770077
 
+# Bit flags of ``symbol_info.filling_mode`` (ENUM_SYMBOL_FILLING_FLAGS). The MetaTrader5 Python
+# module does not expose these ``SYMBOL_FILLING_*`` names, so the bit values are hard-coded.
+_SYMBOL_FILLING_FOK = 1
+_SYMBOL_FILLING_IOC = 2
+
 # Our research name -> the broker's base symbol name (before any account suffix).
 SYMBOL_MAP: dict[str, str] = {
     "XAUUSD": "XAUUSD",
@@ -308,13 +313,18 @@ class Mt5Bridge:
     # -- orders --
 
     def _filling_mode(self, sym: str) -> int:
-        """Pick an order filling mode the symbol supports (IOC preferred, else FOK, else RETURN)."""
+        """Pick an order filling mode the symbol supports (IOC preferred, else FOK).
+
+        ``symbol_info.filling_mode`` is a bitmask of the ALLOWED fill modes. The MetaTrader5
+        Python module does NOT export the ``SYMBOL_FILLING_*`` bit names (only the
+        ``ORDER_FILLING_*`` order types), so the bit values are hard-coded here.
+        """
         m = self._require()
         info = m.symbol_info(sym)
         modes = int(getattr(info, "filling_mode", 0)) if info is not None else 0
-        if modes & m.SYMBOL_FILLING_IOC:
+        if modes & _SYMBOL_FILLING_IOC:
             return int(m.ORDER_FILLING_IOC)
-        if modes & m.SYMBOL_FILLING_FOK:
+        if modes & _SYMBOL_FILLING_FOK:
             return int(m.ORDER_FILLING_FOK)
         # N4: brokers typically reject ORDER_FILLING_RETURN for market DEALs; fall back to FOK
         # (fill-or-kill) instead, and warn so the mismatch surfaces on the first order.
