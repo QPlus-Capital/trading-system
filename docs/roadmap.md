@@ -64,8 +64,13 @@ gap-through-stop.
    "switch broker" = pass a different profile. Market-intrinsic specs (symbol, tick, contract,
    currency) stay in `instruments.py`. Remaining: leverage still lives in the `MARKETS` config list
    (already external) — fold it into the profile too if/when a broker needs different leverage.
-3. **Execution realism, standard (not just stress).** Model gap-through-stop (weekend/news gaps
-   that jump the SL — the risk flagged on the live runner) and partial fills, in every backtest.
+3. **Execution realism, standard (not just stress).** `[DONE]` **Gap-through-stop is already
+   native + correct** (verified empirically, locked by `tests/test_gap_through_stop.py`): a bar
+   that opens beyond the SL fills at the *gapped* price (full gap loss taken), while a bar that
+   merely trades through fills at the trigger (no false penalty). Since our H4 data carries the
+   real weekend/news-gap opens, the flagged gap risk is captured in every backtest — no code
+   needed. Partial fills are immaterial at our lot sizes on these liquid CFDs (skipped, no
+   gold-plating).
 4. **Multiple-testing budget.** Track the running count of everything ever tried and deflate
    (DSR/PBO) accordingly — as instruments/variants/params grow, the selection-bias burden grows.
 5. **Regime robustness.** Break the edge down by volatility/trend regime + crisis windows: is it
@@ -128,3 +133,7 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
   table, factories read from it (baseline preserved). Broker is now swappable end-to-end
   (slippage + swap + commission + margin from one profile). Next: calibrate slippage vs live fills;
   then execution realism (gap-through-stop, sub-step 3).
+- **2026-07-07** — Sub-step 3 (gap-through-stop) resolved by verification: NautilusTrader already
+  fills stops at the gapped price on a gap-through and at the trigger on a trade-through (empirical
+  test + regression `tests/test_gap_through_stop.py`). The flagged gap risk is already in every
+  backtest. Next material step: sub-step 4 (multiple-testing budget) or slippage calibration.
