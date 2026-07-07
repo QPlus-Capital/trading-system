@@ -55,12 +55,15 @@ gap-through-stop.
      re-optimises SL per window. Rates are a **persisted snapshot** (`config/broker/*_swaps.json`,
      pulled from the terminal by `swap_analysis`) so backtests are reproducible + offline.
      Validated end-to-end on XAUUSD (same trades, ~4% R drag; native profile == frictionless).
-   - `[NEXT]` fold instrument specs into the profile (sub-step 2) and calibrate `prob_slippage`
-     against the live demo's actual fills. Then re-run `equity_report --holdout` for the
-     net-of-all-cost headline (needs the terminal once to write the swap snapshot).
-2. **Broker profile as a swappable config.** Extract the hardcoded specs (`instruments.py`) +
-   costs into a per-broker profile; "switch broker" = swap the profile and re-run the study net
-   of that broker's costs. Enables prop → TTP Markets → own broker with one change.
+   - `[NEXT]` calibrate `prob_slippage` against the live demo's actual fills. Then re-run
+     `equity_report --holdout` for the net-of-all-cost headline (needs the terminal once to write
+     the swap snapshot).
+2. **Broker profile as a swappable config.** `[DONE]` Commission + margin now come from the
+   profile's `InstrumentSpec` table (`broker.py`), not hardcoded in `instruments.py`; the factories
+   read them from a default `TTP_MARKETS` profile (baseline preserved) and accept any profile, so
+   "switch broker" = pass a different profile. Market-intrinsic specs (symbol, tick, contract,
+   currency) stay in `instruments.py`. Remaining: leverage still lives in the `MARKETS` config list
+   (already external) — fold it into the profile too if/when a broker needs different leverage.
 3. **Execution realism, standard (not just stress).** Model gap-through-stop (weekend/news gaps
    that jump the SL — the risk flagged on the live runner) and partial fills, in every backtest.
 4. **Multiple-testing budget.** Track the running count of everything ever tried and deflate
@@ -120,3 +123,8 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
 - **2026-07-07** — Sub-step 1 started: `BrokerProfile` built + **slippage** wired natively
   (`FillModel`) from the profile into the venue, validated end-to-end (frictionless baseline
   preserved; slippage moves PnL). Next: swap as the exact in-backtest delta.
+- **2026-07-07** — Sub-steps 1 + 2 done + committed. Swap netted exactly onto the R-stream (real
+  MEX Atlantic snapshot persisted); commission + margin moved into the profile's `InstrumentSpec`
+  table, factories read from it (baseline preserved). Broker is now swappable end-to-end
+  (slippage + swap + commission + margin from one profile). Next: calibrate slippage vs live fills;
+  then execution realism (gap-through-stop, sub-step 3).

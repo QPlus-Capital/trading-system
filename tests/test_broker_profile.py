@@ -104,3 +104,32 @@ def test_swap_r_per_trade_matches_hand_calc() -> None:
     # loss_per_lot = (2000*1%/0.01)*1.0 = 2000; 1 night * short swap(-1.5) / 2000
     assert abs(swap_r[0] - (-1.5 / 2000.0)) < 1e-15
     assert swap_r[0] < 0  # a cost
+
+
+def test_instrument_spec_drives_commission_and_is_swappable() -> None:
+    from decimal import Decimal
+
+    from qplus.backtest.broker import TTP_MARKETS, InstrumentSpec
+    from qplus.instruments import xauusd_ttp
+
+    # Default profile reproduces the historical gold commission/margin (baseline preserved).
+    assert xauusd_ttp().maker_fee == Decimal("0.000007")
+    assert xauusd_ttp().margin_init == Decimal("0.10")
+
+    # Swapping the profile swaps the broker terms -- no edit to instruments.py.
+    cheap = TTP_MARKETS.with_instruments(
+        {"XAUUSD": InstrumentSpec(Decimal("0.000001"), Decimal("0.000001"), Decimal("0.05"))}
+    )
+    assert xauusd_ttp(cheap).maker_fee == Decimal("0.000001")
+    assert xauusd_ttp(cheap).margin_init == Decimal("0.05")
+
+
+def test_instrument_spec_missing_fails_fast() -> None:
+    import pytest
+
+    from qplus.backtest.broker import FRICTIONLESS
+    from qplus.instruments import xauusd_ttp
+
+    empty = FRICTIONLESS.with_instruments({})
+    with pytest.raises(KeyError, match="no instrument spec for 'XAUUSD'"):
+        xauusd_ttp(empty)
