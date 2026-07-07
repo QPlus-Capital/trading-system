@@ -1,9 +1,10 @@
-"""Phase 1: how much do overnight swap/financing costs erode the backtest edge?
+"""Swap-cost report + snapshot refresh: how much do overnight swaps erode the edge?
 
-The strategy holds positions over multiple days, and swaps are the one real cost NOT modelled
-in the backtest. This pulls the live per-symbol swap rates from the terminal, applies them to
-the full-history trade stream (per trade: direction, lot volume at the live flat risk, and
-nights held including the triple-swap rollover day), and reports the impact on the key metrics.
+The strategy holds positions over multiple days. This pulls the live per-symbol swap rates from
+the terminal, **persists them as a snapshot** (`config/broker/mex_atlantic_swaps.json`) so the
+backtest can apply them reproducibly and offline (see `qplus.backtest.broker`), and reports the
+impact on the key metrics. The swap maths itself lives in `broker.swap_r_per_trade`; this module
+is the human-readable report + the way the snapshot gets refreshed.
 
 Swap is signed and direction-dependent: e.g. index CFDs pay a POSITIVE swap on SHORTS (a
 credit) and charge it on longs -- so for a long/short reversal strategy it is NOT uniformly a
@@ -11,8 +12,8 @@ cost. Two calculation modes cover our 9 markets:
 - **POINTS** (FX, gold): swap is in points -> money = points * tick_value.
 - **INT_CURRENT** (indices): annual interest on the notional -> money = price * rate% / 360.
 
-Estimate, not exact history: swap rates are a *current* snapshot, broker-specific (TTP Markets
-!= MEX Atlantic), and change over time. Read it as order-of-magnitude.
+The rates are a *current* snapshot, broker-specific (TTP Markets != MEX Atlantic) and drift over
+time -- so it is a calibrated estimate, refreshed by re-running this, not exact per-day history.
 
 Run from the repo root (MT5 terminal open + logged in)::
 
@@ -21,60 +22,21 @@ Run from the repo root (MT5 terminal open + logged in)::
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import timedelta
-
 import numpy as np
 import pandas as pd
 
+from qplus.backtest.broker import (
+    MEX_ATLANTIC,
+    SwapSpec,
+    dump_swap_snapshot,
+    pull_swap_specs,
+    swap_r_per_trade,
+    swap_snapshot_path,
+)
 from qplus.backtest.config import load_config_module
 from qplus.backtest.portfolio.equity_report import _START_BALANCE, _market_trades
 
 _REPO_ROOT = __import__("pathlib").Path(__file__).resolve().parents[4]
-_INT_YEAR = 360.0  # standard bank year for interest-mode swaps
-
-
-@dataclass(frozen=True)
-class SwapSpec:
-    """Per-symbol swap parameters needed to price the overnight cost (in the account currency)."""
-
-    mode: str  # "POINTS" or "INT_*"
-    swap_long: float  # points (POINTS) or annual % (INT), charged on longs
-    swap_short: float  # ... charged on shorts (can be POSITIVE = a credit)
-    rollover_py: int  # python weekday (Mon=0) of the triple-swap day
-    tick_value: float  # money per tick_size move per lot (account currency)
-    tick_size: float
-
-
-def swap_per_lot_night(
-    spec: SwapSpec, *, is_long: bool, price: float, int_year: float = _INT_YEAR
-) -> float:
-    """Signed swap money per lot per night (negative = you pay, positive = credit)."""
-    rate = spec.swap_long if is_long else spec.swap_short
-    if spec.mode == "POINTS":
-        return rate * spec.tick_value  # points -> money (tick_size == point for these symbols)
-    # Interest mode: annual % on the notional; tick_value/tick_size converts to the account ccy.
-    return price * (rate / 100.0) / int_year * (spec.tick_value / spec.tick_size)
-
-
-def night_units(open_ns: int, close_ns: int, rollover_py: int) -> float:
-    """Number of swap charges between open and close: 1x per weekday night, 3x on the rollover day.
-
-    Weekends carry no separate charge -- the triple on the rollover weekday pre-charges them
-    (the standard MetaTrader model).
-    """
-    o = pd.Timestamp(open_ns).date()
-    c = pd.Timestamp(close_ns).date()
-    units = 0.0
-    d = o
-    while d < c:  # a rollover happens at the end of each held day before the close day
-        wd = d.weekday()
-        if wd == rollover_py:
-            units += 3.0
-        elif wd < 5:  # Mon-Fri
-            units += 1.0
-        d += timedelta(days=1)
-    return units
 
 
 def market_swaps(
@@ -83,43 +45,20 @@ def market_swaps(
     """Per-trade gross (flat) PnL and swap PnL for one market, in the account currency.
 
     ``trades`` has columns ts_opened, ts_closed, entry, exit, r (from the equity-report backtest).
-    Volume is the flat-risk lot size (a stop-out loses ``risk_amount``); direction is inferred
-    from the sign of ``r`` vs the price move.
+    Swap is priced in R by :func:`swap_r_per_trade` (scale-invariant) and booked at ``risk_amount``.
     """
-    rows = []
-    for t in trades.itertuples(index=False):
-        is_long = (t.r > 0) == (t.exit > t.entry)
-        stop_distance = t.entry * sl_pct / 100.0
-        loss_per_lot = (stop_distance / spec.tick_size) * spec.tick_value
-        volume = risk_amount / loss_per_lot if loss_per_lot > 0 else 0.0
-        units = night_units(int(t.ts_opened), int(t.ts_closed), spec.rollover_py)
-        swap = units * swap_per_lot_night(spec, is_long=is_long, price=t.entry) * volume
-        rows.append((risk_amount * t.r, swap, is_long))
-    return pd.DataFrame(rows, columns=["flat_pnl", "swap_pnl", "is_long"])
+    t = trades.assign(sl_pct=sl_pct)
+    swap_r = swap_r_per_trade(t, spec)
+    r = t["r"].to_numpy(dtype=float)
+    is_long = (r > 0) == (t["exit"].to_numpy() > t["entry"].to_numpy())
+    return pd.DataFrame(
+        {"flat_pnl": risk_amount * r, "swap_pnl": risk_amount * swap_r, "is_long": is_long}
+    )
 
 
 def _profit_factor(pnl: np.ndarray) -> float:
     losses = -pnl[pnl < 0].sum()
     return float(pnl[pnl > 0].sum() / losses) if losses > 0 else float("inf")
-
-
-def pull_swap_specs(bridge: object, names: list[str]) -> dict[str, SwapSpec]:
-    """Snapshot the current per-symbol swap parameters from the live terminal."""
-    import MetaTrader5 as mt5
-
-    modes = {1: "POINTS", 5: "INT_CURRENT", 6: "INT_OPEN"}
-    out: dict[str, SwapSpec] = {}
-    for name in names:
-        s = mt5.symbol_info(bridge.terminal_symbol(name))  # type: ignore[attr-defined]
-        out[name] = SwapSpec(
-            mode=modes.get(int(s.swap_mode), f"MODE_{s.swap_mode}"),
-            swap_long=float(s.swap_long),
-            swap_short=float(s.swap_short),
-            rollover_py=(int(s.swap_rollover3days) + 6) % 7,  # MT5 dow (Sun=0) -> python (Mon=0)
-            tick_value=float(s.trade_tick_value),
-            tick_size=float(s.trade_tick_size),
-        )
-    return out
 
 
 def main() -> None:
@@ -137,6 +76,12 @@ def main() -> None:
         specs = pull_swap_specs(bridge, names)
     finally:
         bridge.shutdown()
+
+    # Persist the snapshot so backtests can apply swap reproducibly and offline (the profile then
+    # drives the net-of-swap equity report). This terminal is the MEX Atlantic demo.
+    snapshot = swap_snapshot_path(MEX_ATLANTIC.name)
+    dump_swap_snapshot(specs, snapshot)
+    print(f"swap snapshot saved -> {snapshot.relative_to(_REPO_ROOT)}\n")
 
     parts = []
     t0, t1 = None, None

@@ -27,6 +27,7 @@ from nautilus_trader.config import (
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.instruments import Instrument
 
+from qplus.backtest.broker import BrokerProfile
 from qplus.data_ingest.mt5_csv import write_mt5_catalog
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -52,6 +53,7 @@ class SweepRecipe:
         trade_size: str = "1",
         param_grid: dict[str, list[Any]] | None = None,
         config_overrides: dict[str, Any] | None = None,
+        broker: BrokerProfile | None = None,
     ) -> None:
         self.INSTRUMENT = instrument
         self.BAR_SPEC = bar_spec
@@ -59,6 +61,7 @@ class SweepRecipe:
         self.CSV_PATH = _REPO_ROOT / csv_path
         self.OUT_PATH = _REPO_ROOT / "reports" / f"sweep_{instrument.raw_symbol}.csv"
         self.PARAM_GRID = param_grid if param_grid is not None else DEFAULT_PARAM_GRID
+        self.broker = broker  # None -> frictionless baseline (spread + commission only)
         self._bid = BarType.from_str(f"{instrument.id}-{bar_spec}-BID-EXTERNAL")
         self._ask = BarType.from_str(f"{instrument.id}-{bar_spec}-ASK-EXTERNAL")
         self.VENUE = BacktestVenueConfig(
@@ -68,6 +71,7 @@ class SweepRecipe:
             base_currency="USD",
             starting_balances=["200_000 USD"],
             default_leverage=leverage,
+            fill_model=broker.fill_model_config() if broker is not None else None,
         )
         self._base_config: dict[str, Any] = {
             "instrument_id": str(instrument.id),

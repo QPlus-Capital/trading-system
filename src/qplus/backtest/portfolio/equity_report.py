@@ -34,6 +34,7 @@ import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 from matplotlib.ticker import FuncFormatter  # noqa: E402
 
+from qplus.backtest.broker import BrokerProfile, swap_r_per_trade  # noqa: E402
 from qplus.backtest.config import load_config_module  # noqa: E402
 from qplus.backtest.foundation.recipe import SweepRecipe  # noqa: E402
 from qplus.backtest.portfolio.trades import timed_trades_from_report  # noqa: E402
@@ -76,9 +77,19 @@ def flat_portfolio(trades: pd.DataFrame, *, risk_amount: float) -> pd.DataFrame:
 
 
 def _market_trades(
-    factory: Any, csv: str, leverage: float, sl: float, tp: float, switches: dict[str, Any]
+    factory: Any,
+    csv: str,
+    leverage: float,
+    sl: float,
+    tp: float,
+    switches: dict[str, Any],
+    broker: BrokerProfile | None = None,
 ) -> pd.DataFrame:
-    """Full-history backtest of one market at the frozen config -> timed trades with R-multiples."""
+    """Full-history backtest of one market at the frozen config -> timed trades with R-multiples.
+
+    If ``broker`` carries a swap spec for this market, the per-trade overnight swap (in R) is
+    netted onto the R-multiples, so every downstream metric is automatically net of swap.
+    """
     from nautilus_trader.backtest.node import BacktestNode
 
     recipe = SweepRecipe(
@@ -86,6 +97,7 @@ def _market_trades(
         csv,
         leverage=leverage,
         config_overrides={**switches, "stop_loss_pct": sl, "take_profit_pct": tp},
+        broker=broker,
     )
     node = BacktestNode(configs=[recipe.build_run_config({})])  # start/end None -> full history
     try:
@@ -93,9 +105,12 @@ def _market_trades(
         pos = node.get_engines()[0].trader.generate_positions_report()
     finally:
         node.dispose()  # type: ignore[no-untyped-call]
-    rows = timed_trades_from_report(pos, str(recipe.INSTRUMENT.raw_symbol))
+    name = str(recipe.INSTRUMENT.raw_symbol)
+    rows = timed_trades_from_report(pos, name, sl)
     df = pd.DataFrame(rows).sort_values("ts_closed").reset_index(drop=True)
     df["r"] = r_multiples(df["pnl_base"].tolist())
+    if broker is not None and (spec := broker.swap_spec(name)) is not None:
+        df["r"] = df["r"].to_numpy(dtype=float) + swap_r_per_trade(df, spec)
     return df
 
 
@@ -201,13 +216,19 @@ def daily_equity(
     return pd.Series(start_balance + realized + unrealized, index=idx)
 
 
-def extract_holdout_trades(risk_amount: float) -> tuple[pd.DataFrame, np.ndarray]:
+def extract_holdout_trades(
+    risk_amount: float, broker: BrokerProfile | None = None
+) -> tuple[pd.DataFrame, np.ndarray]:
     """Re-run the walk-forward HOLDOUT for the frozen config -> (trades, flat EUR pnl per trade).
 
     Reproduces the pipeline's genuine out-of-sample stream (no_bb_wpr, 36-month train, per-window
     re-optimised SL/TP over the study grid, on the reserved 24 months). Slow: this is the real
     validation, not the fast fixed-parameter illustration. ``pnl_base`` is at the 1% base risk, so
     the flat contribution at our live risk is ``pnl_base * risk_amount / (base_risk * start)``.
+
+    If ``broker`` carries swap specs, the per-window SL recorded on each trade prices its exact
+    overnight swap, which is netted into the returned flat EUR pnl (and slippage is applied in the
+    walk-forward backtests via the profile), so the holdout metrics are net of all costs.
     """
     from qplus.backtest.portfolio.trades import extract_market_trades
 
@@ -225,6 +246,7 @@ def extract_holdout_trades(risk_amount: float) -> tuple[pd.DataFrame, np.ndarray
             leverage=leverage,
             param_grid=study.PARAM_GRID,
             config_overrides=switches,
+            broker=broker,
         )
         frames.append(
             extract_market_trades(
@@ -239,7 +261,14 @@ def extract_holdout_trades(risk_amount: float) -> tuple[pd.DataFrame, np.ndarray
         )
     trades = pd.concat(frames, ignore_index=True)
     scale = risk_amount / (_BASE_RISK * _START_BALANCE)  # 1% base -> our flat live risk
-    return trades, trades["pnl_base"].to_numpy(dtype=float) * scale
+    flat = trades["pnl_base"].to_numpy(dtype=float) * scale
+    if broker is not None:
+        swap_r = np.zeros(len(trades))
+        for name, grp in trades.groupby("market"):
+            if (spec := broker.swap_spec(str(name))) is not None:
+                swap_r[grp.index.to_numpy()] = swap_r_per_trade(grp, spec)
+        flat = flat + swap_r * risk_amount
+    return trades, flat
 
 
 def edge_stats(pnl: np.ndarray) -> dict[str, float]:
@@ -402,6 +431,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
+    from qplus.backtest.broker import MEX_ATLANTIC, load_swap_snapshot, swap_snapshot_path
+
     cfg = load_config_module(_REPO_ROOT / "config" / "live" / "paper_rsi_wpr_bb.py")
     risk_pct = float(cfg.RISK_PER_TRADE_PCT)
     risk_amount = risk_pct / 100.0 * _START_BALANCE
@@ -410,11 +441,19 @@ def main(argv: list[str] | None = None) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     daily_close = {str(f().raw_symbol): load_daily_close(c) for f, c, _l, _s, _t in cfg.MARKETS}
 
+    # Net-of-cost broker profile: slippage always (FillModel), swap when a snapshot exists.
+    snap = swap_snapshot_path(MEX_ATLANTIC.name)
+    broker = MEX_ATLANTIC.with_swaps(load_swap_snapshot(snap)) if snap.exists() else MEX_ATLANTIC
+    cost_note = (
+        "net of slippage + swap" if snap.exists() else "net of slippage (no swap snapshot yet)"
+    )
+    print(f"broker profile: {broker.name} -- {cost_note}\n")
+
     # -- Illustration: fast fixed-parameter full-history backtest of each market --
     frames = []
     for factory, csv, leverage, sl, tp in cfg.MARKETS:
         print(f"backtesting {factory().raw_symbol} (full history, SL {sl}% / TP {tp}%) ...")
-        frames.append(_market_trades(factory, csv, leverage, sl, tp, switches))
+        frames.append(_market_trades(factory, csv, leverage, sl, tp, switches, broker))
     trades = pd.concat(frames, ignore_index=True)
     illus_pnl = risk_amount * trades["r"].to_numpy(dtype=float)
     curve = flat_portfolio(trades, risk_amount=risk_amount)

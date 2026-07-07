@@ -25,11 +25,18 @@ from qplus.backtest.foundation.recipe import SweepRecipe
 # ``pnl_base`` is the realized PnL in the account currency at the extraction's BASE risk
 # (risk_per_trade=1%), i.e. money -- not a percentage. The portfolio stage rescales it linearly
 # by the flat-risk multiple. (Renamed from the misleading ``pnl_1pct``; audit N1.)
-_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit"]
+_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct"]
 
 
-def timed_trades_from_report(pos: pd.DataFrame, market: str) -> list[dict[str, Any]]:
-    """Extract closed trades ``(ts_opened, ts_closed, pnl, entry, exit)`` from a report."""
+def timed_trades_from_report(
+    pos: pd.DataFrame, market: str, sl_pct: float
+) -> list[dict[str, Any]]:
+    """Extract closed trades ``(ts_opened, ts_closed, pnl, entry, exit, sl_pct)`` from a report.
+
+    ``sl_pct`` is the stop-loss % this window traded at -- recorded per trade so the overnight
+    swap cost can be priced exactly (it depends on the stop distance), including the walk-forward
+    holdout where the SL is re-optimised per window.
+    """
     out: list[dict[str, Any]] = []
     for _, row in pos.iterrows():
         if pd.isna(row["ts_closed"]):  # still open at the window end -> skip
@@ -43,6 +50,7 @@ def timed_trades_from_report(pos: pd.DataFrame, market: str) -> list[dict[str, A
                 "pnl_base": pnl,
                 "entry": float(row["avg_px_open"]),
                 "exit": float(row["avg_px_close"]),
+                "sl_pct": float(sl_pct),
             }
         )
     return out
@@ -114,5 +122,5 @@ def extract_market_trades(
             pos = node.get_engines()[0].trader.generate_positions_report()
         finally:
             node.dispose()  # type: ignore[no-untyped-call]
-        rows.extend(timed_trades_from_report(pos, market))
+        rows.extend(timed_trades_from_report(pos, market, float(best["stop_loss_pct"])))
     return pd.DataFrame(rows, columns=_COLUMNS)
