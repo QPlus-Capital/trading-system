@@ -97,19 +97,21 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         self.subscribe_bars(self.config.bar_type)
 
     def on_bar(self, bar: Bar) -> None:
-        """Enforce the stop-loss / take-profit, then feed the bar to the signal engine."""
-        # Stop/target FIRST, enforced synthetically against the bar's range. Venue stop/limit
-        # orders proved unreliable here (rejected when the market entry gaps past a signal-anchored
-        # trigger, and some resting stops did not fire under the reversal/netting flow), letting
-        # positions ride far past their stop -- artifact tail losses. A direct bar check is
-        # bulletproof and venue-independent: every position is always capped at its SL/TP.
-        if self._exit_hit(bar):
-            self.close_all_positions(self.config.instrument_id)
-            return  # exited on this bar; do not also act on a signal
+        """Feed EVERY bar to the signal engine, then enforce the stop/target, then trade."""
+        # The signal engine keeps rolling indicators (RSI/EMA/BB/WPR) and MUST see every bar, or it
+        # desyncs from the price series -- so update it FIRST, unconditionally (live == backtest).
         c = bar.close.as_double()
         buy_signal, sell_signal = self._signals.update(
             bar.open.as_double(), bar.high.as_double(), bar.low.as_double(), c
         )
+        # Stop/target next, enforced synthetically against the bar's range. Venue stop/limit orders
+        # proved unreliable here (rejected when the market entry gaps past a signal-anchored
+        # trigger, and some resting stops did not fire under the reversal/netting flow), letting
+        # positions ride far past their stop -- artifact tail losses. A direct bar check is
+        # bulletproof: every position is capped at its SL/TP; the stop beats a same-bar signal.
+        if self._exit_hit(bar):
+            self.close_all_positions(self.config.instrument_id)
+            return
         if buy_signal and not sell_signal:
             self._go_long(c)
         elif sell_signal and not buy_signal:
