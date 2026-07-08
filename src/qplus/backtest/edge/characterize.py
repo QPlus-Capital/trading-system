@@ -1,4 +1,4 @@
-"""Overnight robustness study: walk-forward every (instrument x variation) in parallel.
+"""Robustness study: walk-forward every (instrument x variation) in parallel.
 
 For each instrument and each named strategy variation (e.g. a component switched off,
 a different risk level), this runs the full clean walk-forward and records the
@@ -29,8 +29,8 @@ A study config module must define ``INSTRUMENTS`` (list of ``(factory, csv, leve
 
 Usage (append a number to limit windows for a quick test)::
 
-    uv run python -m qplus.backtest.edge.characterize config/study/overnight.py
-    uv run python -m qplus.backtest.edge.characterize config/study/overnight.py 1
+    uv run python -m qplus.backtest.edge.characterize config/study/robustness.py
+    uv run python -m qplus.backtest.edge.characterize config/study/robustness.py 1
 """
 
 import sys
@@ -44,6 +44,7 @@ from typing import Any
 import pandas as pd
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
+from qplus.backtest.broker import TTP_MARKETS
 from qplus.backtest.config import load_config_module
 from qplus.backtest.edge.engine import run_walkforward
 from qplus.backtest.edge.walkforward import normalized_wfe, walk_forward_efficiency
@@ -73,8 +74,16 @@ def _run_task(
     embargo_days: int,
 ) -> dict[str, Any]:
     """Walk-forward one (instrument, variation) and return its OOS metrics + return series."""
+    # Net-of-cost selection: the TTP profile applies slippage in-engine (spread + commission are
+    # already in via the bid/ask bars + fees), so the variation ranking + DSR reflect what live
+    # nets. Swap (~uniform across variations) is validated net separately in the equity report.
     recipe = SweepRecipe(
-        factory(), csv, leverage=leverage, param_grid=param_grid, config_overrides=overrides
+        factory(),
+        csv,
+        leverage=leverage,
+        param_grid=param_grid,
+        config_overrides=overrides,
+        broker=TTP_MARKETS,
     )
     # Selection runs on the pre-holdout data only, so the reserved slice stays untouched (F2).
     results = run_walkforward(

@@ -12,8 +12,8 @@ def test_total_is_the_product_of_dimensions() -> None:
     assert TrialBudget(12, 3, 16).total == 576
 
 
-def test_study_budget_from_the_real_overnight_config() -> None:
-    cfg = load_config_module(_REPO_ROOT / "config" / "study" / "overnight.py")
+def test_study_budget_from_the_real_robustness_config() -> None:
+    cfg = load_config_module(_REPO_ROOT / "config" / "study" / "robustness.py")
     budget = study_trial_budget(cfg)
     # 12 variations x 3 train-lengths x 16 param-combos (SL 4 x TP 4).
     assert budget.variations == 12

@@ -240,7 +240,7 @@ def extract_holdout_trades(
     from qplus.backtest.portfolio.trades import extract_market_trades
 
     live = load_config_module(_REPO_ROOT / "config" / "live" / "paper_rsi_wpr_bb.py")
-    study = load_config_module(_REPO_ROOT / "config" / "study" / "overnight.py")
+    study = load_config_module(_REPO_ROOT / "config" / "study" / "robustness.py")
     switches = {k: v for k, v in dict(live.STRATEGY_SWITCHES).items() if k != "long_only"}
 
     frames = []
