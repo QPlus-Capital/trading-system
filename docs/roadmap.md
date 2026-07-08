@@ -30,7 +30,7 @@ Living plan for developing the trading system. Ordered by what we do next; updat
 
 ## Current focus
 
-### Framework hardening — the swappable broker/market model   `[CURRENT FOCUS]`
+### Framework hardening — the swappable broker/market model   `[DONE — sub-steps 1–7 complete]`
 
 **Goal:** a methodically complete, broker-agnostic backtesting framework — a swappable **market
 model** (specs + ALL costs) so switching broker / prop / instrument is a config change, and
@@ -91,8 +91,14 @@ gap-through-stop.
    holds the live params; the scorecard shows both columns so the cost of freezing is read off
    directly. Smoke (XAUUSD): freezing was not harmful — the re-optimiser converges to the same
    SL, and the fixed config held up OOS. Full 9-market run: `equity_report --holdout`.
-7. **Portfolio-level modelling.** Correlation / concurrent-drawdown across the simultaneously-
-   traded markets in sizing (partly in the DD feasibility already).
+7. **Portfolio-level modelling.** `[DONE]` The DD feasibility already sizes off the combined
+   daily equity (concurrent drawdowns implicitly in `max_flat_risk`); `portfolio/correlation.py`
+   adds the transparency. Result: **diversification is real** — mean pairwise daily-R correlation
+   0.044, effective independent bets N_eff = **8.5 of 9** (only the equity indices cluster mildly,
+   US30–US500 0.39). Concurrency: usually ~5 positions open, all 9 only 2% of days, but the
+   reversal signals can align directionally (max 9 net-long / 8 net-short at once) — the rare
+   full-book gap tail, consistent with the crisis fat tails from sub-step 5. No hidden
+   concentration beyond that known directional-alignment tail.
 
 **Guardrail:** calibrate the cost assumptions against the live demo's actual fills/swaps as they
 arrive (the one reason to keep the monitor alive). Close material blind spots, not chase
@@ -161,5 +167,10 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
 - **2026-07-07** — Sub-step 4 (multiple-testing budget) done: `foundation/trial_budget.py` +
   wired into `characterize.py` (DSR now deflates by the honest 576, not 36). Verified the
   fixed-config holdout separately: net of all costs +58.2% / PF 1.70 / Sharpe 3.55 / −2.3% DD
-  (vs re-opt +78.3% / 2.92 / −4.4%) — the traded config is OOS-validated and lower-risk. Only
-  sub-step 7 (portfolio correlation) remains; slippage calibration still blocked on live fills.
+  (vs re-opt +78.3% / 2.92 / −4.4%) — the traded config is OOS-validated and lower-risk.
+- **2026-07-07** — Sub-step 7 (portfolio correlation) done: `portfolio/correlation.py` +
+  correlation.png. Diversification is real (N_eff 8.5/9, mean corr 0.044); crowding tail rare but
+  present (full-book directional alignment ~2% of days). **Framework hardening (sub-steps 1–7) is
+  COMPLETE.** Remaining open item: slippage calibration, blocked on live demo fills. Optional:
+  re-run the overnight study for the honest deflated-Sharpe verdict; fold leverage into the profile
+  if a broker needs it.
