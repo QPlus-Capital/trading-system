@@ -1,10 +1,11 @@
-"""Overnight robustness study configuration.
+"""Robustness study configuration (variation selection via clean walk-forward).
 
-Runs the clean walk-forward for every (instrument x variation). Ranked by variation
-averaged across instruments, so a change only wins if it helps out-of-sample across
-many markets. Add more instruments to the list as their data + specs arrive.
+Runs the walk-forward for every (instrument x variation). Ranked by variation averaged across
+instruments, so a change only wins if it helps out-of-sample across many markets. Backtests run
+NET of costs (spread + commission + slippage via the broker profile). Add more instruments to
+the list as their data + specs arrive.
 
-    uv run python -m qplus.backtest.edge.characterize config/study/overnight.py
+    uv run python -m qplus.backtest.edge.characterize config/study/robustness.py
 """
 
 from typing import Any

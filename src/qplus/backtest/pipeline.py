@@ -15,7 +15,7 @@ the chaining is unit-testable without backtests.
 
 Usage::
 
-    uv run python -m qplus.backtest.pipeline config/study/overnight.py reports/study/run_x/study.csv
+    uv run python -m qplus.backtest.pipeline config/study/robustness.py <run_dir>/study.csv
 """
 
 import sys
