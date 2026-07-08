@@ -24,7 +24,7 @@ from decimal import Decimal
 from nautilus_trader.config import PositiveInt, StrategyConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar, BarType
-from nautilus_trader.model.enums import OrderSide, OrderType
+from nautilus_trader.model.enums import OrderSide, PositionSide
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
@@ -97,7 +97,15 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         self.subscribe_bars(self.config.bar_type)
 
     def on_bar(self, bar: Bar) -> None:
-        """Feed the bar to the signal engine and trade the reversal."""
+        """Enforce the stop-loss / take-profit, then feed the bar to the signal engine."""
+        # Stop/target FIRST, enforced synthetically against the bar's range. Venue stop/limit
+        # orders proved unreliable here (rejected when the market entry gaps past a signal-anchored
+        # trigger, and some resting stops did not fire under the reversal/netting flow), letting
+        # positions ride far past their stop -- artifact tail losses. A direct bar check is
+        # bulletproof and venue-independent: every position is always capped at its SL/TP.
+        if self._exit_hit(bar):
+            self.close_all_positions(self.config.instrument_id)
+            return  # exited on this bar; do not also act on a signal
         c = bar.close.as_double()
         buy_signal, sell_signal = self._signals.update(
             bar.open.as_double(), bar.high.as_double(), bar.low.as_double(), c
@@ -109,6 +117,21 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
                 self._go_flat()
             else:
                 self._go_short(c)
+
+    def _exit_hit(self, bar: Bar) -> bool:
+        """Whether the open position's stop-loss or take-profit was touched by this bar's range."""
+        if not self._risk_managed():
+            return False
+        positions = self.cache.positions_open(instrument_id=self.config.instrument_id)
+        if not positions:
+            return False
+        cfg = self.config
+        entry = float(positions[0].avg_px_open)
+        high, low = bar.high.as_double(), bar.low.as_double()
+        sl_pct, tp_pct = cfg.stop_loss_pct / 100.0, cfg.take_profit_pct / 100.0
+        if positions[0].side == PositionSide.LONG:
+            return bool(low <= entry * (1 - sl_pct) or high >= entry * (1 + tp_pct))
+        return bool(high >= entry * (1 + sl_pct) or low <= entry * (1 - tp_pct))
 
     # -- position management (long/short reversal) --
 
@@ -169,33 +192,14 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         qty = self._position_qty(ref_price)
         if qty is None:
             return
-
-        if not self._risk_managed():
-            order: MarketOrder = self.order_factory.market(
-                instrument_id=self.config.instrument_id,
-                order_side=side,
-                quantity=qty,
-            )
-            self.submit_order(order)
-            return
-
-        cfg = self.config
-        if side == OrderSide.BUY:
-            sl = ref_price * (1 - cfg.stop_loss_pct / 100.0)
-            tp = ref_price * (1 + cfg.take_profit_pct / 100.0)
-        else:
-            sl = ref_price * (1 + cfg.stop_loss_pct / 100.0)
-            tp = ref_price * (1 - cfg.take_profit_pct / 100.0)
-
-        order_list = self.order_factory.bracket(
+        # Plain market entry; the stop-loss / take-profit are enforced synthetically in on_bar
+        # (see there -- venue stop/limit orders proved unreliable under the reversal/netting flow).
+        order: MarketOrder = self.order_factory.market(
             instrument_id=self.config.instrument_id,
             order_side=side,
             quantity=qty,
-            entry_order_type=OrderType.MARKET,
-            sl_trigger_price=self.instrument.make_price(sl),
-            tp_price=self.instrument.make_price(tp),
         )
-        self.submit_order_list(order_list)
+        self.submit_order(order)
 
     def on_stop(self) -> None:
         """Flatten and clean up when the strategy stops."""
