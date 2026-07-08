@@ -1,4 +1,4 @@
-"""Tests for Stage 2 universe selection + global structure."""
+"""Tests for Stage 2 universe selection + global structure (return-first, risk-gated)."""
 
 import pandas as pd
 
@@ -6,38 +6,51 @@ from qplus.backtest.select.universe import select, select_structure, select_univ
 
 
 def _df() -> pd.DataFrame:
-    rows = []
-    # "good" variation beats "bad" on risk-adjusted return per drawdown across instruments.
+    """Three structures. ``high_ret`` has the most return at a tolerable risk-adjustment;
+    ``high_rpd`` is best risk-adjusted but earns less; ``reckless`` earns most but its
+    risk-adjustment is far below the best (excluded by the gate). ``W`` is a weak instrument
+    dropped by the universe filter."""
     specs = {
-        "good": {"X": (3.0, 10.0, 80.0), "Y": (2.0, 8.0, 75.0), "Z": (0.5, 1.0, 55.0)},
-        "bad": {"X": (1.0, 5.0, 65.0), "Y": (0.8, 4.0, 62.0), "Z": (0.3, 0.5, 52.0)},
+        "high_ret": {"X": (2.3, 12.0, 80.0), "Y": (2.4, 11.0, 78.0), "Z": (2.2, 11.5, 75.0),
+                     "W": (0.5, 1.0, 55.0)},
+        "high_rpd": {"X": (2.6, 9.0, 80.0), "Y": (2.5, 9.5, 78.0), "Z": (2.5, 9.0, 75.0),
+                     "W": (0.5, 1.0, 55.0)},
+        "reckless": {"X": (1.0, 15.0, 70.0), "Y": (1.1, 14.0, 68.0), "Z": (0.9, 16.0, 65.0),
+                     "W": (0.5, 1.0, 55.0)},
     }
+    rows = []
     for variation, insts in specs.items():
         for inst, (rpd, oos, prof) in insts.items():
-            rows.append(
-                {
-                    "variation": variation,
-                    "train_months": 24,
-                    "instrument": inst,
-                    "return_per_dd": rpd,
-                    "mean_oos_pct": oos,
-                    "pct_profitable": prof,
-                }
-            )
+            rows.append({"variation": variation, "train_months": 24, "instrument": inst,
+                         "return_per_dd": rpd, "mean_oos_pct": oos, "pct_profitable": prof})
     return pd.DataFrame(rows)
 
 
-def test_select_structure_picks_best_risk_adjusted() -> None:
-    assert select_structure(_df()) == ("good", 24)
+def test_structure_is_return_first_among_tolerable_risk() -> None:
+    # high_ret earns more than high_rpd and both clear the risk gate -> return wins.
+    assert select_structure(_df()) == ("high_ret", 24)
+
+
+def test_structure_gate_excludes_reckless_high_return() -> None:
+    # reckless has the highest return but its risk-adjustment is far below the best -> excluded,
+    # so it is NOT picked despite the higher return.
+    assert select_structure(_df())[0] != "reckless"
+
+
+def test_structure_gate_excludes_a_negative_market() -> None:
+    # A structure with the highest return but a losing market fails the robustness gate.
+    df = _df()
+    df.loc[(df.variation == "high_ret") & (df.instrument == "Z"), "mean_oos_pct"] = -2.0
+    # high_ret now has a negative market (frac_positive 0.75 < 0.9) -> high_rpd wins instead.
+    assert select_structure(df) == ("high_rpd", 24)
 
 
 def test_select_universe_drops_the_weak_instrument() -> None:
-    # Under "good": X and Y clear the thresholds; Z (rpd 0.5, prof 55) is dropped.
-    assert select_universe(_df(), "good", 24) == ["X", "Y"]
+    assert select_universe(_df(), "high_ret", 24) == ["X", "Y", "Z"]
 
 
 def test_select_end_to_end() -> None:
     sel = select(_df())
-    assert sel.variation == "good"
+    assert sel.variation == "high_ret"
     assert sel.train_months == 24
-    assert sel.instruments == ["X", "Y"]
+    assert sel.instruments == ["X", "Y", "Z"]

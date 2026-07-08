@@ -26,6 +26,7 @@ from typing import Any
 
 import pandas as pd
 
+from qplus.backtest.broker import TTP_MARKETS
 from qplus.backtest.config import load_config_module
 from qplus.backtest.foundation.recipe import SweepRecipe
 from qplus.backtest.portfolio import scorecard
@@ -98,8 +99,16 @@ def make_extract_fn(
 
     def extract(market: str, overrides: dict[str, Any], train_months: int) -> pd.DataFrame:
         factory, csv, leverage = instrument_specs[market]
+        # Net-of-cost portfolio: the broker profile applies slippage in-engine (spread +
+        # commission are already in), consistent with the study + live, so the feasibility is
+        # not over-optimistic (avoids the gross-of-cost sizing trap).
         recipe = SweepRecipe(
-            factory(), csv, leverage=leverage, param_grid=param_grid, config_overrides=overrides
+            factory(),
+            csv,
+            leverage=leverage,
+            param_grid=param_grid,
+            config_overrides=overrides,
+            broker=TTP_MARKETS,
         )
         return extract_market_trades(
             recipe,
