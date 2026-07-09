@@ -92,3 +92,22 @@ def stress_ceiling(
         stress_mult=stress_mult,
         tail_safe_risk_pct=round(safe * 100, 4),
     )
+
+
+def survives(
+    trades: pd.DataFrame,
+    risk_frac: float,
+    *,
+    stress_mult: float = 1.5,
+    daily_hard: float = _DAILY_HARD,
+    trailing_hard: float = _TRAILING_HARD,
+) -> bool:
+    """Whether ``risk_frac`` (flat risk as a fraction) survives a ``stress_mult`` x worst-day gap
+    without breaching the hard limits -- the acceptance-gate form of :func:`stress_ceiling`."""
+    ceiling = tail_safe_risk(
+        worst_day_r(trades),
+        stress_mult=stress_mult,
+        daily_hard=daily_hard,
+        trailing_hard=trailing_hard,
+    )
+    return risk_frac <= ceiling

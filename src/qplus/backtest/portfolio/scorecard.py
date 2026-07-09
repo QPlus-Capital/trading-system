@@ -128,12 +128,20 @@ def acceptance_verdict(
     min_trades: int = 30,
     min_prob_profit: float = 0.6,
     n_sims: int = 1000,
+    stress_trades: pd.DataFrame | None = None,
+    stress_mult: float = 1.5,
+    base_risk_frac: float = 0.01,
 ) -> Verdict:
     """Stage 5 gate: is the holdout result tradeable? (F3)
 
     Bootstraps the holdout trades (at the feasible flat risk) for a probability of profit,
     then requires: enough trades, a flat risk that fits the drawdown limit, a positive
     holdout return, and a Monte-Carlo profit probability above ``min_prob_profit``.
+
+    If ``stress_trades`` (ideally the FULL-history stream, with an ``r`` column) is given, also
+    require that the feasible flat risk survives a ``stress_mult`` x worse-than-history single-day
+    gap -- so a risk fit to a benign holdout is rejected if a worse crisis would breach the hard
+    limit (the tail is what really binds; see :mod:`qplus.backtest.portfolio.stress`).
     """
     checks: list[tuple[bool, str]] = [
         (result.n_trades >= min_trades, f"trades {result.n_trades} >= {min_trades}"),
@@ -149,6 +157,11 @@ def acceptance_verdict(
     checks.append(
         (prob >= min_prob_profit, f"MC prob of profit {prob:.0%} >= {min_prob_profit:.0%}")
     )
+    if stress_trades is not None:
+        from qplus.backtest.portfolio.stress import survives
+
+        ok = survives(stress_trades, result.flat_risk * base_risk_frac, stress_mult=stress_mult)
+        checks.append((ok, f"feasible risk survives a {stress_mult}x worse-than-history gap"))
 
     reasons = [f"{'PASS' if ok else 'FAIL'}: {msg}" for ok, msg in checks]
     return Verdict(passed=all(ok for ok, _ in checks), prob_profit=prob, reasons=reasons)
