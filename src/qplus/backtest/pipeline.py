@@ -187,8 +187,7 @@ def main(argv: list[str] | None = None) -> None:
         rows.append((label, result))
 
     print("\n===== comparison (Stage 3/4 flat feasibility, HOLDOUT, net) =====")
-    header = f"{'variation':14s} {'train':>5s} {'mkts':>4s} {'risk':>6s} {'return':>8s} {'ann':>7s} verdict"
-    print(header)
+    print(f"{'variation':14s} {'trn':>4s} {'mkts':>4s} {'risk':>6s} {'return':>8s} {'ann':>7s} ok")
     for label, r in rows:
         s, p, v = r.selection, r.portfolio, r.verdict
         print(
