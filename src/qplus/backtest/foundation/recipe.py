@@ -66,7 +66,12 @@ class SweepRecipe:
         self._ask = BarType.from_str(f"{instrument.id}-{bar_spec}-ASK-EXTERNAL")
         self.VENUE = BacktestVenueConfig(
             name=instrument.id.venue.value,
-            oms_type="NETTING",
+            # HEDGING (not NETTING): the reversal strategy is only ever in one direction at a time,
+            # so it is economically identical (account P&L matches to the cent), but each round trip
+            # is tracked as its own closed Position. NETTING instead reports one continuously-netted
+            # position with cumulative-average prices per snapshot, which blends entry/exit across
+            # reversals -> false per-trade R (the -34R "tail" artifact). HEDGING gives clean trades.
+            oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USD",
             starting_balances=["200_000 USD"],
