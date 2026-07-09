@@ -58,13 +58,17 @@ def run_pipeline(
     start_balance: float = 200_000.0,
     limit_frac: float = 0.06,
     train_months: int | None = None,
+    force_variation: str | None = None,
 ) -> PipelineResult:
     """Stage 2 -> extraction -> Stage 3/4, returning the selection and the scorecard.
 
     Passing ``daily_high``/``daily_low`` makes the drawdown feasibility use the intraday-worst
-    equity (H1) rather than the EOD close.
+    equity (H1) rather than the EOD close. ``force_variation`` overrides the automatic
+    return-first selection to score a specific variation instead (its best train-length + its
+    own qualifying universe) -- for comparing candidates head to head.
     """
-    selection = universe.select(study_df)
+    df = study_df[study_df["variation"] == force_variation] if force_variation else study_df
+    selection = universe.select(df)
     tm = train_months if train_months is not None else selection.train_months
     overrides = variations[selection.variation]
     frames = [extract_fn(market, overrides, tm) for market in selection.instruments]
@@ -125,12 +129,23 @@ def make_extract_fn(
 
 
 def main(argv: list[str] | None = None) -> None:
-    """CLI: run the pipeline from a study config module + a Stage 1 study.csv."""
+    """CLI: run the pipeline from a study config module + a Stage 1 study.csv.
+
+    Extra args are variation names to force and compare head to head, e.g.::
+
+        python -m qplus.backtest.pipeline config/study/robustness.py <study.csv> \
+            no_confirms no_bb_wpr ema20
+
+    With no variation args it auto-selects (return-first) as before.
+    """
     args = sys.argv[1:] if argv is None else argv
     if len(args) < 2:
-        raise SystemExit("usage: python -m qplus.backtest.pipeline <study_config.py> <study.csv>")
+        raise SystemExit(
+            "usage: python -m qplus.backtest.pipeline <study_config.py> <study.csv> [variation ...]"
+        )
     cfg = load_config_module(Path(args[0]))
     study_df = pd.read_csv(args[1])
+    forced = args[2:]  # variation names to force; empty -> auto-select once
 
     holdout_m = int(getattr(cfg, "HOLDOUT_MONTHS", 0))
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
@@ -142,36 +157,44 @@ def main(argv: list[str] | None = None) -> None:
         phase="holdout",
         embargo_days=int(getattr(cfg, "EMBARGO_DAYS", 0)),
     )
-
-    selection = universe.select(study_df)
-    daily_close = {m: load_daily_close(str(specs[m][1])) for m in selection.instruments}
-    extremes = {m: load_daily_extremes(str(specs[m][1])) for m in selection.instruments}
+    # Load each instrument's daily data once (variations use different subsets of it).
+    daily_close = {m: load_daily_close(str(specs[m][1])) for m in specs}
+    extremes = {m: load_daily_extremes(str(specs[m][1])) for m in specs}
     daily_high = {m: hl[0] for m, hl in extremes.items()}
     daily_low = {m: hl[1] for m, hl in extremes.items()}
-    print(f"Stage 2 -> structure '{selection.variation}' @ train {selection.train_months}m")
-    print(f"          universe: {', '.join(selection.instruments)}")
-    print(f"Stage 3/4 scored on the reserved {holdout_m}-month holdout (untouched by selection)")
 
-    result = run_pipeline(
-        study_df,
-        extract_fn,
-        daily_close,
-        variations=cfg.VARIATIONS,
-        daily_high=daily_high,
-        daily_low=daily_low,
-    )
-    p = result.portfolio
-    print("\n===== Stage 3/4 portfolio feasibility (hybrid TTP drawdown, HOLDOUT) =====")
-    print(f"trades: {p.n_trades}   span: {p.years} years")
-    print(f"flat:     risk {p.flat_risk}x -> {p.flat_return_pct}% ({p.flat_ann_pct}%/yr)")
-    print(
-        f"throttle: base {p.throttle_base}x -> {p.throttle_return_pct}% "
-        f"({p.throttle_ann_pct}%/yr), {p.throttle_gain_pct:+}% vs flat"
-    )
-    print("\n===== Stage 5 acceptance (holdout) =====")
-    print(f"VERDICT: {'PASS' if result.verdict.passed else 'FAIL'}")
-    for line in result.verdict.reasons:
-        print(f"  {line}")
+    rows: list[tuple[str, PipelineResult]] = []
+    for fv in forced or [None]:  # type: ignore[list-item]
+        result = run_pipeline(
+            study_df,
+            extract_fn,
+            daily_close,
+            variations=cfg.VARIATIONS,
+            daily_high=daily_high,
+            daily_low=daily_low,
+            force_variation=fv,
+        )
+        s, p, v = result.selection, result.portfolio, result.verdict
+        label = fv or "AUTO"
+        print(
+            f"\n[{label}] structure {s.variation} @ {s.train_months}m, "
+            f"{len(s.instruments)} markets | HOLDOUT {p.years}y, {p.n_trades} trades"
+        )
+        print(
+            f"  flat risk {p.flat_risk}x -> {p.flat_return_pct}% ({p.flat_ann_pct}%/yr) | "
+            f"VERDICT {'PASS' if v.passed else 'FAIL'}"
+        )
+        rows.append((label, result))
+
+    print("\n===== comparison (Stage 3/4 flat feasibility, HOLDOUT, net) =====")
+    header = f"{'variation':14s} {'train':>5s} {'mkts':>4s} {'risk':>6s} {'return':>8s} {'ann':>7s} verdict"
+    print(header)
+    for label, r in rows:
+        s, p, v = r.selection, r.portfolio, r.verdict
+        print(
+            f"{label:14s} {s.train_months:>4d}m {len(s.instruments):>4d} {p.flat_risk:>6.3f} "
+            f"{p.flat_return_pct:>+7.1f}% {p.flat_ann_pct:>+6.1f}% {'PASS' if v.passed else 'FAIL'}"
+        )
 
 
 if __name__ == "__main__":
