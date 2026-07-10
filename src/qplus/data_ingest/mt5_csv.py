@@ -27,6 +27,17 @@ from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
+# A bar's volume gates how much a PASSIVE order (limit / market-if-touched) may fill against it in
+# the backtest -- aggressive orders (market, stop-market) ignore it. MT5's <TICKVOL> is a count of
+# price ticks, not tradeable size: it is typically a few hundred, while our CFD positions run into
+# millions of units. Feeding it in silently capped every take-profit at a sliver of the position,
+# so the stop later closed the remainder and one trade exited on both legs.
+#
+# For a CFD at a prop broker, liquidity at our size is effectively unbounded, so the honest model is
+# a bar volume that never binds. (Slippage and spread -- which DO cost us -- are modelled separately
+# by the broker profile.) Re-seed the catalog after changing this.
+_BAR_VOLUME = 1_000_000_000
+
 
 def _bar_types(instrument: Instrument, bar_spec: str) -> tuple[BarType, BarType]:
     """Return the (bid, ask) bar types for ``instrument`` and a spec like ``4-HOUR``."""
@@ -71,7 +82,7 @@ def load_mt5_bid_ask_bars(
 
     opens, highs = df["<OPEN>"].tolist(), df["<HIGH>"].tolist()
     lows, closes = df["<LOW>"].tolist(), df["<CLOSE>"].tolist()
-    volumes = df["<TICKVOL>"].tolist()
+    bar_volume = instrument.make_qty(_BAR_VOLUME)
 
     bid_bars: list[Bar] = []
     ask_bars: list[Bar] = []
@@ -79,7 +90,7 @@ def load_mt5_bid_ask_bars(
         ns = dt_to_unix_nanos(ts)
         spread_pts = spreads[i] if spreads[i] > 0 else fallback
         up = Decimal(spread_pts) * tick + half_slip  # bid -> ask shift
-        volume = instrument.make_qty(int(volumes[i]))  # match instrument size precision
+        volume = bar_volume
         o, h, low_, c = Decimal(opens[i]), Decimal(highs[i]), Decimal(lows[i]), Decimal(closes[i])
 
         bid_bars.append(
