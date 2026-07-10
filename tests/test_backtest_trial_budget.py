@@ -15,11 +15,13 @@ def test_total_is_the_product_of_dimensions() -> None:
 def test_study_budget_from_the_real_robustness_config() -> None:
     cfg = load_config_module(_REPO_ROOT / "config" / "study" / "robustness.py")
     budget = study_trial_budget(cfg)
-    # 12 variations x 3 train-lengths x 16 param-combos (SL 4 x TP 4).
+    # 12 variations x 3 train-lengths x 24 param-combos (SL 6 x TP 4). Widening the stop grid buys a
+    # search that can find an interior optimum -- and honestly costs DSR deflation for the extra
+    # trials, which is exactly what this budget feeds.
     assert budget.variations == 12
     assert budget.train_lengths == 3
-    assert budget.param_combos == 16
-    assert budget.total == 576
+    assert budget.param_combos == 24
+    assert budget.total == 864
 
 
 def test_scalar_train_months_counts_as_one_length() -> None:
