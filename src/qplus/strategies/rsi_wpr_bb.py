@@ -80,6 +80,25 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     long_only: bool = False
 
 
+def risk_quantity(
+    instrument: Instrument, risk_amount: float, sl_distance: float
+) -> Quantity | None:
+    """Position size whose stop-out loses ``risk_amount``; ``None`` if the venue cannot express it.
+
+    The only size a venue cannot trade is one that rounds to zero -- i.e. below its
+    ``size_increment``. An index CFD steps in 0.01 lots, so 0.95 is a perfectly good size; an
+    earlier ``>= 1`` floor rejected it and skipped the trade in silence, which quietly drops the
+    high-priced indices from the study whenever the account is small or the stop is wide. Sizes
+    below one increment must still be refused, because ``make_qty`` raises rather than round to
+    zero.
+    """
+    raw = risk_amount / sl_distance
+    if raw < float(instrument.size_increment):
+        return None
+    qty: Quantity = instrument.make_qty(raw)
+    return qty
+
+
 def exit_prices(
     entry: float, entry_side: OrderSide, stop_loss_pct: float, take_profit_pct: float
 ) -> tuple[OrderSide, float, float]:
@@ -238,8 +257,7 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
             sl_distance = ref_price * cfg.stop_loss_pct / 100.0
             if equity is not None and sl_distance > 0:
                 risk_amount = equity * cfg.risk_per_trade_pct / 100.0
-                risk_qty: Quantity = self.instrument.make_qty(risk_amount / sl_distance)
-                return risk_qty if risk_qty.as_double() >= 1 else None
+                return risk_quantity(self.instrument, risk_amount, sl_distance)
         fixed_qty: Quantity = self.instrument.make_qty(cfg.trade_size)
         return fixed_qty
 

@@ -36,7 +36,8 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 from qplus.data_ingest.synthetic import write_synthetic_catalog
-from qplus.strategies.rsi_wpr_bb import exit_prices
+from qplus.instruments import eurusd_ttp, us30_ttp
+from qplus.strategies.rsi_wpr_bb import exit_prices, risk_quantity
 
 _INSTRUMENT = TestInstrumentProvider.audusd_cfd()
 _BAR_TYPE = BarType.from_str("AUDUSD.OANDA-4-HOUR-LAST-EXTERNAL")
@@ -59,6 +60,31 @@ def test_exit_prices_anchor_to_the_fill_price_for_a_short() -> None:
     assert side == OrderSide.BUY
     assert sl == pytest.approx(101.0)  # mirrored: the stop sits ABOVE a short's fill
     assert tp == pytest.approx(98.0)
+
+
+# -- link 0: a tradeable size is never refused -----------------------------------------------------
+
+
+def test_a_fractional_index_size_is_tradeable_not_skipped() -> None:
+    # US30 steps in 0.01 lots. On a 100k account a 2% stop near the index's high needs ~0.95 lots
+    # -- valid, but an old `>= 1` floor refused it and dropped the trade in silence.
+    us30 = us30_ttp()
+    assert float(us30.size_increment) == 0.01
+    qty = risk_quantity(us30, risk_amount=1_000.0, sl_distance=52_725.0 * 0.02)
+    assert qty is not None and float(qty) == pytest.approx(0.95, abs=0.01)
+
+
+def test_a_size_below_one_increment_is_refused_rather_than_rounded_to_zero() -> None:
+    # make_qty raises instead of rounding to zero, so sizes under one increment must be refused.
+    assert risk_quantity(us30_ttp(), risk_amount=1.0, sl_distance=1_000.0) is None
+    # EURUSD steps in whole units -> anything under 1 unit is genuinely untradeable.
+    assert float(eurusd_ttp().size_increment) == 1.0
+    assert risk_quantity(eurusd_ttp(), risk_amount=0.5, sl_distance=1.0) is None
+
+
+def test_whole_unit_instruments_keep_their_effective_floor() -> None:
+    qty = risk_quantity(eurusd_ttp(), risk_amount=1_000.0, sl_distance=0.0021)
+    assert qty is not None and float(qty) == pytest.approx(476_190, abs=1)
 
 
 # -- link 3: end-to-end, one leg, at its own price -------------------------------------------------
