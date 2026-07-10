@@ -65,6 +65,22 @@ class SizedOrder:
     risk_amount: float  # actual money at risk after lot rounding
 
 
+def exit_prices(
+    side: Side, price: float, stop_loss_pct: float, take_profit_pct: float
+) -> tuple[float, float]:
+    """``(stop_loss, take_profit)`` a fixed percentage away from ``price``.
+
+    Mirrors ``qplus.strategies.rsi_wpr_bb.exit_prices`` exactly, so live and backtest place their
+    exits by the same rule. Anchor it to the price that ACTUALLY filled, not to the signal bar's
+    close: sizing assumes a stop-out costs the risked amount, and with a 0.5% stop even 0.1% of
+    slippage between signal and fill moves the real risk by 20%.
+    """
+    sl_frac, tp_frac = stop_loss_pct / 100.0, take_profit_pct / 100.0
+    if side == "BUY":
+        return price * (1 - sl_frac), price * (1 + tp_frac)
+    return price * (1 + sl_frac), price * (1 - tp_frac)
+
+
 def size_order(
     side: Side,
     ref_price: float,
@@ -77,16 +93,16 @@ def size_order(
 
     Pure: computes the SL/TP prices and the lot volume (rounded to the broker's step, capped
     at the max lot, skipped if below the min lot) and the ACTUAL money risked after rounding.
+
+    The SL/TP here are anchored to ``ref_price`` and are PROVISIONAL: they ride along with the
+    market order so the position is never naked for a single tick. Once it fills, the runner
+    re-anchors them to the real fill price (see :meth:`LiveRunner._reanchor_exits`). The volume is
+    sized off ``ref_price`` and stays as computed -- the backtest sizes off the signal bar too.
     """
     stop_distance = ref_price * stop_loss_pct / 100.0
     if stop_distance <= 0:
         return None
-    if side == "BUY":
-        sl = ref_price * (1 - stop_loss_pct / 100.0)
-        tp = ref_price * (1 + take_profit_pct / 100.0)
-    else:
-        sl = ref_price * (1 + stop_loss_pct / 100.0)
-        tp = ref_price * (1 - take_profit_pct / 100.0)
+    sl, tp = exit_prices(side, ref_price, stop_loss_pct, take_profit_pct)
     volume = position_volume(
         risk_amount,
         stop_distance,
@@ -313,7 +329,7 @@ class LiveRunner:
             log.warning("[%s] %s BLOCKED by risk: %s", spec.name, desired, check.reason)
             return
 
-        self._act(spec, pos, sized)
+        self._act(spec, pos, sized, info)
 
     def _replay_signal(self, closed: list[Bar]) -> tuple[bool, bool]:
         engine = RsiWprBbSignals(self._params)
@@ -331,7 +347,9 @@ class LiveRunner:
         """
         return self._risk.start_balance * self._risk.limits.risk_per_trade
 
-    def _act(self, spec: MarketSpec, pos: Position | None, sized: SizedOrder) -> None:
+    def _act(
+        self, spec: MarketSpec, pos: Position | None, sized: SizedOrder, info: SymbolInfo
+    ) -> None:
         """Log the decision and, in EXECUTE mode, (reverse and) open the position."""
         verb = "REVERSE" if pos is not None else "OPEN"
         log.info(
@@ -348,7 +366,10 @@ class LiveRunner:
         if self._mode is Mode.EXECUTE:
             if pos is not None:
                 self._bridge.close_position(pos)
+            # The order carries the provisional (signal-anchored) SL/TP, so the position is
+            # protected from its first tick; then we re-anchor them to the real fill price.
             self._bridge.place_order(spec.name, sized.side, sized.volume, sl=sized.sl, tp=sized.tp)
+            self._reanchor_exits(spec, sized, info)
         self._notify.signal(
             f"[{spec.name}] {verb} {sized.side} vol={sized.volume} sl={sized.sl} "
             f"tp={sized.tp} risk={sized.risk_amount:.0f} EUR ({self._mode.value})"
@@ -357,6 +378,50 @@ class LiveRunner:
         # open-risk cap exactly like EXECUTE would (H4). open_risk is recomputed from live
         # positions each cycle, so this within-cycle increment self-heals next cycle.
         self._risk.on_open(sized.risk_amount)
+
+    def _reanchor_exits(self, spec: MarketSpec, sized: SizedOrder, info: SymbolInfo) -> None:
+        """Move the just-opened position's SL/TP onto its ACTUAL fill price (backtest parity).
+
+        Deliberately conservative. It only ever touches a position that (a) is on this market,
+        (b) points the way we just traded, and (c) is the ONLY such position -- if anything is
+        ambiguous we leave the provisional exits alone rather than risk modifying the wrong
+        ticket. A failure here is not fatal either: the order already carries a valid stop, so the
+        worst case is the pre-fix behaviour (exits anchored to the signal price), never a naked
+        position. Everything is logged.
+        """
+        try:
+            candidates = [p for p in self._bridge.positions(spec.name) if p.side == sized.side]
+            if len(candidates) != 1:
+                log.warning(
+                    "[%s] cannot re-anchor exits: %d matching positions -> keeping signal-anchored"
+                    " SL/TP",
+                    spec.name,
+                    len(candidates),
+                )
+                return
+            position = candidates[0]
+            sl, tp = exit_prices(
+                sized.side, position.price_open, spec.stop_loss_pct, spec.take_profit_pct
+            )
+            sl, tp = round(sl, info.digits), round(tp, info.digits)
+            if sl == position.sl and tp == position.tp:
+                return  # filled exactly at the signal price -> nothing to move
+            self._bridge.modify_sltp(position, sl=sl, tp=tp)
+            log.info(
+                "[%s] exits re-anchored to fill %.*f: sl %s -> %s, tp %s -> %s",
+                spec.name,
+                info.digits,
+                position.price_open,
+                position.sl,
+                sl,
+                position.tp,
+                tp,
+            )
+        except Exception:
+            log.exception(
+                "[%s] re-anchoring exits failed; position keeps its signal-anchored SL/TP",
+                spec.name,
+            )
 
     def _flatten(self, spec: MarketSpec, pos: Position) -> None:
         """Close an open position without opening a new one (N2: long_only sell signal)."""

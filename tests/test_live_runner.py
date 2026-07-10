@@ -3,10 +3,11 @@
 from pathlib import Path
 from typing import cast
 
-from qplus.live.mt5_bridge import Mt5Bridge, Position, SymbolInfo
+from qplus.live.mt5_bridge import Mt5Bridge, Position, Side, SymbolInfo
 from qplus.live.risk_control import RiskController, RiskLimits
 from qplus.live.runner import (
     LiveRunner,
+    exit_prices,
     long_only_from_paper_config,
     markets_from_paper_config,
     position_risk,
@@ -27,6 +28,29 @@ _GOLD = SymbolInfo(
     volume_step=0.01,
     volume_max=100.0,
 )
+
+
+def test_live_and_backtest_place_their_exits_at_identical_prices() -> None:
+    """The guard on "live == backtest": both must derive SL/TP from the fill by the same rule.
+
+    They are separate code paths (a NautilusTrader strategy and an MT5 runner), so nothing but a
+    test stops them drifting apart -- and a drift here silently changes the risk per trade.
+    """
+    from nautilus_trader.model.enums import OrderSide
+
+    from qplus.strategies.rsi_wpr_bb import exit_prices as backtest_exit_prices
+
+    sides: list[tuple[Side, OrderSide]] = [("BUY", OrderSide.BUY), ("SELL", OrderSide.SELL)]
+    for side, order_side in sides:
+        live_sl, live_tp = exit_prices(side, 2002.0, 1.0, 3.0)
+        _exit_side, bt_sl, bt_tp = backtest_exit_prices(2002.0, order_side, 1.0, 3.0)
+        assert live_sl == bt_sl
+        assert live_tp == bt_tp
+
+
+def test_exit_prices_anchor_a_long_below_and_a_short_above() -> None:
+    assert exit_prices("BUY", 2000.0, 1.0, 3.0) == (1980.0, 2060.0)
+    assert exit_prices("SELL", 2000.0, 1.0, 3.0) == (2020.0, 1940.0)
 
 
 def test_size_order_long_sets_sl_tp_and_volume() -> None:

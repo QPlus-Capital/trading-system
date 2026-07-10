@@ -400,6 +400,31 @@ class Mt5Bridge:
             raise Mt5Error(f"order rejected for {sym}: retcode={result.retcode} ({result.comment})")
         return int(result.order)
 
+    def modify_sltp(self, position: Position, *, sl: float, tp: float) -> None:
+        """Re-set an OPEN position's stop-loss / take-profit. Raises on rejection.
+
+        Used to re-anchor the exits to the price that actually filled (the terminal's
+        ``price_open``), which is what the backtest anchors to. Sends only the SL/TP, never a
+        volume or a price, so it cannot open, close or resize anything.
+        """
+        m = self._require()
+        request = {
+            "action": m.TRADE_ACTION_SLTP,
+            "symbol": position.symbol,
+            "position": position.ticket,
+            "sl": float(sl),
+            "tp": float(tp),
+            "magic": MAGIC,
+        }
+        result = m.order_send(request)
+        if result is None:
+            raise Mt5Error(f"modify_sltp returned None for {position.symbol}: {m.last_error()}")
+        if result.retcode != m.TRADE_RETCODE_DONE:
+            raise Mt5Error(
+                f"modify_sltp rejected for {position.symbol}: "
+                f"retcode={result.retcode} ({result.comment})"
+            )
+
     def close_position(self, position: Position, *, deviation: int = 20) -> None:
         """Close an open position with an opposing market order. Raises on rejection."""
         m = self._require()

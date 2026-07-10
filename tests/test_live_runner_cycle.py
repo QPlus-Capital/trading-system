@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
-from qplus.live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, SymbolInfo
+from qplus.live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
 from qplus.live.risk_control import RiskController, RiskLimits
-from qplus.live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode
+from qplus.live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, size_order
 from qplus.strategies.rsi_wpr_bb_signals import SignalParams
 
 _T0 = 1_750_000_000  # arbitrary aligned epoch used as the first bar's open time
@@ -36,6 +36,10 @@ class StubBridge:
         self.open_positions: list[Position] = []
         self.placed: list[tuple[str, str, float]] = []
         self.closed: list[int] = []
+        self.modified: list[tuple[int, float, float]] = []
+        # When set, a placed order fills HERE instead of at the requested price (slippage).
+        self.fill_price: float | None = None
+        self.modify_error: Exception | None = None
         # Server time: just after the LAST bar's open -> that bar is still forming.
         self.now = datetime.fromtimestamp(self.bars[-1].time + 60, tz=UTC)
 
@@ -66,10 +70,40 @@ class StubBridge:
 
     def place_order(self, name: str, side: str, volume: float, **kw: object) -> int:
         self.placed.append((name, side, volume))
+        # A real terminal opens a position; its price_open is the price that ACTUALLY filled,
+        # which may differ from the price the order asked for.
+        sl, tp = float(cast(float, kw["sl"])), float(cast(float, kw["tp"]))
+        requested = sl / (1 - 0.01) if side == "BUY" else sl / (1 + 0.01)
+        self.open_positions.append(
+            Position(
+                ticket=99,
+                symbol=name,
+                side=cast("Side", side),
+                volume=volume,
+                price_open=self.fill_price if self.fill_price is not None else requested,
+                sl=sl,
+                tp=tp,
+                profit=0.0,
+            )
+        )
         return 1
+
+    def modify_sltp(self, position: Position, *, sl: float, tp: float) -> None:
+        if self.modify_error is not None:
+            raise self.modify_error
+        self.modified.append((position.ticket, sl, tp))
+        self.open_positions = [
+            Position(
+                p.ticket, p.symbol, p.side, p.volume, p.price_open, sl, tp, p.profit
+            )
+            if p.ticket == position.ticket
+            else p
+            for p in self.open_positions
+        ]
 
     def close_position(self, position: Position, **kw: object) -> None:
         self.closed.append(position.ticket)
+        self.open_positions = [p for p in self.open_positions if p.ticket != position.ticket]
 
 
 def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
@@ -131,6 +165,72 @@ def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
         state_path=state,
     )
     assert r2._last_bar_time == {"XAUUSD": handled}  # restored -> the bar is already marked
+
+
+# -- re-anchoring the exits onto the real fill price (live == backtest) ---------------------------
+
+_SPEC = MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)
+
+
+def _open_at(fill: float | None, mode: Mode = Mode.EXECUTE) -> StubBridge:
+    """Run one OPEN through ``_act`` with the terminal filling at ``fill`` (None = no slippage)."""
+    stub = StubBridge()
+    stub.fill_price = fill
+    runner = _runner(stub, mode=mode)
+    info = stub.symbol_info("XAUUSD")
+    sized = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
+    assert sized is not None and (sized.sl, sized.tp) == (1980.0, 2060.0)
+    runner._act(_SPEC, None, sized, info)
+    return stub
+
+
+def test_exits_are_reanchored_to_the_actual_fill_price() -> None:
+    # Order asked for 2000 (SL 1980) but filled at 2002. Anchored to the fill, a stop-out costs
+    # exactly the 1% that sizing assumed -- anchored to the signal it would cost ~1.1%.
+    stub = _open_at(2002.0)
+    assert stub.placed == [("XAUUSD", "BUY", 20.0)]
+    assert stub.modified == [(99, 1981.98, 2062.06)]  # 2002 * (1 -/+ 1%/3%)
+    assert stub.open_positions[0].sl == 1981.98
+
+
+def test_no_modify_when_the_fill_matches_the_signal_price() -> None:
+    # No slippage -> the provisional exits are already right; don't send a pointless order.
+    stub = _open_at(2000.0)
+    assert stub.placed and stub.modified == []
+
+
+def test_signal_only_mode_never_touches_the_terminal() -> None:
+    stub = _open_at(2002.0, mode=Mode.SIGNAL_ONLY)
+    assert stub.placed == [] and stub.modified == [] and stub.open_positions == []
+
+
+def test_ambiguous_positions_leave_the_provisional_exits_alone() -> None:
+    # Two positions on the same side: we cannot tell which one we just opened, so touch neither.
+    stub = StubBridge()
+    stub.open_positions = [Position(1, "XAUUSD", "BUY", 1.0, 1990.0, 1970.0, 2050.0, 0.0)]
+    stub.fill_price = 2002.0
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    info = stub.symbol_info("XAUUSD")
+    sized = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
+    assert sized is not None
+    runner._act(_SPEC, None, sized, info)
+    assert stub.modified == []  # ambiguity -> no modification at all
+    assert stub.open_positions[0].sl == 1970.0  # the pre-existing position is untouched
+
+
+def test_a_failed_modify_leaves_the_protective_stop_in_place() -> None:
+    # The order already carries a valid stop, so a rejected modify must never be fatal and must
+    # never leave the position naked -- the worst case is the old signal-anchored stop.
+    stub = StubBridge()
+    stub.fill_price = 2002.0
+    stub.modify_error = RuntimeError("broker rejected SLTP")
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    info = stub.symbol_info("XAUUSD")
+    sized = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
+    assert sized is not None
+    runner._act(_SPEC, None, sized, info)  # must not raise
+    assert stub.modified == []
+    assert stub.open_positions[0].sl == 1980.0  # still protected, at the provisional level
 
 
 def test_run_once_rolls_the_trading_day() -> None:
