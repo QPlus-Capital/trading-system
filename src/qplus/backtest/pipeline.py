@@ -180,19 +180,27 @@ def main(argv: list[str] | None = None) -> None:
             f"\n[{label}] structure {s.variation} @ {s.train_months}m, "
             f"{len(s.instruments)} markets | HOLDOUT {p.years}y, {p.n_trades} trades"
         )
+        # Headline = the HONEST flat live-risk numbers (what we plan/trade). The ceiling is only
+        # a headroom reference (compounded, over-optimistic) -- never the planning figure.
         print(
-            f"  flat risk {p.flat_risk}x -> {p.flat_return_pct}% ({p.flat_ann_pct}%/yr) | "
-            f"VERDICT {'PASS' if v.passed else 'FAIL'}"
+            f"  @ {p.live_risk_pct:.2f}% flat: {p.live_ann_pct:+.1f}%/yr "
+            f"(EUR {p.live_return_eur:,.0f}/yr), maxDD {p.live_max_dd_pct:.1f}%, "
+            f"MC profit {v.prob_profit:.0%} | VERDICT {'PASS' if v.passed else 'FAIL'}"
         )
+        print(f"    headroom: DD ceiling allows up to {p.flat_risk * 0.01 * 100:.2f}% flat risk")
         rows.append((label, result))
 
-    print("\n===== comparison (Stage 3/4 flat feasibility, HOLDOUT, net) =====")
-    print(f"{'variation':14s} {'trn':>4s} {'mkts':>4s} {'risk':>6s} {'return':>8s} {'ann':>7s} ok")
+    print("\n===== comparison (HONEST flat live-risk, HOLDOUT, net of costs) =====")
+    print(
+        f"{'variation':14s} {'trn':>4s} {'mkts':>4s} {'risk':>6s} "
+        f"{'ann':>8s} {'EUR/yr':>10s} {'maxDD':>6s} ok"
+    )
     for label, r in rows:
         s, p, v = r.selection, r.portfolio, r.verdict
         print(
-            f"{label:14s} {s.train_months:>4d}m {len(s.instruments):>4d} {p.flat_risk:>6.3f} "
-            f"{p.flat_return_pct:>+7.1f}% {p.flat_ann_pct:>+6.1f}% {'PASS' if v.passed else 'FAIL'}"
+            f"{label:14s} {s.train_months:>4d}m {len(s.instruments):>4d} "
+            f"{p.live_risk_pct:>5.2f}% {p.live_ann_pct:>+7.1f}% {p.live_return_eur:>10,.0f} "
+            f"{p.live_max_dd_pct:>5.1f}% {'PASS' if v.passed else 'FAIL'}"
         )
 
 

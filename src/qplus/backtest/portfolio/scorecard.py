@@ -30,17 +30,31 @@ _DEFAULT_MULTS = (1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 
 @dataclass(frozen=True)
 class PortfolioResult:
-    """Feasibility scorecard for one account trading the selected universe."""
+    """Feasibility scorecard for one account trading the selected universe.
+
+    The ``live_*`` fields are the HONEST planning numbers: the return of trading at the fixed
+    flat live risk (``live_risk_pct``), booked linearly in R off the fixed start balance -- the
+    same methodology as :mod:`equity_report`. The ``flat_*``/``throttle_*`` fields are the
+    max-feasible CEILING (largest risk the drawdown limit *allows*); they compound with the
+    growing equity and are NOT what we trade -- keep them only as a headroom reference.
+    """
 
     n_trades: int
     years: float
-    flat_risk: float  # max safe flat risk multiple (1.0 = the base risk)
-    flat_return_pct: float  # total OOS return at that risk
+    flat_risk: float  # max safe flat risk multiple (1.0 = the base risk) -- the CEILING, not traded
+    flat_return_pct: float  # total OOS return at that ceiling risk (compounded -- reference only)
     flat_ann_pct: float
     throttle_base: float  # best non-breaching throttle base multiple
     throttle_return_pct: float
     throttle_ann_pct: float
     throttle_gain_pct: float  # extra return of throttle vs flat, same hard limit
+    # -- HONEST flat sizing at the chosen live risk (what we actually plan/trade) --
+    live_risk_pct: float = 0.0  # flat risk sized at, as % of the start balance (e.g. 0.15)
+    live_ann_pct: float = 0.0  # annualised return at that flat risk (linear in R -- no compounding)
+    live_return_pct: float = 0.0  # total return over the window at that flat risk
+    live_return_eur: float = 0.0  # EUR per year on the start balance
+    live_max_dd_pct: float = 0.0  # worst peak-to-trough of the flat-sized equity (floating-incl.)
+    live_fits_limit: bool = True  # does the live risk sit within the drawdown ceiling?
 
 
 def score(
@@ -54,6 +68,8 @@ def score(
     day_loss_frac: float = 0.03,
     throttle_base_mults: tuple[float, ...] = _DEFAULT_MULTS,
     throttle_floor: float = 0.15,
+    live_risk_pct: float = 0.15,
+    base_risk_frac: float = 0.01,
 ) -> PortfolioResult:
     """Score a trade stream (columns: market, ts_opened, ts_closed, pnl_base, entry, exit).
 
@@ -98,6 +114,20 @@ def score(
 
     years = (d1 - d0) / 365.25
     gain = (best_ret - flat_ret) / flat_ret if flat_ret > 0 else 0.0
+
+    # -- HONEST flat sizing at the chosen live risk (the planning numbers) --
+    # The base curves are at the backtest's base risk (``base_risk_frac``, i.e. multiple 1.0).
+    # Trading flat at ``live_risk_pct`` scales every trade's contribution linearly -- so scale the
+    # whole PnL curve by (live_risk / base_risk). No compounding: this is what we actually trade.
+    scale = (live_risk_pct / 100.0) / base_risk_frac
+    live_realized = realized * scale
+    live_equity = start_balance + (realized + unrealized) * scale
+    live_ret = float(live_realized[-1]) / start_balance
+    live_peak = pd.Series(live_equity).cummax().to_numpy()
+    live_dd = float(((live_equity - live_peak) / live_peak).min())
+    # The live risk fits the limit iff it is at or below the max-feasible flat risk (ceiling).
+    live_fits = (live_risk_pct / 100.0) <= flat_m * base_risk_frac
+
     return PortfolioResult(
         n_trades=len(t),
         years=round(years, 2),
@@ -108,6 +138,12 @@ def score(
         throttle_return_pct=round(best_ret * 100, 1),
         throttle_ann_pct=round(best_ret / years * 100, 1) if years > 0 else 0.0,
         throttle_gain_pct=round(gain * 100, 1),
+        live_risk_pct=live_risk_pct,
+        live_ann_pct=round(live_ret / years * 100, 1) if years > 0 else 0.0,
+        live_return_pct=round(live_ret * 100, 1),
+        live_return_eur=round(float(live_realized[-1]) / years, 0) if years > 0 else 0.0,
+        live_max_dd_pct=round(live_dd * 100, 2),
+        live_fits_limit=live_fits,
     )
 
 
@@ -143,13 +179,15 @@ def acceptance_verdict(
     gap -- so a risk fit to a benign holdout is rejected if a worse crisis would breach the hard
     limit (the tail is what really binds; see :mod:`qplus.backtest.portfolio.stress`).
     """
+    # Everything is judged at the LIVE flat risk we actually trade (not the max-feasible ceiling).
+    live_scale = (result.live_risk_pct / 100.0) / base_risk_frac
     checks: list[tuple[bool, str]] = [
         (result.n_trades >= min_trades, f"trades {result.n_trades} >= {min_trades}"),
-        (result.flat_risk > 0.0, f"a flat risk fits the DD limit (flat_risk={result.flat_risk})"),
-        (result.flat_return_pct > 0.0, f"holdout return positive ({result.flat_return_pct}%)"),
+        (result.live_fits_limit, f"live risk {result.live_risk_pct}% within the DD ceiling"),
+        (result.live_ann_pct > 0.0, f"holdout return positive ({result.live_ann_pct}%/yr)"),
     ]
-    pnls = (trades["pnl_base"].to_numpy() * max(result.flat_risk, 0.0)).tolist()
-    if result.flat_risk > 0.0 and len(pnls) >= 2:
+    pnls = (trades["pnl_base"].to_numpy() * live_scale).tolist()
+    if len(pnls) >= 2:
         paths = monte_carlo_paths(pnls, n_sims=n_sims, start_equity=start_balance)
         prob = float(summarize(paths, start_balance)["prob_profit"])
     else:
@@ -160,8 +198,8 @@ def acceptance_verdict(
     if stress_trades is not None:
         from qplus.backtest.portfolio.stress import survives
 
-        ok = survives(stress_trades, result.flat_risk * base_risk_frac, stress_mult=stress_mult)
-        checks.append((ok, f"feasible risk survives a {stress_mult}x worse-than-history gap"))
+        ok = survives(stress_trades, result.live_risk_pct / 100.0, stress_mult=stress_mult)
+        checks.append((ok, f"live risk survives a {stress_mult}x worse-than-history gap"))
 
     reasons = [f"{'PASS' if ok else 'FAIL'}: {msg}" for ok, msg in checks]
     return Verdict(passed=all(ok for ok, _ in checks), prob_profit=prob, reasons=reasons)
