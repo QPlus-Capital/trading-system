@@ -93,12 +93,19 @@ def make_extract_fn(
     holdout_months: int = 0,
     phase: str = "holdout",
     embargo_days: int = 0,
+    start_balance: float = 200_000.0,
+    risk_per_trade_pct: float = 1.0,
 ) -> ExtractFn:
     """Default extractor for the portfolio stream.
 
     Enforces **non-overlapping** windows (``step = test``) so no trade is double-counted
     (F1), and extracts the reserved-**holdout** slice by default so the portfolio is scored
     once on data no stage selected on (F2).
+
+    ``start_balance`` / ``risk_per_trade_pct`` are the account the extraction's backtests size
+    against; pass the real account so every stage measures the same thing. The per-trade R that
+    comes out is scale-invariant either way, but the position quantities are not, and a small
+    enough account silently falls back to the fixed trade size.
     """
 
     def extract(market: str, overrides: dict[str, Any], train_months: int) -> pd.DataFrame:
@@ -113,6 +120,8 @@ def make_extract_fn(
             param_grid=param_grid,
             config_overrides=overrides,
             broker=TTP_MARKETS,
+            start_balance=start_balance,
+            risk_per_trade_pct=risk_per_trade_pct,
         )
         return extract_market_trades(
             recipe,
