@@ -19,6 +19,12 @@ def _result(**kw: float) -> PortfolioResult:
         "throttle_return_pct": 25.0,
         "throttle_ann_pct": 12.5,
         "throttle_gain_pct": 25.0,
+        "live_risk_pct": 0.15,
+        "live_ann_pct": 10.0,
+        "live_return_pct": 20.0,
+        "live_return_eur": 20_000.0,
+        "live_max_dd_pct": -1.5,
+        "live_fits_limit": True,
     }
     base.update(kw)
     return PortfolioResult(**base)  # type: ignore[arg-type]
@@ -29,9 +35,9 @@ def test_acceptance_verdict_pass_and_fail() -> None:
     ok = acceptance_verdict(_result(), trades, start_balance=200_000.0)
     assert ok.passed and ok.prob_profit > 0.9
 
-    # An infeasible config (no flat risk fits the DD limit) must fail the gate.
+    # An infeasible config (live risk does not fit the DD ceiling) must fail the gate.
     bad = acceptance_verdict(
-        _result(flat_risk=0.0, flat_return_pct=0.0), trades, start_balance=200_000.0
+        _result(live_fits_limit=False, live_ann_pct=0.0), trades, start_balance=200_000.0
     )
     assert not bad.passed
 
