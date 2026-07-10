@@ -23,9 +23,31 @@ from qplus.backtest.foundation.grid import expand_grid
 from qplus.backtest.foundation.recipe import SweepRecipe
 
 # ``pnl_base`` is the realized PnL in the account currency at the extraction's BASE risk
-# (risk_per_trade=1%), i.e. money -- not a percentage. The portfolio stage rescales it linearly
-# by the flat-risk multiple. (Renamed from the misleading ``pnl_1pct``; audit N1.)
-_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct"]
+# (risk_per_trade=1%), i.e. money -- not a percentage. It COMPOUNDS with the growing equity, so it
+# must never be scaled linearly to another risk. ``r`` is the scale-invariant twin: the PnL divided
+# by the risk that trade actually took. Re-book ``r * risk_amount`` to size at any flat risk.
+_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "r"]
+
+
+def assign_r(
+    rows: list[dict[str, Any]], start_balance: float, base_risk_frac: float
+) -> list[dict[str, Any]]:
+    """Add each trade's R-multiple: ``pnl / (base_risk * equity when it was booked)``.
+
+    The backtest sizes every position at ``base_risk_frac`` of the *current* equity, so the risk a
+    trade took is recovered by walking the equity forward in close order. Call this per WINDOW: each
+    walk-forward window is its own backtest starting at ``start_balance``, so a single continuous
+    walk across windows would invent compounding that never happened.
+
+    R is what makes the framework sizing-agnostic: it is independent of the backtest's own
+    compounding, so any flat or dynamic risk policy can re-book it linearly.
+    """
+    equity = start_balance
+    for row in sorted(rows, key=lambda r: r["ts_closed"]):
+        risk = base_risk_frac * equity
+        row["r"] = row["pnl_base"] / risk if risk > 0 else 0.0
+        equity += row["pnl_base"]
+    return rows
 
 
 def timed_trades_from_report(
@@ -133,5 +155,7 @@ def extract_market_trades(
             pos = node.get_engines()[0].trader.generate_positions_report()
         finally:
             node.dispose()  # type: ignore[no-untyped-call]
-        rows.extend(timed_trades_from_report(pos, market, float(best["stop_loss_pct"])))
+        window_rows = timed_trades_from_report(pos, market, float(best["stop_loss_pct"]))
+        # Per-window R: this window's backtest started fresh at the recipe's start balance.
+        rows.extend(assign_r(window_rows, recipe.start_balance, recipe.base_risk_frac))
     return pd.DataFrame(rows, columns=_COLUMNS)

@@ -54,6 +54,8 @@ class SweepRecipe:
         param_grid: dict[str, list[Any]] | None = None,
         config_overrides: dict[str, Any] | None = None,
         broker: BrokerProfile | None = None,
+        start_balance: float = 200_000.0,
+        risk_per_trade_pct: float = 1.0,
     ) -> None:
         self.INSTRUMENT = instrument
         self.BAR_SPEC = bar_spec
@@ -62,6 +64,10 @@ class SweepRecipe:
         self.OUT_PATH = _REPO_ROOT / "reports" / f"sweep_{instrument.raw_symbol}.csv"
         self.PARAM_GRID = param_grid if param_grid is not None else DEFAULT_PARAM_GRID
         self.broker = broker  # None -> frictionless baseline (spread + commission only)
+        # The account context the backtest sizes against -- attributes, not constants, so the trade
+        # stream can recover each trade's R-multiple = pnl / (base_risk * equity_at_open).
+        self.start_balance = start_balance
+        self.base_risk_frac = risk_per_trade_pct / 100.0
         self._bid = BarType.from_str(f"{instrument.id}-{bar_spec}-BID-EXTERNAL")
         self._ask = BarType.from_str(f"{instrument.id}-{bar_spec}-ASK-EXTERNAL")
         self.VENUE = BacktestVenueConfig(
@@ -74,7 +80,7 @@ class SweepRecipe:
             oms_type="HEDGING",
             account_type="MARGIN",
             base_currency="USD",
-            starting_balances=["200_000 USD"],
+            starting_balances=[f"{start_balance:.0f} USD"],
             default_leverage=leverage,
             fill_model=broker.fill_model_config() if broker is not None else None,
         )
@@ -82,7 +88,7 @@ class SweepRecipe:
             "instrument_id": str(instrument.id),
             "bar_type": str(self._bid),
             "trade_size": trade_size,
-            "risk_per_trade_pct": 1.0,
+            "risk_per_trade_pct": risk_per_trade_pct,
             **(config_overrides or {}),  # e.g. long_only, use_rsi_filter for studies
         }
 
