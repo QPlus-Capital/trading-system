@@ -61,10 +61,16 @@ INSTRUMENTS: list[tuple[Any, str, float]] = [
     (ustec_ttp, "data/USTEC_H4.csv", 15.0),
 ]
 
-# Full inner grid (buy_rsi_threshold is inert, so it is dropped) -> 16 combos/window.
+# Full inner grid (buy_rsi_threshold is inert, so it is dropped) -> 24 combos/window.
 # A wider grid means the per-window optimizer picks from a more realistic parameter set.
+#
+# The stop grid deliberately reaches BELOW the tail-adjusted optimum (~0.3% measured on XAUUSD): a
+# search that pins to the smallest value on offer has not found an optimum, it has hit a wall. R is
+# move/stop, so raw R keeps rising as the stop tightens; what turns it around is the tail (a gap
+# costs more R against a tighter stop, which lowers the risk ceiling). The tail can only bite if the
+# grid is allowed to go there -- so 0.2% is included to keep the optimum interior.
 PARAM_GRID: dict[str, list[Any]] = {
-    "stop_loss_pct": [0.5, 1.0, 1.5, 2.0],
+    "stop_loss_pct": [0.2, 0.3, 0.5, 1.0, 1.5, 2.0],
     "take_profit_pct": [1.0, 2.0, 3.0, 4.0],
 }
 
