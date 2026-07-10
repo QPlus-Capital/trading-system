@@ -72,7 +72,8 @@ def make_synthetic_bars(
 
     step_nanos = int(bar_type.spec.timedelta.value)
     start_nanos = dt_to_unix_nanos(pd.Timestamp(start_time, tz="UTC"))
-    volume = Quantity.from_int(1_000)
+    # Non-binding: bar volume caps how much a passive order may fill (see mt5_csv._BAR_VOLUME).
+    volume = Quantity.from_int(1_000_000_000)
 
     mids = [
         start_price + wave_amplitude * Decimal(str(math.sin(_TWO_PI * i / wave_period_bars)))
