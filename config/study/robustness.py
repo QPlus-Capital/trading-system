@@ -10,6 +10,7 @@ the list as their data + specs arrive.
 
 from typing import Any
 
+from qplus.backtest.portfolio.risk import AccountProfile
 from qplus.instruments import (
     audusd_ttp,
     de40_ttp,
@@ -23,6 +24,17 @@ from qplus.instruments import (
     ustec_ttp,
     xagusd_ttp,
     xauusd_ttp,
+)
+
+# The account the portfolio stages size against: our live prop account (100k) and The Trading
+# Pit's hard limits. Returns and drawdowns are scale-invariant (everything downstream is booked
+# from R-multiples), but the EUR figures in the Stage 3/4 report are not -- they must be the money
+# we would actually make or lose. base_risk_frac is the risk the extraction's backtests size at.
+ACCOUNT = AccountProfile(
+    start_balance=100_000.0,
+    daily_hard=0.03,  # TTP hard daily loss limit -- a breach kills the account
+    trailing_hard=0.06,  # TTP hard trailing max drawdown
+    base_risk_frac=0.01,
 )
 
 # Leave cores free (old i7-8700, thermals) to keep the machine stable over a long run.

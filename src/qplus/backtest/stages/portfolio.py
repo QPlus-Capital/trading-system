@@ -88,6 +88,8 @@ def main(argv: list[str] | None = None) -> None:
         holdout_months=int(getattr(cfg, "HOLDOUT_MONTHS", 0)),
         phase="holdout",
         embargo_days=int(getattr(cfg, "EMBARGO_DAYS", 0)),
+        start_balance=account.start_balance,  # size the backtests against the REAL account
+        risk_per_trade_pct=account.base_risk_frac * 100.0,
     )
     overrides = cfg.VARIATIONS[sel["variation"]]
 
