@@ -1,0 +1,113 @@
+"""Tests for the pluggable, tail-capped risk system."""
+
+import math
+
+import pandas as pd
+
+from qplus.backtest.portfolio.curves import DAY_NS
+from qplus.backtest.portfolio.risk import (
+    AccountProfile,
+    FlatRisk,
+    ThrottleRisk,
+    evaluate_policy,
+    flat_base_pnl,
+    tail_cap,
+)
+from qplus.backtest.portfolio.trades import assign_r
+
+
+def _trades() -> pd.DataFrame:
+    # Worst day is day 0 (-2R + -3R = -5R); a -4R single trade on day 1.
+    return pd.DataFrame(
+        {"ts_closed": [0, 0, 1 * DAY_NS], "r": [-2.0, -3.0, -4.0]}
+    )
+
+
+def test_tail_cap_binds_on_the_worst_day_under_stress() -> None:
+    acc = AccountProfile()  # 3% daily / 6% trailing
+    # worst day -5R, stress 1.5 -> 7.5R; 3% daily / 7.5 = 0.4% max flat risk.
+    assert abs(tail_cap(_trades(), acc, stress_mult=1.5) - 0.03 / 7.5) < 1e-12
+
+
+def test_flat_risk_is_hard_capped_by_the_tail() -> None:
+    acc = AccountProfile()
+    cap = tail_cap(_trades(), acc, stress_mult=1.5)  # 0.4%
+    # Ask for 1.0% but the tail cap is 0.4% -> resolved risk is the cap, never above it.
+    r = FlatRisk(1.0).resolve(cap, acc)
+    assert abs(r.ceiling_pct - cap * 100) < 1e-9
+    assert r.risk_fn(0.0) == r.risk_fn(1.0)  # constant regardless of used budget
+    assert abs(r.risk_fn(0.5) - cap / acc.base_risk_frac) < 1e-9  # in base-risk multiples
+
+
+def test_flat_risk_below_the_cap_passes_through() -> None:
+    acc = AccountProfile()
+    cap = 0.005  # 0.5%
+    r = FlatRisk(0.15).resolve(cap, acc)  # well under the cap
+    assert abs(r.ceiling_pct - 0.15) < 1e-9
+    assert abs(r.risk_fn(0.0) - 0.0015 / acc.base_risk_frac) < 1e-9
+
+
+def test_throttle_runs_at_the_ceiling_and_tapers_to_the_floor() -> None:
+    acc = AccountProfile()
+    cap = 0.006  # 0.6% ceiling
+    r = ThrottleRisk(floor_pct=0.15).resolve(cap, acc)
+    assert abs(r.ceiling_pct - 0.6) < 1e-9
+    assert r.floor_pct == 0.15
+    # Fresh buffer (used=0) -> full ceiling risk; at the wall (used=1) -> the floor.
+    assert abs(r.risk_fn(0.0) - cap / acc.base_risk_frac) < 1e-9  # 0.6% as a multiple
+    assert abs(r.risk_fn(1.0) - 0.0015 / acc.base_risk_frac) < 1e-9  # tapered to 0.15%
+    assert r.risk_fn(0.0) > r.risk_fn(1.0)  # runs higher in good times, brakes near the wall
+
+
+def test_assign_r_removes_the_backtests_compounding() -> None:
+    # Both trades earn the same money, but the second was sized off a LARGER equity, so it risked
+    # more -- its R must be smaller. That difference is exactly the compounding we must strip.
+    rows = [
+        {"ts_closed": 0, "pnl_base": 2_000.0},
+        {"ts_closed": 1 * DAY_NS, "pnl_base": 2_000.0},
+    ]
+    assign_r(rows, start_balance=200_000.0, base_risk_frac=0.01)
+    assert math.isclose(rows[0]["r"], 1.0)  # 2000 / (1% of 200,000)
+    assert math.isclose(rows[1]["r"], 2_000.0 / (0.01 * 202_000.0))  # equity had grown
+    assert rows[1]["r"] < rows[0]["r"]
+
+
+def _winners() -> tuple[pd.DataFrame, dict[str, pd.Series]]:
+    """Three identical +1R winners, each opening one day and closing the next."""
+    rows = [
+        {"market": "X", "ts_opened": d * DAY_NS, "ts_closed": (d + 1) * DAY_NS,
+         "r": 1.0, "entry": 10.0, "exit": 11.0}
+        for d in (0, 2, 4)
+    ]
+    prices = pd.Series({d: 10.0 + 0.2 * d for d in range(6)})
+    return pd.DataFrame(rows), {"X": prices}
+
+
+def test_flat_base_pnl_is_linear_in_r() -> None:
+    acc = AccountProfile()
+    trades, _ = _winners()
+    # 1R at the 1% base risk on a 200k account = 2,000 EUR, regardless of position in the stream.
+    assert list(flat_base_pnl(trades, acc)) == [2_000.0] * 3
+
+
+def test_flat_policy_books_r_times_risk_without_compounding() -> None:
+    acc = AccountProfile()
+    trades, prices = _winners()
+    res = evaluate_policy(trades, prices, acc, FlatRisk(1.0), cap_frac=0.02)
+    assert res.label == "flat"
+    assert not res.breached
+    # 3 x 1R at 1% of 200k = 6,000 EUR = +3.0% of the START balance (never of a grown one).
+    assert math.isclose(res.total_return_pct, 3.0, abs_tol=0.05)
+
+
+def test_throttle_runs_bigger_than_flat_while_the_buffer_is_fresh() -> None:
+    acc = AccountProfile()
+    trades, prices = _winners()
+    cap = 0.02  # 2% ceiling
+    flat_res = evaluate_policy(trades, prices, acc, FlatRisk(0.5), cap_frac=cap)
+    thr_res = evaluate_policy(trades, prices, acc, ThrottleRisk(floor_pct=0.5), cap_frac=cap)
+    # Winners never eat the drawdown budget, so the throttle stays at its 2% ceiling the whole way
+    # and out-earns the 0.5% flat policy -- exactly the "don't leave return on the table" case.
+    assert thr_res.ceiling_pct == 2.0 and thr_res.floor_pct == 0.5
+    assert thr_res.total_return_pct > flat_res.total_return_pct
+    assert not thr_res.breached

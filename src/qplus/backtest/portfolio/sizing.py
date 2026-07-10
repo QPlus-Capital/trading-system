@@ -40,12 +40,31 @@ def throttle_curves(
     limit_frac: float,
     risk_fn: Callable[[float], float],
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Daily (realized_balance, equity) under per-trade throttled sizing.
+    """Daily (realized_balance, equity) under per-trade throttled sizing -- see :func:`simulate`."""
+    realized, equity, _sizes = simulate(
+        trades, prices, d0, d1, start_balance, limit_frac, risk_fn
+    )
+    return realized, equity
+
+
+def simulate(
+    trades: pd.DataFrame,
+    prices: dict[str, np.ndarray],
+    d0: int,
+    d1: int,
+    start_balance: float,
+    limit_frac: float,
+    risk_fn: Callable[[float], float],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Daily (realized_balance, equity) plus the risk multiple each trade was SIZED at.
 
     Each opening trade is sized ``risk_fn(used)`` where ``used`` in [0, 1] is the fraction
     of the drawdown budget consumed at that moment: ``used = clip(1 - (equity - floor) /
     (limit_frac*start), 0, 1)`` with the hybrid floor (realized-balance HWM minus the
     limit, capped at the starting balance). ``risk_fn`` maps a base risk multiple.
+
+    The returned ``sizes`` array (aligned to ``trades``' rows) is what makes per-trade metrics
+    honest under a dynamic policy: each trade's PnL contribution is ``pnl_base * size``.
     """
     openers, closers = _events(trades)
     mk = trades["market"].to_numpy()
@@ -86,7 +105,7 @@ def throttle_curves(
         unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)  # 3. EOD mark
         realized_series[k] = start_balance + realized
         equity_series[k] = start_balance + realized + unreal
-    return realized_series, equity_series
+    return realized_series, equity_series, size
 
 
 def flat(multiple: float) -> Callable[[float], float]:
