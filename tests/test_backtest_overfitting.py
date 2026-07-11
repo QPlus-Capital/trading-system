@@ -49,3 +49,45 @@ def test_pbo_around_half_for_noise() -> None:
     matrix = rng.normal(size=(40, 8)).tolist()  # pure noise -> no persistent edge
     value = pbo(matrix, n_splits=10)
     assert 0.2 < value < 0.8
+
+
+def test_variation_pbo_dominant_variation_is_not_overfit() -> None:
+    from qplus.backtest.edge.characterize import variation_pbo
+
+    # Three variations over two (instrument, train) cells; "good" dominates every cell, so the
+    # in-sample-best is always best out-of-sample -> PBO 0.
+    good_rows = []
+    for inst in ("A", "B"):
+        good_rows += [
+            {"variation": "good", "instrument": inst, "train_months": 36, "window_oos": [0.02] * 6},
+            {"variation": "mid", "instrument": inst, "train_months": 36, "window_oos": [0.005] * 6},
+            {"variation": "bad", "instrument": inst, "train_months": 36, "window_oos": [-0.01] * 6},
+        ]
+    assert variation_pbo(good_rows) == 0.0
+
+
+def test_variation_pbo_aligns_over_common_cells_when_one_variation_is_short() -> None:
+    from qplus.backtest.edge.characterize import variation_pbo
+
+    # "partial" only ran on instrument A; the matrix must fall back to the common cell (A) rather
+    # than crash on the ragged shape.
+    rows = []
+    for inst in ("A", "B"):
+        rows += [
+            {"variation": "full", "instrument": inst, "train_months": 36, "window_oos": [0.01] * 8},
+            {"variation": "other", "instrument": inst, "train_months": 36, "window_oos": [0.0] * 8},
+        ]
+    rows.append(
+        {"variation": "partial", "instrument": "A", "train_months": 36, "window_oos": [0.02] * 8}
+    )
+    value = variation_pbo(rows)
+    assert 0.0 <= value <= 1.0
+
+
+def test_variation_pbo_nan_with_fewer_than_two_variations() -> None:
+    import math
+
+    from qplus.backtest.edge.characterize import variation_pbo
+
+    rows = [{"variation": "only", "instrument": "A", "train_months": 36, "window_oos": [0.01] * 10}]
+    assert math.isnan(variation_pbo(rows))

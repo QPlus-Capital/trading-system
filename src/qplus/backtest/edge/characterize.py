@@ -176,8 +176,43 @@ def _top_charts(
         )
 
 
+def variation_pbo(good: list[dict[str, Any]], n_splits: int = 10) -> float:
+    """Probability of backtest overfitting across the variations, via CSCV.
+
+    Treats each variation as a trial and its per-window OOS returns as the performance series. The
+    matrix must be *aligned* across variations, so it is built only over the (instrument, training-
+    length) cells present for EVERY variation -- a variation that failed on one market (e.g. USDCAD)
+    then does not break the alignment. Returns the fraction of IS/OOS splits where the in-sample-
+    best variation lands below the OOS median (0 = never overfit, ~0.5 = no better than chance).
+    """
+    from qplus.backtest.foundation.overfitting import pbo
+
+    cells_by_var: dict[str, dict[tuple[Any, Any], list[float]]] = defaultdict(dict)
+    for r in good:
+        cells_by_var[r["variation"]][(r["instrument"], r["train_months"])] = r["window_oos"]
+    variations = list(cells_by_var)
+    if len(variations) < 2:
+        return float("nan")
+    common = set.intersection(*(set(c.keys()) for c in cells_by_var.values()))
+    if not common:
+        return float("nan")
+    order = sorted(common)
+    matrix = [[x for cell in order for x in cells_by_var[v][cell]] for v in variations]
+    cols = list(zip(*matrix, strict=True))  # rows = pooled windows, cols = variations
+    n_time = len(cols)
+    splits = min(n_splits, n_time - (n_time % 2))
+    if n_time < 2 or splits < 2:
+        return float("nan")
+    try:
+        return pbo(cols, n_splits=splits)
+    except ValueError:
+        return float("nan")
+
+
 def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> None:
-    """Build the ranking (with DSR), the heatmap and top-variation Monte-Carlo charts."""
+    """Build the ranking (with DSR + PBO), the heatmap and top-variation Monte-Carlo charts."""
+    import json
+
     import numpy as np
 
     from qplus.backtest.foundation.overfitting import deflated_sharpe_ratio, sharpe_ratio
@@ -199,6 +234,21 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
     sharpe_variance = (
         float(np.var(list(variation_sharpe.values()), ddof=1)) if len(variation_sharpe) > 1 else 0.0
     )
+    # Study-level overfitting gate: PBO across variations (Stage 2 criterion, methodology.md).
+    pbo_value = variation_pbo(good)
+    (out_dir / "overfitting.json").write_text(
+        json.dumps(
+            {
+                "pbo": None if np.isnan(pbo_value) else round(pbo_value, 4),
+                "n_trials": n_trials,
+                "n_variations": len(win_by_var),
+                "sharpe_variance": round(sharpe_variance, 6),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print(f"\nPBO (CSCV over {len(win_by_var)} variations): {pbo_value:.3f} | trials: {n_trials}")
 
     agg = (
         df.dropna(subset=["mean_oos_pct"])
