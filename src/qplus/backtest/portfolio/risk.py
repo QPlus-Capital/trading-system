@@ -97,10 +97,20 @@ class ThrottleRisk:
     floor_pct: float  # risk floored to this (% of start) at the wall
 
     def resolve(self, cap_frac: float, account: AccountProfile) -> ResolvedRisk:
+        cap_pct = cap_frac * 100.0
         ceil_mult = cap_frac / account.base_risk_frac
-        floor_of_ceiling = min(1.0, (self.floor_pct / 100.0) / cap_frac) if cap_frac > 0 else 0.0
+        # A throttle only means something when its floor sits BELOW the tail cap: it runs between
+        # the floor and the ceiling. If the requested floor is already at or above the cap, the
+        # policy is pinned to the cap -- it degenerates to flat sizing there. Report it honestly
+        # (floor == ceiling == cap) instead of the nonsensical "0.15% -> 0.04%" inverted range.
+        if self.floor_pct >= cap_pct:
+            capped = round(cap_pct, 4)
+            return ResolvedRisk("throttle(flat@cap)", flat(ceil_mult), capped, capped)
+        floor_of_ceiling = (self.floor_pct / 100.0) / cap_frac if cap_frac > 0 else 0.0
         return ResolvedRisk(
-            "throttle", throttle(ceil_mult, floor_of_ceiling), round(cap_frac * 100, 4),
+            "throttle",
+            throttle(ceil_mult, floor_of_ceiling),
+            round(cap_pct, 4),
             self.floor_pct,
         )
 
