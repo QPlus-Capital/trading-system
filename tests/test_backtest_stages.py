@@ -23,6 +23,19 @@ def test_parse_risk_flat_and_throttle() -> None:
         parse_risk("martingale:9")
 
 
+def test_live_fixed_stops_reads_per_market_sltp() -> None:
+    from pathlib import Path
+
+    from qplus.backtest.stages.portfolio import live_fixed_stops
+
+    repo_root = Path(__file__).resolve().parents[1]
+    stops = live_fixed_stops(repo_root / "config" / "live" / "paper_rsi_wpr_bb.py")
+    assert stops  # non-empty
+    for market, sltp in stops.items():
+        assert isinstance(market, str)
+        assert sltp["stop_loss_pct"] > 0 and sltp["take_profit_pct"] > 0
+
+
 def test_rundir_roundtrip_and_missing_artifact(tmp_path) -> None:
     run = rb.RunDir.open(tmp_path)
     run.save_json("selection.json", {"variation": "x", "instruments": ["EURUSD"]})

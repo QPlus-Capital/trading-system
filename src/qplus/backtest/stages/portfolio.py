@@ -55,6 +55,19 @@ def parse_risk(spec: str) -> RiskPolicy:
     raise SystemExit(f"unknown risk policy '{spec}' (use flat:0.15 or throttle:0.15)")
 
 
+def live_fixed_stops(config: Path) -> dict[str, dict[str, float]]:
+    """Per-market fixed SL/TP from a live config -- the stops we actually deploy and hold constant.
+
+    ``config`` is a live config module with ``MARKETS = [(factory, csv, leverage, sl, tp), ...]``.
+    """
+    module = load_config_module(config)
+    stops: dict[str, dict[str, float]] = {}
+    for factory, _csv, _lev, sl, tp in module.MARKETS:
+        name = str(factory().raw_symbol)
+        stops[name] = {"stop_loss_pct": float(sl), "take_profit_pct": float(tp)}
+    return stops
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 3 (PORTFOLIO): combine + size.")
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
@@ -69,6 +82,11 @@ def main(argv: list[str] | None = None) -> None:
         "--tail", choices=("full", "holdout"), default="full",
         help="measure the risk ceiling on the FULL history (all crises) or just the holdout",
     )
+    parser.add_argument(
+        "--fixed", type=Path, default=None,
+        help="trade the FIXED per-market SL/TP from this live config every window (no per-window "
+        "stop re-optimisation) -- validates the config we deploy, whose gentle tail is tradeable",
+    )
     args = parser.parse_args(argv)
 
     run = rb.RunDir.open(args.run)
@@ -80,7 +98,16 @@ def main(argv: list[str] | None = None) -> None:
     # The account/prop-firm rules come from config; the code never assumes a balance or a limit.
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
+
+    # Fixed mode: trade the deployed per-market stops, restricted to the markets that have them.
+    fixed_stops = live_fixed_stops(args.fixed) if args.fixed else None
     universe = [m for m in sel["instruments"] if m in specs]
+    if fixed_stops is not None:
+        dropped = [m for m in universe if m not in fixed_stops]
+        universe = [m for m in universe if m in fixed_stops]
+        if dropped:
+            print(f"\n  [fixed] ohne feste Stops im Live-Config, ausgelassen: {', '.join(dropped)}")
+
     extract_fn = make_extract_fn(
         specs,
         test_months=int(getattr(cfg, "TEST_MONTHS", 6)),
@@ -90,12 +117,14 @@ def main(argv: list[str] | None = None) -> None:
         embargo_days=int(getattr(cfg, "EMBARGO_DAYS", 0)),
         start_balance=account.start_balance,  # size the backtests against the REAL account
         risk_per_trade_pct=account.base_risk_frac * 100.0,
+        fixed_stops=fixed_stops,
     )
     overrides = cfg.VARIATIONS[sel["variation"]]
 
+    mode_txt = "FESTE Live-Stops" if fixed_stops is not None else "re-optimiert pro Fenster"
     print(
-        f"\n  Extrahiere Holdout-Trades: {sel['variation']} @ {sel['train_months']}m "
-        f"ueber {len(universe)} Maerkte ..."
+        f"\n  Extrahiere Holdout-Trades ({mode_txt}): {sel['variation']} @ "
+        f"{sel['train_months']}m ueber {len(universe)} Maerkte ..."
     )
     frames = [extract_fn(m, overrides, int(sel["train_months"])) for m in universe]
     trades = pd.concat(frames, ignore_index=True)
@@ -107,15 +136,18 @@ def main(argv: list[str] | None = None) -> None:
     # the hard daily limit. Every policy is capped by it; within it a policy may size freely.
     # Measured on the FULL history by default -- a ceiling fit to a benign holdout is the trap.
     if args.tail == "full":
-        # Measure the ceiling at the stop the walk-forward really traded: R = move/stop, so a tail
-        # measured at a different stop distance is simply the wrong number.
+        # Measure the ceiling at the stop actually traded: R = move/stop, so a tail at a different
+        # stop distance is simply the wrong number. In fixed mode that is each market's own
+        # fixed stop; otherwise it is the stop the walk-forward optimiser landed on most often.
         traded_sl = traded_stop_loss_pct(trades)
-        print(f"\n  Messe Tail-Decke auf der VOLLEN Historie (SL {traded_sl}%, wie gehandelt) ...")
+        sl_note = "feste Live-Stops je Markt" if fixed_stops is not None else f"SL {traded_sl}%"
+        print(f"\n  Messe Tail-Decke auf der VOLLEN Historie ({sl_note}, wie gehandelt) ...")
         worst_day, cap = full_history_tail_cap(
             specs, universe, overrides, cfg.PARAM_GRID, account,
-            broker=TTP_MARKETS, stress_mult=args.stress_mult, stop_loss_pct=traded_sl,
+            broker=TTP_MARKETS, stress_mult=args.stress_mult,
+            stop_loss_pct=traded_sl, fixed_stops=fixed_stops,
         )
-        source = f"volle Historie @ SL {traded_sl}%"
+        source = f"volle Historie @ {sl_note}"
     else:
         worst_day = worst_day_r(trades)
         cap = tail_cap(trades, account, stress_mult=args.stress_mult)

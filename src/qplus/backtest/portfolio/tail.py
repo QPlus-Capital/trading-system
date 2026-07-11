@@ -56,18 +56,25 @@ def full_history_trades(
     account: AccountProfile,
     *,
     broker: BrokerProfile | None = None,
+    fixed_stops: dict[str, dict[str, Any]] | None = None,
 ) -> pd.DataFrame:
-    """One full-history backtest per market at fixed ``params`` -> combined trade stream with R."""
+    """One full-history backtest per market -> combined trade stream with R.
+
+    ``params`` is the common parameter set; ``fixed_stops`` overrides it PER MARKET (the fixed
+    live SL/TP), so the tail is measured at exactly the stop each market really trades -- R is
+    move/stop, so a tail measured at the wrong stop is the wrong number.
+    """
     from nautilus_trader.backtest.node import BacktestNode
 
     frames: list[pd.DataFrame] = []
     for market in markets:
         factory, csv, leverage = instrument_specs[market]
+        market_params = {**params, **(fixed_stops or {}).get(market, {})}
         recipe = SweepRecipe(
             factory(),
             csv,
             leverage=leverage,
-            config_overrides={**overrides, **params},
+            config_overrides={**overrides, **market_params},
             broker=broker,
             start_balance=account.start_balance,
             risk_per_trade_pct=account.base_risk_frac * 100.0,
@@ -78,7 +85,7 @@ def full_history_trades(
             pos = node.get_engines()[0].trader.generate_positions_report()
         finally:
             node.dispose()  # type: ignore[no-untyped-call]
-        rows = timed_trades_from_report(pos, market, float(params["stop_loss_pct"]))
+        rows = timed_trades_from_report(pos, market, float(market_params["stop_loss_pct"]))
         # One continuous backtest per market -> a single equity walk is the right one here.
         assign_r(rows, account.start_balance, account.base_risk_frac)
         frames.append(pd.DataFrame(rows))
@@ -95,16 +102,18 @@ def full_history_tail_cap(
     broker: BrokerProfile | None = None,
     stress_mult: float = 1.5,
     stop_loss_pct: float | None = None,
+    fixed_stops: dict[str, dict[str, Any]] | None = None,
 ) -> tuple[float, float]:
     """``(worst_day_r, cap_frac)`` over the full history: the crisis-derived risk ceiling.
 
     Pass ``stop_loss_pct`` -- the stop the strategy really trades -- or the ceiling will be measured
-    at a different stop distance than it is spent at, and come out too high.
+    at a different stop distance than it is spent at, and come out too high. ``fixed_stops`` gives
+    the per-market stops when each market trades its own fixed SL/TP.
     """
     trades = full_history_trades(
         instrument_specs, markets, overrides,
         representative_params(param_grid, stop_loss_pct=stop_loss_pct), account,
-        broker=broker,
+        broker=broker, fixed_stops=fixed_stops,
     )
     worst = worst_day_r(trades)
     cap = tail_safe_risk(
