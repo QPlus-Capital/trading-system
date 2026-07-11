@@ -2,11 +2,13 @@
 
 Principle (framework-wide): *nothing strategy-specific is baked in.* The framework never
 hardcodes a risk like "0.15%" -- it sizes against an :class:`AccountProfile` (the account /
-prop-firm rules) using a chosen :class:`RiskPolicy`. Two policies today, both interchangeable:
+prop-firm rules) using a chosen :class:`RiskPolicy`. Three policies today:
 
 * :class:`FlatRisk` -- one constant risk every trade (the special case "policy = constant");
 * :class:`ThrottleRisk` -- dynamic risk that runs at the ceiling with a fresh buffer and tapers
-  toward a floor near the drawdown wall (Jan's idea).
+  toward a floor near the drawdown wall;
+* :class:`KellyRisk` -- risk-constrained Kelly: the growth-optimal flat fraction derived from the
+  trade distribution under a drawdown-probability bound (see :func:`rck_fraction`).
 
 Every policy is hard-capped by the strategy's OWN tail: :func:`tail_cap` is the largest risk whose
 ``stress_mult`` x worst-day gap still fits the hard daily limit (see :mod:`stress`). The crisis sets
@@ -14,7 +16,7 @@ the CEILING; within it a policy is free to move risk between a floor and that ce
 times -- so a single fixed risk (over-conservative in good times) is no longer forced on us.
 
 A resolved policy yields a ``risk_fn`` in *multiples of the account's base risk*, which the daily
-path simulation (:func:`sizing.throttle_curves`) consumes directly; ``FlatRisk`` reproduces flat
+path simulation (:func:`sizing.simulate`) consumes directly; ``FlatRisk`` reproduces flat
 sizing exactly (a constant ``risk_fn``).
 """
 
@@ -47,7 +49,8 @@ class AccountProfile:
     base_risk_frac: float = 0.01  # the risk the backtest sized each trade at (recovers multiples)
 
 
-# The Trading Pit hard limits (3% daily / 6% trailing) on the study's 200k account.
+# Default account profile (The Trading Pit hard limits: 3% daily / 6% trailing). The live account
+# size lives in config (config/study/robustness.py: ACCOUNT); this default is only a fallback.
 TTP_ACCOUNT = AccountProfile()
 
 
@@ -73,7 +76,7 @@ class ResolvedRisk:
     """A policy resolved against an account + its tail cap: ready for the daily simulation."""
 
     label: str
-    risk_fn: Callable[[float], float]  # risk multiple given used-budget fraction (throttle_curves)
+    risk_fn: Callable[[float], float]  # risk multiple given the used-budget fraction (simulate)
     ceiling_pct: float  # the largest risk the policy runs at, as % of the start balance
     floor_pct: float  # the smallest risk the policy tapers to (== ceiling for flat)
 
@@ -245,7 +248,7 @@ def evaluate_policy(
 ) -> PolicyResult:
     """Run ``policy`` over the trade stream day by day and report its honest return / drawdown.
 
-    Uses the path-dependent daily simulation (:func:`sizing.throttle_curves`), which sizes each
+    Uses the path-dependent daily simulation (:func:`sizing.simulate`), which sizes each
     trade as it opens from how much of the drawdown budget is already used -- so a throttle really
     runs bigger with a fresh buffer and brakes near the wall, while a flat policy is the constant
     special case. PnL is booked from ``r`` at the flat base risk, so nothing compounds.

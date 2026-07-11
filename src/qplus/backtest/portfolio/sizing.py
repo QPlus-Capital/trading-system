@@ -1,18 +1,11 @@
-"""Stage 4 -- position-sizing policy: flat vs dynamic drawdown-throttle.
+"""Position-sizing simulation: the per-trade risk function + the daily path.
 
-Position sizing only *scales* trade PnL, so it is applied last, against the prop-firm
-drawdown limit (Stage 3). Two policies:
-
-* **flat** -- one risk multiple for every trade. The largest safe multiple follows directly
-  from the base curves (see :func:`qplus.backtest.portfolio.drawdown.max_flat_risk`).
-* **throttle** (Jan's idea) -- size each trade when it opens from how much of the drawdown
-  budget is already used: full risk with a fresh buffer, tapering toward the floor. This
-  protects the hard limit while running higher base risk, and matters most in the early
-  phase before the +limit% buffer is banked (where the hybrid floor still binds).
-
-``throttle_curves`` runs the path-dependent daily simulation and returns absolute daily
-realized-balance and equity series to hand to :mod:`qplus.backtest.portfolio.drawdown`. A
-constant throttle reproduces flat sizing exactly (covered by tests).
+Sizing only *scales* trade PnL, so it is applied last, against the prop-firm drawdown limit. The
+per-trade risk multiple comes from a ``risk_fn`` (see :func:`flat` / :func:`throttle`); the risk
+policies in :mod:`qplus.backtest.portfolio.risk` build those. :func:`simulate` runs the
+path-dependent daily simulation and returns the daily realized-balance and equity series (for the
+drawdown check) plus the size each trade was given (for honest per-trade metrics). A constant
+``risk_fn`` reproduces flat sizing exactly (covered by tests).
 """
 
 from collections import defaultdict
@@ -29,22 +22,6 @@ def _events(trades: pd.DataFrame) -> tuple[dict[int, list[int]], dict[int, list[
         openers[int(o)].append(i)
         closers[int(c)].append(i)
     return openers, closers
-
-
-def throttle_curves(
-    trades: pd.DataFrame,
-    prices: dict[str, np.ndarray],
-    d0: int,
-    d1: int,
-    start_balance: float,
-    limit_frac: float,
-    risk_fn: Callable[[float], float],
-) -> tuple[np.ndarray, np.ndarray]:
-    """Daily (realized_balance, equity) under per-trade throttled sizing -- see :func:`simulate`."""
-    realized, equity, _sizes = simulate(
-        trades, prices, d0, d1, start_balance, limit_frac, risk_fn
-    )
-    return realized, equity
 
 
 def simulate(

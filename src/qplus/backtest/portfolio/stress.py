@@ -1,17 +1,15 @@
-"""Stage 5 -- tail-stress gate: does the sized account survive a WORSE-than-history gap?
+"""Sizing (Stage 5) -- the tail cap: does the sized account survive a WORSE-than-history gap?
 
-The drawdown feasibility (``scorecard.max_flat_risk``) fits the risk to the worst path *seen in
-the sample*. But the next crisis can be worse than the worst historical gap -- so a risk fit to
-history is not safe (it is exactly the 0.352% trap: a benign window allows a huge risk that a
-COVID-repeat would kill).
+Fitting the risk to the worst path *seen in the sample* is unsafe: the next crisis can be worse than
+the worst historical gap, so a risk fit to a benign window would be killed by a COVID-repeat.
 
-This models the binding real constraint for a gap-exposed reversal strategy: a single
-catastrophic gap through the stop. The worst historical single-trade loss (in R) is amplified by
-a ``stress_mult``
-(headroom for a worse gap AND for several positions gapping together), and that stressed loss must
-stay inside the hard daily limit at the chosen flat risk. The truly-safe risk is the MIN of the
-drawdown-path feasibility and this tail-stress ceiling -- so the framework never blesses a risk that
-a worse-than-history gap would breach.
+This models the binding real constraint for a gap-exposed reversal strategy: a single catastrophic
+day gapping through the stops. The worst historical single-DAY loss in R (several positions gapping
+together, which the hard *daily* limit sees as one loss) is amplified by a ``stress_mult`` (headroom
+for a worse-than-history gap), and that stressed loss must stay inside the hard daily limit at the
+chosen flat risk. The truly-safe risk is the MIN of this tail cap and the risk-constrained-Kelly
+drawdown bound (see :mod:`qplus.backtest.portfolio.risk`) -- so a worse-than-history gap never
+breaches.
 
 Works in **R-multiples** (the scale-invariant per-trade risk unit) via the trade stream's ``r``
 column -- NOT ``pnl_base``, which compounds with the growing equity over a long history and would

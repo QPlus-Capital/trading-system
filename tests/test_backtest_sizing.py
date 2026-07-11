@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from qplus.backtest.portfolio.curves import base_curves
-from qplus.backtest.portfolio.sizing import flat, throttle, throttle_curves
+from qplus.backtest.portfolio.sizing import flat, simulate, throttle
 
 _TRADES = pd.DataFrame(
     {
@@ -30,7 +30,7 @@ def test_constant_throttle_reproduces_flat_scaling() -> None:
     start, m = 200_000.0, 0.5
     realized_base, unreal_base = base_curves(_TRADES, _PRICES, 0, 3)
     equity_base = realized_base + unreal_base
-    realized, equity = throttle_curves(_TRADES, _PRICES, 0, 3, start, 0.06, flat(m))
+    realized, equity, _sizes = simulate(_TRADES, _PRICES, 0, 3, start, 0.06, flat(m))
     assert np.allclose(realized, start + m * realized_base)
     assert np.allclose(equity, start + m * equity_base)
 

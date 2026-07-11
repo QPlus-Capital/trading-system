@@ -266,8 +266,8 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         qty = self._position_qty(ref_price)
         if qty is None:
             return
-        # Plain market entry; the stop-loss / take-profit are enforced synthetically in on_bar
-        # (see there -- venue stop/limit orders proved unreliable under the reversal/netting flow).
+        # Plain market entry; once it fills, the stop-loss / take-profit are attached as resting
+        # venue orders anchored to the ACTUAL fill price (see on_position_opened).
         order: MarketOrder = self.order_factory.market(
             instrument_id=self.config.instrument_id,
             order_side=side,
