@@ -2,6 +2,7 @@
 
 import math
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -9,9 +10,11 @@ from qplus.backtest.portfolio.curves import DAY_NS
 from qplus.backtest.portfolio.risk import (
     AccountProfile,
     FlatRisk,
+    KellyRisk,
     ThrottleRisk,
     evaluate_policy,
     flat_base_pnl,
+    rck_fraction,
     tail_cap,
 )
 from qplus.backtest.portfolio.trades import assign_r
@@ -122,3 +125,48 @@ def test_throttle_runs_bigger_than_flat_while_the_buffer_is_fresh() -> None:
     assert thr_res.ceiling_pct == 2.0 and thr_res.floor_pct == 0.5
     assert thr_res.total_return_pct > flat_res.total_return_pct
     assert not thr_res.breached
+
+
+def _reversal_r(seed: int, hit: float = 0.46, win: float = 2.0, loss: float = -1.0, n: int = 8000):
+    """A reversal-like R distribution: ``hit`` winners of ``win`` R, rest losers of ``loss`` R."""
+    rng = np.random.default_rng(seed)
+    return np.where(rng.random(n) < hit, win, loss)
+
+
+def test_rck_positive_and_bounded_for_a_profitable_distribution() -> None:
+    phi = rck_fraction(_reversal_r(0), alpha=0.94, beta=0.05)
+    assert 0.0 < phi <= 0.05  # a real bet, under the sanity cap
+
+
+def test_rck_tighter_tolerance_shrinks_the_bet() -> None:
+    r = _reversal_r(1)
+    loose = rck_fraction(r, alpha=0.94, beta=0.10)
+    tight = rck_fraction(r, alpha=0.94, beta=0.01)
+    assert 0.0 < tight < loose  # a lower tolerance for ruin -> a smaller bet
+
+
+def test_rck_zero_for_an_unprofitable_distribution() -> None:
+    # 40% winners of +2R vs 60% losers of -1.5R -> negative expectancy -> no growth-positive bet.
+    assert rck_fraction(_reversal_r(2, hit=0.40, win=2.0, loss=-1.5), alpha=0.94, beta=0.05) == 0.0
+
+
+def test_rck_respects_the_drawdown_bound_in_simulation() -> None:
+    # The correctness check: at the returned fraction, the empirical probability of EVER falling to
+    # alpha*W0 over a long trade sequence must stay within beta (the bound is guaranteed-safe).
+    import numpy as np
+
+    r_dist = _reversal_r(3)
+    alpha, beta = 0.94, 0.05
+    phi = rck_fraction(r_dist, alpha=alpha, beta=beta)
+    rng = np.random.default_rng(99)
+    draws = rng.choice(r_dist, size=(4000, 800))  # 4000 wealth paths of 800 trades
+    wealth = np.cumprod(1.0 + phi * draws, axis=1)
+    hit_floor = (wealth.min(axis=1) <= alpha).mean()
+    assert hit_floor <= beta + 0.01  # the drawdown bound holds empirically
+
+
+def test_kelly_risk_reads_the_account_wall() -> None:
+    acc = AccountProfile()  # trailing_hard 0.06 -> wealth floor alpha = 0.94
+    trades = pd.DataFrame({"r": _reversal_r(4)})
+    phi = KellyRisk(beta=0.05).fraction(trades, acc)
+    assert 0.0 < phi <= 0.05

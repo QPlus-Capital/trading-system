@@ -103,12 +103,14 @@ def full_history_tail_cap(
     stress_mult: float = 1.5,
     stop_loss_pct: float | None = None,
     fixed_stops: dict[str, dict[str, Any]] | None = None,
-) -> tuple[float, float]:
-    """``(worst_day_r, cap_frac)`` over the full history: the crisis-derived risk ceiling.
+) -> tuple[float, float, pd.DataFrame]:
+    """``(worst_day_r, cap_frac, full_history_trades)`` -- the crisis-derived risk ceiling + stream.
 
     Pass ``stop_loss_pct`` -- the stop the strategy really trades -- or the ceiling will be measured
     at a different stop distance than it is spent at, and come out too high. ``fixed_stops`` gives
-    the per-market stops when each market trades its own fixed SL/TP.
+    the per-market stops when each market trades its own fixed SL/TP. The full-history trade stream
+    is returned too so the same all-crises data can drive the risk-constrained-Kelly sizing (its
+    drawdown bound must see the crisis tail, not the benign holdout).
     """
     trades = full_history_trades(
         instrument_specs, markets, overrides,
@@ -122,4 +124,4 @@ def full_history_tail_cap(
         daily_hard=account.daily_hard,
         trailing_hard=account.trailing_hard,
     )
-    return worst, cap
+    return worst, cap, trades

@@ -26,9 +26,13 @@ from qplus.backtest.foundation.montecarlo import monte_carlo_paths, summarize
 from qplus.backtest.portfolio import report
 from qplus.backtest.portfolio.curves import load_daily_close
 from qplus.backtest.portfolio.equity_report import daily_equity, edge_stats, risk_stats
-from qplus.backtest.portfolio.risk import AccountProfile, evaluate_policy
+from qplus.backtest.portfolio.risk import (
+    AccountProfile,
+    FlatRisk,
+    ThrottleRisk,
+    evaluate_policy,
+)
 from qplus.backtest.stages import _runbook as rb
-from qplus.backtest.stages.portfolio import parse_risk
 
 _STAT_ROWS = [
     ("trades", "Trades", "{:,.0f}"),
@@ -62,10 +66,15 @@ def main(argv: list[str] | None = None) -> None:
     universe = [m for m in spec["instruments"] if m in specs]
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
 
-    # Re-run the chosen policy (cheap: a daily sim, not backtests) to recover each trade's PnL AT
-    # the size that policy gave it -- so the metrics are honest under a dynamic policy too.
-    policy = parse_risk(str(spec["risk_policy"]))
+    # Re-run the chosen sizing (cheap: a daily sim, not backtests) to recover each trade's PnL AT
+    # the size it was given -- so the metrics are honest under a dynamic policy too. Reconstruct it
+    # from the stored result, not the CLI string: flat and Kelly were both sized FLAT at the chosen
+    # ceiling (Kelly derived that ceiling upstream), throttle ran from its floor up to it.
     cap = float(spec["tail_cap_pct"]) / 100.0
+    if str(spec["risk_policy"]).startswith("throttle"):
+        policy: FlatRisk | ThrottleRisk = ThrottleRisk(floor_pct=float(spec["floor_pct"]))
+    else:
+        policy = FlatRisk(float(spec["ceiling_pct"]))
     result = evaluate_policy(trades, daily_close, account, policy, cap)
     sized_pnl = result.trade_pnl
     equity = daily_equity(trades, sized_pnl, daily_close, start_balance=account.start_balance)

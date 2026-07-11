@@ -247,13 +247,15 @@ now guarded by tests — check these first when a number looks too good:
 | 2 Edge & robustness | `edge/`, `foundation/overfitting` (DSR/PBO), `foundation/trial_budget` | ✅ compute; ⚠️ DSR/PBO not yet surfaced in the `stages/` CLI |
 | 3 Selection | `select/universe`, `stages/edge`, `stages/select` | ✅ |
 | 4 Holdout | `portfolio/trades` (phase="holdout"), `stages/portfolio` | ✅ |
-| 5 Sizing | `portfolio/risk` (tail cap, policies), `portfolio/tail`, `portfolio/stress` | ✅ implements the gap-constraint special case; ⚠️ not yet framed/optimized as risk-constrained Kelly |
+| 5 Sizing | `portfolio/risk` (tail cap, `rck_fraction`/`KellyRisk`, policies), `portfolio/tail`, `portfolio/stress` | ✅ gap tail cap + risk-constrained Kelly (`kelly:beta`), sized on the full-history stream; the drawdown bound is Monte-Carlo-verified |
 | 6 Robustness | `foundation/montecarlo`, per-year analysis, `portfolio/stress` | ✅ |
 | 7 Decision | *(the stress/return frontier)* | ⚠️ produced ad-hoc; to formalize into Stage-4 report output |
 
-**Nearest gaps to close:** surface DSR/PBO in the staged CLI (Stage 2); make the sizing an explicit
-fractional-Kelly / risk-constrained-Kelly choice with the efficient frontier as the Stage-7 output;
-write the per-strategy hypothesis (Stage 0).
+**Done since:** Stage 0 hypothesis written; DSR + PBO surfaced in the staged CLI (Stage 2);
+risk-constrained Kelly wired as the `kelly:beta` policy (Stage 5), sized on the full-history stream.
+**Nearest gap:** the efficient frontier (return vs risk-aversion β) as the formal Stage-7 report
+output -- currently produced ad-hoc; on real data the gap tail cap binds below RCK for every β, so
+the sizing decision reduces to the tail cap with RCK confirming the trade-sequence drawdown is safe.
 
 ---
 

@@ -34,6 +34,7 @@ from qplus.backtest.portfolio.curves import load_daily_close
 from qplus.backtest.portfolio.risk import (
     AccountProfile,
     FlatRisk,
+    KellyRisk,
     RiskPolicy,
     ThrottleRisk,
     evaluate_policy,
@@ -45,14 +46,16 @@ from qplus.backtest.stages import _runbook as rb
 
 
 def parse_risk(spec: str) -> RiskPolicy:
-    """``flat:0.15`` -> FlatRisk(0.15); ``throttle:0.15`` -> ThrottleRisk(floor 0.15%)."""
+    """``flat:0.15`` | ``throttle:0.15`` | ``kelly:0.05`` (risk-constrained Kelly, beta)."""
     kind, _, rest = spec.partition(":")
     kind = kind.strip().lower()
     if kind == "flat":
         return FlatRisk(float(rest or "0.15"))
     if kind == "throttle":
         return ThrottleRisk(floor_pct=float((rest or "0.15").split(",")[0]))
-    raise SystemExit(f"unknown risk policy '{spec}' (use flat:0.15 or throttle:0.15)")
+    if kind == "kelly":
+        return KellyRisk(beta=float(rest or "0.05"))
+    raise SystemExit(f"unknown risk policy '{spec}' (use flat:0.15, throttle:0.15 or kelly:0.05)")
 
 
 def live_fixed_stops(config: Path) -> dict[str, dict[str, float]]:
@@ -142,7 +145,7 @@ def main(argv: list[str] | None = None) -> None:
         traded_sl = traded_stop_loss_pct(trades)
         sl_note = "feste Live-Stops je Markt" if fixed_stops is not None else f"SL {traded_sl}%"
         print(f"\n  Messe Tail-Decke auf der VOLLEN Historie ({sl_note}, wie gehandelt) ...")
-        worst_day, cap = full_history_tail_cap(
+        worst_day, cap, rck_stream = full_history_tail_cap(
             specs, universe, overrides, cfg.PARAM_GRID, account,
             broker=TTP_MARKETS, stress_mult=args.stress_mult,
             stop_loss_pct=traded_sl, fixed_stops=fixed_stops,
@@ -151,17 +154,34 @@ def main(argv: list[str] | None = None) -> None:
     else:
         worst_day = worst_day_r(trades)
         cap = tail_cap(trades, account, stress_mult=args.stress_mult)
+        rck_stream = trades  # holdout mode: no full-history stream, fall back to the holdout
         source = "nur Holdout - eine schlimmere Krise wuerde die Decke senken"
     print(f"\n  Tail-Decke: schlechtester Tag {worst_day:.2f}R x {args.stress_mult} Stress "
           f"-> {cap * 100:.3f}% pro Trade  [{source}]")
 
-    # Same floor for both policies -> apples to apples: what does going dynamic actually buy?
-    base_pct = policy.pct if isinstance(policy, FlatRisk) else policy.floor_pct
+    # Risk-constrained Kelly derives the growth-optimal flat fraction from the trade distribution
+    # under the "P(ever hit the 6% trailing wall) <= beta" bound; the single-day gap tail still caps
+    # it. Flat/Throttle instead start from the requested percent. All are then compared at one base.
+    kelly_info: dict[str, float | str] = {}
+    if isinstance(policy, KellyRisk):
+        phi = policy.fraction(rck_stream, account)  # drawdown bound on the ALL-crises stream
+        bound = "RCK" if phi <= cap else "Tail-Cap"
+        base_pct = min(phi, cap) * 100.0
+        kelly_info = {"kelly_beta": policy.beta, "rck_pct": round(phi * 100, 4), "bound": bound}
+        alpha = 1 - account.trailing_hard
+        print(
+            f"\n  Risk-constrained Kelly (beta={policy.beta}, Wand alpha={alpha}): "
+            f"phi={phi * 100:.3f}% -> gebunden durch {bound} -> {base_pct:.3f}% pro Trade"
+        )
+    else:
+        base_pct = policy.pct if isinstance(policy, FlatRisk) else policy.floor_pct
+
+    # Same base for both policies -> apples to apples: what does going dynamic actually buy?
     results = {
         "flat": evaluate_policy(trades, daily_close, account, FlatRisk(base_pct), cap),
         "throttle": evaluate_policy(trades, daily_close, account, ThrottleRisk(base_pct), cap),
     }
-    chosen_label = "flat" if isinstance(policy, FlatRisk) else "throttle"
+    chosen_label = "throttle" if isinstance(policy, ThrottleRisk) else "flat"  # Kelly sizes flat
     chosen = results[chosen_label]
 
     print(f"\n  {results['flat'].n_trades} Trades / {chosen.years}J (Holdout, netto)\n")
@@ -195,6 +215,7 @@ def main(argv: list[str] | None = None) -> None:
             "total_return_pct": chosen.total_return_pct,
             "max_drawdown_pct": chosen.max_drawdown_pct,
             "breached": chosen.breached,
+            **kelly_info,
         },
     )
 

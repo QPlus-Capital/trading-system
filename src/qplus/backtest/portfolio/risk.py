@@ -20,7 +20,8 @@ sizing exactly (a constant ``risk_fn``).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import math
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 import numpy as np
@@ -115,8 +116,96 @@ class ThrottleRisk:
         )
 
 
-# A risk policy is anything that resolves to a ResolvedRisk against an account + tail cap.
-RiskPolicy = FlatRisk | ThrottleRisk
+def _golden_max(f: Callable[[float], float], lo: float, hi: float, iters: int = 100) -> float:
+    """argmax of a unimodal (concave) ``f`` on ``[lo, hi]`` by golden-section search."""
+    gr = (math.sqrt(5.0) - 1.0) / 2.0
+    a, b = lo, hi
+    c, d = b - gr * (b - a), a + gr * (b - a)
+    for _ in range(iters):
+        if f(c) < f(d):
+            a = c
+        else:
+            b = d
+        c, d = b - gr * (b - a), a + gr * (b - a)
+    return (a + b) / 2.0
+
+
+def _bisect_root(f: Callable[[float], float], lo: float, hi: float, iters: int = 100) -> float:
+    """Root of ``f`` on ``[lo, hi]`` where ``f(lo) < 0 <= f(hi)`` (monotone crossing)."""
+    for _ in range(iters):
+        mid = (lo + hi) / 2.0
+        if f(mid) < 0.0:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2.0
+
+
+def rck_fraction(
+    r_multiples: Sequence[float], *, alpha: float, beta: float, max_frac: float = 0.05
+) -> float:
+    """Growth-optimal per-trade risk fraction under a drawdown-probability constraint.
+
+    Risk-constrained Kelly (Busseti, Ryu, Boyd 2016): maximize the expected log growth
+    ``E[ln(1 + phi*r)]`` subject to the drawdown bound ``P(ever fall to alpha*W0) <= beta``,
+    enforced convexly via ``E[(1 + phi*r)^(-lambda)] <= 1`` with ``lambda = ln(beta)/ln(alpha)``.
+
+    ``r_multiples`` are the per-trade returns in units of the risk taken (R-multiples); ``phi`` is
+    the fraction of capital risked per trade (0.002 = 0.2%). ``alpha`` is the wealth floor (e.g.
+    0.94 = the 6% trailing wall), ``beta`` the tolerance for ever touching it. Returns 0 when no
+    growth-positive feasible bet exists. Capped at ``max_frac`` as a sanity bound.
+    """
+    r = np.asarray(r_multiples, dtype=float)
+    if r.size < 2 or not (0.0 < alpha < 1.0) or not (0.0 < beta < 1.0):
+        return 0.0
+    lam = math.log(beta) / math.log(alpha)  # > 0 since both logs are negative
+    worst = float(r.min())
+    # Keep the wealth ratio (1 + phi*r) strictly positive -- it is the base of a fractional power.
+    hi = max_frac if worst >= 0.0 else min(max_frac, 0.98 / -worst)
+    if hi <= 0.0:
+        return 0.0
+
+    def growth(phi: float) -> float:
+        return float(np.mean(np.log1p(phi * r)))
+
+    def risk_excess(phi: float) -> float:  # E[(1+phi r)^-lambda] - 1; <= 0 is feasible
+        return float(np.mean((1.0 + phi * r) ** (-lam))) - 1.0
+
+    phi_kelly = _golden_max(growth, 0.0, hi)
+    if phi_kelly <= 0.0 or growth(phi_kelly) <= 0.0:
+        return 0.0
+    # risk_excess(0)=0, dips negative for a profitable strategy, then rises back through 0 at the
+    # feasible ceiling. Find that ceiling; the answer is the smaller of it and the Kelly optimum.
+    if risk_excess(hi) <= 0.0:
+        phi_max = hi
+    else:
+        probe = hi * 1e-4
+        if risk_excess(probe) >= 0.0:  # not even a tiny bet is feasible
+            return 0.0
+        phi_max = _bisect_root(risk_excess, probe, hi)
+    return max(0.0, min(phi_kelly, phi_max))
+
+
+@dataclass(frozen=True)
+class KellyRisk:
+    """Risk-constrained Kelly sizing: the growth-optimal flat fraction under a drawdown bound.
+
+    ``beta`` is the tolerance for EVER touching the wealth floor ``alpha = 1 - trailing_hard`` (the
+    prop firm's trailing drawdown wall). Unlike Flat/Throttle it is data-driven -- it reads the
+    trade R-distribution -- so the stage calls :meth:`fraction` and then sizes flat at that fraction
+    (still capped by the single-day gap tail, which this trade-sequence bound does not see).
+    """
+
+    beta: float
+
+    def fraction(self, trades: pd.DataFrame, account: AccountProfile) -> float:
+        alpha = 1.0 - account.trailing_hard
+        return rck_fraction(trades["r"].to_numpy(dtype=float), alpha=alpha, beta=self.beta)
+
+
+# A risk policy the stage can request. Flat/Throttle resolve directly against the tail cap;
+# KellyRisk first derives its flat fraction from the trade distribution, then is sized flat.
+RiskPolicy = FlatRisk | ThrottleRisk | KellyRisk
 
 
 def flat_base_pnl(trades: pd.DataFrame, account: AccountProfile) -> np.ndarray:
@@ -151,7 +240,7 @@ def evaluate_policy(
     trades: pd.DataFrame,
     daily_close: dict[str, pd.Series],
     account: AccountProfile,
-    policy: RiskPolicy,
+    policy: FlatRisk | ThrottleRisk,  # KellyRisk is sized flat upstream, so it never reaches here
     cap_frac: float,
 ) -> PolicyResult:
     """Run ``policy`` over the trade stream day by day and report its honest return / drawdown.
