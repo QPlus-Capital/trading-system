@@ -1,4 +1,4 @@
-"""Stage 4 charts: the pictures that make an assembled portfolio legible.
+"""Verdict-stage charts: the pictures that make an assembled portfolio legible.
 
 Strategy-agnostic on purpose (framework principle #1): every function takes the account context and
 the already-sized PnL, so the same report renders for any strategy, any market set, any risk policy.

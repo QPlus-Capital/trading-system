@@ -1,4 +1,4 @@
-"""Sizing (Stage 5) -- the tail cap: does the sized account survive a WORSE-than-history gap?
+"""Sizing -- the tail cap: does the sized account survive a WORSE-than-history gap?
 
 Fitting the risk to the worst path *seen in the sample* is unsafe: the next crisis can be worse than
 the worst historical gap, so a risk fit to a benign window would be killed by a COVID-repeat.

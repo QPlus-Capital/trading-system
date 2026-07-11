@@ -1,8 +1,8 @@
 """Portfolio-level modelling: are the 9 markets really diversified, and how crowded is the book?
 
-The prop-firm drawdown feasibility already sizes off the *combined* daily equity of all markets,
-so concurrent drawdowns are implicitly in ``max_flat_risk`` (the deepest trough of the summed
-curve). What that number does not expose is the STRUCTURE behind it -- this adds that:
+The sizing already works off the *combined* trade stream of all markets, so concurrent drawdowns
+and the correlated worst day are implicitly in the tail cap / risk-constrained-Kelly sizing. What
+those numbers do not expose is the STRUCTURE behind them -- this adds that:
 
 - **Correlation + effective bets.** Pairwise correlation of the markets' daily (mark-to-market)
   R-returns, and the *effective number of independent bets* N_eff = (Sum lambda)^2 / Sum lambda^2
