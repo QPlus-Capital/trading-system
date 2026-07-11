@@ -1,4 +1,4 @@
-"""Tests for the timed OOS trade-stream extraction (Stage 1 -> 3)."""
+"""Tests for the timed OOS trade-stream extraction (edge -> portfolio)."""
 
 import pandas as pd
 

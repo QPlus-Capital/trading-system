@@ -1,4 +1,4 @@
-"""Tests for the Stage 4 report charts and the full-history tail helpers."""
+"""Tests for the verdict-stage report charts and the full-history tail helpers."""
 
 import numpy as np
 import pandas as pd
