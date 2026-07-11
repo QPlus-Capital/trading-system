@@ -15,7 +15,7 @@ Run the bundled demo from the repo root::
 
 or point it at another config module::
 
-    uv run python -m qplus.backtest.config config/backtest/ema_cross_demo.py
+    uv run python -m qplus.backtest.config config/backtest/rsi_wpr_bb_xauusd.py
 """
 
 import importlib.util

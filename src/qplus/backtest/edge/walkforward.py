@@ -105,17 +105,6 @@ def split_windows(
     return selection, holdout
 
 
-def describe_windows(windows: Sequence[WalkForwardWindow]) -> str:
-    """Return a short multi-line summary of the windows (for logging)."""
-    if not windows:
-        return "no walk-forward windows (data span too short for the given sizing)"
-    lines = [f"{len(windows)} walk-forward windows:"]
-    lines += [
-        f"  train {w.train_start:%Y-%m}..{w.train_end:%Y-%m}  ->  test {w.label}" for w in windows
-    ]
-    return "\n".join(lines)
-
-
 def calmar_score(
     trade_pnls: Sequence[float],
     start_equity: float,
