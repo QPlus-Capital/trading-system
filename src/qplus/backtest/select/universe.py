@@ -13,7 +13,7 @@ carrying the risk-adjusted ``return_per_dd`` and friends) and makes two joined d
 2. **Universe:** under that structure, keep the instruments whose own risk-adjusted edge
    clears thresholds; drop the weak / inconsistent ones.
 
-Pure pandas -- no backtest. See ``docs/backtesting-framework.md`` (Stage 2).
+Pure pandas -- no backtest. See ``docs/methodology.md`` (Stage 3, selection).
 """
 
 from dataclasses import dataclass
