@@ -29,8 +29,8 @@ from qplus.monitoring.reference import load_reference, mc_band
 from qplus.monitoring.research import METRICS, latest_study_csv, load_study, variant_ranking
 
 _REPO = Path(__file__).resolve().parents[3]
-_LIVE_RISK_PCT = 0.0015  # 0.15% flat, matches the live config
-_BT_RISK = 300.0  # backtest per-trade risk (0.15% of 200k), for the R-expectancy comparison
+_LIVE_RISK_PCT = 0.0018  # 0.18% flat, matches the live config (the gap tail cap)
+_BT_RISK = 180.0  # backtest per-trade risk (0.18% of the 100k base), for the R-expectancy comparison
 # Validated data-viz palette (see the dataviz skill's reference palette).
 _BLUE, _MUTED, _GRID = "#2a78d6", "#898781", "#e1e0d9"
 _GOOD, _WARN, _CRIT = "#0ca30c", "#fab219", "#d03b3b"

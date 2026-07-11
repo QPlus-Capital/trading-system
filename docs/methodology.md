@@ -2,8 +2,7 @@
 
 The authoritative, literature-grounded specification for how a strategy is taken from idea to a
 tradeable, prop-firm-compliant configuration — *what* is done, *in which order*, and *by which
-pass/fail criterion*. It supersedes the protocol parts of `backtesting-framework.md` (kept as the
-original design blueprint / history).
+pass/fail criterion*. It replaces the earlier design blueprint (removed; see git history).
 
 The goal it serves: a framework that tests every sensible variant in the order that makes sense and
 ends with a defensible recommendation plus an explicit **return-vs-risk decision**, not a pile of
