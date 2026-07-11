@@ -61,3 +61,59 @@ def test_edge_ranking_is_return_sorted_and_gated() -> None:
     top = ranking(df)
     assert list(top["variation"]) == ["a", "b"]  # best row per variation, sorted by return
     assert int(top.iloc[0]["train_months"]) == 36  # a's best train is the higher-return one
+
+
+def test_edge_ranking_dsr_gate_excludes_low_dsr() -> None:
+    from qplus.backtest.stages.edge import ranking
+
+    df = pd.DataFrame(
+        {
+            "variation": ["a", "a", "b", "b"],
+            "train_months": [24, 36, 24, 36],
+            "instrument": ["E", "E", "E", "E"],
+            "mean_oos_pct": [30.0, 30.0, 25.0, 25.0],
+            "return_per_dd": [3.0, 3.0, 2.9, 2.9],
+            "pct_profitable": [100, 100, 100, 100],
+        }
+    )
+    # 'a' has the higher return but an overfit DSR; 'b' clears the DSR gate.
+    top = ranking(df, dsr_by_variation={"a": 0.10, "b": 0.99})
+    a = top[top["variation"] == "a"].iloc[0]
+    b = top[top["variation"] == "b"].iloc[0]
+    assert not a["dsr_ok"] and b["dsr_ok"]  # low DSR gated out, high DSR kept
+
+
+def test_edge_ranking_unknown_dsr_does_not_gate_out() -> None:
+    from qplus.backtest.stages.edge import ranking
+
+    df = pd.DataFrame(
+        {
+            "variation": ["a"],
+            "train_months": [36],
+            "instrument": ["E"],
+            "mean_oos_pct": [20.0],
+            "return_per_dd": [2.0],
+            "pct_profitable": [100],
+        }
+    )
+    top = ranking(df)  # no DSR supplied
+    assert bool(top.iloc[0]["dsr_ok"])  # unknown DSR must not exclude
+
+
+def test_load_overfitting_reads_ranking_and_pbo(tmp_path) -> None:
+    from qplus.backtest.stages.edge import load_overfitting
+
+    pd.DataFrame({"variation": ["a", "b"], "dsr": [1.0, 0.4]}).to_csv(
+        tmp_path / "ranking.csv", index=False
+    )
+    (tmp_path / "overfitting.json").write_text('{"pbo": 0.05, "n_trials": 864}')
+    dsr, pbo = load_overfitting(tmp_path)
+    assert dsr == {"a": 1.0, "b": 0.4}
+    assert pbo == 0.05
+
+
+def test_load_overfitting_missing_artifacts_returns_empty(tmp_path) -> None:
+    from qplus.backtest.stages.edge import load_overfitting
+
+    dsr, pbo = load_overfitting(tmp_path)
+    assert dsr == {} and pbo is None
