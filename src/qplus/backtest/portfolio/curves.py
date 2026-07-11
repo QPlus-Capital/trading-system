@@ -1,4 +1,4 @@
-"""Stage 3/4 support: build daily realized-balance and mark-to-market equity curves.
+"""Portfolio-stage support: build daily realized-balance and mark-to-market equity curves.
 
 Given a combined, timestamped OOS trade stream for one account (all selected markets) at a
 base risk (1 unit = the extraction's ``risk_per_trade``), this reconstructs the two daily

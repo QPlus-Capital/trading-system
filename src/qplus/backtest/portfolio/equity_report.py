@@ -7,9 +7,13 @@ the live sizing). The output is an equity-over-time curve starting at the chosen
 the reserved-holdout cutoff marked, plus a Monte-Carlo fan over trade order.
 
 This is an *illustration of the chosen config's character* over the full data span (it includes
-in-sample periods, so it is NOT the out-of-sample validation -- that is the 95.4% holdout number
-from the pipeline). The everything-left-of-the-line part was used for fitting; only the part to
-the right of the marked cutoff is genuinely out-of-sample.
+in-sample periods, so it is NOT the out-of-sample validation -- that is the ``stages.verdict``
+result on the reserved holdout). The everything-left-of-the-line part was used for fitting; only
+the part to the right of the marked cutoff is genuinely out-of-sample.
+
+It shares its metric helpers (``edge_stats``, ``risk_stats``, ``daily_equity``, ``r_multiples``,
+``_market_trades``) with the portfolio/verdict stages and other analysis tools; the ``main`` /
+``plot_*`` machinery is the standalone illustration itself.
 
 Sizing is made independent of the backtest's own compounding by working in **R-multiples**: each
 trade's realized PnL (costs included) is divided by the risk it took, giving a size-invariant,
@@ -40,7 +44,7 @@ from qplus.backtest.foundation.recipe import SweepRecipe  # noqa: E402
 from qplus.backtest.portfolio.trades import timed_trades_from_report  # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
-_START_BALANCE = 200_000.0  # the study's account size (what the feasibility was scored on)
+_START_BALANCE = 100_000.0  # matches the live prop account (see config ACCOUNT)
 _HOLDOUT_MONTHS = 24  # reserved tail marked on the chart (matches the study config)
 _BASE_RISK = 0.01  # the backtest sizes each trade at 1% of equity; used to recover R-multiples
 
@@ -366,7 +370,7 @@ def plot_scorecard(columns: list[tuple[str, dict[str, float]]], out: Path) -> No
     fig, ax = plt.subplots(figsize=(6 + 3.2 * len(columns), 7.5))
     ax.axis("off")
     ax.set_title(
-        "Kennzahlen -- no_bb_wpr, 9 Maerkte, flach 0.15% Risiko (Start EUR 200,000)\n"
+        f"Kennzahlen -- no_bb_wpr, 9 Maerkte, flach (Start EUR {_START_BALANCE:,.0f})\n"
         "Illustration = volle Historie, feste Parameter (enthaelt In-Sample). Holdout = "
         "Walk-Forward auf unberuehrten Daten: 'fest' = live-Parameter, 're-opt' = pro Fenster neu.",
         fontsize=11,

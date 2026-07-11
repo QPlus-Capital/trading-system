@@ -1,15 +1,14 @@
-"""Stage 1 -> 3 connective tissue: the timestamped OOS trade stream.
+"""The timestamped out-of-sample trade stream that the portfolio stage consumes.
 
-The portfolio stages (3/4) need each out-of-sample trade with its open/close time and
-entry/exit price, so the account's daily equity can be reconstructed. This runs the same
-walk-forward as Stage 1 (choose parameters on train by Calmar) but, on each test window,
-records the timed trades instead of only their PnL.
+The portfolio stage needs each out-of-sample trade with its open/close time and entry/exit price,
+so the account's daily equity can be reconstructed. This runs the same walk-forward as the edge
+study (choose parameters on train by Calmar), but on each test window records the timed trades
+instead of only their PnL.
 
 ``timed_trades_from_report`` is the pure extraction from a NautilusTrader positions report
 (unit-tested); ``extract_market_trades`` drives the walk-forward for one instrument (needs
-backtests). Under NETTING every closed round-trip except the last is flagged
-``is_snapshot=True`` but is a real trade -- kept; only positions still open at the window
-end (no close time) are skipped.
+backtests). Under the venue's HEDGING OMS each round trip is its own closed Position, so every
+closed trade is a real one; only positions still open at the window end (no close time) are skipped.
 """
 
 from typing import Any

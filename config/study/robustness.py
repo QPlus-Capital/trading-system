@@ -28,8 +28,8 @@ from qplus.instruments import (
 
 # The account the portfolio stages size against: our live prop account (100k) and The Trading
 # Pit's hard limits. Returns and drawdowns are scale-invariant (everything downstream is booked
-# from R-multiples), but the EUR figures in the Stage 3/4 report are not -- they must be the money
-# we would actually make or lose. base_risk_frac is the risk the extraction's backtests size at.
+# from R-multiples), but the EUR figures in the portfolio/verdict report are not -- they must be the
+# money we would actually make or lose. base_risk_frac is the risk the extraction's backtests use.
 ACCOUNT = AccountProfile(
     start_balance=100_000.0,
     daily_hard=0.03,  # TTP hard daily loss limit -- a breach kills the account
@@ -49,8 +49,8 @@ TEST_MONTHS = 6
 STEP_MONTHS = 6
 
 # Reserve the last HOLDOUT_MONTHS: no stage (study/selection) ever sees them, and the
-# chosen config is scored once on them by the pipeline -- the honest guard against
-# selecting on out-of-sample results (F2).
+# chosen config is scored once on them by the portfolio + verdict stages -- the honest guard
+# against selecting on out-of-sample results.
 HOLDOUT_MONTHS = 24
 
 # Purge the train/test boundary: a gap so trailing-window indicators / straddling positions
