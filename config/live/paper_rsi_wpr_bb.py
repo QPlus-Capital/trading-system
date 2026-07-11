@@ -24,13 +24,15 @@ from qplus.instruments import (
     xauusd_ttp,
 )
 
-# Flat risk per trade -- the SINGLE source of truth (the live runner builds RiskLimits from
-# this; M3). Under the stricter intraday-worst drawdown model the holdout tolerated up to
-# ~0.175% for no_bb_wpr against the HARD 6%/3% TTP limits. We size below that: 0.15% leaves a
-# margin under the ceiling while our own safety layer halts earlier at 5%/2.5%. (0.12% is the
-# more conservative option given the now-"used" holdout and unmodelled swaps/gaps; Jan chose
-# 0.15%.) Revisit after the demo phase confirms the live drawdown profile.
-RISK_PER_TRADE_PCT = 0.15
+# Flat risk per trade -- the SINGLE source of truth (the live runner builds RiskLimits from this).
+# Sized to the framework's gap tail cap: over the FULL history at these fixed per-market stops the
+# worst single day was -11.1R (COVID, 2020-03-16); the cap is 3% daily / (1.5 x 11.1R) = 0.18%,
+# i.e. the largest flat risk at which a 1.5x-worse-than-COVID gap day still fits the HARD 3% daily
+# limit. Risk-constrained Kelly confirms the trade-sequence drawdown is comfortably safe there
+# (full-history max drawdown ~2.5% vs the 6% trailing wall; RCK would even allow 0.4%+). Raised
+# from 0.15% to run at that proven ceiling; the internal 2.5%/5% safety halt is the extra net.
+# (0.18% = 1.5x-COVID buffer; drop toward 0.15% for a ~2x-COVID buffer.)
+RISK_PER_TRADE_PCT = 0.18
 
 # The chosen structure (no_bb_wpr): drop the Bollinger + Williams-%R buy-confirmations, keep
 # the RSI filter; long/short reversal (not long-only).
