@@ -3,6 +3,7 @@
 import math
 
 import pandas as pd
+import pytest
 
 from qplus.backtest.portfolio.curves import DAY_NS
 from qplus.backtest.portfolio.risk import (
@@ -57,6 +58,16 @@ def test_throttle_runs_at_the_ceiling_and_tapers_to_the_floor() -> None:
     assert abs(r.risk_fn(0.0) - cap / acc.base_risk_frac) < 1e-9  # 0.6% as a multiple
     assert abs(r.risk_fn(1.0) - 0.0015 / acc.base_risk_frac) < 1e-9  # tapered to 0.15%
     assert r.risk_fn(0.0) > r.risk_fn(1.0)  # runs higher in good times, brakes near the wall
+
+
+def test_throttle_degenerates_to_flat_when_the_floor_exceeds_the_cap() -> None:
+    # A vicious tail can push the cap (0.04%) BELOW the requested floor (0.15%). The throttle then
+    # has no room to move -- it must pin to the cap, not report an inverted 0.15% -> 0.04% range.
+    acc = AccountProfile()
+    r = ThrottleRisk(floor_pct=0.15).resolve(0.0004, acc)  # cap 0.04% < floor 0.15%
+    assert r.ceiling_pct == r.floor_pct == pytest.approx(0.04)  # collapsed to the cap
+    assert r.risk_fn(0.0) == r.risk_fn(1.0)  # constant -> flat sizing at the cap
+    assert "flat" in r.label  # labelled honestly
 
 
 def test_assign_r_removes_the_backtests_compounding() -> None:
