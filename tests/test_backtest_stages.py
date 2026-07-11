@@ -23,6 +23,13 @@ def test_parse_risk_flat_and_throttle() -> None:
         parse_risk("martingale:9")
 
 
+def test_parse_risk_kelly() -> None:
+    from qplus.backtest.portfolio.risk import KellyRisk
+
+    assert parse_risk("kelly:0.05") == KellyRisk(beta=0.05)
+    assert parse_risk("kelly") == KellyRisk(beta=0.05)  # default tolerance
+
+
 def test_live_fixed_stops_reads_per_market_sltp() -> None:
     from pathlib import Path
 
