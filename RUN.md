@@ -88,7 +88,7 @@ uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 ## The workflow
 
 The methodology (the staged funnel from raw edge to a tradeable, prop-firm-compliant
-config) is documented in **[docs/backtesting-framework.md](docs/backtesting-framework.md)**;
+config) is documented in **[docs/methodology.md](docs/methodology.md)**;
 the live/paper wiring is in **[docs/mt5-bridge-plan.md](docs/mt5-bridge-plan.md)**. In short:
 
 - **Data** lives in a Parquet catalog under `catalog/` (gitignored), imported from the

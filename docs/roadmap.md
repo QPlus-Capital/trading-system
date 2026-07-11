@@ -144,7 +144,7 @@ exists. Its live-data feed stays useful as the **calibration** input for the fra
 - **2026-07-07** — Swap phase done; dashboard v0+v1 built then PAUSED. Reprioritised (Jan): the
   swappable broker/market cost model is now the focus — durable, broker-agnostic, closes the
   material gaps. Live paper-trading (EXECUTE) running on the MEX Atlantic demo (`no_bb_wpr`,
-  9 markets, 0.15% flat). Next up: unified net-in-backtest cost layer + broker profile.
+  9 markets, 0.18% flat). Next up: unified net-in-backtest cost layer + broker profile.
 - **2026-07-07** — Sub-step 1 started: `BrokerProfile` built + **slippage** wired natively
   (`FillModel`) from the profile into the venue, validated end-to-end (frictionless baseline
   preserved; slippage moves PnL). Next: swap as the exact in-backtest delta.

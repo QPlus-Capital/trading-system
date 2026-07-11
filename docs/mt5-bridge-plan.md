@@ -1,7 +1,7 @@
 # MT5 Live/Paper Bridge — Implementation Plan
 
 **Goal:** run the frozen strategy (`config/live/paper_rsi_wpr_bb.py`) on The Trading Pit MT5,
-automated (Option 1) or signal-only (Option 2). Test on a **$200k MT5 demo** (paper money,
+automated (Option 1) or signal-only (Option 2). Test on a **$100k MT5 demo** (paper money,
 same broker) for 1-2 weeks first, then go live on a real TTP account.
 Both share the same base; only the last step differs (send order vs send notification).
 **Risk control to enforce: the daily 3% limit and the 6% trailing limit — nothing else**
@@ -21,7 +21,7 @@ the strategy's signal logic (not NautilusTrader live). His machine is Windows ->
    manager (never committed).
 3. **Demo-first (decided):**
    - **MT5 DEMO account (paper money) first** — ideally with TTP's broker (MEX Atlantic) so
-     symbols / spreads / commissions match the real thing, **balance set to $200,000** (as
+     symbols / spreads / commissions match the real thing, **balance set to $100,000** (as
      designed -> no min-lot distortion, 0.24%/trade clean). Build the bridge + risk layer +
      runner against this; run 1-2 weeks. Real spreads / commissions / bar timing, ZERO money
      at risk. This IS the original paper-trading idea.
@@ -75,12 +75,12 @@ safeguards, each conservative:
   notification (Telegram/log). Uses `config/live/paper_rsi_wpr_bb.py` for the per-market
   params (SL/TP/risk/switches).
 
-## Phase 5 — Test & dry-run (prove the risk layer before the 200k account)
+## Phase 5 — Test & dry-run (prove the risk layer before the real account)
 1. Unit-test the signal module (Phase 1) and risk control (Phase 3) with synthetic data —
    include cases that MUST block trades / flatten / hit the open-risk cap.
 2. Run the bridge in `SIGNAL_ONLY` for a few days -> sanity-check signals + sizing vs the live
    market (no orders).
-3. `EXECUTE` on the **MT5 demo** (200k balance) for 1-2 weeks; explicitly verify the risk
+3. `EXECUTE` on the **MT5 demo** (100k balance) for 1-2 weeks; explicitly verify the risk
    cut-offs fire correctly (block, flatten, cap) and check fills / spreads / commissions.
 4. ONLY after the demo proves the system + risk layer -> go live on a real TTP account.
 

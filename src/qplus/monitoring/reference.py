@@ -1,6 +1,6 @@
 """Load the backtest reference and its Monte-Carlo expectation band for the live comparison.
 
-The reference is the equity report's flat-0.15% trade stream (``reports/equity/portfolio_trades``).
+The reference is the equity report's flat-0.18% trade stream (``reports/equity/portfolio_trades``).
 Everything is expressed in **R-multiples** (PnL / per-trade risk) so the live account (any size /
 broker) is comparable to the backtest without a currency/scale mismatch.
 """
@@ -15,7 +15,7 @@ import pandas as pd
 
 from qplus.backtest.portfolio.equity_report import edge_stats
 
-_BACKTEST_RISK = 300.0  # 0.15% of the equity-report's 200k base -> R = pnl / 300
+_BACKTEST_RISK = 180.0  # 0.18% of the equity-report's 100k base -> R = pnl / 180
 
 
 def load_reference(trades_csv: str | Path) -> dict[str, Any]:
