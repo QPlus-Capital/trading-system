@@ -109,7 +109,7 @@ def main() -> None:
     years = (t1 - t0) / (365.25 * 86400 * 1e9) if t0 is not None and t1 is not None else 1.0
     swap_total = all_t["swap_pnl"].sum()
     g_ret, n_ret = gross.sum() / _START_BALANCE, net.sum() / _START_BALANCE
-    print("\n===== swap impact (flat 0.15% off 200k, full history) =====")
+    print(f"\n===== swap impact (flat live risk off EUR {_START_BALANCE:,.0f}, full history) =====")
     swap_pct = swap_total / gross.sum() * 100
     print(f"total swap:       {swap_total:+,.0f} EUR ({swap_pct:+.1f}% of gross)")
     print(f"total return:     gross {g_ret:+.1%}  ->  net {n_ret:+.1%}")
