@@ -130,16 +130,27 @@ Classical **Kelly** sizing maximizes long-run log-growth but accepts brutal draw
 draw down 50 %+). We cannot: a prop account *dies* at a fixed loss. The correct frame is
 **risk-constrained Kelly** (Busseti, Ryu, Boyd 2016):
 
-> maximize  E[log growth]   subject to   P(Wealth ≤ α·W₀) ≤ δ
+> maximize  E[log growth]   subject to   P(min Wealth ≤ α·W₀) ≤ β
 
-i.e. maximize growth while holding the probability of dropping to a fraction α of capital below a
-tolerance δ. The result is always **fractional Kelly**: the admissible bet is
+i.e. maximize growth while holding the probability of *ever* dropping to a fraction α of capital
+below a tolerance β. Their key move is a **convex, guaranteed-safe bound** on that drawdown
+probability:
 
-> f\* ≤ f_Kelly · c(α, δ)
+> P(min Wealth ≤ α·W₀) ≤ α^λ
 
-where the shrink factor c(α,δ) tightens as the drawdown severity (lower α) or the tolerance (lower δ)
-tighten. The value of this frame: it **converts subjective risk aversion into an explicit,
-reproducible constraint** instead of a gut number.
+so choosing the single **risk-aversion parameter**
+
+> **λ = ln(β) / ln(α)**
+
+makes α^λ = β and enforces the constraint. The bet is then the solution of the convex problem
+
+> maximize  E[ln(bᵀr)]   subject to   **E[(bᵀr)^(−λ)] ≤ 1**,   Σb = 1, b ≥ 0
+
+(bᵀr = the gross return of the sized bet; solvable by bisection on the bet fraction for our
+single-strategy case). λ = 0 recovers full Kelly; larger λ shrinks the bet — always to a
+**fractional-Kelly** size, but the paper's bets beat plain fractional Kelly at the same drawdown
+risk. The value: it **converts subjective risk aversion into one explicit, reproducible parameter**
+(α, β) instead of a gut number, and it is stable across regimes.
 
 Fractional Kelly is also *cheap insurance*: **half-Kelly keeps ≈ 75 % of full-Kelly growth for far
 less variance and drawdown** — a derived property, not a rule of thumb. Overestimating the edge under
