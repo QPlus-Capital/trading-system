@@ -1,4 +1,4 @@
-"""Tests for the Stage 4 sizing policies (flat vs drawdown-throttle)."""
+"""Tests for the sizing policies (flat vs drawdown-throttle)."""
 
 import math
 

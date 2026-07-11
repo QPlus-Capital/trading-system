@@ -1,4 +1,4 @@
-"""Tests for Stage 2 universe selection + global structure (return-first, risk-gated)."""
+"""Tests for universe selection + global structure (return-first, risk-gated)."""
 
 import pandas as pd
 

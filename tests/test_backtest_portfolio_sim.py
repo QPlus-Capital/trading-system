@@ -1,4 +1,4 @@
-"""Tests for the daily realized/equity curve construction (Stage 3/4 support)."""
+"""Tests for the daily realized/equity curve construction (portfolio-stage support)."""
 
 import numpy as np
 import pandas as pd
