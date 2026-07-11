@@ -1,4 +1,4 @@
-"""Stage 3 -- prop-firm portfolio drawdown rule (The Trading Pit hybrid).
+"""Prop-firm portfolio drawdown rule (The Trading Pit hybrid).
 
 The Trading Pit's maximum-drawdown rule is a hybrid (confirmed from their support docs):
 
@@ -9,9 +9,9 @@ The Trading Pit's maximum-drawdown rule is a hybrid (confirmed from their suppor
   ever falls to or below the floor. Floating losses can breach; floating gains do not
   raise the floor.
 
-These are pure functions over pre-built daily series (NumPy only); constructing the daily
-balance/equity curves from a trade stream lives in the portfolio simulator that calls
-these. See ``docs/backtesting-framework.md`` (Stage 3).
+These are pure functions over pre-built daily series (NumPy only); the daily balance/equity
+curves are built from a trade stream by :mod:`qplus.backtest.portfolio.sizing` (``simulate``),
+and :func:`evaluate` / :func:`daily_breach` are the breach tests the risk system applies.
 """
 
 from collections.abc import Sequence
@@ -83,42 +83,3 @@ def daily_breach(equity: Sequence[float] | np.ndarray, day_loss_frac: float) -> 
         return False
     losses = eq[:-1] - eq[1:]  # positive on a down day
     return bool((losses > day_loss_frac * eq[:-1]).any())
-
-
-def max_flat_risk(
-    realized_excess: Sequence[float] | np.ndarray,
-    equity_excess: Sequence[float] | np.ndarray,
-    start_balance: float,
-    limit_frac: float,
-    *,
-    day_loss_frac: float = 0.0,
-    hi: float = 4.0,
-    iters: int = 50,
-) -> float:
-    """Largest flat risk multiple (1.0 = base) that never breaches, under flat sizing.
-
-    ``realized_excess`` / ``equity_excess`` are the base (multiple = 1) daily curves of
-    *excess over the starting balance* (realized-only, and equity incl. floating). Because
-    both scale linearly with the risk multiple while the starting balance does not, the
-    breach condition is monotonic in the multiple, so we bisect for the largest safe one.
-    ``day_loss_frac > 0`` additionally enforces the daily loss limit (:func:`daily_breach`).
-    """
-    r = np.asarray(realized_excess, dtype=float)
-    e = np.asarray(equity_excess, dtype=float)
-    r_hwm = np.maximum.accumulate(r)
-
-    def breaches(m: float) -> bool:
-        floor_excess = np.minimum(0.0, m * r_hwm - limit_frac * start_balance)  # floor - start
-        trailing = bool((m * e - floor_excess <= 0.0).any())  # equity_excess - floor_excess <= 0
-        return trailing or daily_breach(start_balance + m * e, day_loss_frac)
-
-    if not breaches(hi):
-        return hi
-    lo = 0.0
-    for _ in range(iters):
-        mid = (lo + hi) / 2.0
-        if breaches(mid):
-            hi = mid
-        else:
-            lo = mid
-    return lo

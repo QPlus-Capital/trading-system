@@ -14,7 +14,7 @@ Unrealized PnL is exact and linear in price for a fixed-size position:
 (MT5 CSVs parse to ``datetime64[us]``, so ``.astype(int64)//DAY_NS`` would be wrong).
 
 These are pure functions (NumPy/pandas); pass the resulting curves to
-:mod:`qplus.backtest.portfolio.drawdown`. See ``docs/backtesting-framework.md`` (Stage 3).
+:mod:`qplus.backtest.portfolio.drawdown`.
 """
 
 import numpy as np
