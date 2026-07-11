@@ -95,6 +95,7 @@ def make_extract_fn(
     embargo_days: int = 0,
     start_balance: float = 200_000.0,
     risk_per_trade_pct: float = 1.0,
+    fixed_stops: dict[str, dict[str, Any]] | None = None,
 ) -> ExtractFn:
     """Default extractor for the portfolio stream.
 
@@ -106,6 +107,11 @@ def make_extract_fn(
     against; pass the real account so every stage measures the same thing. The per-trade R that
     comes out is scale-invariant either way, but the position quantities are not, and a small
     enough account silently falls back to the fixed trade size.
+
+    ``fixed_stops`` maps a market to the SL/TP it should trade in EVERY window instead of
+    re-optimising the stop per window. This validates the config we actually deploy (fixed stops),
+    whose gentle tail permits a tradeable size -- as opposed to the re-optimised path, which chases
+    the tightest stop on the grid and is tail-capped to an untradeable one.
     """
 
     def extract(market: str, overrides: dict[str, Any], train_months: int) -> pd.DataFrame:
@@ -132,6 +138,7 @@ def make_extract_fn(
             holdout_months=holdout_months,
             phase=phase,
             embargo_days=embargo_days,
+            fixed_params=(fixed_stops or {}).get(market),
         )
 
     return extract
