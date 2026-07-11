@@ -127,10 +127,12 @@ def test_long_only_from_paper_config_is_false() -> None:
 
 
 def test_risk_per_trade_from_paper_config() -> None:
-    # M3: the config is the single source; validated below the intraday DD ceiling (0.175%).
+    # The config is the single source; sized at the framework's gap tail cap for no_bb_wpr
+    # (3% daily / (1.5 x -11.1R worst day) = 0.18%), the largest flat risk a 1.5x-COVID gap day
+    # still keeps inside the hard 3% daily limit.
     r = risk_per_trade_from_paper_config()
-    assert abs(r - 0.0015) < 1e-9  # 0.15%
-    assert 0 < r < 0.00175  # under the feasible ceiling
+    assert abs(r - 0.0018) < 1e-9  # 0.18%
+    assert 0 < r <= 0.0018  # at the tail cap, never above it
 
 
 def test_risk_snapshot_restore_roundtrip() -> None:
