@@ -1,5 +1,10 @@
 # QPlus Backtesting Framework — Blueprint
 
+> **Superseded for the protocol by [`methodology.md`](methodology.md)** (the authoritative,
+> literature-grounded spec: what is done, in which order, by which criterion). This file is kept as
+> the original design blueprint and history (2026-07-03); some specifics here (200k account, throttle
+> as a return lever, "current best configuration") are outdated — see `methodology.md` and the code.
+
 **Build status:** all stages plus the end-to-end runner are tested modules, organized into
 subpackages under `qplus.backtest` that read as the funnel:
 `foundation/` (recipe, grid, execution, montecarlo, overfitting), `edge/` (walkforward,
