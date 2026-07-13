@@ -45,7 +45,7 @@ def test_edge_is_the_r_backbone_and_sizing_invariant() -> None:
     assert fs.full.edge == fs.holdout.edge  # deterministic, no sizing leak into the edge
 
 
-def test_per_market_and_per_year_use_the_flat_percent_lens() -> None:
+def test_per_market_uses_the_flat_percent_lens() -> None:
     trades, daily_close, account = _fixture()
     fs = compute_factsheet(trades, trades, daily_close, account)
     pm = fs.per_market.set_index("market")
@@ -53,9 +53,17 @@ def test_per_market_and_per_year_use_the_flat_percent_lens() -> None:
     assert np.isclose(pm.loc["A", "ret_pct"], 0.8)
     assert np.isclose(pm.loc["B", "ret_pct"], 0.5)
     assert np.isclose(pm["share_pct"].sum(), 100.0)  # shares of total R
-    # all trades close in 2024 -> one year row summing every trade's R at the flat lens
+
+
+def test_per_year_is_compound_return_on_the_running_balance() -> None:
+    trades, daily_close, account = _fixture()
+    fs = compute_factsheet(trades, trades, daily_close, account)
+    # all trades close in 2024 -> the single year equals the full-window COMPOUND total return
+    # (growth of the compounding equity), NOT the flat sum(R)*risk figure.
     assert list(fs.per_year["year"]) == [2024]
-    assert np.isclose(fs.per_year["ret_pct"].iloc[0], 6.5 * 0.002 * 100)
+    eq = fs.full.equity_comp
+    expected = (float(eq.iloc[-1]) / float(eq.iloc[0]) - 1) * 100
+    assert np.isclose(fs.per_year["ret_pct"].iloc[0], expected)
 
 
 def test_compound_and_flat_money_both_present_and_terminal_renders() -> None:

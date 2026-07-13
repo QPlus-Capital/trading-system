@@ -67,7 +67,7 @@ class FactSheet:
     full: WindowResult
     holdout: WindowResult
     per_market: pd.DataFrame  # market, trades, ret_pct (flat), share_pct, hit_rate, avg_r
-    per_year: pd.DataFrame  # year, ret_pct (flat), trades
+    per_year: pd.DataFrame  # year, ret_pct (COMPOUND: return on that year's actual balance)
     regime_vol: pd.DataFrame  # regime, trades, share, hit_rate, expectancy_R, ret_pct (flat)
     regime_trend: pd.DataFrame
     holdout_start: pd.Timestamp
@@ -161,12 +161,14 @@ def _per_market(trades: pd.DataFrame, risk_frac: float) -> pd.DataFrame:
     return out.sort_values("total_r", ascending=False).reset_index()
 
 
-def _per_year(trades: pd.DataFrame, risk_frac: float) -> pd.DataFrame:
-    t = trades.copy()
-    t["year"] = pd.to_datetime(t["ts_closed"]).dt.year
-    g = t.groupby("year")["r"]
-    out = pd.DataFrame({"trades": g.size(), "ret_pct": g.sum() * risk_frac * 100.0})
-    return out.reset_index()
+def _per_year(equity_comp: pd.Series) -> pd.DataFrame:
+    """Compound return per calendar year: how much the compounding account grew that year,
+    measured on the equity it actually had at the year's start -- not on the fixed 100k base."""
+    year_end = equity_comp.resample("YE").last()
+    base = year_end.shift(1)
+    base.iloc[0] = float(equity_comp.iloc[0])  # first year measured from the starting equity
+    ret = (year_end.to_numpy() / base.to_numpy() - 1.0) * 100.0
+    return pd.DataFrame({"year": year_end.index.year, "ret_pct": ret})
 
 
 def _regime(
@@ -239,12 +241,13 @@ def compute_factsheet(
     """Assemble the full fact sheet from the full-history and holdout trade streams."""
     risk_frac = account.base_risk_frac
     labeled = regime.label_trades(full_trades, daily_close)
+    full = _window(full_trades, daily_close, account)
     return FactSheet(
         risk_pct=round(risk_frac * 100, 3),
-        full=_window(full_trades, daily_close, account),
+        full=full,
         holdout=_window(holdout_trades, daily_close, account),
         per_market=_per_market(full_trades, risk_frac),
-        per_year=_per_year(full_trades, risk_frac),
+        per_year=_per_year(full.equity_comp),  # compound: return on the account at each year
         regime_vol=_regime(labeled, "vol_regime", _VOL_ORDER, risk_frac),
         regime_trend=_regime(labeled, "trend_regime", _TREND_ORDER, risk_frac),
         holdout_start=pd.to_datetime(holdout_trades["ts_opened"]).min(),

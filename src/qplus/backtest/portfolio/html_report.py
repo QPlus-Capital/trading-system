@@ -74,7 +74,7 @@ def _chart_year(fs: FactSheet) -> str:
         color=[_POS if v >= 0 else _NEG for v in py["ret_pct"]],
     )
     ax.axhline(0, color="0.4", lw=0.8)
-    ax.set_ylabel("Rendite/Jahr (flach %)")
+    ax.set_ylabel("Rendite/Jahr (compound %, auf Kontostand)")
     ax.tick_params(axis="x", labelrotation=45, labelsize=8)
     ax.grid(True, axis="y", color="0.9", lw=0.5)
     return _b64(fig)
