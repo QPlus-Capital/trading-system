@@ -159,6 +159,10 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\n  Tail-Decke: schlechtester Tag {worst_day:.2f}R x {args.stress_mult} Stress "
           f"-> {cap * 100:.3f}% pro Trade  [{source}]")
 
+    # Persist the full-history stream (already computed for the tail) so the verdict fact sheet can
+    # report full-history vs holdout side by side without re-running the backtests.
+    rck_stream.to_csv(run.file("full_history_trades.csv"), index=False)
+
     # Risk-constrained Kelly derives the growth-optimal flat fraction from the trade distribution
     # under the "P(ever hit the 6% trailing wall) <= beta" bound; the single-day gap tail still caps
     # it. Flat/Throttle instead start from the requested percent. All are then compared at one base.
