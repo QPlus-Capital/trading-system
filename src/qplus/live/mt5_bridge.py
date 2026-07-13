@@ -41,6 +41,7 @@ _SYMBOL_FILLING_IOC = 2
 # Our research name -> the broker's base symbol name (before any account suffix).
 SYMBOL_MAP: dict[str, str] = {
     "XAUUSD": "XAUUSD",
+    "XAGUSD": "XAGUSD",  # silver; the broker carries it (base name matches, suffix resolved live)
     "EURUSD": "EURUSD",
     "GBPUSD": "GBPUSD",
     "AUDUSD": "AUDUSD",
