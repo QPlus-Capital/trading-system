@@ -1,5 +1,7 @@
 """Tests for the verdict-stage report charts and the full-history tail helpers."""
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
@@ -31,7 +33,7 @@ def test_traded_stop_loss_pct_is_the_mode_of_the_stream() -> None:
     assert traded_stop_loss_pct(trades) == 0.5
 
 
-def test_charts_render_to_files(tmp_path) -> None:
+def test_charts_render_to_files(tmp_path: Path) -> None:
     eq = _equity()
     trades = pd.DataFrame({"market": ["EURUSD", "XAUUSD", "EURUSD"]})
     pnl = np.array([300.0, -100.0, 250.0])

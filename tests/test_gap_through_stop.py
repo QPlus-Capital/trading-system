@@ -23,11 +23,11 @@ _BAR_TYPE = BarType.from_str(f"{_INSTR.id}-1-HOUR-LAST-EXTERNAL")
 _H = 3_600_000_000_000  # 1 hour in ns
 
 
-class _GapCfg(StrategyConfig, frozen=True):
+class _GapCfg(StrategyConfig, frozen=True):  # type: ignore[misc,call-arg]
     pass
 
 
-class _GapStrat(Strategy):
+class _GapStrat(Strategy):  # type: ignore[misc]
     """Enter long at 100 on the first bar with a bracket SL at 95 (TP at 200, never hit)."""
 
     def __init__(self) -> None:

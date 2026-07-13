@@ -136,7 +136,7 @@ def _run(tmp_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         trader = node.get_engines()[0].trader
         return trader.generate_positions_report(), trader.generate_order_fills_report()
     finally:
-        node.dispose()
+        node.dispose()  # type: ignore[no-untyped-call]
 
 
 def test_each_position_exits_on_exactly_one_leg(tmp_path: Path) -> None:
