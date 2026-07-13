@@ -1,13 +1,15 @@
-"""Stage 4 — VERDICT: trade yes/no, plus the full report on the assembled portfolio.
+"""Stage 4 — VERDICT: trade yes/no, plus the consistent end-of-run fact sheet.
 
-Reads the cached out-of-sample trade stream from Stage 3 (no slow re-extraction) and produces:
-the accept/reject gate (positive return, within the drawdown ceiling, survives a stressed tail,
-Monte-Carlo profit probability), the tradeable portfolio spec, the detailed statistics (hit rate,
-profit factor, payoff, expectancy, annual return, Sharpe, max drawdown), and the charts: equity
-curve, underwater drawdown, Monte-Carlo fan over trade order, and per-market contributions.
+Reads the cached holdout + full-history trade streams from Stage 3 (no slow re-extraction) and
+produces: the accept/reject gate (positive return, within the drawdown ceiling, survives a
+stressed tail, Monte-Carlo profit probability), the tradeable portfolio spec, and the fact sheet
+(:mod:`qplus.backtest.portfolio.factsheet`) -- the metrics matrix comparing the full history vs
+the holdout and flat vs compound sizing, per-market and per-year contributions (flat % lens), and
+regime robustness. It is printed as a terminal summary and written as a self-contained
+``report.html``.
 
-Metrics are computed from each trade's PnL at the size its risk policy actually gave it, so a
-dynamic (throttle) policy is measured as honestly as a flat one.
+Everything is measured in R (sizing-invariant); only annual return and max drawdown split into
+flat vs compound, so the numbers never mix the two sizings.
 
 Usage::
 
@@ -17,13 +19,14 @@ Usage::
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 import pandas as pd
 
 from qplus.backtest.config import load_config_module
 from qplus.backtest.foundation.montecarlo import monte_carlo_paths, summarize
-from qplus.backtest.portfolio import report
+from qplus.backtest.portfolio import factsheet, html_report
 from qplus.backtest.portfolio.curves import load_daily_close
 from qplus.backtest.portfolio.equity_report import daily_equity, edge_stats, risk_stats
 from qplus.backtest.portfolio.risk import (
@@ -96,19 +99,18 @@ def main(argv: list[str] | None = None) -> None:
         print(f"    {'PASS' if ok else 'FAIL'}: {msg}")
 
     risk_txt = (
-        f"{result.ceiling_pct:.3f}%/Trade" if result.label == "flat"
+        f"{result.ceiling_pct:.3f}%/Trade"
+        if result.label == "flat"
         else f"{result.floor_pct:.2f}% -> {result.ceiling_pct:.3f}%/Trade (dynamisch)"
     )
     print("\n  PORTFOLIO-SPEC")
     print(f"    Strategie-Variante : {spec['variation']} @ {spec['train_months']}m Training")
     print(f"    Risiko-Police      : {spec['risk_policy']}  ({risk_txt})")
-    print(f"    Tail-Decke         : {spec['tail_cap_pct']:.3f}%  "
-          f"(schlechtester Tag {spec['worst_day_r']:.2f}R x {spec['stress_mult']})")
+    print(
+        f"    Tail-Decke         : {spec['tail_cap_pct']:.3f}%  "
+        f"(schlechtester Tag {spec['worst_day_r']:.2f}R x {spec['stress_mult']})"
+    )
     print(f"    Maerkte ({len(universe)})       : {', '.join(universe)}")
-
-    print("\n  KENNZAHLEN (netto, Holdout, in R gebucht)")
-    for key, label, fmt in _STAT_ROWS:
-        print(f"    {label:26s} {fmt.format(stats[key])}")
 
     run.save_json(
         "verdict.json",
@@ -120,23 +122,20 @@ def main(argv: list[str] | None = None) -> None:
         },
     )
 
-    charts = run.path / "charts"
-    title = (
-        f"{spec['variation']} | {len(universe)} Maerkte | {spec['risk_policy']} "
-        f"| Start EUR {account.start_balance:,.0f}"
-    )
-    report.plot_equity(equity, account.start_balance, title, charts / "equity.png")
-    report.plot_drawdown(equity, charts / "drawdown.png")
-    report.plot_monte_carlo(sized_pnl, account.start_balance, charts / "monte_carlo.png")
-    report.plot_contributions(trades, sized_pnl, charts / "contributions.png")
-    report.plot_stats_table(
-        [(label, fmt.format(stats[key])) for key, label, fmt in _STAT_ROWS],
-        f"Kennzahlen - {title}",
-        charts / "kennzahlen.png",
-    )
-    print(f"\n  Diagramme: {charts}")
-    for name in ("equity", "drawdown", "monte_carlo", "contributions", "kennzahlen"):
-        print(f"    - {name}.png")
+    # Fact sheet: full history vs holdout, flat vs compound -- the consistent end-of-run report.
+    # Sized at the chosen ceiling; the full-history stream was cached by the portfolio stage.
+    fh_path = run.file("full_history_trades.csv")
+    if fh_path.exists():
+        full_trades = pd.read_csv(fh_path)
+        fs_account = replace(account, base_risk_frac=float(spec["ceiling_pct"]) / 100.0)
+        fs = factsheet.compute_factsheet(full_trades, trades, daily_close, fs_account)
+        print(factsheet.render_terminal(fs))
+        html = html_report.render(
+            fs, str(spec["variation"]), run.path.name, run.file("report.html")
+        )
+        print(f"\n  Faktsheet-Report (im Browser oeffnen): {html}")
+    else:
+        print("\n  (full_history_trades.csv fehlt - Portfolio-Stufe neu laufen fuer den Faktsheet)")
     rb.finished()
 
 

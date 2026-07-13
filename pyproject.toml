@@ -38,6 +38,10 @@ src = ["src", "tests"]
 # pyupgrade, bugbear, comprehensions, simplify.
 select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
 
+[tool.ruff.lint.per-file-ignores]
+# html_report renders an inline HTML/CSS template -- long content lines are inherent.
+"src/qplus/backtest/portfolio/html_report.py" = ["E501"]
+
 [tool.mypy]
 python_version = "3.13"
 files = ["src", "tests"]
