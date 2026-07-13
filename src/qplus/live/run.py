@@ -96,7 +96,7 @@ def main(argv: list[str] | None = None) -> None:
         # restores it and this is ignored (K1: restarts must not reset the risk references).
         start_balance = args.start_balance if args.start_balance is not None else account.balance
         limits = RiskLimits(risk_per_trade=risk_per_trade_from_paper_config())  # M3: from config
-        log.info("risk per trade: %.3f%% of the initial balance", limits.risk_per_trade * 100)
+        log.info("risk per trade: %.3f%% of equity (compounding)", limits.risk_per_trade * 100)
         notifier = Notifier(_LIVE_DIR / "signals.log", beep=True)  # +Telegram if env vars set
         runner = LiveRunner(
             bridge,

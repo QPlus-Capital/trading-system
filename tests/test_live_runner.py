@@ -97,12 +97,14 @@ def test_position_risk_without_stop_is_worst_case() -> None:
     assert position_risk(pos, _GOLD) == 40_000.0
 
 
-def test_risk_amount_is_flat_off_start_balance() -> None:
-    # H2: sizing risk is a fixed fraction of the INITIAL balance, not live equity.
+def test_risk_amount_compounds_off_current_equity() -> None:
+    # Fixed-fractional: sizing risk is a fixed fraction of the CURRENT equity, so it grows
+    # with the account (compounding), not pinned to the initial balance.
     bridge = cast(Mt5Bridge, object())
     risk = RiskController(RiskLimits(), 100_000)  # default risk_per_trade = 0.18%
     runner = LiveRunner(bridge, [], SignalParams(), risk)
-    assert abs(runner._risk_amount() - 180.0) < 1e-6  # 0.0018 * 100_000, regardless of live equity
+    assert abs(runner._risk_amount(100_000) - 180.0) < 1e-6  # 0.18% of the starting equity
+    assert abs(runner._risk_amount(150_000) - 270.0) < 1e-6  # grows with equity: 0.18% of 150k
 
 
 def test_markets_from_paper_config_maps_all_ten() -> None:
