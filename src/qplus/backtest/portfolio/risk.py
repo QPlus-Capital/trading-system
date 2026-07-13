@@ -245,6 +245,8 @@ def evaluate_policy(
     account: AccountProfile,
     policy: FlatRisk | ThrottleRisk,  # KellyRisk is sized flat upstream, so it never reaches here
     cap_frac: float,
+    *,
+    compound: bool = False,
 ) -> PolicyResult:
     """Run ``policy`` over the trade stream day by day and report its honest return / drawdown.
 
@@ -262,7 +264,8 @@ def evaluate_policy(
 
     resolved = policy.resolve(cap_frac, account)
     realized, equity, sizes = simulate(
-        t, prices, d0, d1, account.start_balance, account.trailing_hard, resolved.risk_fn
+        t, prices, d0, d1, account.start_balance, account.trailing_hard, resolved.risk_fn,
+        compound=compound,
     )
     breached = bool(
         evaluate(equity, realized, account.start_balance, account.trailing_hard).breached
