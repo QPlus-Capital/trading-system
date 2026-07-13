@@ -119,7 +119,8 @@ def _live_view() -> None:
     trades["market"] = trades["symbol"].map(live["term_to_research"]).fillna(trades["symbol"])
     state = _risk_state()
     start_balance = float(state.get("start_balance", live["balance"]))
-    live_risk = _LIVE_RISK_PCT * start_balance
+    # Compounding: risk tracks current equity, so normalise per-trade expectancy to R off equity.
+    live_risk = _LIVE_RISK_PCT * float(live["equity"])
 
     # -- account / risk header --
     c1, c2, c3, c4 = st.columns(4)

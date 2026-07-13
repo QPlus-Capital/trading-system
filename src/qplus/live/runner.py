@@ -315,7 +315,7 @@ class LiveRunner:
             spec.stop_loss_pct,
             spec.take_profit_pct,
             info,
-            self._risk_amount(),
+            self._risk_amount(equity),
         )
         if sized is None:
             log.info("[%s] %s signal but not sizable (min-lot/stop) -> skip", spec.name, desired)
@@ -338,14 +338,18 @@ class LiveRunner:
             buy, sell = engine.update(b.open, b.high, b.low, b.close)
         return buy, sell
 
-    def _risk_amount(self) -> float:
-        """Money risked per trade -- FLAT off the fixed initial reference (H2).
+    def _risk_amount(self, equity: float) -> float:
+        """Money risked per trade -- fixed-fractional off the CURRENT equity (compounding).
 
-        The study validated the drawdown feasibility under *flat* sizing (a fixed fraction of
-        the starting balance). Sizing off live equity would compound after gains and drift
-        outside that validated envelope, so we size off ``start_balance`` instead.
+        Risk tracks live equity, so as the account grows the money risked grows with it and the
+        returns compound -- the natural way to run a fixed edge. This is safe under the prop-firm
+        limits precisely because the risk fraction is the gap tail cap: a percentage guarantee
+        (a stressed worst-day gap fits the 3% daily limit) holds at *every* equity level, so
+        staying at that fraction of current equity never widens the drawdown profile. The
+        backtest sizes the same way (``simulate(..., compound=True)`` scales by equity/start),
+        keeping live == backtest.
         """
-        return self._risk.start_balance * self._risk.limits.risk_per_trade
+        return equity * self._risk.limits.risk_per_trade
 
     def _act(
         self, spec: MarketSpec, pos: Position | None, sized: SizedOrder, info: SymbolInfo

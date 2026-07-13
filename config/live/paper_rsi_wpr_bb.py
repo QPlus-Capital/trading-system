@@ -1,9 +1,11 @@
 """Paper/live configuration for the selected strategy (prop-firm phase, via MetaTrader 5).
 
 The research pipeline selected: **RsiWprBb** with the Bollinger and Williams-%R buy-
-confirmations OFF (the RSI filter kept), a 36-month parameter fit, **flat** position sizing
-(the drawdown-throttle added nothing once the daily limit is enforced), on **10 markets**,
-under the prop firm's 6% trailing / 3% daily drawdown limits.
+confirmations OFF (the RSI filter kept), a 36-month parameter fit, **compounding** (fixed-
+fractional) position sizing -- risk is a fixed fraction of the *current* equity, so returns
+compound as the account grows -- on **10 markets**, under the prop firm's 6% trailing / 3%
+daily drawdown limits. Safe because that fraction is the gap tail cap: a percentage guarantee
+holds at every equity level (see the runner's ``_risk_amount``).
 
 Stop-loss / take-profit are FIXED per market (fit on the most recent 36 months; re-fit
 periodically). This module is the single source of truth for those decisions; the live MT5
