@@ -32,6 +32,8 @@ def simulate(
     start_balance: float,
     limit_frac: float,
     risk_fn: Callable[[float], float],
+    *,
+    compound: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Daily (realized_balance, equity) plus the risk multiple each trade was SIZED at.
 
@@ -39,6 +41,11 @@ def simulate(
     of the drawdown budget consumed at that moment: ``used = clip(1 - (equity - floor) /
     (limit_frac*start), 0, 1)`` with the hybrid floor (realized-balance HWM minus the
     limit, capped at the starting balance). ``risk_fn`` maps a base risk multiple.
+
+    With ``compound=True`` the risk multiple is additionally scaled by ``equity/start_balance``
+    at the moment each trade opens, so the money risked tracks the *current* equity (fixed-
+    fractional) instead of the fixed starting balance -- the returns then compound. ``pnl_base``
+    is booked flat off the start balance, so this equity ratio is exactly the compounding factor.
 
     The returned ``sizes`` array (aligned to ``trades``' rows) is what makes per-trade metrics
     honest under a dynamic policy: each trade's PnL contribution is ``pnl_base * size``.
@@ -72,6 +79,8 @@ def simulate(
             equity = start_balance + realized + unreal
             used = min(1.0, max(0.0, 1.0 - (equity - floor) / budget))
             r = risk_fn(used)
+            if compound:
+                r *= equity / start_balance  # fixed-fractional: risk tracks current equity
             for i in openers[day]:
                 size[i] = r
                 open_set.add(i)
