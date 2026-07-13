@@ -105,11 +105,12 @@ def test_risk_amount_is_flat_off_start_balance() -> None:
     assert abs(runner._risk_amount() - 180.0) < 1e-6  # 0.0018 * 100_000, regardless of live equity
 
 
-def test_markets_from_paper_config_maps_all_nine() -> None:
+def test_markets_from_paper_config_maps_all_ten() -> None:
     specs = markets_from_paper_config()
     names = {s.name for s in specs}
-    assert len(specs) == 9
+    assert len(specs) == 10
     assert "USTEC" in names  # our research name; the bridge maps it to UT100
+    assert "XAGUSD" in names  # silver, added with a robust 0.5% stop (not the tight 0.3% fit)
     for s in specs:
         assert s.stop_loss_pct > 0 and s.take_profit_pct > 0
 

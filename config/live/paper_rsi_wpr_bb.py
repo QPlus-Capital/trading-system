@@ -2,7 +2,7 @@
 
 The research pipeline selected: **RsiWprBb** with the Bollinger and Williams-%R buy-
 confirmations OFF (the RSI filter kept), a 36-month parameter fit, **flat** position sizing
-(the drawdown-throttle added nothing once the daily limit is enforced), on **9 markets**,
+(the drawdown-throttle added nothing once the daily limit is enforced), on **10 markets**,
 under the prop firm's 6% trailing / 3% daily drawdown limits.
 
 Stop-loss / take-profit are FIXED per market (fit on the most recent 36 months; re-fit
@@ -21,12 +21,14 @@ from qplus.instruments import (
     us500_ttp,
     usdjpy_ttp,
     ustec_ttp,
+    xagusd_ttp,
     xauusd_ttp,
 )
 
 # Flat risk per trade -- the SINGLE source of truth (the live runner builds RiskLimits from this).
-# Sized to the framework's gap tail cap: over the FULL history at these fixed per-market stops the
-# worst single day was -11.1R (COVID, 2020-03-16); the cap is 3% daily / (1.5 x 11.1R) = 0.18%,
+# Sized to the framework's gap tail cap: over the FULL history at these fixed per-market stops (all
+# 10 markets) the worst single day was -11.0R (COVID, 2020-03-16); the cap is 3% daily / (1.5 x
+# 11.0R) = 0.18%,
 # i.e. the largest flat risk at which a 1.5x-worse-than-COVID gap day still fits the HARD 3% daily
 # limit. Risk-constrained Kelly confirms the trade-sequence drawdown is comfortably safe there
 # (full-history max drawdown ~2.5% vs the 6% trailing wall; RCK would even allow 0.4%+). Raised
@@ -46,6 +48,11 @@ STRATEGY_SWITCHES: dict[str, Any] = {
 # (factory, csv, leverage, stop_loss_pct, take_profit_pct). SL/TP fit on the last 36 months.
 MARKETS: list[tuple[Any, str, float, float, float]] = [
     (xauusd_ttp, "data/XAUUSD_H4.csv", 10.0, 1.0, 3.0),
+    # Silver: the 36m Calmar fit favours a tight 0.3% stop, but over the FULL history silver gaps
+    # through it for up to -10.2R -- the fattest tail in the book. A 0.5%/2.0 stop halves that gap
+    # (-6.1R, safely below the rest of the book) at ~similar full-history mean-R, so silver never
+    # drives the portfolio tail. Robustness chosen over ~5pp of headline return.
+    (xagusd_ttp, "data/XAGUSD_H4.csv", 10.0, 0.5, 2.0),
     (eurusd_ttp, "data/EURUSD_H4.csv", 50.0, 0.5, 3.0),
     (gbpusd_ttp, "data/GBPUSD_H4.csv", 50.0, 0.5, 1.0),
     (audusd_ttp, "data/AUDUSD_H4.csv", 50.0, 0.5, 2.0),
