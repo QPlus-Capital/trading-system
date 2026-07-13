@@ -31,7 +31,9 @@ def test_fill_model_config_is_constructible_by_nautilus() -> None:
     # The importable config must actually resolve into a live FillModel (path + fields correct).
     from nautilus_trader.backtest.config import FillModelFactory
 
-    fill_model = FillModelFactory.create(MEX_ATLANTIC.fill_model_config())
+    cfg = MEX_ATLANTIC.fill_model_config()
+    assert cfg is not None
+    fill_model = FillModelFactory.create(cfg)
     assert fill_model is not None
 
 

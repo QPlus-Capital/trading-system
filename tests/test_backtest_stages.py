@@ -1,6 +1,7 @@
 """Tests for the staged framework CLI skeleton (run-book + the fast, pure stage helpers)."""
 
 import importlib
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -43,7 +44,7 @@ def test_live_fixed_stops_reads_per_market_sltp() -> None:
         assert sltp["stop_loss_pct"] > 0 and sltp["take_profit_pct"] > 0
 
 
-def test_rundir_roundtrip_and_missing_artifact(tmp_path) -> None:
+def test_rundir_roundtrip_and_missing_artifact(tmp_path: Path) -> None:
     run = rb.RunDir.open(tmp_path)
     run.save_json("selection.json", {"variation": "x", "instruments": ["EURUSD"]})
     assert run.load_json("selection.json")["variation"] == "x"
@@ -107,7 +108,7 @@ def test_edge_ranking_unknown_dsr_does_not_gate_out() -> None:
     assert bool(top.iloc[0]["dsr_ok"])  # unknown DSR must not exclude
 
 
-def test_load_overfitting_reads_ranking_and_pbo(tmp_path) -> None:
+def test_load_overfitting_reads_ranking_and_pbo(tmp_path: Path) -> None:
     from qplus.backtest.stages.edge import load_overfitting
 
     pd.DataFrame({"variation": ["a", "b"], "dsr": [1.0, 0.4]}).to_csv(
@@ -119,7 +120,7 @@ def test_load_overfitting_reads_ranking_and_pbo(tmp_path) -> None:
     assert pbo == 0.05
 
 
-def test_load_overfitting_missing_artifacts_returns_empty(tmp_path) -> None:
+def test_load_overfitting_missing_artifacts_returns_empty(tmp_path: Path) -> None:
     from qplus.backtest.stages.edge import load_overfitting
 
     dsr, pbo = load_overfitting(tmp_path)

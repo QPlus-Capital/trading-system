@@ -127,10 +127,12 @@ def test_throttle_runs_bigger_than_flat_while_the_buffer_is_fresh() -> None:
     assert not thr_res.breached
 
 
-def _reversal_r(seed: int, hit: float = 0.46, win: float = 2.0, loss: float = -1.0, n: int = 8000):
+def _reversal_r(
+    seed: int, hit: float = 0.46, win: float = 2.0, loss: float = -1.0, n: int = 8000
+) -> list[float]:
     """A reversal-like R distribution: ``hit`` winners of ``win`` R, rest losers of ``loss`` R."""
     rng = np.random.default_rng(seed)
-    return np.where(rng.random(n) < hit, win, loss)
+    return list(np.where(rng.random(n) < hit, win, loss))
 
 
 def test_rck_positive_and_bounded_for_a_profitable_distribution() -> None:
