@@ -48,7 +48,7 @@ class StubBridge:
         return self.now
 
     def account(self) -> AccountState:
-        return AccountState(balance=self.balance, equity=self.equity, currency="EUR")
+        return AccountState(balance=self.balance, equity=self.equity, currency="EUR", login=1)
 
     def symbol_info(self, name: str) -> SymbolInfo:
         return SymbolInfo(
