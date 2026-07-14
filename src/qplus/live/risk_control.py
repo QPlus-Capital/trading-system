@@ -7,7 +7,7 @@ daily), the values Jan chose:
 - **risk per trade** 0.18% (position sizing; from the config -- the gap tail cap for no_bb_wpr),
 - **daily loss stop** 2.5% (hard limit 3%),
 - **trailing max-drawdown stop** 5% (hard limit 6%; floor caps at the starting balance),
-- **total-open-risk cap** 1.5% -- the sum of all open stop-risks, so even a same-day full
+- **total-open-risk cap** 2.0% -- the sum of all open stop-risks, so even a same-day full
   stop-out of every open position stays under the daily limit.
 
 Everything here is deterministic and unit-tested; the runner (Phase 4) supplies the live
@@ -26,7 +26,7 @@ class RiskLimits:
     risk_per_trade: float = 0.0018  # 0.18% of the initial balance per trade (config is source)
     daily_stop: float = 0.025  # halt for the day at 2.5% loss (hard TTP = 3%)
     trailing_stop: float = 0.05  # halt at 5% trailing drawdown (hard TTP = 6%)
-    open_risk_cap: float = 0.015  # max combined open stop-risk = 1.5% of equity
+    open_risk_cap: float = 0.020  # max combined open stop-risk = 2.0% (fits all 10 markets @ 0.18%)
 
 
 @dataclass(frozen=True)

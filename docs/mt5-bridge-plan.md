@@ -53,7 +53,7 @@ safeguards, each conservative:
 1. **Own, stricter limits (margin):** stop well before TTP's hard limits — e.g. ~2.5% daily /
    ~4.5-5% trailing — so their server-side auto-liquidation never triggers.
 2. **Total-open-risk cap (the key guarantee):** cap the SUM of all open positions' stop-risk
-   to a fraction of the daily limit (e.g. <= 1.5%). Then even if EVERY open position stops out
+   to a fraction of the daily limit (e.g. <= 2.0%). Then even if EVERY open position stops out
    the same day, the loss stays under the daily limit (modulo gaps).
 3. **Pre-trade worst-case check:** before every order, compute "this trade + all open
    positions at their stops" — if that would breach a (margined) limit, DON'T open.
@@ -100,7 +100,7 @@ Phases 1 and 3 are pure Python and unit-testable without the terminal, so start 
 ## Status (built)
 - **Phase 1 DONE** — `qplus.strategies.rsi_wpr_bb_signals` (pure engine); strategy delegates to
   it, so live == backtest.
-- **Phase 3 DONE** — `qplus.live.risk_control`: daily 2.5% / trailing 5% floors, 1.5% open-risk
+- **Phase 3 DONE** — `qplus.live.risk_control`: daily 2.5% / trailing 5% floors, 2.0% open-risk
   cap, worst-case pre-trade gate, `position_volume` sizing. Unit-tested.
 - **Phase 2 DONE** — `qplus.live.mt5_bridge`: attach to a logged-in terminal, resolve symbols
   (USTEC->UT100, broker suffixes), H4 bars, account/positions, place/close orders.

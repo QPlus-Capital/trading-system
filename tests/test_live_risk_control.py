@@ -41,8 +41,8 @@ def test_check_open_allows_within_budget() -> None:
 
 def test_check_open_blocks_on_open_risk_cap() -> None:
     c = RiskController(RiskLimits(), 200_000)
-    c.open_risk = 2_800  # cap is 1.5% of 200k = 3000
-    d = c.check_open(400, 200_000)  # 2800 + 400 = 3200 > 3000
+    c.open_risk = 3_800  # cap is 2.0% of 200k = 4000
+    d = c.check_open(400, 200_000)  # 3800 + 400 = 4200 > 4000
     assert not d.allowed and "open-risk" in d.reason
 
 
@@ -57,6 +57,6 @@ def test_check_open_blocks_on_daily_worst_case() -> None:
 def test_check_open_exclude_risk_allows_reversal() -> None:
     # M2: the position being closed on a reversal must not count against its replacement.
     c = RiskController(RiskLimits(), 200_000)
-    c.open_risk = 2_800  # near the 3000 cap; e.g. a large opposite position we will close
-    assert not c.check_open(400, 200_000).allowed  # 2800 + 400 > 3000 -> blocked
-    assert c.check_open(400, 200_000, exclude_risk=2_800).allowed  # excluded -> 0 + 400, fine
+    c.open_risk = 3_800  # near the 4000 cap; e.g. a large opposite position we will close
+    assert not c.check_open(400, 200_000).allowed  # 3800 + 400 > 4000 -> blocked
+    assert c.check_open(400, 200_000, exclude_risk=3_800).allowed  # excluded -> 0 + 400, fine
