@@ -127,11 +127,11 @@ def _live_view() -> None:
     c1.metric("Equity", f"{live['equity']:,.0f} {live['currency']}")
     c2.metric("Balance", f"{live['balance']:,.0f} {live['currency']}")
     c3.metric("Floating", f"{live['equity'] - live['balance']:+,.0f} {live['currency']}")
-    cap = 0.015 * live["equity"]
+    cap = 0.020 * live["equity"]
     c4.metric(
         "Open risk",
         f"{live['open_risk']:,.0f} / {cap:,.0f}",
-        help="Total open stop-risk vs the 1.5% cap",
+        help="Total open stop-risk vs the 2.0% cap",
     )
 
     if trades.empty:
