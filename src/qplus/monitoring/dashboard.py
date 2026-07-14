@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from qplus.live.accounts import ACCOUNTS
 from qplus.live.mt5_bridge import Mt5Bridge
 from qplus.live.runner import position_risk
 from qplus.monitoring.live import deals_to_trades, equity_curve, live_stats
@@ -37,10 +38,10 @@ _GOOD, _WARN, _CRIT = "#0ca30c", "#fab219", "#d03b3b"
 
 
 @st.cache_data(ttl=60)
-def _load_live(days: int) -> dict[str, Any]:
+def _load_live(days: int, terminal_path: str | None) -> dict[str, Any]:
     """Pull live deals / account / positions / open-risk from the terminal (cached 60s)."""
     bridge = Mt5Bridge()
-    bridge.connect()
+    bridge.connect(path=terminal_path)
     try:
         since = datetime.now(tz=UTC) - timedelta(days=days)
         deals = bridge.history_deals(since)
@@ -76,8 +77,8 @@ def _load_live(days: int) -> dict[str, Any]:
         bridge.shutdown()
 
 
-def _risk_state() -> dict[str, Any]:
-    p = _REPO / "reports" / "live" / "risk_state.json"
+def _risk_state(account_name: str) -> dict[str, Any]:
+    p = _REPO / "reports" / "live" / account_name / "risk_state.json"
     return json.loads(p.read_text()) if p.exists() else {}
 
 
@@ -96,14 +97,17 @@ def _live_view() -> None:
     st.title("QPlus — Live vs. Backtest Monitor")
 
     with st.sidebar:
+        names = sorted(ACCOUNTS)
+        account_name = st.selectbox("Account", names, index=names.index("ttp"))
         days = st.slider("History window (days)", 7, 365, 90)
         if st.button("Refresh now"):
             st.cache_data.clear()
         st.caption("Live data from MT5 (60s cache). Backtest reference from reports/equity/.")
 
+    profile = ACCOUNTS[account_name]
     # -- load --
     try:
-        live = _load_live(days)
+        live = _load_live(days, profile.terminal_path)
     except Exception as exc:  # noqa: BLE001 -- surface connection issues in the UI
         st.error(f"Could not read from the MT5 terminal: {exc}\n\nIs it open and logged in?")
         return
@@ -117,7 +121,7 @@ def _live_view() -> None:
 
     trades = deals_to_trades(live["deals"])
     trades["market"] = trades["symbol"].map(live["term_to_research"]).fillna(trades["symbol"])
-    state = _risk_state()
+    state = _risk_state(profile.name)
     start_balance = float(state.get("start_balance", live["balance"]))
     # Compounding: risk tracks current equity, so normalise per-trade expectancy to R off equity.
     live_risk = _LIVE_RISK_PCT * float(live["equity"])
