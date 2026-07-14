@@ -105,6 +105,7 @@ class AccountState:
     balance: float
     equity: float
     currency: str
+    login: int  # the broker account number -- used to guard against trading the wrong account
 
 
 def base_symbol(name: str, symbol_map: dict[str, str] = SYMBOL_MAP) -> str:
@@ -282,7 +283,10 @@ class Mt5Bridge:
         if info is None:
             raise Mt5Error(f"account_info failed: {m.last_error()}")
         return AccountState(
-            balance=float(info.balance), equity=float(info.equity), currency=str(info.currency)
+            balance=float(info.balance),
+            equity=float(info.equity),
+            currency=str(info.currency),
+            login=int(info.login),
         )
 
     def positions(self, name: str | None = None) -> list[Position]:
