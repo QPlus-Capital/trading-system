@@ -11,10 +11,10 @@ Safety model: the runner CONNECTS to this profile's ``terminal_path`` and then R
 unless the *connected* account's login number and currency match the profile. So a runner can
 never place orders on the wrong account, even if the wrong terminal happens to be open.
 
-Instance layout: every MT5 instance is its own folder under ``C:\\Users\\jancw\\MT5\\<name>\\`` (each
-a copy of a base install, independent because MT5's data folder is keyed by the install path). To
-add another account: copy an existing instance folder to ``MT5\\<new>\\``, log the new account into
-it, and add a ``LiveAccount`` below with that terminal64.exe path + the login.
+Instance layout: every MT5 instance is its own folder under ``C:\\Users\\jancw\\MT5\\<name>\\``
+-- each a copy of a base install, independent because MT5 keys its data folder off the install
+path. To add another account: copy an existing instance folder to ``MT5\\<new>\\``, log the new
+account into it, and add a ``LiveAccount`` below with that terminal64.exe path + the login.
 """
 
 from __future__ import annotations
