@@ -1,0 +1,82 @@
+{
+  "AUDUSD": {
+    "mode": "POINTS",
+    "rollover_py": 2,
+    "swap_long": -3.4228,
+    "swap_short": -9.5,
+    "tick_size": 1e-05,
+    "tick_value": 1.0
+  },
+  "DE40": {
+    "mode": "POINTS",
+    "rollover_py": 4,
+    "swap_long": -392.87575,
+    "swap_short": -48.556,
+    "tick_size": 0.01,
+    "tick_value": 0.01
+  },
+  "EURUSD": {
+    "mode": "POINTS",
+    "rollover_py": 2,
+    "swap_long": -12.56,
+    "swap_short": 0.04,
+    "tick_size": 1e-05,
+    "tick_value": 1.0
+  },
+  "GBPUSD": {
+    "mode": "POINTS",
+    "rollover_py": 2,
+    "swap_long": -6.7,
+    "swap_short": -9.1,
+    "tick_size": 1e-05,
+    "tick_value": 1.0
+  },
+  "US30": {
+    "mode": "POINTS",
+    "rollover_py": 4,
+    "swap_long": -962.5,
+    "swap_short": 22.36,
+    "tick_size": 0.01,
+    "tick_value": 0.01
+  },
+  "US500": {
+    "mode": "POINTS",
+    "rollover_py": 4,
+    "swap_long": -142.55365,
+    "swap_short": -11.7808,
+    "tick_size": 0.01,
+    "tick_value": 0.01
+  },
+  "USDJPY": {
+    "mode": "POINTS",
+    "rollover_py": 2,
+    "swap_long": 0.19,
+    "swap_short": -25.4,
+    "tick_size": 0.001,
+    "tick_value": 0.616154334337665
+  },
+  "USTEC": {
+    "mode": "POINTS",
+    "rollover_py": 4,
+    "swap_long": -640.8397,
+    "swap_short": 25.0,
+    "tick_size": 0.01,
+    "tick_value": 0.01
+  },
+  "XAGUSD": {
+    "mode": "POINTS",
+    "rollover_py": 2,
+    "swap_long": -21.1537,
+    "swap_short": 0.04,
+    "tick_size": 0.001,
+    "tick_value": 5.0
+  },
+  "XAUUSD": {
+    "mode": "POINTS",
+    "rollover_py": 2,
+    "swap_long": -88.8137,
+    "swap_short": -14.45735,
+    "tick_size": 0.01,
+    "tick_value": 1.0
+  }
+}
