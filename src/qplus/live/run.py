@@ -27,7 +27,7 @@ import logging
 from pathlib import Path
 
 from qplus.live.accounts import ACCOUNTS, get_account, guard_account
-from qplus.live.mt5_bridge import Mt5Bridge
+from qplus.live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 from qplus.live.notify import Notifier
 from qplus.live.risk_control import RiskController, RiskLimits
 from qplus.live.runner import (
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> None:
         state_path.write_text(legacy_state.read_text(encoding="utf-8"), encoding="utf-8")
         log.info("migrated legacy risk state -> %s", state_path)
 
-    bridge = Mt5Bridge()
+    bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **profile.symbol_overrides})
     bridge.connect(path=profile.terminal_path)  # attach to THIS account's terminal (no creds)
     try:
         account = bridge.account()

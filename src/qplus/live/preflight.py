@@ -13,7 +13,7 @@ from __future__ import annotations
 import argparse
 
 from qplus.live.accounts import ACCOUNTS, get_account
-from qplus.live.mt5_bridge import Mt5Bridge
+from qplus.live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 from qplus.live.runner import (
     markets_from_paper_config,
     risk_per_trade_from_paper_config,
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     profile = get_account(args.account)
 
-    bridge = Mt5Bridge()
+    bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **profile.symbol_overrides})
     bridge.connect(path=profile.terminal_path)
     try:
         rows, risk_amount = _checks(bridge, args.account)
