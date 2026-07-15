@@ -35,7 +35,7 @@ MEX = LiveAccount(
     expected_login=90480097,  # MEXAtlantic-Demo
     expected_currency="EUR",
     start_balance=100_000.0,
-    terminal_path=None,  # single-terminal setup today; set explicitly once TTP runs alongside it
+    terminal_path=r"C:\Program Files\MetaTrader 5\terminal64.exe",  # the demo's MT5 install
 )
 
 TTP = LiveAccount(
