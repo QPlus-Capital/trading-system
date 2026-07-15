@@ -227,6 +227,17 @@ def load_swap_snapshot(path: Path) -> dict[str, SwapSpec]:
     return {sym: SwapSpec(**fields) for sym, fields in payload.items()}
 
 
+def standard_broker() -> BrokerProfile:
+    """The STANDARD backtest profile: TTP Markets with its real swap snapshot attached.
+
+    TTP is the account actually traded live, so its costs are the truth the framework validates
+    against. Every stage should net costs against this. Falls back to the swap-less TTP profile if
+    the snapshot has not been pulled yet (see :func:`pull_swap_specs`).
+    """
+    snap = swap_snapshot_path(TTP_MARKETS.name)
+    return TTP_MARKETS.with_swaps(load_swap_snapshot(snap)) if snap.exists() else TTP_MARKETS
+
+
 def pull_swap_specs(bridge: object, names: list[str]) -> dict[str, SwapSpec]:
     """Snapshot the current per-symbol swap parameters from the live terminal."""
     import MetaTrader5 as mt5

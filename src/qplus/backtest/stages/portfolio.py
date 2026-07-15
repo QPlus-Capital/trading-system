@@ -27,7 +27,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from qplus.backtest.broker import TTP_MARKETS
+from qplus.backtest.broker import standard_broker, swap_r_per_trade
 from qplus.backtest.config import load_config_module
 from qplus.backtest.pipeline import make_extract_fn
 from qplus.backtest.portfolio.curves import load_daily_close
@@ -131,6 +131,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     frames = [extract_fn(m, overrides, int(sel["train_months"])) for m in universe]
     trades = pd.concat(frames, ignore_index=True)
+    # Net the real TTP overnight swap onto the holdout R-stream, so every downstream figure
+    # (returns, drawdown, edge, fact sheet) reflects the cost of carry actually paid live.
+    broker = standard_broker()
+    for market, grp in trades.groupby("market"):
+        if (spec := broker.swap_spec(str(market))) is not None:
+            net = grp["r"].to_numpy(dtype=float) + swap_r_per_trade(grp, spec)
+            trades.loc[grp.index, "r"] = net
     trades.to_csv(run.file("portfolio_trades.csv"), index=False)
 
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
@@ -147,7 +154,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"\n  Messe Tail-Decke auf der VOLLEN Historie ({sl_note}, wie gehandelt) ...")
         worst_day, cap, rck_stream = full_history_tail_cap(
             specs, universe, overrides, cfg.PARAM_GRID, account,
-            broker=TTP_MARKETS, stress_mult=args.stress_mult,
+            broker=broker, stress_mult=args.stress_mult,
             stop_loss_pct=traded_sl, fixed_stops=fixed_stops,
         )
         source = f"volle Historie @ {sl_note}"

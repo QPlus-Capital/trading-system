@@ -19,7 +19,7 @@ from typing import Any
 
 import pandas as pd
 
-from qplus.backtest.broker import BrokerProfile
+from qplus.backtest.broker import BrokerProfile, swap_r_per_trade
 from qplus.backtest.foundation.recipe import SweepRecipe
 from qplus.backtest.portfolio.risk import AccountProfile
 from qplus.backtest.portfolio.stress import tail_safe_risk, worst_day_r
@@ -88,7 +88,12 @@ def full_history_trades(
         rows = timed_trades_from_report(pos, market, float(market_params["stop_loss_pct"]))
         # One continuous backtest per market -> a single equity walk is the right one here.
         assign_r(rows, account.start_balance, account.base_risk_frac)
-        frames.append(pd.DataFrame(rows))
+        df = pd.DataFrame(rows)
+        # Net the broker's overnight swap onto R (TTP swaps are large -- see the ttp snapshot),
+        # so the tail cap + every downstream return figure reflects the real cost of carry.
+        if broker is not None and not df.empty and (spec := broker.swap_spec(market)) is not None:
+            df["r"] = df["r"].to_numpy(dtype=float) + swap_r_per_trade(df, spec)
+        frames.append(df)
     return pd.concat(frames, ignore_index=True)
 
 
