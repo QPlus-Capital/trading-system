@@ -87,6 +87,9 @@ def _daily_equity(
     t["od"] = ns_open // DAY_NS
     t["cd"] = ns_close // DAY_NS
     t["pnl_base"] = flat_base_pnl(t, account)  # r * base_risk_frac * start (flat EUR at live risk)
+    if "swap_r" in t.columns:  # realized cost of carry, booked at close (never marked to market)
+        base = account.base_risk_frac * account.start_balance
+        t["swap_base"] = t["swap_r"].to_numpy(dtype=float) * base
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
     _real, eq, _sizes = simulate(
@@ -113,8 +116,16 @@ def _money(equity: pd.Series, start: float, *, compound: bool) -> Money:
     return Money(round(ann * 100, 1), round(maxdd * 100, 2))
 
 
+def _net_r(trades: pd.DataFrame) -> np.ndarray:
+    """Per-trade R net of the realized swap (r + swap_r) -- safe for edge/attribution (no frac)."""
+    r = np.asarray(trades["r"], dtype=float)
+    if "swap_r" in trades.columns:
+        r = r + np.asarray(trades["swap_r"], dtype=float)
+    return np.asarray(r, dtype=float)
+
+
 def _edge(trades: pd.DataFrame, equity_flat: pd.Series, start: float) -> Edge:
-    r = trades["r"].to_numpy(dtype=float)
+    r = _net_r(trades)  # edge net of swap; the equity/Sharpe are already net via swap_base
     es = edge_stats(r)  # expectancy here is mean(R) since we pass R directly
     sharpe = risk_stats(equity_flat, start_balance=start)["sharpe"]
     hold = pd.to_datetime(trades["ts_closed"]) - pd.to_datetime(trades["ts_opened"])
@@ -147,7 +158,9 @@ def _window(
 
 
 def _per_market(trades: pd.DataFrame, risk_frac: float) -> pd.DataFrame:
-    g = trades.groupby("market")["r"]
+    t = trades.copy()
+    t["r"] = _net_r(t)  # net of swap
+    g = t.groupby("market")["r"]
     out = pd.DataFrame(
         {
             "trades": g.size(),
@@ -174,7 +187,9 @@ def _per_year(equity_comp: pd.Series) -> pd.DataFrame:
 def _regime(
     labeled: pd.DataFrame, col: str, order: tuple[str, ...], risk_frac: float
 ) -> pd.DataFrame:
-    tbl = regime.regime_edge_table(labeled, col, order=order)
+    lab = labeled.copy()
+    lab["r_net"] = _net_r(lab)  # net of swap
+    tbl = regime.regime_edge_table(lab, col, order=order, r_col="r_net")
     if not tbl.empty:
         tbl["ret_pct"] = tbl["total_R"] * risk_frac * 100.0  # flat % contribution
     return tbl

@@ -53,6 +53,12 @@ def simulate(
     openers, closers = _events(trades)
     mk = trades["market"].to_numpy()
     pnl = trades["pnl_base"].to_numpy(dtype=float)
+    # Swap is a REALIZED cost of carry -- booked at close, never marked to market (see base_curves).
+    swap = (
+        trades["swap_base"].to_numpy(dtype=float)
+        if "swap_base" in trades.columns
+        else np.zeros(len(trades))
+    )
     entry = trades["entry"].to_numpy(dtype=float)
     exit_ = trades["exit"].to_numpy(dtype=float)
     span = np.where(np.abs(exit_ - entry) < 1e-12, 1.0, exit_ - entry)
@@ -84,8 +90,8 @@ def simulate(
             for i in openers[day]:
                 size[i] = r
                 open_set.add(i)
-        for i in closers.get(day, ()):  # 2. realize closers (now correctly sized)
-            realized += pnl[i] * size[i]
+        for i in closers.get(day, ()):  # 2. realize closers (now correctly sized) + their swap
+            realized += (pnl[i] + swap[i]) * size[i]
             open_set.discard(i)
         peak_bal = max(peak_bal, start_balance + realized)
         unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)  # 3. EOD mark

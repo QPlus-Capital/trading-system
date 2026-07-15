@@ -259,6 +259,9 @@ def evaluate_policy(
     t["od"] = [to_day(x) for x in t["ts_opened"]]
     t["cd"] = [to_day(x) for x in t["ts_closed"]]
     t["pnl_base"] = flat_base_pnl(t, account)  # linear in R: safe to scale by a risk multiple
+    if "swap_r" in t.columns:  # realized cost of carry, booked at close (never marked to market)
+        base = account.base_risk_frac * account.start_balance
+        t["swap_base"] = t["swap_r"].to_numpy(dtype=float) * base
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
 
