@@ -70,19 +70,26 @@ def base_curves(
     ``trades`` needs columns ``market, od, cd, pnl_base, entry, exit`` where ``od``/``cd``
     are open/close day numbers. ``prices[market]`` is that market's daily close aligned to
     ``[d0, d1]`` (see :func:`align_prices`). ``equity_excess = realized_excess +
-    unrealized``.
+    unrealized``. An optional ``swap_base`` column is booked as a REALIZED cost at close --
+    never marked to market (marking a fixed swap via the price fraction blows up the floating
+    on tiny-span trades, so the mark-to-market drawdown stays on the gross price PnL).
     """
     n = d1 - d0 + 1
     od = trades["od"].to_numpy()
     cd = trades["cd"].to_numpy()
     pnl = trades["pnl_base"].to_numpy(dtype=float)
+    swap = (
+        trades["swap_base"].to_numpy(dtype=float)
+        if "swap_base" in trades.columns
+        else np.zeros(len(trades))
+    )
     entry = trades["entry"].to_numpy(dtype=float)
     exit_ = trades["exit"].to_numpy(dtype=float)
     mk = trades["market"].to_numpy()
     span = np.where(np.abs(exit_ - entry) < 1e-12, 1.0, exit_ - entry)
 
     realized_step = np.zeros(n)
-    np.add.at(realized_step, np.clip(cd - d0, 0, n - 1), pnl)
+    np.add.at(realized_step, np.clip(cd - d0, 0, n - 1), pnl + swap)  # swap realized at close
     realized = np.cumsum(realized_step)
 
     unrealized = np.zeros(n)

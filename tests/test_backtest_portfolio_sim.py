@@ -61,6 +61,27 @@ def test_base_curves_two_markets_open_together() -> None:
     assert list(realized) == [0.0, 0.0, 0.0, 100.0]  # both close day 3: +200-100
 
 
+def test_base_curves_books_swap_realized_not_marked() -> None:
+    # A swap must hit REALIZED at close only, never the floating (frac). That separation is what
+    # keeps the mark-to-market drawdown stable when swaps are large (a fixed swap on a tiny-span
+    # trade otherwise explodes the frac). See the TTP-swap incident.
+    trades = pd.DataFrame(
+        {
+            "market": ["A"],
+            "od": [0],
+            "cd": [2],
+            "pnl_base": [100.0],
+            "swap_base": [-50.0],
+            "entry": [100.0],
+            "exit": [110.0],
+        }
+    )
+    prices = {"A": np.array([100.0, 105.0, 110.0])}
+    realized, unrealized = base_curves(trades, prices, 0, 2)
+    assert list(realized) == [0.0, 0.0, 50.0]  # pnl+swap booked at close: 100 - 50
+    assert unrealized[1] == 50.0  # open day 1, frac 0.5 on GROSS pnl (100*0.5); swap NOT marked
+
+
 def test_worst_unrealized_marks_adverse_extreme() -> None:
     # Long (k>0): marked at the day's LOW, not the close -> a deeper intraday dip than base.
     trades = pd.DataFrame(
