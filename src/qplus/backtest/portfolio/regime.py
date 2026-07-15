@@ -185,13 +185,14 @@ def plot_regime(
 
 def main() -> None:
     """Re-run the frozen config full-history (net of costs), then report the edge per regime."""
-    from qplus.backtest.broker import standard_broker
+    from qplus.backtest.broker import MEX_ATLANTIC, load_swap_snapshot, swap_snapshot_path
     from qplus.backtest.config import load_config_module
     from qplus.backtest.portfolio.equity_report import _REPO_ROOT, _market_trades
 
     cfg = load_config_module(_REPO_ROOT / "config" / "live" / "paper_rsi_wpr_bb.py")
     switches = dict(cfg.STRATEGY_SWITCHES)
-    broker = standard_broker()  # TTP + real swap snapshot (the account actually traded)
+    snap = swap_snapshot_path(MEX_ATLANTIC.name)
+    broker = MEX_ATLANTIC.with_swaps(load_swap_snapshot(snap)) if snap.exists() else MEX_ATLANTIC
 
     frames, daily_closes = [], {}
     for factory, csv, leverage, sl, tp in cfg.MARKETS:
