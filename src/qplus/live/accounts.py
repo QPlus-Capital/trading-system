@@ -40,10 +40,10 @@ MEX = LiveAccount(
 
 TTP = LiveAccount(
     name="ttp",
-    expected_login=None,  # TODO: set to the TTP account number after purchase (guards real orders)
+    expected_login=None,  # TODO: set to the TTP account number after login (guards real orders)
     expected_currency="USD",
     start_balance=50_000.0,  # CFD Prime $50k, 1-phase
-    terminal_path=None,  # TODO: path to the TTP MT5 terminal64.exe (a separate install)
+    terminal_path=r"C:\Users\jancw\MT5-TTP\terminal64.exe",  # 2nd MT5 instance (copy of the demo's)
 )
 
 ACCOUNTS: dict[str, LiveAccount] = {a.name: a for a in (MEX, TTP)}
