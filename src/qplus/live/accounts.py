@@ -21,7 +21,7 @@ then add a ``LiveAccount`` below with that terminal64.exe path + the login.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from qplus.live.mt5_bridge import AccountState
 
@@ -35,6 +35,8 @@ class LiveAccount:
     expected_currency: str  # "EUR" | "USD" -- also asserted against the live connection
     start_balance: float  # daily/trailing reference on the FIRST run (saved state wins afterwards)
     terminal_path: str | None  # path to this account's terminal64.exe; None = the default terminal
+    # per-account overrides on the base SYMBOL_MAP, for brokers that name a symbol differently
+    symbol_overrides: dict[str, str] = field(default_factory=dict)
 
 
 MEX = LiveAccount(
@@ -49,10 +51,11 @@ MEX = LiveAccount(
 
 TTP = LiveAccount(
     name="ttp",
-    expected_login=None,  # TODO: set to the TTP account number after login (guards real orders)
+    expected_login=504071681,  # The Trading Pit CFD Prime $50k
     expected_currency="USD",
     start_balance=50_000.0,  # CFD Prime $50k, 1-phase
     terminal_path=r"C:\Users\jancw\MT5\ttp\terminal64.exe",  # its instance under the MT5\ root
+    symbol_overrides={"USTEC": "USTEC"},  # TTP names the Nasdaq USTEC (MEX calls it UT100)
 )
 
 ACCOUNTS: dict[str, LiveAccount] = {a.name: a for a in (MEX, TTP)}
