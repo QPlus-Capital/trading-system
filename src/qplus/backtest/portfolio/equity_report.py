@@ -435,7 +435,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
-    from qplus.backtest.broker import MEX_ATLANTIC, load_swap_snapshot, swap_snapshot_path
+    from qplus.backtest.broker import standard_broker
 
     cfg = load_config_module(_REPO_ROOT / "config" / "live" / "paper_rsi_wpr_bb.py")
     risk_pct = float(cfg.RISK_PER_TRADE_PCT)
@@ -446,10 +446,9 @@ def main(argv: list[str] | None = None) -> None:
     daily_close = {str(f().raw_symbol): load_daily_close(c) for f, c, _l, _s, _t in cfg.MARKETS}
 
     # Net-of-cost broker profile: slippage always (FillModel), swap when a snapshot exists.
-    snap = swap_snapshot_path(MEX_ATLANTIC.name)
-    broker = MEX_ATLANTIC.with_swaps(load_swap_snapshot(snap)) if snap.exists() else MEX_ATLANTIC
+    broker = standard_broker()  # TTP + real swap snapshot (the account actually traded)
     cost_note = (
-        "net of slippage + swap" if snap.exists() else "net of slippage (no swap snapshot yet)"
+        "net of slippage + swap" if broker.swap_specs else "net of slippage (no swap snapshot yet)"
     )
     print(f"broker profile: {broker.name} -- {cost_note}\n")
 
