@@ -9,14 +9,15 @@ account. All code tooling (dashboard) defaults to TTP.
 1. **Buy** the TTP CFD Prime $50k (1-phase) account. Rules the code already targets: daily DD 3%
    ($1,500), max DD 6% ($3,000), profit target +10% ($5,000). No config-value change needed —
    `RiskLimits`/`AccountProfile` already use 3% / 6%.
-2. **Install a second MT5 terminal** in its own folder (do NOT reuse the demo's install — two
-   accounts need two terminal instances). Log it into the TTP account, enable Algo Trading, and
-   add all 10 symbols to Market Watch.
-3. **Fill the TTP profile** in `src/qplus/live/accounts.py`:
-   - `expected_login` = the TTP account number (the guard refuses real orders until this is set),
-   - `terminal_path` = the full path to that terminal's `terminal64.exe`.
-   Also set `MEX.terminal_path` to the demo terminal's `terminal64.exe` so each runner is pinned to
-   the right instance (once two terminals run, "the default terminal" is ambiguous).
+2. **Second MT5 instance (no download needed).** Every instance lives under `C:\Users\jancw\MT5\<name>\`
+   — each a COPY of a base MT5 install (a copy at a new path runs independently; MT5 keys its data
+   folder off the install path). `mex` and `ttp` are already set up there. To add a future account,
+   copy an existing instance folder to `MT5\<new>\`. Log the TTP account into `MT5\ttp\` (File →
+   Login to Trade Account; if TTP's server isn't listed, File → Open an Account → search its name to
+   add it), enable Algo Trading, and add all 10 symbols to Market Watch.
+3. **Fill the TTP profile** in `src/qplus/live/accounts.py`: `expected_login` = the TTP account
+   number (the guard refuses real orders until this is set). `terminal_path` is already set for both
+   accounts (the `MT5\<name>\terminal64.exe` copies).
 4. **Verify symbols on first connect:** run `--account ttp` once in the default SIGNAL_ONLY mode and
    check the `symbol resolved: … -> …` log lines. If TTP names differ (like `USTEC -> UT100` on
    MEX), add a per-account symbol map. Do this before `--mode execute`.

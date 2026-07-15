@@ -10,6 +10,11 @@ Two accounts run in parallel, each with its OWN MT5 terminal and fully isolated 
 Safety model: the runner CONNECTS to this profile's ``terminal_path`` and then REFUSES to trade
 unless the *connected* account's login number and currency match the profile. So a runner can
 never place orders on the wrong account, even if the wrong terminal happens to be open.
+
+Instance layout: every MT5 instance lives as its own folder under ``C:\\Users\\jancw\\MT5\\<name>\\``
+(each a copy of a base install, independent because MT5's data folder is keyed by the install
+path). To add another account: copy an existing instance folder to ``MT5\\<new>\\``, log the new
+account into it, and add a ``LiveAccount`` below with that terminal64.exe path + the login.
 """
 
 from __future__ import annotations
@@ -35,7 +40,7 @@ MEX = LiveAccount(
     expected_login=90480097,  # MEXAtlantic-Demo
     expected_currency="EUR",
     start_balance=100_000.0,
-    terminal_path=r"C:\Program Files\MetaTrader 5\terminal64.exe",  # the demo's MT5 install
+    terminal_path=r"C:\Users\jancw\MT5\mex\terminal64.exe",  # its instance under the MT5\ root
 )
 
 TTP = LiveAccount(
@@ -43,7 +48,7 @@ TTP = LiveAccount(
     expected_login=None,  # TODO: set to the TTP account number after login (guards real orders)
     expected_currency="USD",
     start_balance=50_000.0,  # CFD Prime $50k, 1-phase
-    terminal_path=r"C:\Users\jancw\MT5-TTP\terminal64.exe",  # 2nd MT5 instance (copy of the demo's)
+    terminal_path=r"C:\Users\jancw\MT5\ttp\terminal64.exe",  # its instance under the MT5\ root
 )
 
 ACCOUNTS: dict[str, LiveAccount] = {a.name: a for a in (MEX, TTP)}
