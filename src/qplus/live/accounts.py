@@ -11,10 +11,12 @@ Safety model: the runner CONNECTS to this profile's ``terminal_path`` and then R
 unless the *connected* account's login number and currency match the profile. So a runner can
 never place orders on the wrong account, even if the wrong terminal happens to be open.
 
-Instance layout: every MT5 instance is its own folder under ``C:\\Users\\jancw\\MT5\\<name>\\``
--- each a copy of a base install, independent because MT5 keys its data folder off the install
-path. To add another account: copy an existing instance folder to ``MT5\\<new>\\``, log the new
-account into it, and add a ``LiveAccount`` below with that terminal64.exe path + the login.
+Instance layout: managed (prop) instances live under ``C:\\Users\\jancw\\MT5\\<name>\\`` -- each a
+copy of a base install, independent because MT5 keys its data folder off the install path. A copy
+is a FRESH terminal (login lives in %APPDATA%, not the install folder), so it must be logged into
+its account ONCE before a runner can attach. The demo keeps its original install. To add another
+account: copy an instance folder to ``MT5\\<new>\\``, log the account into it, enable Algo Trading,
+then add a ``LiveAccount`` below with that terminal64.exe path + the login.
 """
 
 from __future__ import annotations
@@ -40,7 +42,9 @@ MEX = LiveAccount(
     expected_login=90480097,  # MEXAtlantic-Demo
     expected_currency="EUR",
     start_balance=100_000.0,
-    terminal_path=r"C:\Users\jancw\MT5\mex\terminal64.exe",  # its instance under the MT5\ root
+    # The demo keeps its ORIGINAL install (already logged in). A fresh copy under MT5\ would need a
+    # one-time manual login -- not worth it for the shadow account. Prop instances go under MT5\.
+    terminal_path=r"C:\Program Files\MetaTrader 5\terminal64.exe",
 )
 
 TTP = LiveAccount(

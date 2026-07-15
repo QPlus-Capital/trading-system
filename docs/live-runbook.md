@@ -9,12 +9,14 @@ account. All code tooling (dashboard) defaults to TTP.
 1. **Buy** the TTP CFD Prime $50k (1-phase) account. Rules the code already targets: daily DD 3%
    ($1,500), max DD 6% ($3,000), profit target +10% ($5,000). No config-value change needed —
    `RiskLimits`/`AccountProfile` already use 3% / 6%.
-2. **Second MT5 instance (no download needed).** Every instance lives under `C:\Users\jancw\MT5\<name>\`
+2. **Second MT5 instance (no download needed).** Prop instances live under `C:\Users\jancw\MT5\<name>\`
    — each a COPY of a base MT5 install (a copy at a new path runs independently; MT5 keys its data
-   folder off the install path). `mex` and `ttp` are already set up there. To add a future account,
-   copy an existing instance folder to `MT5\<new>\`. Log the TTP account into `MT5\ttp\` (File →
-   Login to Trade Account; if TTP's server isn't listed, File → Open an Account → search its name to
-   add it), enable Algo Trading, and add all 10 symbols to Market Watch.
+   folder off the install path). The `ttp` instance is set up there; the demo keeps its original
+   install. NB: a copy is a FRESH terminal (login lives in %APPDATA%, not the install folder), so it
+   must be logged into its account ONCE before a runner can attach. Log the TTP account into
+   `MT5\ttp\` (File → Login to Trade Account; if TTP's server isn't listed, File → Open an Account →
+   search its name to add it), enable Algo Trading, and add all 10 symbols to Market Watch. To add a
+   future account, copy an instance folder to `MT5\<new>\`.
 3. **Fill the TTP profile** in `src/qplus/live/accounts.py`: `expected_login` = the TTP account
    number (the guard refuses real orders until this is set). `terminal_path` is already set for both
    accounts (the `MT5\<name>\terminal64.exe` copies).
