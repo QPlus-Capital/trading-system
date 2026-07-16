@@ -16,6 +16,8 @@ historical data first, then **paper trading**, then **live trading**.
   live); the broker layer changes in a later phase.
 - **Stack:** Python 3.13, `uv` for packaging, NautilusTrader (backtest engine), MetaTrader5
   (live bridge). Tooling: `ruff`, `mypy`, `pytest`.
+- **Orientation:** read [docs/architecture.md](docs/architecture.md) first — diagrams of
+  the research pipeline, live path and monitoring, plus a one-line-per-file module map.
 
 ## Team & roles
 
