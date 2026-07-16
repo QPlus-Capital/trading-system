@@ -215,7 +215,6 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `backtest/portfolio/drawdown.py` | Prop-firm drawdown rule (trailing/hybrid) |
 | `backtest/portfolio/factsheet.py` | End-of-run metrics matrix (full vs holdout, flat vs compound, net of swap) |
 | `backtest/portfolio/html_report.py` | Self-contained `report.html` from a fact sheet |
-| `backtest/portfolio/report.py` | Verdict-stage charts |
 | `backtest/portfolio/regime.py` | Does the edge hold across volatility/trend regimes? |
 | `backtest/portfolio/correlation.py` | Are the markets really diversified; how crowded is the book? |
 | `backtest/portfolio/equity_report.py` | Illustrative equity report for the frozen live config |
@@ -231,8 +230,6 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `backtest/stages/portfolio.py` | Stage 3 — combine + size under a risk policy |
 | `backtest/stages/verdict.py` | Stage 4 — trade yes/no + fact sheet + report |
 | `backtest/pipeline.py` | The injected per-market trade extractor used by stage 3 |
-| `backtest/validation/acceptance.py` | Validation scorecard: individual checks → one verdict |
-| `backtest/validation/stress.py` | Stress testing: worse conditions |
 
 ### Live
 
@@ -264,7 +261,7 @@ The import direction is strictly downward; nothing imports from `stages/`.
 
 ```mermaid
 flowchart TD
-    STAGES["backtest/stages (CLI orchestration)"] --> EDGE["edge / select / portfolio / validation"]
+    STAGES["backtest/stages (CLI orchestration)"] --> EDGE["edge / select / portfolio"]
     EDGE --> FOUND["foundation (engine machinery)"]
     FOUND --> STRAT["strategies (pure signals + Nautilus wrapper)"]
     LIVE2["live (runner, bridge, risk)"] --> STRAT

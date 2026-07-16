@@ -8,7 +8,6 @@ from qplus.backtest.portfolio.curves import (
     align_prices,
     base_curves,
     to_day,
-    worst_unrealized,
 )
 
 
@@ -82,39 +81,3 @@ def test_base_curves_books_swap_realized_not_marked() -> None:
     assert unrealized[1] == 50.0  # open day 1, frac 0.5 on GROSS pnl (100*0.5); swap NOT marked
 
 
-def test_worst_unrealized_marks_adverse_extreme() -> None:
-    # Long (k>0): marked at the day's LOW, not the close -> a deeper intraday dip than base.
-    trades = pd.DataFrame(
-        {
-            "market": ["X"],
-            "od": [0],
-            "cd": [2],
-            "pnl_base": [100.0],  # k = 100/(11-10) = 100 > 0 -> long
-            "entry": [10.0],
-            "exit": [11.0],
-        }
-    )
-    highs = {"X": np.array([10.0, 10.5, 11.0])}
-    lows = {"X": np.array([10.0, 9.5, 11.0])}  # day1 dips to 9.5
-    worst = worst_unrealized(trades, highs, lows, 0, 2)
-    # Day 1 at the low: 100 * (9.5 - 10) = -50 (worse than the close-based +50).
-    assert list(worst) == [0.0, -50.0, 0.0]
-
-
-def test_worst_unrealized_short_uses_high() -> None:
-    # Short (k<0): entry 100, exit 98 (price fell) -> profit; adverse = the day's HIGH.
-    trades = pd.DataFrame(
-        {
-            "market": ["S"],
-            "od": [0],
-            "cd": [2],
-            "pnl_base": [100.0],  # k = 100/(98-100) = -50 < 0 -> short
-            "entry": [100.0],
-            "exit": [98.0],
-        }
-    )
-    highs = {"S": np.array([100.0, 101.0, 98.0])}  # day1 spikes to 101 (adverse for a short)
-    lows = {"S": np.array([100.0, 97.0, 98.0])}
-    worst = worst_unrealized(trades, highs, lows, 0, 2)
-    # Day 1 at the high: -50 * (101 - 100) = -50.
-    assert list(worst) == [0.0, -50.0, 0.0]

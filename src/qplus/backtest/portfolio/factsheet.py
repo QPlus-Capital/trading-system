@@ -46,7 +46,6 @@ class Edge:
     payoff: float
     expectancy_r: float
     avg_hold_days: float
-    median_hold_days: float
     trades: int
 
 
@@ -137,7 +136,6 @@ def _edge(trades: pd.DataFrame, equity_flat: pd.Series, start: float) -> Edge:
         payoff=es["payoff"],
         expectancy_r=round(float(es["expectancy"]), 3),
         avg_hold_days=round(float(hold_days.mean()), 1),
-        median_hold_days=round(float(np.median(hold_days)), 1),
         trades=len(r),
     )
 
