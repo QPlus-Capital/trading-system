@@ -392,9 +392,19 @@ class LiveRunner:
         ticket. A failure here is not fatal either: the order already carries a valid stop, so the
         worst case is the pre-fix behaviour (exits anchored to the signal price), never a naked
         position. Everything is logged.
+
+        Some terminals (TTP) list the just-opened position a moment AFTER ``order_send`` returns,
+        so an empty result is polled briefly before giving up. Ambiguity (>1 match) is immediate:
+        waiting cannot resolve it.
         """
         try:
-            candidates = [p for p in self._bridge.positions(spec.name) if p.side == sized.side]
+            candidates: list[Position] = []
+            for attempt in range(5):
+                if attempt:
+                    time.sleep(0.5)
+                candidates = [p for p in self._bridge.positions(spec.name) if p.side == sized.side]
+                if candidates:
+                    break
             if len(candidates) != 1:
                 log.warning(
                     "[%s] cannot re-anchor exits: %d matching positions -> keeping signal-anchored"
