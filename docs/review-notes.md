@@ -29,8 +29,8 @@ Leitfragen bei jedem Modul:
 - [ ] `RUN.md` — könnte ein Fremder damit das System starten?
 - [ ] `CLAUDE.md` — sind die Regeln vollständig und aktuell?
 - [ ] `docs/methodology.md` — die Spezifikation. Deckt sie sich mit dem Code?
-- [ ] `docs/live-runbook.md`, `docs/roadmap.md`, `docs/mt5-bridge-plan.md` — was
-      davon ist noch wahr, was ist Museum?
+- [ ] `docs/live-runbook.md`, `docs/roadmap.md` — was davon ist noch wahr, was ist
+      Museum? (`mt5-bridge-plan.md` ist bereits gelöscht — Plan war komplett umgesetzt.)
 
 ### Block B — Der Strategie-Kern (~20 min)
 - [ ] `strategies/rsi_wpr_bb_signals.py` — DIE zentrale Datei (backtest == live)
@@ -48,7 +48,6 @@ Leitfragen bei jedem Modul:
       factsheet → html_report/report → regime/correlation
 - [ ] `backtest/portfolio/equity_report.py`, `swap_analysis.py` — Standalone-Tools:
       behalten, umbauen oder löschen?
-- [ ] `backtest/validation/` — wird das noch von den Stages genutzt oder ist es Altbestand?
 
 ### Block D — Live-Pfad (echtes Geld, hier besonders kritisch lesen) (~45 min)
 - [ ] `live/run.py` → `accounts.py` → `mt5_bridge.py` → `runner.py`
@@ -93,20 +92,19 @@ Leitfragen bei jedem Modul:
 
 ## Überbleibsel-Sweep (Claude, 2026-07-16 — vulture + Import-Analyse)
 
-### A. Klar tot — wird in src nirgends importiert, nur der eigene Test hält es am Leben
+### A. Klar tot — GELÖSCHT am 2026-07-16 (auf diesem Branch; Git-Historie bewahrt alles)
 
 | Kandidat | Befund |
 |---|---|
-| `backtest/validation/acceptance.py` + `tests/test_backtest_scorecard.py` | Die alte „Scorecard" — laut `pipeline.py`-Docstring von der Stages-CLI abgelöst. Null src-Importe. |
-| `backtest/validation/stress.py` | Nur eigener `__main__`, referenziert den alten Einzel-Config-Pfad; abgelöst durch `portfolio/stress` + `tail`. Null Importe überhaupt. |
-| → ganzes Paket `backtest/validation/` | Nach den beiden oben ist es leer (`__init__.py` ist schon leer). |
-| `backtest/portfolio/report.py` + `tests/test_backtest_report.py` | „Verdict-stage charts" — aber Stage 4 nutzt `html_report`; `plot_monte_carlo` existiert doppelt (auch in `foundation/execution`). Orphan. |
-| `curves.load_daily_extremes` + `curves.worst_unrealized` (+ 2 Tests) | Intraday-Adverse-Marking, nirgends verdrahtet. ENTSCHEIDEN: löschen oder einbauen (wäre ein Ehrlichkeits-Feature für den DD — markiert Tagesextreme statt Schlusskurse). |
-| `risk.TTP_ACCOUNT` | Fallback-Konstante, nie referenziert (Config liefert `ACCOUNT`). |
-| `risk_control.RiskController.on_close()` | Wird nie aufgerufen (Runner rechnet Open-Risk je Zyklus aus Live-Positionen neu). |
-| `factsheet.Edge.median_hold_days` | Berechnet, aber weder im Terminal noch im HTML gerendert — rendern oder raus. |
-| `drawdown`-Resultatfeld `min_margin_frac` | Wird gesetzt, aber nirgends gelesen (nur `.breached` wird genutzt). |
-| `parity_check.close_diff_mean` (vulture, 60%) | Feld im Standalone-Tool — prüfen. |
+| ~~`backtest/validation/` (ganzes Paket) + `tests/test_backtest_scorecard.py`~~ | Alte „Scorecard" + alter Stress-Pfad, von der Stages-CLI abgelöst. Null src-Importe. GELÖSCHT. |
+| ~~`backtest/portfolio/report.py` + `tests/test_backtest_report.py`~~ | Stage 4 nutzt `html_report`; `plot_monte_carlo` gab es doppelt. GELÖSCHT. |
+| ~~`curves.load_daily_extremes` + `worst_unrealized` (+ 2 Tests)~~ | Intraday-Adverse-Marking, nie verdrahtet. GELÖSCHT — bei Bedarf als Feature aus der Historie wiederholbar (wäre ein Ehrlichkeits-Upgrade: DD an Tagesextremen statt Schlusskursen messen). |
+| ~~`risk.TTP_ACCOUNT`~~ | Nie referenziert (Config liefert `ACCOUNT`). GELÖSCHT. |
+| ~~`risk_control.on_close()`~~ | Nie aufgerufen (Open-Risk wird je Zyklus neu berechnet). GELÖSCHT. |
+| ~~`factsheet.median_hold_days`~~ | Berechnet, nie gerendert. GELÖSCHT. |
+| ~~`drawdown.min_margin_frac`~~ | Gesetzt, nie gelesen. GELÖSCHT. |
+| ~~`parity_check.close_diff_mean`~~ | Weder gedruckt noch im Verdict. GELÖSCHT. |
+| ~~`docs/mt5-bridge-plan.md`~~ | Plan vollständig umgesetzt. GELÖSCHT (+ RUN.md-Verweise korrigiert: Stages-CLI statt totem `pipeline`-`__main__`, `--account`-Flag). |
 
 ### B. Altlast-Pfad „Einzel-Backtest-Ära" — Entscheidung nötig, nicht blind löschen
 

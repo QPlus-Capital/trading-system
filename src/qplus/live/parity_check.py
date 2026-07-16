@@ -58,7 +58,6 @@ class ParityResult:
     match_rate: float
     modal_offset_hours: float  # most common live-vs-nearest-CSV time offset (0 = aligned)
     close_diff_max: float  # worst relative close difference on matched bars
-    close_diff_mean: float
     signal_agree: int
     signal_disagree: int
 
@@ -77,7 +76,7 @@ def compare(mt5_bars: list[Bar], csv_bars: list[Bar], params: SignalParams) -> P
     """Compare live bars to CSV bars on their overlap: alignment, OHLC, and signal parity (pure)."""
     csv_by_time = {b.time: b for b in csv_bars}
     if not csv_by_time:
-        return ParityResult(0, 0, 0.0, 0.0, 0.0, 0.0, 0, 0)
+        return ParityResult(0, 0, 0.0, 0.0, 0.0, 0, 0)
     lo, hi = min(csv_by_time), max(csv_by_time)
     overlap = sorted((b for b in mt5_bars if lo <= b.time <= hi), key=lambda b: b.time)
     csv_times = sorted(csv_by_time)
@@ -117,7 +116,6 @@ def compare(mt5_bars: list[Bar], csv_bars: list[Bar], params: SignalParams) -> P
         match_rate=len(matched) / len(overlap) if overlap else 0.0,
         modal_offset_hours=modal_hours,
         close_diff_max=max(diffs, default=0.0),
-        close_diff_mean=(sum(diffs) / len(diffs)) if diffs else 0.0,
         signal_agree=agree,
         signal_disagree=disagree,
     )

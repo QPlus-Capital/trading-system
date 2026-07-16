@@ -45,7 +45,6 @@ class DrawdownResult:
 
     breached: bool
     min_margin: float  # min(equity - floor) over the path; <= 0 means a breach
-    min_margin_frac: float  # min_margin / start_balance
     breach_index: int  # first day index where equity <= floor, else -1
 
 
@@ -65,7 +64,6 @@ def evaluate(
     return DrawdownResult(
         breached=bool(below.any()),
         min_margin=min_margin,
-        min_margin_frac=min_margin / start_balance,
         breach_index=breach_index,
     )
 

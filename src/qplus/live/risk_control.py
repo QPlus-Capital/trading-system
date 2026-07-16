@@ -99,9 +99,6 @@ class RiskController:
     def on_open(self, risk_amount: float) -> None:
         self.open_risk += risk_amount
 
-    def on_close(self, risk_amount: float) -> None:
-        self.open_risk = max(0.0, self.open_risk - risk_amount)
-
     # -- the safety floors --
     def trailing_floor(self) -> float:
         """Equity floor from the trailing stop; caps at the starting balance."""

@@ -49,11 +49,6 @@ class AccountProfile:
     base_risk_frac: float = 0.01  # the risk the backtest sized each trade at (recovers multiples)
 
 
-# Default account profile (The Trading Pit hard limits: 3% daily / 6% trailing). The live account
-# size lives in config (config/study/robustness.py: ACCOUNT); this default is only a fallback.
-TTP_ACCOUNT = AccountProfile()
-
-
 def tail_cap(
     trades: pd.DataFrame, account: AccountProfile, *, stress_mult: float = 1.5
 ) -> float:

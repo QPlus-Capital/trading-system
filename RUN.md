@@ -80,16 +80,16 @@ uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 | Type-check          | `uv run mypy`                 |
 | Tests               | `uv run pytest`               |
 | Single backtest     | `uv run python -m qplus.backtest.config config/backtest/rsi_wpr_bb_xauusd.py` |
-| Robustness study (Stage 1) | `uv run python -m qplus.backtest.edge.characterize config/study/overnight.py` |
-| Selection + validation (Stage 2–5) | `uv run python -m qplus.backtest.pipeline config/study/overnight.py <study.csv>` |
+| Robustness study sweep | `uv run python -m qplus.backtest.edge.characterize config/study/robustness.py` |
+| Staged framework (Stages 1–4) | `uv run python -m qplus.backtest.stages.edge --from <study.csv>` (each stage prints the next command) |
 | Equity report / charts | `uv run python -m qplus.backtest.portfolio.equity_report` |
-| Live / paper trading | `uv run python -m qplus.live.run` (add `--mode execute` for real orders) |
+| Live / paper trading | `uv run python -m qplus.live.run --account ttp` (add `--mode execute` for real orders) |
 
 ## The workflow
 
 The methodology (the staged funnel from raw edge to a tradeable, prop-firm-compliant
-config) is documented in **[docs/methodology.md](docs/methodology.md)**;
-the live/paper wiring is in **[docs/mt5-bridge-plan.md](docs/mt5-bridge-plan.md)**. In short:
+config) is documented in **[docs/methodology.md](docs/methodology.md)**; the live
+operations guide is **[docs/live-runbook.md](docs/live-runbook.md)**. In short:
 
 - **Data** lives in a Parquet catalog under `catalog/` (gitignored), imported from the
   MetaTrader 5 CSVs in `data/` (also gitignored); the backtest seeds it on first use.
