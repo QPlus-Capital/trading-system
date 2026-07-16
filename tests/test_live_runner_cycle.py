@@ -8,6 +8,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 
+import pytest
+
 from qplus.live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
 from qplus.live.risk_control import RiskController, RiskLimits
 from qplus.live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, size_order
@@ -191,6 +193,35 @@ def test_exits_are_reanchored_to_the_actual_fill_price() -> None:
     assert stub.placed == [("XAUUSD", "BUY", 20.0)]
     assert stub.modified == [(99, 1981.98, 2062.06)]  # 2002 * (1 -/+ 1%/3%)
     assert stub.open_positions[0].sl == 1981.98
+
+
+def test_reanchor_polls_until_the_terminal_lists_the_position(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Some terminals (TTP) list the just-opened position a moment after order_send returns; the
+    # first queries come back empty. The re-anchor must poll briefly instead of giving up.
+    class LaggyBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.lag = 2  # the first two positions() calls miss the new position
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            if self.lag:
+                self.lag -= 1
+                return []
+            return super().positions(name)
+
+    naps: list[float] = []
+    monkeypatch.setattr("time.sleep", lambda s: naps.append(s))
+    stub = LaggyBridge()
+    stub.fill_price = 2002.0
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    info = stub.symbol_info("XAUUSD")
+    sized = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
+    assert sized is not None
+    runner._act(_SPEC, None, sized, info)
+    assert naps == [0.5, 0.5]  # polled twice, then the position showed up
+    assert stub.modified == [(99, 1981.98, 2062.06)]  # and was re-anchored normally
 
 
 def test_no_modify_when_the_fill_matches_the_signal_price() -> None:
