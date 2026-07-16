@@ -372,8 +372,10 @@ class LiveRunner:
                 self._bridge.close_position(pos)
             # The order carries the provisional (signal-anchored) SL/TP, so the position is
             # protected from its first tick; then we re-anchor them to the real fill price.
-            self._bridge.place_order(spec.name, sized.side, sized.volume, sl=sized.sl, tp=sized.tp)
-            self._reanchor_exits(spec, sized, info)
+            ticket = self._bridge.place_order(
+                spec.name, sized.side, sized.volume, sl=sized.sl, tp=sized.tp
+            )
+            self._reanchor_exits(spec, sized, info, ticket)
         self._notify.signal(
             f"[{spec.name}] {verb} {sized.side} vol={sized.volume} sl={sized.sl} "
             f"tp={sized.tp} risk={sized.risk_amount:.0f} EUR ({self._mode.value})"
@@ -383,37 +385,42 @@ class LiveRunner:
         # positions each cycle, so this within-cycle increment self-heals next cycle.
         self._risk.on_open(sized.risk_amount)
 
-    def _reanchor_exits(self, spec: MarketSpec, sized: SizedOrder, info: SymbolInfo) -> None:
+    def _reanchor_exits(
+        self, spec: MarketSpec, sized: SizedOrder, info: SymbolInfo, ticket: int
+    ) -> None:
         """Move the just-opened position's SL/TP onto its ACTUAL fill price (backtest parity).
 
-        Deliberately conservative. It only ever touches a position that (a) is on this market,
-        (b) points the way we just traded, and (c) is the ONLY such position -- if anything is
-        ambiguous we leave the provisional exits alone rather than risk modifying the wrong
-        ticket. A failure here is not fatal either: the order already carries a valid stop, so the
-        worst case is the pre-fix behaviour (exits anchored to the signal price), never a naked
-        position. Everything is logged.
+        ``ticket`` is the order ticket ``place_order`` returned; a market order's position carries
+        the same ticket, so the position is looked up EXACTLY -- no guessing which one we opened.
+        Some terminals (TTP) list the just-opened position a moment after ``order_send`` returns,
+        so the lookup polls briefly. Should a broker ever assign a different position ticket, a
+        UNIQUE position on the side we just traded is still unambiguous and used as fallback.
 
-        Some terminals (TTP) list the just-opened position a moment AFTER ``order_send`` returns,
-        so an empty result is polled briefly before giving up. Ambiguity (>1 match) is immediate:
-        waiting cannot resolve it.
+        A failure here is not fatal: the order already carries a valid stop, so the worst case is
+        the pre-fix behaviour (exits anchored to the signal price), never a naked position.
         """
         try:
-            candidates: list[Position] = []
+            position: Position | None = None
             for attempt in range(5):
                 if attempt:
                     time.sleep(0.5)
-                candidates = [p for p in self._bridge.positions(spec.name) if p.side == sized.side]
-                if candidates:
+                mine = self._bridge.positions(spec.name)
+                exact = [p for p in mine if p.ticket == ticket]
+                same_side = [p for p in mine if p.side == sized.side]
+                if exact:
+                    position = exact[0]
                     break
-            if len(candidates) != 1:
+                if len(same_side) == 1:
+                    position = same_side[0]
+                    break
+            if position is None:
                 log.warning(
-                    "[%s] cannot re-anchor exits: %d matching positions -> keeping signal-anchored"
-                    " SL/TP",
+                    "[%s] cannot re-anchor exits: position (ticket %d) not listed -> keeping"
+                    " signal-anchored SL/TP",
                     spec.name,
-                    len(candidates),
+                    ticket,
                 )
                 return
-            position = candidates[0]
             sl, tp = exit_prices(
                 sized.side, position.price_open, spec.stop_loss_pct, spec.take_profit_pct
             )
