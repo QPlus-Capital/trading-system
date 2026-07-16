@@ -73,7 +73,8 @@ class StubBridge:
     def place_order(self, name: str, side: str, volume: float, **kw: object) -> int:
         self.placed.append((name, side, volume))
         # A real terminal opens a position; its price_open is the price that ACTUALLY filled,
-        # which may differ from the price the order asked for.
+        # which may differ from the price the order asked for. A market order's position carries
+        # the SAME ticket as the order, which place_order returns.
         sl, tp = float(cast(float, kw["sl"])), float(cast(float, kw["tp"]))
         requested = sl / (1 - 0.01) if side == "BUY" else sl / (1 + 0.01)
         self.open_positions.append(
@@ -88,7 +89,7 @@ class StubBridge:
                 profit=0.0,
             )
         )
-        return 1
+        return 99
 
     def modify_sltp(self, position: Position, *, sl: float, tp: float) -> None:
         if self.modify_error is not None:
@@ -235,8 +236,9 @@ def test_signal_only_mode_never_touches_the_terminal() -> None:
     assert stub.placed == [] and stub.modified == [] and stub.open_positions == []
 
 
-def test_ambiguous_positions_leave_the_provisional_exits_alone() -> None:
-    # Two positions on the same side: we cannot tell which one we just opened, so touch neither.
+def test_ticket_match_reanchors_only_the_position_we_just_opened() -> None:
+    # Another same-side position already exists. The order ticket identifies OUR position
+    # exactly, so it is re-anchored and the pre-existing one is left untouched.
     stub = StubBridge()
     stub.open_positions = [Position(1, "XAUUSD", "BUY", 1.0, 1990.0, 1970.0, 2050.0, 0.0)]
     stub.fill_price = 2002.0
@@ -245,8 +247,26 @@ def test_ambiguous_positions_leave_the_provisional_exits_alone() -> None:
     sized = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
     assert sized is not None
     runner._act(_SPEC, None, sized, info)
-    assert stub.modified == []  # ambiguity -> no modification at all
+    assert stub.modified == [(99, 1981.98, 2062.06)]  # only ticket 99 (ours)
     assert stub.open_positions[0].sl == 1970.0  # the pre-existing position is untouched
+
+
+def test_side_fallback_when_the_broker_assigns_a_different_position_ticket() -> None:
+    # Broker quirk: the position's ticket differs from the order ticket. A UNIQUE position on
+    # the side we just traded is still unambiguous, so it is re-anchored via the fallback.
+    class OddTicketBridge(StubBridge):
+        def place_order(self, name: str, side: str, volume: float, **kw: object) -> int:
+            super().place_order(name, side, volume, **kw)
+            return 12345  # order ticket != position ticket (99)
+
+    stub = OddTicketBridge()
+    stub.fill_price = 2002.0
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    info = stub.symbol_info("XAUUSD")
+    sized = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
+    assert sized is not None
+    runner._act(_SPEC, None, sized, info)
+    assert stub.modified == [(99, 1981.98, 2062.06)]  # found via the unique-side fallback
 
 
 def test_a_failed_modify_leaves_the_protective_stop_in_place() -> None:
