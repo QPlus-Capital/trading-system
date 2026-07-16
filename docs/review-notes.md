@@ -90,3 +90,49 @@ Leitfragen bei jedem Modul:
   unterschätzt günstigere FX-Paare — geringer Effekt.
 - `ruff format` ist kein Gate: 13 Dateien wären umzuformatieren — einheitlich machen?
 - `docs/mt5-bridge-plan.md` und Teile von `docs/roadmap.md` sind vermutlich Museum.
+
+## Überbleibsel-Sweep (Claude, 2026-07-16 — vulture + Import-Analyse)
+
+### A. Klar tot — wird in src nirgends importiert, nur der eigene Test hält es am Leben
+
+| Kandidat | Befund |
+|---|---|
+| `backtest/validation/acceptance.py` + `tests/test_backtest_scorecard.py` | Die alte „Scorecard" — laut `pipeline.py`-Docstring von der Stages-CLI abgelöst. Null src-Importe. |
+| `backtest/validation/stress.py` | Nur eigener `__main__`, referenziert den alten Einzel-Config-Pfad; abgelöst durch `portfolio/stress` + `tail`. Null Importe überhaupt. |
+| → ganzes Paket `backtest/validation/` | Nach den beiden oben ist es leer (`__init__.py` ist schon leer). |
+| `backtest/portfolio/report.py` + `tests/test_backtest_report.py` | „Verdict-stage charts" — aber Stage 4 nutzt `html_report`; `plot_monte_carlo` existiert doppelt (auch in `foundation/execution`). Orphan. |
+| `curves.load_daily_extremes` + `curves.worst_unrealized` (+ 2 Tests) | Intraday-Adverse-Marking, nirgends verdrahtet. ENTSCHEIDEN: löschen oder einbauen (wäre ein Ehrlichkeits-Feature für den DD — markiert Tagesextreme statt Schlusskurse). |
+| `risk.TTP_ACCOUNT` | Fallback-Konstante, nie referenziert (Config liefert `ACCOUNT`). |
+| `risk_control.RiskController.on_close()` | Wird nie aufgerufen (Runner rechnet Open-Risk je Zyklus aus Live-Positionen neu). |
+| `factsheet.Edge.median_hold_days` | Berechnet, aber weder im Terminal noch im HTML gerendert — rendern oder raus. |
+| `drawdown`-Resultatfeld `min_margin_frac` | Wird gesetzt, aber nirgends gelesen (nur `.breached` wird genutzt). |
+| `parity_check.close_diff_mean` (vulture, 60%) | Feld im Standalone-Tool — prüfen. |
+
+### B. Altlast-Pfad „Einzel-Backtest-Ära" — Entscheidung nötig, nicht blind löschen
+
+- `config/backtest/rsi_wpr_bb_xauusd.py` + `sweep_rsi_wpr_bb_xauusd.py`, die
+  `__main__`s von `backtest/config.py` und `foundation/grid.py`: der Vor-Framework-Pfad
+  (ein Markt, ein Lauf). Noch in RUN.md dokumentiert. Behalten als Ad-hoc-Debug-Werkzeug
+  oder weg? (Die *Bibliotheks*-Funktionen beider Dateien sind stark genutzt — nur die
+  Einstiegspunkte/Configs stehen zur Debatte.)
+- `foundation/execution.py`-`__main__` (Standalone-MC-Report) — Bibliothek bleibt sicher,
+  der Einstiegspunkt ist fraglich.
+
+### C. Struktur-Smell (kein toter Code, aber Aufräum-Kandidat)
+
+- `portfolio/equity_report.py` hat eine Doppelrolle: Standalone-Report UND
+  Statistik-Bibliothek. `edge_stats`, `risk_stats`, `daily_equity` sowie die **privaten**
+  Namen `_market_trades`, `_REPO_ROOT`, `_START_BALANCE` werden von factsheet, verdict,
+  regime, correlation, swap_analysis und monitoring importiert — private Namen quer durchs
+  Repo. → Statistik in ein eigenes Modul (z.B. `portfolio/stats.py`) ziehen.
+- `backtest/pipeline.py` enthält nur noch `make_extract_fn` — einsortieren (z.B. zu
+  `portfolio/trades.py` oder in die Stage), Datei auflösen.
+- `swap_analysis.py` refresht den Snapshot standardmäßig für MEX_ATLANTIC — sollte
+  `standard_broker()`/TTP sein (Teil der bekannten MEX-Altlast).
+
+### D. Docs-Museum
+
+- `docs/mt5-bridge-plan.md` — der Plan ist vollständig umgesetzt (Bridge läuft live).
+  Löschen; die Git-Historie bewahrt ihn.
+- `docs/roadmap.md` — `[STATUS]`-Marker gegen die Realität prüfen (TTP ist live,
+  Zwei-Konten-Architektur steht); vermutlich stark veraltet.
