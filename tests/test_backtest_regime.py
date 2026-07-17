@@ -2,9 +2,8 @@
 
 import numpy as np
 import pandas as pd
-
-from qplus.backtest.portfolio.curves import DAY_NS
-from qplus.backtest.portfolio.regime import (
+from research.portfolio.curves import DAY_NS
+from research.portfolio.regime import (
     _day_number,
     crisis_table,
     efficiency_ratio,

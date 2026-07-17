@@ -1,8 +1,7 @@
 """Tests for the overfitting statistics (PSR, DSR, PBO)."""
 
 import numpy as np
-
-from qplus.backtest.foundation.overfitting import (
+from research.engine.overfitting import (
     deflated_sharpe_ratio,
     expected_max_sharpe,
     pbo,
@@ -52,7 +51,7 @@ def test_pbo_around_half_for_noise() -> None:
 
 
 def test_variation_pbo_dominant_variation_is_not_overfit() -> None:
-    from qplus.backtest.edge.characterize import variation_pbo
+    from research.engine.characterize import variation_pbo
 
     # Three variations over two (instrument, train) cells; "good" dominates every cell, so the
     # in-sample-best is always best out-of-sample -> PBO 0.
@@ -67,7 +66,7 @@ def test_variation_pbo_dominant_variation_is_not_overfit() -> None:
 
 
 def test_variation_pbo_aligns_over_common_cells_when_one_variation_is_short() -> None:
-    from qplus.backtest.edge.characterize import variation_pbo
+    from research.engine.characterize import variation_pbo
 
     # "partial" only ran on instrument A; the matrix must fall back to the common cell (A) rather
     # than crash on the ragged shape.
@@ -87,7 +86,7 @@ def test_variation_pbo_aligns_over_common_cells_when_one_variation_is_short() ->
 def test_variation_pbo_nan_with_fewer_than_two_variations() -> None:
     import math
 
-    from qplus.backtest.edge.characterize import variation_pbo
+    from research.engine.characterize import variation_pbo
 
     rows = [{"variation": "only", "instrument": "A", "train_months": 36, "window_oos": [0.01] * 10}]
     assert math.isnan(variation_pbo(rows))

@@ -3,8 +3,7 @@
 from pathlib import Path
 
 import pandas as pd
-
-from qplus.monitoring.research import METRICS, latest_study_csv, load_study, variant_ranking
+from monitoring.study_explorer import METRICS, latest_study_csv, load_study, variant_ranking
 
 
 def _study(tmp: Path) -> Path:

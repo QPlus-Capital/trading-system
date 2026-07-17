@@ -2,9 +2,8 @@
 
 import numpy as np
 import pandas as pd
-
-from qplus.backtest.portfolio.factsheet import compute_factsheet, render_terminal
-from qplus.backtest.portfolio.risk import AccountProfile
+from research.portfolio.factsheet import compute_factsheet, render_terminal
+from research.portfolio.risk import AccountProfile
 
 _DAY = 86_400_000_000_000  # ns per day
 _BASE = 20_000  # day number ~ 2024-10

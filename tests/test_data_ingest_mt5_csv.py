@@ -2,10 +2,9 @@
 
 from pathlib import Path
 
+from core.data.mt5_csv import load_mt5_bid_ask_bars, write_mt5_catalog
+from core.instruments import xauusd_ttp
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-
-from qplus.data_ingest.mt5_csv import load_mt5_bid_ask_bars, write_mt5_catalog
-from qplus.instruments import xauusd_ttp
 
 _INSTRUMENT = xauusd_ttp()
 

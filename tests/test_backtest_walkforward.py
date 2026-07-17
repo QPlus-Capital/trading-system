@@ -4,8 +4,7 @@ import math
 from typing import Any
 
 import pandas as pd
-
-from qplus.backtest.edge.walkforward import (
+from research.engine.walkforward import (
     calmar_score,
     normalized_wfe,
     run_walk_forward,

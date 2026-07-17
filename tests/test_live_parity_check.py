@@ -1,8 +1,8 @@
 """Tests for the pure parity-comparison logic (no terminal needed)."""
 
-from qplus.live.mt5_bridge import Bar
-from qplus.live.parity_check import compare
-from qplus.strategies.rsi_wpr_bb_signals import SignalParams
+from core.strategies.rsi_wpr_bb_signals import SignalParams
+from live.mt5_bridge import Bar
+from live.parity_check import compare
 
 _H4 = 4 * 3600
 _T0 = 1_700_000_000 // _H4 * _H4  # aligned to a 4h boundary

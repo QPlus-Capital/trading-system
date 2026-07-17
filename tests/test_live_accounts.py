@@ -1,9 +1,8 @@
 """Tests for the live account identity guard -- the safeguard against trading the wrong account."""
 
 import pytest
-
-from qplus.live.accounts import LiveAccount, get_account, guard_account
-from qplus.live.mt5_bridge import AccountState
+from live.accounts import LiveAccount, get_account, guard_account
+from live.mt5_bridge import AccountState
 
 _TTP = LiveAccount(
     name="ttp", expected_login=123456, expected_currency="USD", start_balance=50_000.0,

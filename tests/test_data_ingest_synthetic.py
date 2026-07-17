@@ -2,11 +2,10 @@
 
 from pathlib import Path
 
+from core.data.synthetic import make_synthetic_bars, write_synthetic_catalog
 from nautilus_trader.model.data import BarType
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
-from qplus.data_ingest.synthetic import make_synthetic_bars, write_synthetic_catalog
 
 _INSTRUMENT = TestInstrumentProvider.audusd_cfd()
 _BAR_TYPE = BarType.from_str("AUDUSD.OANDA-1-DAY-LAST-EXTERNAL")

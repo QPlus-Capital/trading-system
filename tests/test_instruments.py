@@ -1,6 +1,6 @@
 """Tests for the instrument definitions."""
 
-from qplus.instruments import (
+from core.instruments import (
     audusd_ttp,
     de40_ttp,
     eurusd_ttp,

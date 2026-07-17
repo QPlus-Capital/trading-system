@@ -9,11 +9,10 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-
-from qplus.live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
-from qplus.live.risk_control import RiskController, RiskLimits
-from qplus.live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, size_order
-from qplus.strategies.rsi_wpr_bb_signals import SignalParams
+from core.strategies.rsi_wpr_bb_signals import SignalParams
+from live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
+from live.risk_control import RiskController, RiskLimits
+from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, size_order
 
 _T0 = 1_750_000_000  # arbitrary aligned epoch used as the first bar's open time
 

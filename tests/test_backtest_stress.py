@@ -1,9 +1,8 @@
 """Tests for the tail-stress ceiling."""
 
 import pandas as pd
-
-from qplus.backtest.portfolio.curves import DAY_NS
-from qplus.backtest.portfolio.stress import (
+from research.portfolio.curves import DAY_NS
+from research.portfolio.stress import (
     stress_ceiling,
     survives,
     tail_safe_risk,

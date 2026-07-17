@@ -69,21 +69,28 @@ uv run python -c "import nautilus_trader; print(nautilus_trader.__version__)"
 
 ## Everyday commands
 
-| Task                | Command                       |
-| ------------------- | ----------------------------- |
-| Install / update    | `uv sync`                     |
-| Add a dependency    | `uv add <package>`            |
-| Add a dev dependency| `uv add --dev <package>`      |
-| Run a script        | `uv run python <path>`        |
-| Lint                | `uv run ruff check .`         |
-| Format              | `uv run ruff format .`        |
-| Type-check          | `uv run mypy`                 |
-| Tests               | `uv run pytest`               |
-| Single backtest     | `uv run python -m qplus.backtest.config config/backtest/rsi_wpr_bb_xauusd.py` |
-| Robustness study sweep | `uv run python -m qplus.backtest.edge.characterize config/study/robustness.py` |
-| Staged framework (Stages 1–4) | `uv run python -m qplus.backtest.stages.edge --from <study.csv>` (each stage prints the next command) |
-| Equity report / charts | `uv run python -m qplus.backtest.portfolio.equity_report` |
-| Live / paper trading | `uv run python -m qplus.live.run --account ttp` (add `--mode execute` for real orders) |
+**All day-to-day commands live in the [`justfile`](justfile).** Type `just` to see the
+full list. (One-time: install `just` — `winget install --id Casey.Just`.)
+
+| Task | Command |
+| ---- | ------- |
+| List all commands | `just` |
+| Run the backtest pipeline | `just backtest` → `reports/framework/run_*/` (open with `just report`) |
+| Live — real TTP account | `just live-ttp execute` |
+| Live — demo account | `just live-demo execute` |
+| Pre-flight before going live | `just preflight ttp` |
+| Monitoring dashboard | `just monitor` |
+| Quality gates (before every commit) | `just check` (ruff + mypy + pytest) |
+
+Under the hood these are plain `uv run python -m <world>.<module>` calls — the
+`justfile` is just the discoverable front door. The three worlds are `research`,
+`live`, `monitoring`; shared code is in `core`.
+
+| Raw tooling | Command |
+| ----------- | ------- |
+| Install / update | `uv sync` |
+| Add a dependency | `uv add <package>` |
+| Lint / format / type-check / test | `uv run ruff check .` · `uv run ruff format .` · `uv run mypy` · `uv run pytest` |
 
 ## The workflow
 

@@ -3,11 +3,10 @@
 from pathlib import Path
 
 from nautilus_trader.config import BacktestRunConfig
-
-from qplus.backtest.config import load_config_module
+from research.engine.config import load_config_module
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_RECIPE = _REPO_ROOT / "config" / "backtest" / "rsi_wpr_bb_xauusd.py"
+_RECIPE = _REPO_ROOT / "research" / "config" / "rsi_wpr_bb_xauusd.py"
 
 
 def test_recipe_build_run_config_returns_run_config() -> None:

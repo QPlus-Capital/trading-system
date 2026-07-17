@@ -1,8 +1,7 @@
 """Tests for the flat-portfolio equity report's pure logic (R-multiples + accumulation)."""
 
 import pandas as pd
-
-from qplus.backtest.portfolio.equity_report import (
+from research.portfolio.equity_report import (
     _START_BALANCE,
     edge_stats,
     flat_portfolio,
