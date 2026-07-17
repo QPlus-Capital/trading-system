@@ -20,18 +20,12 @@ or point it at another config module::
 
 
 import importlib.util
-import sys
 from pathlib import Path
 from types import ModuleType
 
-from core.paths import REPO_ROOT
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-
-_REPO_ROOT = REPO_ROOT
-_DEFAULT_CONFIG = _REPO_ROOT / "config" / "backtest" / "rsi_wpr_bb_xauusd.py"
 
 
 def run_backtest(run_config: BacktestRunConfig) -> BacktestResult:
@@ -90,39 +84,3 @@ def extract_trade_pnls(run_config: BacktestRunConfig) -> tuple[list[float], floa
         node.dispose()  # type: ignore[no-untyped-call]
     start_equity = _parse_money(run_config.venues[0].starting_balances[0])
     return pnls, start_equity
-
-
-def main(argv: list[str] | None = None) -> None:
-    """CLI entry point: load a config module, ensure data exists, run the backtest."""
-    args = sys.argv[1:] if argv is None else argv
-    path = Path(args[0]) if args else _DEFAULT_CONFIG
-
-    module = load_config_module(path)
-    run_config = module.build_run_config()
-    data_config = run_config.data[0]
-    catalog_dir = Path(data_config.catalog_path)
-
-    # Seed only if this run's instrument is missing (catalogs may hold several).
-    needed = str(data_config.instrument_id)
-    have = (
-        {str(i.id) for i in ParquetDataCatalog(str(catalog_dir)).instruments()}
-        if catalog_dir.exists()
-        else set()
-    )
-    if needed not in have:
-        print(f"Instrument {needed} not in catalog {catalog_dir} -> seeding ...")
-        count = module.seed_catalog()
-        print(f"Wrote {count} bars.")
-
-    result = run_backtest(run_config)
-
-    print("\n===== Backtest result =====")
-    print(f"config:          {path}")
-    print(f"total orders:    {result.total_orders}")
-    print(f"total positions: {result.total_positions}")
-    for ccy, stats in result.stats_pnls.items():
-        print(f"PnL [{ccy}]:      {stats.get('PnL (total)')}  ({stats.get('PnL% (total)')}%)")
-
-
-if __name__ == "__main__":
-    main()
