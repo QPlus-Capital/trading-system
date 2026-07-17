@@ -46,6 +46,34 @@ timeframe-neutral; the current instance is one detail of configuration, not a co
   is left behind. `tests/test_docs_architecture_map.py` enforces that the map stays honest.
   See [AGENTS.md](AGENTS.md) for the full reviewer checklist (shared with Codex).
 
+## Development workflow — the standard for larger changes
+
+Bundle related work into a coherent theme, then run it through this loop (this is the default
+for any feature/refactor of more than trivial size; small self-contained fixes may still go
+straight to `main` when it clearly makes sense):
+
+1. **Claude implements on a feature branch** — never commit a larger feature straight to `main`;
+   keep `just check` green throughout.
+2. **Claude opens the PR** (`gh pr create`) when the theme is done — proactively, without being asked.
+3. **CI + Codex review run automatically** on the PR (CI = ruff / mypy / pytest / vulture;
+   Codex = the independent reviewer, per [AGENTS.md](AGENTS.md)).
+4. **Claude drives the review loop via `gh`** (`gh pr view --comments`, `gh api .../pulls/N/reviews`
+   and `/comments`): read Codex's findings **directly** — never make Jan copy-paste them — then
+   triage: fix the valid ones and push, dismiss the wrong ones with a one-line reason. Surface to
+   Jan **only** genuine decision topics (a design / logic / methodology choice, or anything on the
+   live money path where a *choice* — not just an obvious bug fix — is needed). A valid issue
+   that is outside the theme's scope → open a GitHub issue rather than widen the PR.
+5. **Merge** once CI is green, Codex's findings are resolved, and Jan approves.
+
+**Roles:** Claude = builder/fixer **and** PR driver; Codex = independent reviewer (correctness,
+methodology, security, the money path); Jan = decides the judgment calls and approves the merge,
+otherwise stays out of the loop. Codex reads AGENTS.md on every review, so its role is
+self-documented; Claude drives everything else.
+
+**Live merges need a quiet window:** the running MT5 runners hold the old code in memory. Merge
++ `uv sync` + restart the runners only when they are **stopped** — and never start a second runner
+on an account that already has one (double orders on real money).
+
 ## Backtest vs. live
 
 A strategy is **one class** in `core/strategies/`, run with either a backtest or
