@@ -243,7 +243,7 @@ now guarded by tests — check these first when a number looks too good:
 |---|---|---|
 | 0 Hypothesis | *(doc / config)* | ⚠️ make explicit per strategy |
 | 1 Signal + costs | `core/strategies`, `core/broker`, `engine/recipe`, `core/data` | ✅ |
-| 2 Edge & robustness | `engine/` walk-forward, `engine/overfitting` (DSR/PBO + trial budget) | ✅ compute; ⚠️ DSR/PBO not yet surfaced in the `stages/` CLI |
+| 2 Edge & robustness | `engine/` walk-forward, `engine/overfitting` (DSR/PBO + trial budget) | ✅ DSR/PBO computed and surfaced in Stage 1 (`stages/edge`) |
 | 3 Selection | `stages/universe`, `stages/edge`, `stages/select` | ✅ |
 | 4 Holdout | `portfolio/trades` (phase="holdout"), `stages/portfolio` | ✅ |
 | 5 Sizing | `portfolio/risk` (tail cap, `rck_fraction`/`KellyRisk`, policies), `portfolio/tail`, `portfolio/stress` | ✅ gap tail cap + risk-constrained Kelly (`kelly:beta`), sized on the full-history stream; the drawdown bound is Monte-Carlo-verified |

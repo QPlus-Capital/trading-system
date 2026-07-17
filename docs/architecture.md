@@ -264,9 +264,8 @@ flowchart TD
   what makes backtest/live parity possible. Only the thin wrapper touches Nautilus;
   only the bridge touches MT5.
 - The portfolio math never talks to an engine — stages pass it DataFrames.
-- The live **runner** imports only the shared core (`core/…`), never `research/`. The standalone
-  live diagnostic `parity_check` additionally loads a research config module by path — it is an
-  ops tool, not part of the trading loop.
+- Live imports from `research/` only the generic `load_config_module` helper (a by-path module
+  loader) to read its own config; it never touches the research engine or portfolio math.
 
 ---
 

@@ -29,7 +29,6 @@ from research.engine.config import run_backtest
 Factory = Callable[[dict[str, Any]], BacktestRunConfig]
 Runner = Callable[[BacktestRunConfig], BacktestResult]
 
-_MIN_TRADES = 30  # ignore combinations with too few trades when ranking
 
 
 def expand_grid(grid: Mapping[str, Sequence[Any]]) -> list[dict[str, Any]]:
@@ -80,9 +79,3 @@ def run_sweep(
     return pd.DataFrame(rows)
 
 
-def _rank(df: pd.DataFrame) -> pd.DataFrame:
-    """Rank combinations: enough trades first, then by profit factor."""
-    eligible = df[df["trades"] >= _MIN_TRADES]
-    if eligible.empty:
-        return df.sort_values("pnl", ascending=False)
-    return eligible.sort_values("profit_factor", ascending=False)
