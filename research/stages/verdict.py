@@ -13,7 +13,7 @@ flat vs compound, so the numbers never mix the two sizings.
 
 Usage::
 
-    uv run python -m research.stages.verdict --run reports/framework/run_XXXX
+    uv run python -m research.stages.verdict --run reports/research/run_XXXX
 """
 
 from __future__ import annotations

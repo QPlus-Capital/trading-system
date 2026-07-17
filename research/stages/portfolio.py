@@ -17,7 +17,7 @@ the slow extraction. This stage is the heavy one (walk-forward backtests over th
 
 Usage::
 
-    uv run python -m research.stages.portfolio --run reports/framework/run_X --risk flat:0.15
+    uv run python -m research.stages.portfolio --run reports/research/run_X --risk flat:0.15
 """
 
 from __future__ import annotations

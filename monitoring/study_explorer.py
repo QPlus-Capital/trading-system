@@ -1,6 +1,6 @@
 """Research-explorer data: slice + aggregate the study results for the dashboard's research view.
 
-The study (``reports/study/<run>/study.csv``) is one row per (instrument x variation x
+The study (``reports/research/study_<ts>/study.csv``) is one row per (instrument x variation x
 train_months) with the walk-forward metrics. These pure helpers pick the latest study, drop
 failed tasks, and build the two views the explorer renders: a variation x instrument heatmap
 of a chosen metric, and a variation ranking averaged across markets.
@@ -24,8 +24,8 @@ METRICS: dict[str, tuple[str, float | None, bool]] = {
 
 
 def latest_study_csv(reports_dir: str | Path) -> Path | None:
-    """Path of the most recent ``study.csv`` under ``reports/study/`` (timestamped run folders)."""
-    cands = sorted(Path(reports_dir).glob("study/*/study.csv"))
+    """Path of the most recent ``study.csv`` under ``reports/research/study_*`` (timestamped)."""
+    cands = sorted(Path(reports_dir).glob("research/study_*/study.csv"))
     return cands[-1] if cands else None
 
 
