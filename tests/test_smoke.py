@@ -1,7 +1,14 @@
-"""Smoke tests verifying the package is importable and wired up correctly."""
+"""Smoke test: the four top-level packages import cleanly and the repo root resolves."""
 
-import qplus
+import importlib
 
 
-def test_package_imports() -> None:
-    assert qplus.__version__
+def test_worlds_import() -> None:
+    for pkg in ("core", "research", "live", "monitoring"):
+        assert importlib.import_module(pkg) is not None
+
+
+def test_repo_root_resolves() -> None:
+    from core.paths import REPO_ROOT
+
+    assert (REPO_ROOT / "pyproject.toml").is_file()

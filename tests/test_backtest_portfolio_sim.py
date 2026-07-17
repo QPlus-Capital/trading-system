@@ -2,8 +2,7 @@
 
 import numpy as np
 import pandas as pd
-
-from qplus.backtest.portfolio.curves import (
+from research.portfolio.curves import (
     DAY_NS,
     align_prices,
     base_curves,

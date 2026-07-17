@@ -1,9 +1,8 @@
 """Tests for the pure swap-cost logic (night counting + per-night pricing)."""
 
 import pandas as pd
-
-from qplus.backtest.broker import SwapSpec, night_units, swap_per_lot_night
-from qplus.backtest.portfolio.swap_analysis import market_swaps
+from core.broker import SwapSpec, night_units, swap_per_lot_night
+from research.portfolio.swap_analysis import market_swaps
 
 _WED = 2  # python weekday for Wednesday
 

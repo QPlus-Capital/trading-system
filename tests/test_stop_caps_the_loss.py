@@ -22,6 +22,9 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from core.data.synthetic import write_synthetic_catalog
+from core.instruments import eurusd_ttp, us30_ttp
+from core.strategies.rsi_wpr_bb import exit_prices, risk_quantity
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.config import (
     BacktestDataConfig,
@@ -34,10 +37,6 @@ from nautilus_trader.config import (
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
-from qplus.data_ingest.synthetic import write_synthetic_catalog
-from qplus.instruments import eurusd_ttp, us30_ttp
-from qplus.strategies.rsi_wpr_bb import exit_prices, risk_quantity
 
 _INSTRUMENT = TestInstrumentProvider.audusd_cfd()
 _BAR_TYPE = BarType.from_str("AUDUSD.OANDA-4-HOUR-LAST-EXTERNAL")
@@ -114,8 +113,8 @@ def _run(tmp_path: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
         engine=BacktestEngineConfig(
             strategies=[
                 ImportableStrategyConfig(
-                    strategy_path="qplus.strategies.rsi_wpr_bb:RsiWprBb",
-                    config_path="qplus.strategies.rsi_wpr_bb:RsiWprBbConfig",
+                    strategy_path="core.strategies.rsi_wpr_bb:RsiWprBb",
+                    config_path="core.strategies.rsi_wpr_bb:RsiWprBbConfig",
                     config={
                         "instrument_id": str(_INSTRUMENT.id),
                         "bar_type": str(_BAR_TYPE),

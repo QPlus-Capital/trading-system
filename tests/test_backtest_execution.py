@@ -4,8 +4,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-
-from qplus.backtest.foundation import execution
+from research.engine import execution
 
 
 class _FakeTrader:

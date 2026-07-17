@@ -2,13 +2,12 @@
 
 import numpy as np
 import pandas as pd
-
-from qplus.backtest.portfolio.correlation import (
+from research.portfolio.correlation import (
     concurrency_summary,
     daily_exposure,
     effective_bets,
 )
-from qplus.backtest.portfolio.curves import DAY_NS
+from research.portfolio.curves import DAY_NS
 
 
 def test_effective_bets_uncorrelated_equals_n() -> None:

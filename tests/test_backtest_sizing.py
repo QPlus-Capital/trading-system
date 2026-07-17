@@ -4,9 +4,8 @@ import math
 
 import numpy as np
 import pandas as pd
-
-from qplus.backtest.portfolio.curves import base_curves
-from qplus.backtest.portfolio.sizing import flat, simulate, throttle
+from research.portfolio.curves import base_curves
+from research.portfolio.sizing import flat, simulate, throttle
 
 _TRADES = pd.DataFrame(
     {

@@ -2,7 +2,7 @@
 
 import math
 
-from qplus.backtest.portfolio.drawdown import daily_breach, evaluate, trailing_floor
+from research.portfolio.drawdown import daily_breach, evaluate, trailing_floor
 
 
 def test_daily_breach() -> None:

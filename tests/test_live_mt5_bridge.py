@@ -1,6 +1,6 @@
 """Tests for the pure parts of the MT5 bridge (symbol mapping). No terminal required."""
 
-from qplus.live.mt5_bridge import base_symbol, match_terminal_symbol
+from live.mt5_bridge import base_symbol, match_terminal_symbol
 
 
 def test_base_symbol_maps_ustec_to_broker_name() -> None:

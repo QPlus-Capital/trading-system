@@ -1,8 +1,7 @@
 """Tests for universe selection + global structure (return-first, risk-gated)."""
 
 import pandas as pd
-
-from qplus.backtest.select.universe import select, select_structure, select_universe
+from research.stages.universe import select, select_structure, select_universe
 
 
 def _df() -> pd.DataFrame:

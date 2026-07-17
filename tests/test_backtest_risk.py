@@ -5,9 +5,8 @@ import math
 import numpy as np
 import pandas as pd
 import pytest
-
-from qplus.backtest.portfolio.curves import DAY_NS
-from qplus.backtest.portfolio.risk import (
+from research.portfolio.curves import DAY_NS
+from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
     KellyRisk,
@@ -17,7 +16,7 @@ from qplus.backtest.portfolio.risk import (
     rck_fraction,
     tail_cap,
 )
-from qplus.backtest.portfolio.trades import assign_r
+from research.portfolio.trades import assign_r
 
 
 def _trades() -> pd.DataFrame:

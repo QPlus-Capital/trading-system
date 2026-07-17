@@ -1,8 +1,7 @@
 """Tests for the Monte-Carlo helpers (pure NumPy, no backtests)."""
 
 import numpy as np
-
-from qplus.backtest.foundation.montecarlo import (
+from research.engine.montecarlo import (
     equity_curve,
     max_drawdown,
     monte_carlo_paths,

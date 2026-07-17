@@ -6,6 +6,7 @@ merely trades through the stop fills at the trigger (no false gap penalty). This
 NautilusTrader behaviour -- this test guards it against silent changes on upgrade.
 """
 
+from core.instruments import us30_ttp
 from nautilus_trader.backtest.engine import BacktestEngine, BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
 from nautilus_trader.config import LoggingConfig
@@ -15,8 +16,6 @@ from nautilus_trader.model.enums import AccountType, OmsType, OrderSide
 from nautilus_trader.model.identifiers import TraderId, Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.trading.strategy import Strategy, StrategyConfig
-
-from qplus.instruments import us30_ttp
 
 _INSTR = us30_ttp()
 _BAR_TYPE = BarType.from_str(f"{_INSTR.id}-1-HOUR-LAST-EXTERNAL")

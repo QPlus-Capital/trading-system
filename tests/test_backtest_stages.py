@@ -5,16 +5,15 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
-from qplus.backtest.portfolio.risk import FlatRisk, ThrottleRisk
-from qplus.backtest.stages import _runbook as rb
-from qplus.backtest.stages.portfolio import parse_risk
+from research.portfolio.risk import FlatRisk, ThrottleRisk
+from research.stages import _runbook as rb
+from research.stages.portfolio import parse_risk
 
 
 def test_all_stage_modules_import() -> None:
     # Importing every stage catches wiring/typo errors without running the slow compute.
     for mod in ("edge", "select", "portfolio", "verdict"):
-        assert importlib.import_module(f"qplus.backtest.stages.{mod}")
+        assert importlib.import_module(f"research.stages.{mod}")
 
 
 def test_parse_risk_flat_and_throttle() -> None:
@@ -25,7 +24,7 @@ def test_parse_risk_flat_and_throttle() -> None:
 
 
 def test_parse_risk_kelly() -> None:
-    from qplus.backtest.portfolio.risk import KellyRisk
+    from research.portfolio.risk import KellyRisk
 
     assert parse_risk("kelly:0.05") == KellyRisk(beta=0.05)
     assert parse_risk("kelly") == KellyRisk(beta=0.05)  # default tolerance
@@ -34,10 +33,10 @@ def test_parse_risk_kelly() -> None:
 def test_live_fixed_stops_reads_per_market_sltp() -> None:
     from pathlib import Path
 
-    from qplus.backtest.stages.portfolio import live_fixed_stops
+    from research.stages.portfolio import live_fixed_stops
 
     repo_root = Path(__file__).resolve().parents[1]
-    stops = live_fixed_stops(repo_root / "config" / "live" / "paper_rsi_wpr_bb.py")
+    stops = live_fixed_stops(repo_root / "live" / "config" / "paper_rsi_wpr_bb.py")
     assert stops  # non-empty
     for market, sltp in stops.items():
         assert isinstance(market, str)
@@ -54,7 +53,7 @@ def test_rundir_roundtrip_and_missing_artifact(tmp_path: Path) -> None:
 
 
 def test_edge_ranking_is_return_sorted_and_gated() -> None:
-    from qplus.backtest.stages.edge import ranking
+    from research.stages.edge import ranking
 
     df = pd.DataFrame(
         {
@@ -72,7 +71,7 @@ def test_edge_ranking_is_return_sorted_and_gated() -> None:
 
 
 def test_edge_ranking_dsr_gate_excludes_low_dsr() -> None:
-    from qplus.backtest.stages.edge import ranking
+    from research.stages.edge import ranking
 
     df = pd.DataFrame(
         {
@@ -92,7 +91,7 @@ def test_edge_ranking_dsr_gate_excludes_low_dsr() -> None:
 
 
 def test_edge_ranking_unknown_dsr_does_not_gate_out() -> None:
-    from qplus.backtest.stages.edge import ranking
+    from research.stages.edge import ranking
 
     df = pd.DataFrame(
         {
@@ -109,7 +108,7 @@ def test_edge_ranking_unknown_dsr_does_not_gate_out() -> None:
 
 
 def test_load_overfitting_reads_ranking_and_pbo(tmp_path: Path) -> None:
-    from qplus.backtest.stages.edge import load_overfitting
+    from research.stages.edge import load_overfitting
 
     pd.DataFrame({"variation": ["a", "b"], "dsr": [1.0, 0.4]}).to_csv(
         tmp_path / "ranking.csv", index=False
@@ -121,7 +120,7 @@ def test_load_overfitting_reads_ranking_and_pbo(tmp_path: Path) -> None:
 
 
 def test_load_overfitting_missing_artifacts_returns_empty(tmp_path: Path) -> None:
-    from qplus.backtest.stages.edge import load_overfitting
+    from research.stages.edge import load_overfitting
 
     dsr, pbo = load_overfitting(tmp_path)
     assert dsr == {} and pbo is None

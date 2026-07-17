@@ -3,9 +3,10 @@
 from pathlib import Path
 from typing import cast
 
-from qplus.live.mt5_bridge import Mt5Bridge, Position, Side, SymbolInfo
-from qplus.live.risk_control import RiskController, RiskLimits
-from qplus.live.runner import (
+from core.strategies.rsi_wpr_bb_signals import SignalParams
+from live.mt5_bridge import Mt5Bridge, Position, Side, SymbolInfo
+from live.risk_control import RiskController, RiskLimits
+from live.runner import (
     LiveRunner,
     exit_prices,
     long_only_from_paper_config,
@@ -15,7 +16,6 @@ from qplus.live.runner import (
     signal_params_from_paper_config,
     size_order,
 )
-from qplus.strategies.rsi_wpr_bb_signals import SignalParams
 
 # A gold-like symbol: 0.01 tick, $1 per tick per lot, 0.01..100 lots.
 _GOLD = SymbolInfo(
@@ -36,9 +36,8 @@ def test_live_and_backtest_place_their_exits_at_identical_prices() -> None:
     They are separate code paths (a NautilusTrader strategy and an MT5 runner), so nothing but a
     test stops them drifting apart -- and a drift here silently changes the risk per trade.
     """
+    from core.strategies.rsi_wpr_bb import exit_prices as backtest_exit_prices
     from nautilus_trader.model.enums import OrderSide
-
-    from qplus.strategies.rsi_wpr_bb import exit_prices as backtest_exit_prices
 
     sides: list[tuple[Side, OrderSide]] = [("BUY", OrderSide.BUY), ("SELL", OrderSide.SELL)]
     for side, order_side in sides:

@@ -1,6 +1,6 @@
 """Tests for the live risk-control layer (safety-critical)."""
 
-from qplus.live.risk_control import RiskController, RiskLimits, position_volume
+from live.risk_control import RiskController, RiskLimits, position_volume
 
 
 def test_position_volume_sizes_to_risk() -> None:

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from qplus.live.notify import Notifier
+from live.notify import Notifier
 
 
 def test_signal_and_alert_append_to_the_signals_file(tmp_path: Path) -> None:

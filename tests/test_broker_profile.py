@@ -3,8 +3,7 @@
 from pathlib import Path
 
 import pandas as pd
-
-from qplus.backtest.broker import (
+from core.broker import (
     FRICTIONLESS,
     MEX_ATLANTIC,
     BrokerProfile,
@@ -48,16 +47,16 @@ def test_profile_is_frozen() -> None:
 
 def test_recipe_default_venue_is_frictionless() -> None:
     # Default recipe (no broker) must carry no fill model -> baseline unchanged.
-    from qplus.backtest.foundation.recipe import SweepRecipe
-    from qplus.instruments import xauusd_ttp
+    from core.instruments import xauusd_ttp
+    from research.engine.recipe import SweepRecipe
 
     recipe = SweepRecipe(xauusd_ttp(), "data/dummy.csv", leverage=100)
     assert recipe.VENUE.fill_model is None
 
 
 def test_recipe_with_broker_wires_the_fill_model() -> None:
-    from qplus.backtest.foundation.recipe import SweepRecipe
-    from qplus.instruments import xauusd_ttp
+    from core.instruments import xauusd_ttp
+    from research.engine.recipe import SweepRecipe
 
     recipe = SweepRecipe(xauusd_ttp(), "data/dummy.csv", leverage=100, broker=MEX_ATLANTIC)
     assert recipe.VENUE.fill_model is not None
@@ -111,8 +110,8 @@ def test_swap_r_per_trade_matches_hand_calc() -> None:
 def test_instrument_spec_drives_commission_and_is_swappable() -> None:
     from decimal import Decimal
 
-    from qplus.backtest.broker import TTP_MARKETS, InstrumentSpec
-    from qplus.instruments import xauusd_ttp
+    from core.broker import TTP_MARKETS, InstrumentSpec
+    from core.instruments import xauusd_ttp
 
     # Default profile reproduces the historical gold commission/margin (baseline preserved).
     assert xauusd_ttp().maker_fee == Decimal("0.000007")
@@ -128,9 +127,8 @@ def test_instrument_spec_drives_commission_and_is_swappable() -> None:
 
 def test_instrument_spec_missing_fails_fast() -> None:
     import pytest
-
-    from qplus.backtest.broker import FRICTIONLESS
-    from qplus.instruments import xauusd_ttp
+    from core.broker import FRICTIONLESS
+    from core.instruments import xauusd_ttp
 
     empty = FRICTIONLESS.with_instruments({})
     with pytest.raises(KeyError, match="no instrument spec for 'XAUUSD'"):

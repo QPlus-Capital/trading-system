@@ -3,6 +3,8 @@
 import math
 from pathlib import Path
 
+from core.data.synthetic import write_synthetic_catalog
+from core.strategies.rsi_wpr_bb_signals import bollinger, williams_r
 from nautilus_trader.config import (
     BacktestDataConfig,
     BacktestEngineConfig,
@@ -13,10 +15,7 @@ from nautilus_trader.config import (
 )
 from nautilus_trader.model.data import BarType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-
-from qplus.backtest.config import run_backtest
-from qplus.data_ingest.synthetic import write_synthetic_catalog
-from qplus.strategies.rsi_wpr_bb_signals import bollinger, williams_r
+from research.engine.config import run_backtest
 
 _INSTRUMENT = TestInstrumentProvider.audusd_cfd()
 _BAR_TYPE = BarType.from_str("AUDUSD.OANDA-4-HOUR-LAST-EXTERNAL")
@@ -47,7 +46,7 @@ def test_bollinger_matches_manual_calculation() -> None:
 
 
 def test_signal_engine_warms_up_and_resets() -> None:
-    from qplus.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
+    from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
     engine = RsiWprBbSignals(SignalParams())
     for i in range(60):  # feed enough bars to warm up
@@ -84,8 +83,8 @@ def test_backtest_runs_end_to_end(tmp_path: Path) -> None:
         engine=BacktestEngineConfig(
             strategies=[
                 ImportableStrategyConfig(
-                    strategy_path="qplus.strategies.rsi_wpr_bb:RsiWprBb",
-                    config_path="qplus.strategies.rsi_wpr_bb:RsiWprBbConfig",
+                    strategy_path="core.strategies.rsi_wpr_bb:RsiWprBb",
+                    config_path="core.strategies.rsi_wpr_bb:RsiWprBbConfig",
                     config={
                         "instrument_id": str(_INSTRUMENT.id),
                         "bar_type": str(_BAR_TYPE),
