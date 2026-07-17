@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync
+      - name: Lint (ruff)
+        run: uv run ruff check .
+      - name: Type-check (mypy)
+        run: uv run mypy
+      - name: Tests (pytest)
+        run: uv run pytest -q
+      - name: Dead code (vulture)
+        run: uvx vulture core research live monitoring --min-confidence 80
