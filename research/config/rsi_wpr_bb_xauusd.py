@@ -14,7 +14,7 @@ contain XAUUSD, the runner imports it via ``seed_catalog()``.
 from pathlib import Path
 
 from core.data.mt5_csv import write_mt5_catalog
-from core.instruments import xauusd_ttp
+from core.instruments import xauusd
 from nautilus_trader.config import (
     BacktestDataConfig,
     BacktestEngineConfig,
@@ -25,7 +25,7 @@ from nautilus_trader.config import (
 )
 from nautilus_trader.model.data import BarType
 
-INSTRUMENT = xauusd_ttp()
+INSTRUMENT = xauusd()
 BAR_SPEC = "4-HOUR"
 # The strategy trades on the BID series; the ASK series only feeds realistic fills.
 BID_BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-{BAR_SPEC}-BID-EXTERNAL")

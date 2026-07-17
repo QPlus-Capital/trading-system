@@ -1,28 +1,28 @@
 """Tests for the instrument definitions."""
 
 from core.instruments import (
-    audusd_ttp,
-    de40_ttp,
-    eurusd_ttp,
-    gbpusd_ttp,
-    us30_ttp,
-    us500_ttp,
-    usdcad_ttp,
-    usdchf_ttp,
-    usdjpy_ttp,
-    ustec_ttp,
-    xagusd_ttp,
-    xauusd_ttp,
+    audusd,
+    de40,
+    eurusd,
+    gbpusd,
+    us30,
+    us500,
+    usdcad,
+    usdchf,
+    usdjpy,
+    ustec,
+    xagusd,
+    xauusd,
 )
 
 
 def test_fx_instruments() -> None:
     for factory, symbol in [
-        (eurusd_ttp, "EURUSD"),
-        (gbpusd_ttp, "GBPUSD"),
-        (audusd_ttp, "AUDUSD"),
-        (usdchf_ttp, "USDCHF"),
-        (usdcad_ttp, "USDCAD"),
+        (eurusd, "EURUSD"),
+        (gbpusd, "GBPUSD"),
+        (audusd, "AUDUSD"),
+        (usdchf, "USDCHF"),
+        (usdcad, "USDCAD"),
     ]:
         inst = factory()
         assert str(inst.id) == f"{symbol}.TTP"
@@ -32,14 +32,14 @@ def test_fx_instruments() -> None:
 
 
 def test_usdjpy_has_three_decimals() -> None:
-    jpy = usdjpy_ttp()
+    jpy = usdjpy()
     assert str(jpy.id) == "USDJPY.TTP"
     assert jpy.price_precision == 3  # JPY pairs quote with 3 decimals
     assert str(jpy.price_increment) == "0.001"
 
 
 def test_silver_instrument() -> None:
-    silver = xagusd_ttp()
+    silver = xagusd()
     assert str(silver.id) == "XAGUSD.TTP"
     assert silver.price_precision == 3
     assert silver.lot_size == 5_000  # 1 lot = 5000 oz
@@ -47,16 +47,16 @@ def test_silver_instrument() -> None:
 
 
 def test_index_instruments() -> None:
-    us30 = us30_ttp()
-    assert str(us30.id) == "US30.TTP"
-    assert us30.price_precision == 2
-    assert us30.taker_fee == 0  # indices: cost is in the spread, no commission
+    us30_inst = us30()
+    assert str(us30_inst.id) == "US30.TTP"
+    assert us30_inst.price_precision == 2
+    assert us30_inst.taker_fee == 0  # indices: cost is in the spread, no commission
 
-    de40 = de40_ttp()
-    assert str(de40.id) == "DE40.TTP"
-    assert de40.size_precision == 1  # volume step 0.1
+    de40_inst = de40()
+    assert str(de40_inst.id) == "DE40.TTP"
+    assert de40_inst.size_precision == 1  # volume step 0.1
 
-    for factory, symbol in [(us500_ttp, "US500"), (ustec_ttp, "USTEC")]:
+    for factory, symbol in [(us500, "US500"), (ustec, "USTEC")]:
         idx = factory()
         assert str(idx.id) == f"{symbol}.TTP"
         assert idx.price_precision == 2
@@ -65,6 +65,6 @@ def test_index_instruments() -> None:
 
 
 def test_gold_instrument_unchanged() -> None:
-    gold = xauusd_ttp()
+    gold = xauusd()
     assert str(gold.id) == "XAUUSD.TTP"
     assert gold.price_precision == 2

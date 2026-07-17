@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from core.data.mt5_csv import write_mt5_catalog
-from core.instruments import xauusd_ttp
+from core.instruments import xauusd
 from nautilus_trader.config import (
     BacktestDataConfig,
     BacktestEngineConfig,
@@ -24,7 +24,7 @@ from nautilus_trader.config import (
 )
 from nautilus_trader.model.data import BarType
 
-INSTRUMENT = xauusd_ttp()
+INSTRUMENT = xauusd()
 BAR_SPEC = "4-HOUR"
 BID_BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-{BAR_SPEC}-BID-EXTERNAL")
 ASK_BAR_TYPE = BarType.from_str(f"{INSTRUMENT.id}-{BAR_SPEC}-ASK-EXTERNAL")

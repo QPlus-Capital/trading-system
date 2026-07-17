@@ -15,16 +15,16 @@ runner (live.run) reads it and enforces the drawdown limits -- see the note at t
 from typing import Any
 
 from core.instruments import (
-    audusd_ttp,
-    de40_ttp,
-    eurusd_ttp,
-    gbpusd_ttp,
-    us30_ttp,
-    us500_ttp,
-    usdjpy_ttp,
-    ustec_ttp,
-    xagusd_ttp,
-    xauusd_ttp,
+    audusd,
+    de40,
+    eurusd,
+    gbpusd,
+    us30,
+    us500,
+    usdjpy,
+    ustec,
+    xagusd,
+    xauusd,
 )
 
 # Flat risk per trade -- the SINGLE source of truth (the live runner builds RiskLimits from this).
@@ -49,20 +49,20 @@ STRATEGY_SWITCHES: dict[str, Any] = {
 
 # (factory, csv, leverage, stop_loss_pct, take_profit_pct). SL/TP fit on the last 36 months.
 MARKETS: list[tuple[Any, str, float, float, float]] = [
-    (xauusd_ttp, "data/XAUUSD_H4.csv", 10.0, 1.0, 3.0),
+    (xauusd, "data/XAUUSD_H4.csv", 10.0, 1.0, 3.0),
     # Silver: the 36m Calmar fit favours a tight 0.3% stop, but over the FULL history silver gaps
     # through it for up to -10.2R -- the fattest tail in the book. A 0.5%/2.0 stop halves that gap
     # (-6.1R, safely below the rest of the book) at ~similar full-history mean-R, so silver never
     # drives the portfolio tail. Robustness chosen over ~5pp of headline return.
-    (xagusd_ttp, "data/XAGUSD_H4.csv", 10.0, 0.5, 2.0),
-    (eurusd_ttp, "data/EURUSD_H4.csv", 50.0, 0.5, 3.0),
-    (gbpusd_ttp, "data/GBPUSD_H4.csv", 50.0, 0.5, 1.0),
-    (audusd_ttp, "data/AUDUSD_H4.csv", 50.0, 0.5, 2.0),
-    (usdjpy_ttp, "data/USDJPY_H4.csv", 50.0, 0.5, 1.0),
-    (us30_ttp, "data/US30_H4.csv", 15.0, 0.5, 3.0),
-    (de40_ttp, "data/DE40_H4.csv", 15.0, 1.5, 2.0),
-    (us500_ttp, "data/US500_H4.csv", 15.0, 1.0, 3.0),
-    (ustec_ttp, "data/USTEC_H4.csv", 15.0, 1.0, 4.0),
+    (xagusd, "data/XAGUSD_H4.csv", 10.0, 0.5, 2.0),
+    (eurusd, "data/EURUSD_H4.csv", 50.0, 0.5, 3.0),
+    (gbpusd, "data/GBPUSD_H4.csv", 50.0, 0.5, 1.0),
+    (audusd, "data/AUDUSD_H4.csv", 50.0, 0.5, 2.0),
+    (usdjpy, "data/USDJPY_H4.csv", 50.0, 0.5, 1.0),
+    (us30, "data/US30_H4.csv", 15.0, 0.5, 3.0),
+    (de40, "data/DE40_H4.csv", 15.0, 1.5, 2.0),
+    (us500, "data/US500_H4.csv", 15.0, 1.0, 3.0),
+    (ustec, "data/USTEC_H4.csv", 15.0, 1.0, 4.0),
 ]
 
 

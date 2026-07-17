@@ -20,7 +20,7 @@ from core.broker import TTP_MARKETS, BrokerProfile
 TTP_VENUE = "TTP"
 
 
-def xauusd_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def xauusd(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """Gold vs US Dollar CFD as offered on The Trading Pit's MT5 (XAUUSD).
 
     Specs mirror the broker's symbol specification: 2 price decimals, 0.01 tick,
@@ -80,37 +80,37 @@ def _fx_cfd(
     )
 
 
-def eurusd_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def eurusd(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """Euro vs US Dollar CFD (EURUSD)."""
     return _fx_cfd("EURUSD", EUR, profile=profile)
 
 
-def gbpusd_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def gbpusd(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """British Pound vs US Dollar CFD (GBPUSD)."""
     return _fx_cfd("GBPUSD", GBP, profile=profile)
 
 
-def audusd_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def audusd(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """Australian Dollar vs US Dollar CFD (AUDUSD); USD-quoted (clean)."""
     return _fx_cfd("AUDUSD", AUD, profile=profile)
 
 
-def usdchf_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def usdchf(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """US Dollar vs Swiss Franc CFD (USDCHF); CHF-settled, modelled USD-quoted (see note)."""
     return _fx_cfd("USDCHF", CHF, profile=profile)
 
 
-def usdjpy_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def usdjpy(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """US Dollar vs Japanese Yen CFD (USDJPY); 3 decimals, JPY-settled (see note)."""
     return _fx_cfd("USDJPY", JPY, price_precision=3, profile=profile)
 
 
-def usdcad_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def usdcad(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """US Dollar vs Canadian Dollar CFD (USDCAD); CAD-settled, modelled USD-quoted (see note)."""
     return _fx_cfd("USDCAD", CAD, profile=profile)
 
 
-def xagusd_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def xagusd(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """Silver vs US Dollar CFD (XAGUSD).
 
     3 price decimals, 0.001 tick, contract size 5000 (1 lot = 5000 oz), USD-quoted.
@@ -165,21 +165,21 @@ def _index_cfd(symbol: str, size_increment: str, *, profile: BrokerProfile = TTP
     )
 
 
-def us30_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def us30(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """US 30 (Dow Jones) index CFD (US30), volume step 0.01."""
     return _index_cfd("US30", "0.01", profile=profile)
 
 
-def de40_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def de40(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """Germany 40 (DAX) index CFD (DE40), volume step 0.1; EUR-settled (see note)."""
     return _index_cfd("DE40", "0.1", profile=profile)
 
 
-def ustec_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def ustec(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """US 100 (Nasdaq 100) index CFD (USTEC), volume step 0.01."""
     return _index_cfd("USTEC", "0.01", profile=profile)
 
 
-def us500_ttp(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
+def us500(profile: BrokerProfile = TTP_MARKETS) -> Cfd:
     """US 500 (S&P 500) index CFD (US500), volume step 0.01."""
     return _index_cfd("US500", "0.01", profile=profile)
