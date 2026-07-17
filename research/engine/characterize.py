@@ -28,8 +28,8 @@ A study config module must define ``INSTRUMENTS`` (list of ``(factory, csv, leve
 
 Usage (append a number to limit windows for a quick test)::
 
-    uv run python -m research.engine.characterize config/study/robustness.py
-    uv run python -m research.engine.characterize config/study/robustness.py 1
+    uv run python -m research.engine.characterize research/config/robustness.py
+    uv run python -m research.engine.characterize research/config/robustness.py 1
 """
 
 
