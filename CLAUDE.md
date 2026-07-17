@@ -27,8 +27,8 @@ timeframe-neutral; the current instance is one detail of configuration, not a co
   the repo is not.)
 - **Tests:** Write tests automatically wherever they add value, without being asked.
   Use `pytest`; tests live in `tests/`.
-- **Types & lint:** Keep code passing `ruff` and `mypy` (strict). Run them before
-  considering a change done.
+- **Gates:** a change is not done until **`just check`** is green — `ruff` + `mypy`
+  (strict) + `pytest` + `vulture`. CI runs the same on every PR (see `.github/workflows/ci.yml`).
 - **Money & prices:** Never use `float` for prices, quantities, or money — use
   `Decimal` (or NautilusTrader's `Price`/`Quantity`/`Money` types). Floating-point
   rounding is unacceptable in a trading system.
@@ -39,8 +39,12 @@ timeframe-neutral; the current instance is one detail of configuration, not a co
   do not leave finished work unpushed and do not wait to be asked. Jan does not push
   manually. Only push work that is actually finished and green (`ruff`, `mypy`,
   `pytest` all pass); never push broken or half-done code.
-- **Git workflow:** Lightweight — feature branches + PRs are the norm, but direct
-  pushes to `main` are fine. `main` is not branch-protected; no mandatory reviews.
+- **Git workflow:** feature branch → PR → CI green + Codex review → merge to `main`.
+- **Definition of done (anti-drift):** a change is complete only when its callers,
+  docstrings, the `docs/architecture.md` module map, and tests are all updated to match,
+  `just check` is green, and no stale cruft (dead code, orphaned files, stale docs/paths)
+  is left behind. `tests/test_docs_architecture_map.py` enforces that the map stays honest.
+  See [AGENTS.md](AGENTS.md) for the full reviewer checklist (shared with Codex).
 
 ## Backtest vs. live
 
