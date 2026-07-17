@@ -199,11 +199,8 @@ _TTP_SPECS: dict[str, InstrumentSpec] = {
 # Frictionless reference: spread + commission only, no slippage (the zero-slippage baseline).
 FRICTIONLESS = BrokerProfile(name="frictionless", prob_slippage=0.0, instrument_specs=_TTP_SPECS)
 
-# The current prop-firm brokers. prob_slippage is a starting estimate for H4 CFDs -- calibrate it
-# against the live demo's actual fills once enough trades have closed (see docs/roadmap.md).
-MEX_ATLANTIC = BrokerProfile(
-    name="mex_atlantic", prob_slippage=0.15, instrument_specs=_TTP_SPECS
-)
+# The live prop-firm broker. prob_slippage is a starting estimate for H4 CFDs -- calibrate it
+# against the live account's actual fills once enough trades have closed.
 TTP_MARKETS = BrokerProfile(name="ttp_markets", prob_slippage=0.15, instrument_specs=_TTP_SPECS)
 
 

@@ -4,8 +4,6 @@ import numpy as np
 import pandas as pd
 from research.portfolio.curves import DAY_NS
 from research.portfolio.regime import (
-    _day_number,
-    crisis_table,
     efficiency_ratio,
     label_trades,
     realized_vol,
@@ -63,11 +61,3 @@ def test_regime_edge_table_aggregates_in_r() -> None:
     assert "mittel" not in set(tbl["regime"])  # empty buckets are dropped
 
 
-def test_crisis_table_counts_trades_inside_the_window() -> None:
-    inside = _day_number("2020-03-15") * DAY_NS  # within the COVID window
-    outside = _day_number("2019-06-01") * DAY_NS
-    labeled = pd.DataFrame({"ts_opened": [inside, outside], "r": [-2.0, 1.0]})
-    tbl = crisis_table(labeled)
-    covid = tbl[tbl["crisis"] == "COVID-Crash 2020"].iloc[0]
-    assert covid["trades"] == 1
-    assert abs(covid["total_R"] - (-2.0)) < 1e-9

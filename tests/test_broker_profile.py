@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 from core.broker import (
     FRICTIONLESS,
-    MEX_ATLANTIC,
+    TTP_MARKETS,
     BrokerProfile,
     SwapSpec,
     dump_swap_snapshot,
@@ -20,9 +20,9 @@ def test_frictionless_profile_has_no_fill_model() -> None:
 
 
 def test_slippage_profile_builds_a_fill_model() -> None:
-    cfg = MEX_ATLANTIC.fill_model_config()
+    cfg = TTP_MARKETS.fill_model_config()
     assert cfg is not None
-    assert cfg.config["prob_slippage"] == MEX_ATLANTIC.prob_slippage
+    assert cfg.config["prob_slippage"] == TTP_MARKETS.prob_slippage
     assert cfg.config["prob_fill_on_limit"] == 1.0
 
 
@@ -30,7 +30,7 @@ def test_fill_model_config_is_constructible_by_nautilus() -> None:
     # The importable config must actually resolve into a live FillModel (path + fields correct).
     from nautilus_trader.backtest.config import FillModelFactory
 
-    cfg = MEX_ATLANTIC.fill_model_config()
+    cfg = TTP_MARKETS.fill_model_config()
     assert cfg is not None
     fill_model = FillModelFactory.create(cfg)
     assert fill_model is not None
@@ -58,9 +58,9 @@ def test_recipe_with_broker_wires_the_fill_model() -> None:
     from core.instruments import xauusd
     from research.engine.recipe import SweepRecipe
 
-    recipe = SweepRecipe(xauusd(), "data/dummy.csv", leverage=100, broker=MEX_ATLANTIC)
+    recipe = SweepRecipe(xauusd(), "data/dummy.csv", leverage=100, broker=TTP_MARKETS)
     assert recipe.VENUE.fill_model is not None
-    assert recipe.VENUE.fill_model.config["prob_slippage"] == MEX_ATLANTIC.prob_slippage
+    assert recipe.VENUE.fill_model.config["prob_slippage"] == TTP_MARKETS.prob_slippage
 
 
 def _spec() -> SwapSpec:
@@ -83,10 +83,10 @@ def test_swap_snapshot_round_trips(tmp_path: Path) -> None:
 
 
 def test_with_swaps_attaches_specs_and_accessor_finds_them() -> None:
-    profile = MEX_ATLANTIC.with_swaps({"XAUUSD": _spec()})
+    profile = TTP_MARKETS.with_swaps({"XAUUSD": _spec()})
     assert profile.swap_spec("XAUUSD") == _spec()
     assert profile.swap_spec("NOPE") is None
-    assert MEX_ATLANTIC.swap_specs == {}  # original is untouched (frozen copy)
+    assert TTP_MARKETS.swap_specs == {}  # original is untouched (frozen copy)
 
 
 def test_swap_r_per_trade_matches_hand_calc() -> None:
