@@ -1,22 +1,18 @@
-"""RSI / Williams %R / Bollinger Bands crossover strategy (4H portion).
+"""RSI / Williams %R / Bollinger Bands reversal strategy -- the NautilusTrader wrapper.
 
-Ported from a TradingView Pine *indicator* ("Daily + 4H RSI/Williams %R Buy/Sell
-Signals + Bollinger Bands"). The original only draws buy/sell markers; here those
-signals drive a long/short **reversal** strategy:
+A long/short reversal strategy on 4H bars. This class is the execution shell: it turns the
+``(buy, sell)`` decisions of the shared signal engine
+(:mod:`core.strategies.rsi_wpr_bb_signals`) into orders, and handles sizing and exits.
 
 - On a buy signal: go long (closing any short first).
 - On a sell signal: go short (closing any long first).
 
-Only the **4H** signal logic is implemented (the Pine script's daily signals only
-fire on a daily chart; on H4 data they are inactive). A daily / multi-timeframe
-extension can be layered on later.
+All signal logic lives in the signal engine, so the backtest (this wrapper) and the live
+runner drive the same code and produce identical signals.
 
-Indicator note: EMA and RSI (Wilder-smoothed, to match TradingView's ``ta.rsi``)
-come from NautilusTrader. Williams %R and the Bollinger Bands are computed here on
-the close price -- NautilusTrader's Bollinger uses the typical price ``(H+L+C)/3``,
-whereas the Pine script uses the close, so we replicate the close-based version to
-stay faithful. Indicator maths use ``float`` (as NautilusTrader's own indicators
-do); order sizing still uses ``Decimal`` / ``Quantity``.
+Indicators: EMA and RSI (Wilder-smoothed) come from NautilusTrader; Williams %R and the
+Bollinger Bands are computed on the close price. Indicator maths use ``float`` (matching
+NautilusTrader's own indicators); order sizing uses ``Decimal`` / ``Quantity``.
 """
 
 from decimal import Decimal
@@ -38,7 +34,7 @@ from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 class RsiWprBbConfig(StrategyConfig, frozen=True):
     """Configuration for :class:`RsiWprBb`.
 
-    All periods/levels mirror the Pine script inputs and are the knobs to optimize.
+    The periods/levels are the knobs the parameter sweep optimizes.
     """
 
     instrument_id: InstrumentId
@@ -115,7 +111,7 @@ def exit_prices(
 
 
 class RsiWprBb(Strategy):  # type: ignore[misc]
-    """Long/short reversal strategy driven by the ported 4H signals."""
+    """Long/short reversal strategy driven by the shared 4H signal engine."""
 
     def __init__(self, config: RsiWprBbConfig) -> None:
         super().__init__(config)
@@ -159,9 +155,8 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         lets a parameter search pin the stop to the tightest grid value to farm the artifact.
 
         Anchoring to ``avg_px_open`` (not the signal bar's close) is what makes this safe: the
-        trigger sits a full ``stop_loss_pct`` away from the price that actually filled, so it can
-        never be "in the market" at submission -- the rejection that originally forced the
-        synthetic stop.
+        trigger sits a full ``stop_loss_pct`` away from the price that actually filled, so it is
+        never already "in the market" at submission (which the broker would reject).
         """
         if not self._risk_managed() or self.instrument is None:
             return
