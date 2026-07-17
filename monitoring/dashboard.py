@@ -22,7 +22,7 @@ import pandas as pd
 import streamlit as st
 from core.paths import REPO_ROOT
 from live.accounts import ACCOUNTS
-from live.mt5_bridge import Mt5Bridge
+from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 from live.runner import position_risk
 
 from monitoring.deals import deals_to_trades, equity_curve, live_stats
@@ -37,10 +37,15 @@ _GOOD, _WARN, _CRIT = "#0ca30c", "#fab219", "#d03b3b"
 
 
 @st.cache_data(ttl=60)
-def _load_live(days: int, terminal_path: str | None) -> dict[str, Any]:
-    """Pull live deals / account / positions / open-risk from the terminal (cached 60s)."""
-    bridge = Mt5Bridge()
-    bridge.connect(path=terminal_path)
+def _load_live(days: int, account_name: str) -> dict[str, Any]:
+    """Pull live deals / account / positions / open-risk from the terminal (cached 60s).
+
+    Builds the bridge with THIS account's symbol overrides (e.g. TTP names Nasdaq ``USTEC``,
+    the base map names it ``UT100``), so symbols resolve on whichever terminal we attach to.
+    """
+    profile = ACCOUNTS[account_name]
+    bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **profile.symbol_overrides})
+    bridge.connect(path=profile.terminal_path)
     try:
         since = datetime.now(tz=UTC) - timedelta(days=days)
         deals = bridge.history_deals(since)
@@ -108,16 +113,20 @@ def _live_view() -> None:
     profile = ACCOUNTS[account_name]
     # -- load --
     try:
-        live = _load_live(days, profile.terminal_path)
+        live = _load_live(days, account_name)
     except Exception as exc:  # noqa: BLE001 -- surface connection issues in the UI
         st.error(f"Could not read from the MT5 terminal: {exc}\n\nIs it open and logged in?")
         return
-    runs = sorted((_REPO / "reports" / "framework").glob("run_*"))
-    ref_csv = runs[-1] / "full_history_trades.csv" if runs else None
-    if ref_csv is None or not ref_csv.exists():
+    # Newest framework run that actually carries the reference stream (a run dir may be partial).
+    runs = [
+        d
+        for d in (_REPO / "reports" / "framework").glob("run_*")
+        if (d / "full_history_trades.csv").is_file()
+    ]
+    if not runs:
         st.warning("No backtest reference yet — run the backtest pipeline (`just backtest`) first.")
         return
-    ref = load_reference(ref_csv)
+    ref = load_reference(max(runs, key=lambda d: d.stat().st_mtime) / "full_history_trades.csv")
 
     trades = deals_to_trades(live["deals"])
     trades["market"] = trades["symbol"].map(live["term_to_research"]).fillna(trades["symbol"])
