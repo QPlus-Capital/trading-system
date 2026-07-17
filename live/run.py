@@ -107,8 +107,8 @@ def main(argv: list[str] | None = None) -> None:
         # SAFETY: refuse to run unless we are really on the expected account (login + currency).
         guard_account(account, profile, execute=(mode == Mode.EXECUTE))
         log.info(
-            "connected: account=%d (%s) balance=%.2f equity=%.2f %s | mode=%s",
-            account.login,
+            "connected: account=***%03d (%s) balance=%.2f equity=%.2f %s | mode=%s",
+            account.login % 1000,  # masked: the full login is not written to logs
             profile.name,
             account.balance,
             account.equity,
@@ -132,6 +132,8 @@ def main(argv: list[str] | None = None) -> None:
             state_path=state_path,
             long_only=long_only_from_live_config(),
             notifier=notifier,
+            expected_login=profile.expected_login,
+            expected_currency=profile.expected_currency,
         )
         if args.once:
             try:  # N3: a single cycle must not crash with a bare traceback on a transient error
