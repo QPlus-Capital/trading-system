@@ -30,7 +30,7 @@ class Selection:
     instruments: list[str]
 
 
-def _per_config(df: pd.DataFrame) -> pd.DataFrame:
+def per_config(df: pd.DataFrame) -> pd.DataFrame:
     """Return + risk summary per (variation, train_months), aggregated across instruments."""
     return df.groupby(["variation", "train_months"]).agg(
         mean_ret=("mean_oos_pct", "mean"),  # the objective: cross-instrument OOS return
@@ -52,7 +52,7 @@ def select_structure(
     a much worse drawdown profile). Among the eligible, the highest mean OOS return wins. If
     none qualify, fall back to the full pool so a choice is always returned.
     """
-    g = _per_config(df)
+    g = per_config(df)
     best_rpd = float(g["mean_rpd"].max())
     eligible = g[
         (g["frac_positive"] >= min_frac_positive) & (g["mean_rpd"] >= rpd_tolerance * best_rpd)

@@ -26,7 +26,7 @@ def _best_train(df: pd.DataFrame, variation: str) -> int:
     sub = df[df["variation"] == variation].dropna(subset=["mean_oos_pct"])
     if sub.empty:
         raise SystemExit(f"variation '{variation}' has no rows in the study")
-    per = universe._per_config(sub)
+    per = universe.per_config(sub)
     return int(per["mean_ret"].idxmax()[1])
 
 

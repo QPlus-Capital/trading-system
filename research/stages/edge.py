@@ -8,9 +8,9 @@ variations are *eligible*. You read this and decide which variation to carry for
 Usage::
 
     # run the full sweep (heavy), then show the ranking:
-    uv run python -m research.stages.edge config/study/robustness.py
+    uv run python -m research.stages.edge research/config/robustness.py
     # or ingest an already-computed study:
-    uv run python -m research.stages.edge config/study/robustness.py --from <study_dir>
+    uv run python -m research.stages.edge research/config/robustness.py --from <study_dir>
 """
 
 from __future__ import annotations
@@ -87,7 +87,7 @@ def ranking(
     applied when the DSR is available. The auto-pick requires both.
     """
     valid = df.dropna(subset=["mean_oos_pct", "return_per_dd"])
-    g = universe._per_config(valid).reset_index()
+    g = universe.per_config(valid).reset_index()
     best_rpd = float(g["mean_rpd"].max()) if not g.empty else 0.0
     gate_pos = g["frac_positive"] >= min_frac_positive
     gate_rpd = g["mean_rpd"] >= rpd_tolerance * best_rpd
