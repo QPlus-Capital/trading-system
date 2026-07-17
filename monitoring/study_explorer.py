@@ -1,4 +1,4 @@
-"""Research-explorer data: slice + aggregate the study results for the dashboard's v1 view.
+"""Research-explorer data: slice + aggregate the study results for the dashboard's research view.
 
 The study (``reports/study/<run>/study.csv``) is one row per (instrument x variation x
 train_months) with the walk-forward metrics. These pure helpers pick the latest study, drop

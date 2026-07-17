@@ -1,8 +1,9 @@
 """Load the backtest reference and its Monte-Carlo expectation band for the live comparison.
 
-The reference is the equity report's flat-0.18% trade stream (``reports/equity/portfolio_trades``).
-Everything is expressed in **R-multiples** (PnL / per-trade risk) so the live account (any size /
-broker) is comparable to the backtest without a currency/scale mismatch.
+The reference is the staged framework's full-history trade stream
+(``reports/framework/run_*/full_history_trades.csv``), net of the TTP swap. Everything is in
+**R-multiples** (per-trade return in units of risk), so the live account (any size / broker) is
+comparable to the backtest without a currency/scale mismatch.
 """
 
 from __future__ import annotations
@@ -12,22 +13,28 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from research.portfolio.stats import edge_stats
 
-_BACKTEST_RISK = 180.0  # 0.18% of the equity-report's 100k base -> R = pnl / 180
+from research.portfolio.stats import edge_stats
 
 
 def load_reference(trades_csv: str | Path) -> dict[str, Any]:
-    """Backtest edge metrics (overall + per market) + per-trade R-multiples from the report CSV."""
-    df = pd.read_csv(trades_csv)  # columns: date, equity, market, pnl
-    pnl = df["pnl"].to_numpy(dtype=float)
+    """Backtest edge metrics (overall + per market) + per-trade R from the framework stream.
+
+    Reads the framework trade stream (columns ``market``, ``r`` and optional ``swap_r``) and nets
+    the swap onto R, so every metric is net of the overnight cost of carry.
+    """
+    df = pd.read_csv(trades_csv)
+    r = df["r"].to_numpy(dtype=float)
+    if "swap_r" in df.columns:
+        r = r + df["swap_r"].to_numpy(dtype=float)  # net of the realized swap
+    df = df.assign(_net_r=r)
     return {
         "trades": len(df),
-        "overall": edge_stats(pnl),
+        "overall": edge_stats(r),
         "per_market": {
-            str(m): edge_stats(g["pnl"].to_numpy(dtype=float)) for m, g in df.groupby("market")
+            str(m): edge_stats(g["_net_r"].to_numpy(dtype=float)) for m, g in df.groupby("market")
         },
-        "r_multiples": pnl / _BACKTEST_RISK,
+        "r_multiples": r,
     }
 
 

@@ -1,13 +1,13 @@
-"""QPlus live-vs-backtest monitoring dashboard (roadmap Phase 2, v0).
+"""QPlus live-vs-backtest monitoring dashboard.
 
 Run from the repo root with the MT5 terminal open + logged in::
 
     uv run streamlit run monitoring/dashboard.py
 
-Shows how the live/paper account tracks the backtest expectation: the realized equity curve,
+Shows how the live account tracks the backtest expectation: the realized equity curve,
 the live edge metrics vs the backtest reference (per market), the cumulative-R path against the
 backtest Monte-Carlo band, and the current risk usage. Reads live data from MT5 and the backtest
-reference from ``reports/equity/``; changes nothing on the account.
+reference from the latest ``reports/framework/`` run; changes nothing on the account.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from monitoring.study_explorer import METRICS, latest_study_csv, load_study, var
 
 _REPO = REPO_ROOT
 _LIVE_RISK_PCT = 0.0018  # 0.18% flat, matches the live config (the gap tail cap)
-_BT_RISK = 180.0  # backtest per-trade risk (0.18% of the 100k base), for the R-expectancy check
 # Validated data-viz palette (see the dataviz skill's reference palette).
 _BLUE, _MUTED, _GRID = "#2a78d6", "#898781", "#e1e0d9"
 _GOOD, _WARN, _CRIT = "#0ca30c", "#fab219", "#d03b3b"
@@ -102,7 +101,7 @@ def _live_view() -> None:
         days = st.slider("History window (days)", 7, 365, 90)
         if st.button("Refresh now"):
             st.cache_data.clear()
-        st.caption("Live data from MT5 (60s cache). Backtest reference from reports/equity/.")
+        st.caption("Live data from MT5 (60s cache). Backtest reference from the latest reports/framework/ run.")
 
     profile = ACCOUNTS[account_name]
     # -- load --
@@ -111,11 +110,10 @@ def _live_view() -> None:
     except Exception as exc:  # noqa: BLE001 -- surface connection issues in the UI
         st.error(f"Could not read from the MT5 terminal: {exc}\n\nIs it open and logged in?")
         return
-    ref_csv = _REPO / "reports" / "equity" / "portfolio_trades.csv"
-    if not ref_csv.exists():
-        st.warning(
-            "No backtest reference yet — run `research.portfolio.equity_report` first."
-        )
+    runs = sorted((_REPO / "reports" / "framework").glob("run_*"))
+    ref_csv = runs[-1] / "full_history_trades.csv" if runs else None
+    if ref_csv is None or not ref_csv.exists():
+        st.warning("No backtest reference yet — run the backtest pipeline (`just backtest`) first.")
         return
     ref = load_reference(ref_csv)
 
@@ -157,7 +155,7 @@ def _live_view() -> None:
             _stat_row(
                 "Expectancy / trade (R)",
                 ls["expectancy"] / live_risk,
-                ro["expectancy"] / _BT_RISK,
+                ro["expectancy"],
                 "+.2f",
             )
 
