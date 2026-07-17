@@ -1,7 +1,7 @@
 """Swap-cost report + snapshot refresh: how much do overnight swaps erode the edge?
 
 The strategy holds positions over multiple days. This pulls the live per-symbol swap rates from
-the terminal, **persists them as a snapshot** (`config/broker/mex_atlantic_swaps.json`) so the
+the terminal, **persists them as a snapshot** (`core/config/broker/ttp_markets_swaps.json`) so the
 backtest can apply them reproducibly and offline (see `core.broker`), and reports the
 impact on the key metrics. The swap maths itself lives in `broker.swap_r_per_trade`; this module
 is the human-readable report + the way the snapshot gets refreshed.
@@ -25,7 +25,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 from core.broker import (
-    MEX_ATLANTIC,
+    TTP_MARKETS,
     SwapSpec,
     dump_swap_snapshot,
     pull_swap_specs,
@@ -35,7 +35,7 @@ from core.broker import (
 from core.paths import REPO_ROOT
 
 from research.engine.config import load_config_module
-from research.portfolio.equity_report import _START_BALANCE, _market_trades
+from research.portfolio.stats import _START_BALANCE, _market_trades
 
 _REPO_ROOT = REPO_ROOT
 
@@ -79,8 +79,8 @@ def main() -> None:
         bridge.shutdown()
 
     # Persist the snapshot so backtests can apply swap reproducibly and offline (the profile then
-    # drives the net-of-swap equity report). This terminal is the MEX Atlantic demo.
-    snapshot = swap_snapshot_path(MEX_ATLANTIC.name)
+    # drives the net-of-swap equity report).
+    snapshot = swap_snapshot_path(TTP_MARKETS.name)
     dump_swap_snapshot(specs, snapshot)
     print(f"swap snapshot saved -> {snapshot.relative_to(_REPO_ROOT)}\n")
 

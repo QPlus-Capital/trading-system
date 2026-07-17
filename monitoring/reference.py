@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from research.portfolio.equity_report import edge_stats
+from research.portfolio.stats import edge_stats
 
 _BACKTEST_RISK = 180.0  # 0.18% of the equity-report's 100k base -> R = pnl / 180
 

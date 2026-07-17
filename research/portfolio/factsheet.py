@@ -19,9 +19,9 @@ import pandas as pd
 
 from research.portfolio import regime
 from research.portfolio.curves import DAY_NS, align_prices
-from research.portfolio.equity_report import edge_stats, risk_stats
 from research.portfolio.risk import AccountProfile, flat_base_pnl
 from research.portfolio.sizing import flat, simulate
+from research.portfolio.stats import edge_stats, risk_stats
 
 # Must match regime.py's _VOL_LABELS / _TREND_LABELS (low -> high on each axis).
 _VOL_ORDER = ("ruhig", "mittel", "stuermisch")

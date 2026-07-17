@@ -18,19 +18,12 @@ concentrated in one bucket as a fragile peak.
 
 from __future__ import annotations
 
-from pathlib import Path
+import numpy as np
+import pandas as pd
 
-import matplotlib
+from research.portfolio.curves import DAY_NS
+from research.portfolio.stats import edge_stats
 
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-import pandas as pd  # noqa: E402
-
-from research.portfolio.curves import DAY_NS, load_daily_close  # noqa: E402
-from research.portfolio.equity_report import edge_stats  # noqa: E402
-
-_EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
 _VOL_LABELS = ("ruhig", "mittel", "stuermisch")
 _TREND_LABELS = ("seitwaerts", "mittel", "trendig")
 
@@ -125,101 +118,3 @@ def regime_edge_table(
             }
         )
     return pd.DataFrame(rows)
-
-
-def _day_number(date: str) -> int:
-    return int((pd.Timestamp(date, tz="UTC") - _EPOCH) // pd.Timedelta(days=1))
-
-
-def crisis_table(labeled: pd.DataFrame, *, r_col: str = "r") -> pd.DataFrame:
-    """Edge inside each named crisis window: trades, total-R, expectancy, hit-rate, worst trade."""
-    day = labeled["ts_opened"].to_numpy() // DAY_NS
-    rows = []
-    for name, (start, end) in CRISIS_WINDOWS.items():
-        mask = (day >= _day_number(start)) & (day <= _day_number(end))
-        r = labeled.loc[mask, r_col].to_numpy(dtype=float)
-        rows.append(
-            {
-                "crisis": name,
-                "trades": len(r),
-                "total_R": float(r.sum()) if len(r) else 0.0,
-                "expectancy_R": float(r.mean()) if len(r) else 0.0,
-                "hit_rate": float((r > 0).mean()) if len(r) else 0.0,
-                "worst_R": float(r.min()) if len(r) else 0.0,
-            }
-        )
-    return pd.DataFrame(rows)
-
-
-def plot_regime(
-    vol_tbl: pd.DataFrame, trend_tbl: pd.DataFrame, crisis_tbl: pd.DataFrame, out: Path
-) -> None:
-    """Expectancy (R) per volatility + trend regime, and total-R per crisis window."""
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5.2))
-    for ax, tbl, title in [
-        (axes[0], vol_tbl, "Erwartung/Trade (R) nach Volatilitaet"),
-        (axes[1], trend_tbl, "Erwartung/Trade (R) nach Trendstaerke"),
-    ]:
-        colors = ["tab:green" if v >= 0 else "tab:red" for v in tbl["expectancy_R"]]
-        ax.bar(tbl["regime"], tbl["expectancy_R"], color=colors)
-        ax.axhline(0, color="0.4", linewidth=0.8)
-        ax.set_title(title)
-        ax.set_ylabel("Erwartung je Trade (R)")
-        for i, (e, n) in enumerate(zip(tbl["expectancy_R"], tbl["trades"], strict=True)):
-            ax.annotate(f"n={n}", (i, e), ha="center", va="bottom" if e >= 0 else "top", fontsize=9)
-        ax.grid(True, axis="y", alpha=0.25)
-    colors = ["tab:green" if v >= 0 else "tab:red" for v in crisis_tbl["total_R"]]
-    axes[2].barh(crisis_tbl["crisis"], crisis_tbl["total_R"], color=colors)
-    axes[2].axvline(0, color="0.4", linewidth=0.8)
-    axes[2].set_title("Gesamt-R in Krisenfenstern")
-    axes[2].set_xlabel("Summe R")
-    axes[2].grid(True, axis="x", alpha=0.25)
-    fig.suptitle(
-        "Regime-Robustheit -- no_bb_wpr, 9 Maerkte, netto (Terzile je Instrument)", fontsize=12
-    )
-    fig.tight_layout()
-    out.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out, dpi=120)
-    plt.close(fig)
-
-
-def main() -> None:
-    """Re-run the frozen config full-history (net of costs), then report the edge per regime."""
-    from core.broker import MEX_ATLANTIC, load_swap_snapshot, swap_snapshot_path
-
-    from research.engine.config import load_config_module
-    from research.portfolio.equity_report import _REPO_ROOT, _market_trades
-
-    cfg = load_config_module(_REPO_ROOT / "config" / "live" / "paper_rsi_wpr_bb.py")
-    switches = dict(cfg.STRATEGY_SWITCHES)
-    snap = swap_snapshot_path(MEX_ATLANTIC.name)
-    broker = MEX_ATLANTIC.with_swaps(load_swap_snapshot(snap)) if snap.exists() else MEX_ATLANTIC
-
-    frames, daily_closes = [], {}
-    for factory, csv, leverage, sl, tp in cfg.MARKETS:
-        name = str(factory().raw_symbol)
-        print(f"backtesting {name} (full history) ...")
-        frames.append(_market_trades(factory, csv, leverage, sl, tp, switches, broker))
-        daily_closes[name] = load_daily_close(csv)
-    trades = pd.concat(frames, ignore_index=True)
-    labeled = label_trades(trades, daily_closes)
-
-    vol_tbl = regime_edge_table(labeled, "vol_regime", order=_VOL_LABELS)
-    trend_tbl = regime_edge_table(labeled, "trend_regime", order=_TREND_LABELS)
-    crisis_tbl = crisis_table(labeled)
-
-    out_dir = _REPO_ROOT / "reports" / "equity"
-    plot_regime(vol_tbl, trend_tbl, crisis_tbl, out_dir / "regime.png")
-
-    pd.options.display.float_format = lambda v: f"{v:,.3f}"
-    print("\n===== edge by VOLATILITY regime (R) =====")
-    print(vol_tbl.to_string(index=False))
-    print("\n===== edge by TREND regime (R) =====")
-    print(trend_tbl.to_string(index=False))
-    print("\n===== edge in CRISIS windows (R) =====")
-    print(crisis_tbl.to_string(index=False))
-    print(f"\nchart: {out_dir / 'regime.png'}")
-
-
-if __name__ == "__main__":
-    main()

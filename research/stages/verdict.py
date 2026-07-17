@@ -28,13 +28,13 @@ from research.engine.config import load_config_module
 from research.engine.montecarlo import monte_carlo_paths, summarize
 from research.portfolio import factsheet, html_report
 from research.portfolio.curves import load_daily_close
-from research.portfolio.equity_report import daily_equity, edge_stats, risk_stats
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
     ThrottleRisk,
     evaluate_policy,
 )
+from research.portfolio.stats import daily_equity, edge_stats, risk_stats
 from research.stages import _runbook as rb
 
 _STAT_ROWS = [
