@@ -7,12 +7,16 @@ relying on prior chat history.
 
 ## Project
 
-QPlus Capital's quantitative trading system, built on
-[NautilusTrader](https://nautilustrader.io/). Purpose: **backtesting** strategies on
-historical data first, then **paper trading**, then **live trading**.
+QPlus Capital's quantitative trading-system framework, built on
+[NautilusTrader](https://nautilustrader.io/). A strategy flows through three worlds:
+**research** (backtest & validate) → **live** (execute the frozen config) →
+**monitoring** (live vs. backtest). The framework is strategy-, venue-, and
+timeframe-neutral; the current instance is one detail of configuration, not a constraint.
 
-- **Stack:** Python 3.13, `uv` for packaging, NautilusTrader (backtest engine), MetaTrader5
-  (live bridge). Tooling: `ruff`, `mypy`, `pytest`.
+- **Structure:** four flat packages — `core/` (shared: strategies, instruments, broker,
+  data), `research/`, `live/`, `monitoring/`. No `src/` nesting.
+- **Stack:** Python 3.13, `uv` for packaging, NautilusTrader (backtest engine), `just`
+  as the command hub. Tooling: `ruff`, `mypy`, `pytest`.
 - **Orientation:** read [docs/architecture.md](docs/architecture.md) first — diagrams of
   the research pipeline, live path and monitoring, plus a one-line-per-file module map.
 
@@ -40,9 +44,9 @@ historical data first, then **paper trading**, then **live trading**.
 
 ## Backtest vs. live
 
-A strategy is **one class** in `src/qplus/strategies/`, run with either a backtest or
+A strategy is **one class** in `core/strategies/`, run with either a backtest or
 a live config. Never duplicate strategy logic across backtest and live. Promotion to
-live = adding the strategy's config under `config/live/` after it is backtested and
+live = adding the strategy's config under `live/config/` after it is backtested and
 approved. Always keep it unambiguous which strategies are live.
 
 ## Secrets

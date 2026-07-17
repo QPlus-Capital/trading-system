@@ -1,83 +1,82 @@
 # QPlus Capital – Trading System
 
-Quantitative trading system for **QPlus Capital**. It is used first for **backtesting**
-strategies on historical data (via [NautilusTrader](https://nautilustrader.io/)), then
-**paper trading**, and finally **live trading**.
+A quantitative **trading-system framework** for QPlus Capital. It takes a strategy from
+idea to deployment along three loosely-coupled stages:
 
-Primary markets are **CFDs** (FX, indices such as US30, and commodities) on the **4H**
-timeframe. Live/paper execution currently runs through **MetaTrader 5** — this is the
-interim setup for the prop-firm phase (MEX Atlantic demo / TTP Markets live); the broker
-layer will change in a later phase.
+1. **Research** — backtest and validate a strategy on historical data (built on
+   [NautilusTrader](https://nautilustrader.io/)), ending in a defensible, risk-sized,
+   prop-firm-compliant configuration.
+2. **Live** — run that frozen configuration against a broker, one bar at a time, under
+   hard risk limits.
+3. **Monitoring** — compare live results back against what the backtest predicted.
 
-> New here? Read **[RUN.md](RUN.md)** — it gets you from a fresh clone to a runnable
-> setup. Working with Claude Code? See **[CLAUDE.md](CLAUDE.md)** for the project
-> conventions every session must follow.
+The framework is deliberately **neutral**: nothing in the core assumes a particular
+strategy, instrument, timeframe, or broker. A strategy is one plug-in class; the
+venue, timeframe, and cost model are configuration. New strategies and venues are
+added alongside the existing ones, never by changing the framework.
+
+> **Current instance:** one mean-reversion strategy on a basket of CFDs (FX, indices,
+> metals), executed through MetaTrader 5 on a prop-firm account. This is just the first
+> deployment — see `live/config/` for what is actually live.
+
+## Structure — the three worlds + a shared core
+
+```
+core/         # shared, strategy-/venue-neutral: strategies, instruments, broker costs, data
+research/     # WORLD 1 — the backtesting framework (engine · portfolio · stages · config)
+live/         # WORLD 2 — the live runner, broker bridge, risk control (+ its config)
+monitoring/   # WORLD 3 — the live-vs-backtest dashboard
+```
+
+Full map with diagrams: **[docs/architecture.md](docs/architecture.md)**.
+
+## Commands
+
+All day-to-day commands live in the **[`justfile`](justfile)** — type `just` to see them:
+
+```
+just backtest        # run the research pipeline  -> reports/framework/run_*/
+just report          # open the latest backtest report
+just live-ttp        # start the live runner (add `execute` for real orders)
+just monitor         # the monitoring dashboard
+just check           # ruff + mypy + pytest (before every commit)
+```
+
+Getting from a fresh clone to a runnable setup: **[RUN.md](RUN.md)**. Project
+conventions every contributor (human or AI) follows: **[CLAUDE.md](CLAUDE.md)**.
 
 ## Tech stack
 
-| Component         | Role                                                   |
-| ----------------- | ------------------------------------------------------ |
-| **Python 3.13**   | Implementation language                                |
-| **uv**            | Package & environment management                       |
-| **NautilusTrader**| Event-driven engine for backtesting                    |
-| **MetaTrader 5**  | Live/paper broker connection (interim, prop-firm phase)|
-| **ruff / mypy / pytest** | Linting & formatting, type checking, tests      |
+| Component | Role |
+| --------- | ---- |
+| **Python 3.13** | Implementation language |
+| **uv** | Package & environment management |
+| **NautilusTrader** | Event-driven backtesting engine |
+| **just** | Command runner (the discoverable command hub) |
+| **ruff / mypy / pytest** | Lint & format, type-checking, tests |
 
-## Repository layout
+Live execution currently runs through **MetaTrader 5** (the interim prop-firm venue);
+the execution layer is an adapter and will change as new venues are added.
 
-```
-trading-system/
-├── src/qplus/              # Python package (versioned source code)
-│   ├── strategies/         # Strategy classes — single source of truth,
-│   │                       #   shared by both backtest and live
-│   ├── backtest/           # Backtest runners & wiring (staged study pipeline)
-│   ├── live/               # Live/paper runner + MT5 bridge + risk control
-│   └── data_ingest/        # Data acquisition & preparation (MT5 CSV -> catalog)
-├── config/
-│   ├── backtest/           # Backtest configurations
-│   └── live/               # Live configurations (only approved strategies)
-├── tests/                  # Test suite (pytest)
-├── data/                   # Market data / Parquet catalog (NEVER versioned)
-├── .env.example            # Secrets template (committed, placeholders only)
-├── pyproject.toml          # Project & dependency definition
-└── uv.lock                 # Pinned dependencies (committed for reproducibility)
-```
+## Research vs. live: one strategy, two configs
 
-The structure is intentionally lean and will grow as NautilusTrader is integrated.
-
-## Setup
-
-Live/paper trading runs on **Windows** (MetaTrader 5 is Windows-only); the backtest also
-runs on macOS/Linux. Full step-by-step instructions are in **[RUN.md](RUN.md)**. Short
-version:
-
-```bash
-uv sync                # install dependencies (incl. NautilusTrader) into .venv
-cp .env.example .env   # optional: only for Telegram notifications
-```
-
-## Backtest vs. live
-
-Strategy code lives once in `src/qplus/strategies/`. The same strategy class is run
-with a **backtest config** or a **live config** — code is never duplicated between
-the two. A strategy only moves to live by adding its configuration under
-`config/live/` once it has been backtested and approved, so it is always clear which
-strategies are live and which are not.
+A strategy is **one class** in `core/strategies/`. The *same* class runs under a
+research config or a live config — strategy logic is never duplicated. A strategy
+only goes live by adding its configuration under `live/config/` once it has been
+backtested and approved, so it is always unambiguous which strategies are live.
 
 ## Git workflow
 
-Two-person team. Lightweight by design:
+Two-person team, lightweight by design:
 
 - Feature branches + pull requests are the norm; direct pushes to `main` are allowed
   when it makes sense.
-- No mandatory reviews. `main` is not branch-protected.
-- [Conventional Commits](https://www.conventionalcommits.org/) for commit messages
-  (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:` …).
+- [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
+  `chore:`, `docs:`, `refactor:`, `test:` …).
 
 ## Principle: code in, data and secrets out
 
-- **Code** is versioned (everything under `src/qplus/`, `config/`, `tests/`).
-- **Market data** belongs in `data/` (and `catalog/`) and is **never** committed —
-  both are gitignored.
-- **Secrets** belong in `.env` (template: `.env.example`) and are **never** committed.
-  Real credentials are additionally stored in the shared password manager.
+- **Code** is versioned (`core/`, `research/`, `live/`, `monitoring/`, `tests/`).
+- **Market data** lives in `data/` and the catalog — **never** committed (gitignored).
+- **Secrets** live in `.env` (template: `.env.example`) and are **never** committed;
+  real credentials additionally go in the shared password manager.
