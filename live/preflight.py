@@ -15,8 +15,8 @@ import argparse
 from live.accounts import ACCOUNTS, get_account
 from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 from live.runner import (
-    markets_from_paper_config,
-    risk_per_trade_from_paper_config,
+    markets_from_live_config,
+    risk_per_trade_from_live_config,
     size_order,
 )
 
@@ -47,8 +47,8 @@ def _checks(bridge: Mt5Bridge, account_name: str) -> tuple[list[tuple[str, bool,
         bool(ti and ti.trade_allowed),
         "an" if (ti and ti.trade_allowed) else "AUS -- im Terminal einschalten",
     ))
-    risk_amount = acct.balance * risk_per_trade_from_paper_config()
-    for spec in markets_from_paper_config():
+    risk_amount = acct.balance * risk_per_trade_from_live_config()
+    for spec in markets_from_live_config():
         try:
             info = bridge.symbol_info(spec.name)
             term = bridge.terminal_symbol(spec.name)

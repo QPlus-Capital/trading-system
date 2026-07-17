@@ -1,4 +1,4 @@
-"""Tests for the pure runner helpers, the paper-config factories, and risk-state persistence."""
+"""Tests for the pure runner helpers, the live-config factories, and risk-state persistence."""
 
 from pathlib import Path
 from typing import cast
@@ -9,11 +9,11 @@ from live.risk_control import RiskController, RiskLimits
 from live.runner import (
     LiveRunner,
     exit_prices,
-    long_only_from_paper_config,
-    markets_from_paper_config,
+    long_only_from_live_config,
+    markets_from_live_config,
     position_risk,
-    risk_per_trade_from_paper_config,
-    signal_params_from_paper_config,
+    risk_per_trade_from_live_config,
+    signal_params_from_live_config,
     size_order,
 )
 
@@ -106,8 +106,8 @@ def test_risk_amount_compounds_off_current_equity() -> None:
     assert abs(runner._risk_amount(150_000) - 270.0) < 1e-6  # grows with equity: 0.18% of 150k
 
 
-def test_markets_from_paper_config_maps_all_ten() -> None:
-    specs = markets_from_paper_config()
+def test_markets_from_live_config_maps_all_ten() -> None:
+    specs = markets_from_live_config()
     names = {s.name for s in specs}
     assert len(specs) == 10
     assert "USTEC" in names  # our research name; the bridge maps it to UT100
@@ -116,23 +116,23 @@ def test_markets_from_paper_config_maps_all_ten() -> None:
         assert s.stop_loss_pct > 0 and s.take_profit_pct > 0
 
 
-def test_signal_params_from_paper_config_is_no_bb_wpr() -> None:
-    p = signal_params_from_paper_config()
+def test_signal_params_from_live_config_is_no_bb_wpr() -> None:
+    p = signal_params_from_live_config()
     assert p.use_bb_confirm is False
     assert p.use_wpr_confirm is False
     assert p.use_rsi_filter is True
 
 
-def test_long_only_from_paper_config_is_false() -> None:
+def test_long_only_from_live_config_is_false() -> None:
     # The frozen config trades both directions (long/short reversal).
-    assert long_only_from_paper_config() is False
+    assert long_only_from_live_config() is False
 
 
-def test_risk_per_trade_from_paper_config() -> None:
+def test_risk_per_trade_from_live_config() -> None:
     # The config is the single source; sized at the framework's gap tail cap for no_bb_wpr
     # (3% daily / (1.5 x -11.1R worst day) = 0.18%), the largest flat risk a 1.5x-COVID gap day
     # still keeps inside the hard 3% daily limit.
-    r = risk_per_trade_from_paper_config()
+    r = risk_per_trade_from_live_config()
     assert abs(r - 0.0018) < 1e-9  # 0.18%
     assert 0 < r <= 0.0018  # at the tail cap, never above it
 

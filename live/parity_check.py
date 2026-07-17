@@ -126,7 +126,7 @@ def main() -> None:
     """Connect to the terminal and print a parity report for every configured market."""
     from research.engine.config import load_config_module
 
-    cfg = load_config_module(REPO_ROOT / "live" / "config" / "paper_rsi_wpr_bb.py")
+    cfg = load_config_module(REPO_ROOT / "live" / "config" / "rsi_wpr_bb.py")
     switches = {k: v for k, v in dict(cfg.STRATEGY_SWITCHES).items() if k != "long_only"}
     params = SignalParams(**switches)
 

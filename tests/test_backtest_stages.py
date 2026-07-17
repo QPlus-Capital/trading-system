@@ -36,7 +36,7 @@ def test_live_fixed_stops_reads_per_market_sltp() -> None:
     from research.stages.portfolio import live_fixed_stops
 
     repo_root = Path(__file__).resolve().parents[1]
-    stops = live_fixed_stops(repo_root / "live" / "config" / "paper_rsi_wpr_bb.py")
+    stops = live_fixed_stops(repo_root / "live" / "config" / "rsi_wpr_bb.py")
     assert stops  # non-empty
     for market, sltp in stops.items():
         assert isinstance(market, str)

@@ -13,7 +13,7 @@ backtest study="research/config/robustness.py":
 
 # Re-run only sizing + verdict on an existing run dir (fast; no re-extraction).
 verdict run:
-    uv run python -m research.stages.portfolio --run {{run}} --risk flat:0.18 --fixed live/config/paper_rsi_wpr_bb.py
+    uv run python -m research.stages.portfolio --run {{run}} --risk flat:0.18 --fixed live/config/rsi_wpr_bb.py
     uv run python -m research.stages.verdict --run {{run}}
 
 # Open the newest report.html in the browser.
