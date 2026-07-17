@@ -29,7 +29,6 @@ import pandas as pd
 from core.broker import standard_broker, swap_r_per_trade
 
 from research.engine.config import load_config_module
-from research.engine.pipeline import make_extract_fn
 from research.portfolio.curves import load_daily_close
 from research.portfolio.risk import (
     AccountProfile,
@@ -42,6 +41,7 @@ from research.portfolio.risk import (
 )
 from research.portfolio.stress import worst_day_r
 from research.portfolio.tail import full_history_tail_cap, traded_stop_loss_pct
+from research.portfolio.trades import make_extract_fn
 from research.stages import _runbook as rb
 
 

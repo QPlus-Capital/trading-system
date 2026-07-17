@@ -17,10 +17,14 @@ its inverse); no SciPy dependency.
 
 import math
 from collections.abc import Sequence
+from dataclasses import dataclass
 from itertools import combinations
 from statistics import NormalDist
+from typing import Any
 
 import numpy as np
+
+from research.engine.grid import expand_grid
 
 _NORMAL = NormalDist()
 _EULER_MASCHERONI = 0.5772156649015329
@@ -110,3 +114,41 @@ def pbo(performance_matrix: Sequence[Sequence[float]], n_splits: int = 10) -> fl
             overfit += 1
         total += 1
     return overfit / total
+
+
+# --- Multiple-testing budget: how many configurations were effectively searched? ---
+# The deflated Sharpe ratio only corrects for selection luck if told the TRUE trial count.
+# The study searches variations x train-lengths x grid-combos; the product is the honest
+# (conservative) budget -- correlated trials mean the real independent count is lower, which
+# only makes the deflation bar safer.
+
+
+@dataclass(frozen=True)
+class TrialBudget:
+    """The effective number of configurations searched, broken down by dimension."""
+
+    variations: int
+    train_lengths: int
+    param_combos: int
+
+    @property
+    def total(self) -> int:
+        """Effective trial count = the product of the independent search dimensions."""
+        return self.variations * self.train_lengths * self.param_combos
+
+    def summary(self) -> str:
+        """One-line human breakdown for the report."""
+        return (
+            f"{self.total} effective trials = "
+            f"{self.variations} variations x {self.train_lengths} train-lengths "
+            f"x {self.param_combos} param-combos"
+        )
+
+
+def study_trial_budget(cfg: Any) -> TrialBudget:
+    """Derive the multiple-testing budget from a study config's search dimensions."""
+    variations = len(getattr(cfg, "VARIATIONS", {"baseline": {}}))
+    train_cfg = getattr(cfg, "TRAIN_MONTHS", 24)
+    train_lengths = len(train_cfg) if isinstance(train_cfg, list | tuple) else 1
+    param_combos = len(expand_grid(getattr(cfg, "PARAM_GRID", {})))
+    return TrialBudget(max(variations, 1), max(train_lengths, 1), max(param_combos, 1))

@@ -29,8 +29,7 @@ import pandas as pd
 from core.paths import REPO_ROOT
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from research.engine.config import load_config_module
-from research.engine.execution import extract_trade_pnls, plot_monte_carlo
+from research.engine.config import extract_trade_pnls, load_config_module
 from research.engine.grid import expand_grid
 from research.engine.montecarlo import equity_curve, monte_carlo_paths, summarize
 from research.engine.walkforward import (
@@ -176,16 +175,11 @@ def main(argv: list[str] | None = None) -> None:
         dollar_pnls = [r * base for r in oos_returns]
         paths = monte_carlo_paths(dollar_pnls, n_sims=500, start_equity=base)
         stats = summarize(paths, base)
-        png = _REPO_ROOT / "reports" / f"walkforward_montecarlo_{path.stem}.png"
-        plot_monte_carlo(
-            paths, equity_curve(dollar_pnls, base), base, png, f"OOS Monte-Carlo -- {path.stem}"
-        )
         print("\n===== Out-of-sample Monte-Carlo =====")
         print(f"OOS trades:            {len(oos_returns)}")
         print(f"probability of profit: {stats['prob_profit']:.0%}")
         print(f"median max drawdown:   {stats['max_dd_median']:.1%}")
         print(f"95th pct max drawdown: {stats['max_dd_p95']:.1%}")
-        print(f"Chart: {png}")
 
 
 if __name__ == "__main__":

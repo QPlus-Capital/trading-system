@@ -4,7 +4,7 @@ from typing import Any
 
 import pandas as pd
 import pytest
-from research.engine import execution
+from research.engine import config
 
 
 class _FakeTrader:
@@ -53,15 +53,15 @@ def test_zero_trade_window_yields_empty_pnls_not_a_crash(monkeypatch: pytest.Mon
     # a variation with few signals, long-only skipping shorts, or a quiet market. That is a flat
     # window, not a failed task. (Before the guard this raised KeyError and killed the whole task.)
     _FakeNode.report = pd.DataFrame()
-    monkeypatch.setattr(execution, "BacktestNode", _FakeNode)
-    pnls, start = execution.extract_trade_pnls(_run_config())
+    monkeypatch.setattr(config, "BacktestNode", _FakeNode)
+    pnls, start = config.extract_trade_pnls(_run_config())
     assert pnls == []
     assert start == 200_000.0
 
 
 def test_trades_are_parsed_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
     _FakeNode.report = pd.DataFrame({"realized_pnl": ["1_784.69 USD", "-320.00 USD"]})
-    monkeypatch.setattr(execution, "BacktestNode", _FakeNode)
-    pnls, start = execution.extract_trade_pnls(_run_config())
+    monkeypatch.setattr(config, "BacktestNode", _FakeNode)
+    pnls, start = config.extract_trade_pnls(_run_config())
     assert pnls == [1784.69, -320.0]
     assert start == 200_000.0

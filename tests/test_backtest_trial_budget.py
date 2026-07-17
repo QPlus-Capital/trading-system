@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 from research.engine.config import load_config_module
-from research.engine.trial_budget import TrialBudget, study_trial_budget
+from research.engine.overfitting import TrialBudget, study_trial_budget
 
 _REPO_ROOT = __import__("pathlib").Path(__file__).resolve().parents[1]
 
