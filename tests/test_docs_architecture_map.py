@@ -8,7 +8,7 @@ from core.paths import REPO_ROOT
 
 def test_architecture_map_paths_exist() -> None:
     doc = (REPO_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
-    # Backtick-quoted module paths under one of the four packages, e.g. `research/portfolio/risk.py`.
+    # Backtick-quoted module paths under one of the four packages, e.g. `research/portfolio/risk.py`
     paths = set(re.findall(r"`((?:core|research|live|monitoring)/[\w/]+\.py)`", doc))
     assert paths, "no module paths parsed from architecture.md -- has the format changed?"
     missing = sorted(p for p in paths if not (REPO_ROOT / p).is_file())
