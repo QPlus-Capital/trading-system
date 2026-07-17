@@ -7,11 +7,11 @@ default:
 
 # Run the full research pipeline (stage 1 -> prints the next command)
 backtest:
-    uv run python -m research.stages.edge --config research/config/robustness.py
+    uv run python -m research.stages.edge research/config/robustness.py
 
 # Open the newest report.html in the browser
 report:
-    uv run python -c "import pathlib,webbrowser; d=sorted(pathlib.Path('reports/research').glob('run_*')); print('no runs yet') if not d else webbrowser.open((d[-1]/'report.html').as_uri())"
+    uv run python -c "import pathlib,webbrowser; d=sorted(pathlib.Path('reports/research').glob('run_*')); print('no runs yet') if not d else webbrowser.open((d[-1]/'report.html').resolve().as_uri())"
 
 # Live TTP account — signal-only (safe, no orders)
 live-ttp:
