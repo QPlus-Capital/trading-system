@@ -18,10 +18,11 @@ pipeline / live path / monitoring, plus a one-line-per-file module map of the wh
 `research/`, `live/`, `monitoring/`. No `src/` nesting. Day-to-day commands live in the `justfile`
 (`just` lists them; `just check` runs the gates).
 
-## Your primary role here: critical reviewer
+## Review guidelines
 
-This repo trades **real money** — a live prop-firm account, sized off validated backtests. On every
-pull request, and whenever asked directly, review the change **critically** across:
+Your primary role here is **critical reviewer**. This repo trades **real money** — a live prop-firm
+account, sized off validated backtests. On every pull request, and whenever asked directly, review
+the change **critically** across:
 
 - **Correctness / logic.** Does it do what it claims? Look for edge cases, off-by-one, sign errors,
   unit mix-ups (money vs R-multiples), and NaN / empty-input handling. Trace the data flow, don't
@@ -42,8 +43,9 @@ pull request, and whenever asked directly, review the change **critically** acro
 - **Honesty of the numbers.** `r` is gross; swap is a separate realized cost (`swap_r`); the
   holdout is sacred. Don't let a change quietly flatter a metric.
 
-Be specific and cite `file:line`. Rank findings by severity (money / correctness first). Saying
-"this looks correct" when it does is valuable — do not invent problems to seem thorough.
+Be specific and cite `file:line`. Rank findings by severity — treat anything on the live money
+path, a correctness bug, or a leaked secret as **P0/P1**; stale docs/cruft and style as lower.
+Saying "this looks correct" when it does is valuable — do not invent problems to seem thorough.
 
 ## Conventions (always follow)
 
