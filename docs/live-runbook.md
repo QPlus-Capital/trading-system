@@ -17,7 +17,7 @@ account. All code tooling (dashboard) defaults to TTP.
    `MT5\ttp\` (File → Login to Trade Account; if TTP's server isn't listed, File → Open an Account →
    search its name to add it), enable Algo Trading, and add all 10 symbols to Market Watch. To add a
    future account, copy an instance folder to `MT5\<new>\`.
-3. **Fill the TTP profile** in `src/qplus/live/accounts.py`: `expected_login` = the TTP account
+3. **Fill the TTP profile** in `live/accounts.py`: `expected_login` = the TTP account
    number (the guard refuses real orders until this is set). `terminal_path` is already set for both
    accounts (the `MT5\<name>\terminal64.exe` copies).
 4. **Verify symbols on first connect:** run `--account ttp` once in the default SIGNAL_ONLY mode and
@@ -29,12 +29,12 @@ account. All code tooling (dashboard) defaults to TTP.
 Each runner needs *its* terminal open + logged in.
 
 ```bash
-# Demo (unchanged strategy; watched only in MT5). State migrates to reports/live/mex/ on first run.
-uv run python -m qplus.live.run --account mex --mode execute
+# Demo (unchanged strategy; watched only in MT5). State lives in reports/live/mex/.
+uv run python -m live.run --account mex --mode execute      # or: just live-demo execute
 
 # TTP real money — SIGNAL_ONLY first (a few cycles, verify), THEN execute.
-uv run python -m qplus.live.run --account ttp                 # dry-run, no orders
-uv run python -m qplus.live.run --account ttp --mode execute  # REAL orders
+uv run python -m live.run --account ttp                 # dry-run, no orders (just live-ttp)
+uv run python -m live.run --account ttp --mode execute  # REAL orders (just live-ttp execute)
 ```
 
 - State/logs are isolated per account: `reports/live/mex/` vs `reports/live/ttp/`.
@@ -44,7 +44,7 @@ uv run python -m qplus.live.run --account ttp --mode execute  # REAL orders
 ## Monitoring
 
 ```bash
-uv run streamlit run src/qplus/monitoring/dashboard.py
+uv run streamlit run monitoring/dashboard.py    # or: just monitor
 ```
 Pick the account in the sidebar (defaults to TTP). The demo you watch directly in MT5.
 
@@ -56,7 +56,7 @@ automatically because sizing is 0.18% of the current equity):
 
 ```bash
 rm reports/live/ttp/risk_state.json    # reset the trailing/daily reference to the new start
-uv run python -m qplus.live.run --account ttp --mode execute
+uv run python -m live.run --account ttp --mode execute
 ```
 
 ## Emergency
