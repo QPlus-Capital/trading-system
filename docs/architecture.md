@@ -97,8 +97,8 @@ The call stack from a stage down to the strategy — this is where things are
 
 ```text
 research/stages/portfolio.py             orchestrates the stage
-└─ engine/pipeline.make_extract_fn()     builds the per-market extractor
-   └─ research/portfolio/trades.py       extracts the timed OOS trade stream
+└─ portfolio/trades.make_extract_fn()    builds the per-market extractor
+   └─ portfolio/trades.extract_market_trades  extracts the timed OOS trade stream
       └─ engine/walkforward_runner.py    drives walk-forward windows
          └─ engine/walkforward.py        splits history into train/test windows
             └─ engine/grid.py            runs the parameter sweep per window
@@ -153,7 +153,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    DEALS["MT5 deals<br/>(via the bridge)"] --> LIVEM["monitoring/live.py<br/>deals → round-trip trades<br/>+ realized equity"]
+    DEALS["MT5 deals<br/>(via the bridge)"] --> LIVEM["monitoring/deals.py<br/>deals → round-trip trades<br/>+ realized equity"]
     REF["backtest reference run"] --> REFM["monitoring/reference.py<br/>expectation + Monte-Carlo band"]
     STUDY2["study.csv"] --> RES["monitoring/study_explorer.py<br/>study explorer"]
     LIVEM --> DASH["monitoring/dashboard.py<br/>Streamlit, account selector (default ttp)"]
@@ -181,32 +181,25 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `core/data/mt5_csv.py` | Import MT5 CSV exports into the Parquet catalog |
 | `core/data/synthetic.py` | Deterministic synthetic data for offline tests |
 
-### Research — engine (backtest machinery: foundation + walk-forward)
+### Research — engine (backtest + walk-forward machinery)
 
 | File | Purpose |
 |---|---|
-| `research/engine/config.py` | High-level backtest runner (NautilusTrader wiring) |
+| `research/engine/config.py` | Run one NautilusTrader backtest + extract its per-trade PnLs; load config modules |
 | `research/engine/recipe.py` | Factory for per-instrument sweep recipes (one engine run) |
 | `research/engine/grid.py` | Parameter sweep across combinations |
-| `research/engine/execution.py` | Monte-Carlo equity report for a single recipe |
-| `research/engine/montecarlo.py` | Monte-Carlo robustness from per-trade PnLs |
-| `research/engine/overfitting.py` | Selection-bias statistics (deflated Sharpe, PBO — Bailey & López de Prado) |
-| `research/engine/trial_budget.py` | Honest multiple-testing budget |
-
-### Research — engine (walk-forward) & selection
-
-| File | Purpose |
-|---|---|
+| `research/engine/montecarlo.py` | Monte-Carlo robustness from per-trade PnLs (profit probability, drawdown) |
+| `research/engine/overfitting.py` | Selection-bias statistics: deflated Sharpe, PBO, the multiple-testing budget |
 | `research/engine/walkforward.py` | Walk-forward window scheme (train/test splits, purge/embargo) |
-| `research/engine/walkforward_runner.py` | Walk-forward runner (engine driver) |
+| `research/engine/walkforward_runner.py` | Walk-forward runner (drives backtests over the windows) |
 | `research/engine/characterize.py` | The robustness study: walk-forward every instrument × variation, in parallel |
-| `research/stages/universe.py` | Universe selection + global structure choice |
 
 ### Research — portfolio math (pure, on DataFrames)
 
 | File | Purpose |
 |---|---|
-| `research/portfolio/trades.py` | The timestamped OOS trade stream the portfolio consumes |
+| `research/portfolio/trades.py` | The timestamped OOS trade stream + the stage-3 extractor factory |
+| `research/portfolio/stats.py` | Shared metric helpers: edge/risk stats, R-multiples, daily equity |
 | `research/portfolio/curves.py` | Daily realized + mark-to-market equity curves (swap realized-only) |
 | `research/portfolio/sizing.py` | Position-sizing simulation: per-trade risk + the daily path |
 | `research/portfolio/risk.py` | The risk system: account context + pluggable tail-capped sizing policies |
@@ -216,8 +209,6 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/portfolio/factsheet.py` | End-of-run metrics matrix (full vs holdout, flat vs compound, net of swap) |
 | `research/portfolio/html_report.py` | Self-contained `report.html` from a fact sheet |
 | `research/portfolio/regime.py` | Does the edge hold across volatility/trend regimes? |
-| `research/portfolio/correlation.py` | Are the markets really diversified; how crowded is the book? |
-| `research/portfolio/equity_report.py` | Illustrative equity report for the frozen live config |
 | `research/portfolio/swap_analysis.py` | Swap-cost report + snapshot refresh (`pull_swap_specs`) |
 
 ### Research — stages (the CLI)
@@ -227,9 +218,9 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/stages/_runbook.py` | Run directory + terminal UX (banner, next command) |
 | `research/stages/edge.py` | Stage 1 — is the edge real, where, is it robust? |
 | `research/stages/select.py` | Stage 2 — which structure and which markets? |
+| `research/stages/universe.py` | Stage-2 selection logic (structure + market universe) |
 | `research/stages/portfolio.py` | Stage 3 — combine + size under a risk policy |
 | `research/stages/verdict.py` | Stage 4 — trade yes/no + fact sheet + report |
-| `research/engine/pipeline.py` | The injected per-market trade extractor used by stage 3 |
 
 ### Live
 
@@ -249,7 +240,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | File | Purpose |
 |---|---|
 | `monitoring/dashboard.py` | Streamlit dashboard (account-aware, default ttp) |
-| `monitoring/live.py` | MT5 deals → round-trip trades + realized equity + stats |
+| `monitoring/deals.py` | MT5 deals → round-trip trades + realized equity + stats |
 | `monitoring/reference.py` | Backtest reference + Monte-Carlo expectation band |
 | `monitoring/study_explorer.py` | Study explorer: slice + aggregate study results |
 
