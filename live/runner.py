@@ -337,9 +337,27 @@ class LiveRunner:
             return  # already handled this bar
 
         buy, sell = self._replay_signal(closed)
+        # K1/#7: act on the signal FIRST, then record the bar as handled. A rejected order (or a
+        # failed close/reverse) raises out of _act_on_signal, so we never reach the mark below and
+        # the SAME bar is retried next cycle -- live can't silently stay flat while the backtest is
+        # positioned. The retry is idempotent: owned_positions reflects what actually filled, so a
+        # partial reversal (old side already closed) reopens the intended side rather than acting
+        # twice. Terminal no-op outcomes (no signal, already positioned, blocked) return normally
+        # and DO mark the bar, so we don't reprocess them.
+        self._act_on_signal(spec, buy, sell, last, equity)
         self._last_bar_time[spec.name] = last.time
         self._cycle_bars += 1
         self._persist()  # remember the handled bar, so a restart cannot act on it twice
+
+    def _act_on_signal(
+        self, spec: MarketSpec, buy: bool, sell: bool, last: Bar, equity: float
+    ) -> None:
+        """Turn the replayed signal into (at most) one position change for ``spec``.
+
+        Returns normally for every terminal outcome (no signal, already positioned the right way,
+        long-only flatten, not sizable, risk-blocked). Raises only if an order it *attempts* fails
+        -- the caller relies on that to decide whether the bar may be marked handled (#7).
+        """
         if buy == sell:  # no signal (or contradictory) -> hold
             return
         self._cycle_signals += 1

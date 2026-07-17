@@ -223,6 +223,38 @@ def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
     assert r2._last_bar_time == {"XAUUSD": handled}  # restored -> the bar is already marked
 
 
+def test_rejected_order_leaves_the_bar_unmarked_and_retries_next_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #7: a signal bar is marked handled only AFTER the order is confirmed. If the terminal
+    # rejects the order, the bar stays unmarked so the next cycle retries it -- live must not
+    # sit flat while the backtest is positioned.
+    stub = StubBridge()
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    # Drive the order path directly (the indicator would need hand-crafted bars); we test the
+    # order/idempotency wiring, not the signal maths.
+    monkeypatch.setattr(runner, "_replay_signal", lambda closed: (True, False))
+    reject = {"n": 1}  # reject exactly the first order, then let it through
+    real_place = stub.place_order
+
+    def flaky(name: str, side: str, volume: float, **kw: object) -> int:
+        if reject["n"]:
+            reject["n"] -= 1
+            raise RuntimeError("broker rejected order")
+        return real_place(name, side, volume, **kw)
+
+    monkeypatch.setattr(stub, "place_order", flaky)
+
+    runner.run_once()  # order rejected this cycle
+    assert stub.open_positions == []  # nothing opened
+    assert "XAUUSD" not in runner._last_bar_time  # bar NOT recorded -> eligible for retry
+
+    runner.run_once()  # same bar retried; the order goes through now
+    assert stub.placed == [("XAUUSD", "BUY", stub.placed[0][2])]  # placed once, on the retry
+    assert stub.open_positions and stub.open_positions[0].side == "BUY"  # position now live
+    assert runner._last_bar_time["XAUUSD"] == stub.bars[-2].time  # only NOW marked handled
+
+
 # -- re-anchoring the exits onto the real fill price (live == backtest) ---------------------------
 
 _SPEC = MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)
