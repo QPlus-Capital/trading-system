@@ -24,9 +24,11 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from datetime import time as dtime
 from enum import StrEnum
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from core.paths import REPO_ROOT
 from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
@@ -36,6 +38,23 @@ from live.notify import Notifier
 from live.risk_control import RiskController, position_volume
 
 log = logging.getLogger("live")
+
+# TTP CFD Prime resets the daily drawdown at 16:15 America/Chicago (DST-aware), on the previous
+# day's closing balance -- verified from TTP support. The internal daily stop must follow the same
+# loss-day boundary, not UTC/server midnight, or our budget disagrees with the prop firm's.
+_CHICAGO = ZoneInfo("America/Chicago")
+_DAILY_RESET = dtime(16, 15)
+
+
+def loss_day(now_utc: datetime) -> date:
+    """The prop-firm 'loss day' a UTC instant belongs to (rolls at 16:15 CT).
+
+    An instant at/after 16:15 CT counts toward the NEXT day, so the returned label increments
+    exactly at the reset. ``now_utc`` must be tz-aware; MT5 tick times are UTC per the MetaQuotes
+    Python docs (parity of the feed's clock is tracked separately).
+    """
+    local = now_utc.astimezone(_CHICAGO)
+    return local.date() + timedelta(days=1) if local.time() >= _DAILY_RESET else local.date()
 
 _H4_SECONDS = 4 * 3600  # an H4 bar with open time t is closed once server time >= t + 4h
 
@@ -222,16 +241,19 @@ class LiveRunner:
         """Process one polling cycle: day roll, safety check, then each market."""
         if self._halted:
             return
-        # H3: the daily-limit boundary must follow the BROKER's server day (TTP resets at
-        # server midnight), not the client's UTC date -- otherwise the daily reference resets
-        # at the wrong hour and our budget can disagree with TTP's.
+        # H3: the daily-limit boundary follows the prop firm's loss day (TTP resets at 16:15 CT on
+        # the previous day's closing balance), not UTC/server midnight -- else the daily reference
+        # resets at the wrong hour and our budget disagrees with TTP's.
         now = now or self._bridge.server_time()
         account = self._bridge.account()
 
-        # Day roll: bank the prior day's HWM, reset the daily reference. Persist so a restart
-        # keeps the true HWM / day-start rather than resetting to the current balance (K1).
-        today = now.date()
+        # Day roll: bank the prior day's HWM, reset the daily reference. Persist so a restart keeps
+        # the true HWM / day-start rather than resetting to the current balance (K1).
+        today = loss_day(now)
         if self._day is None:
+            # First launch (no restored state): anchor the daily floor to the CURRENT balance, not
+            # the profile's original balance, so a mid-run start doesn't leave a stale floor.
+            self._risk.on_new_day(account.balance)
             self._day = today
             self._persist()
         elif today != self._day:

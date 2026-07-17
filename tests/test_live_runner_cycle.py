@@ -4,7 +4,7 @@ These exercise the real orchestration path (day roll, safety cut-off, bar filter
 replay, sizing, risk gate) without a terminal -- the wiring that must work on Monday.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
@@ -147,6 +147,23 @@ def test_run_once_halts_below_trailing_floor() -> None:
     runner2 = _runner(stub2, mode=Mode.EXECUTE)
     runner2.run_once()
     assert runner2._halted and stub2.closed == [8]  # EXECUTE flattens for real
+
+
+def test_loss_day_rolls_at_16_15_chicago_dst_aware() -> None:
+    from live.runner import loss_day
+
+    # Summer (CDT = UTC-5): 16:15 CT = 21:15 UTC. 16:14 vs 16:16 CT are different loss days.
+    before = datetime(2026, 7, 1, 21, 14, tzinfo=UTC)  # 16:14 CDT
+    after = datetime(2026, 7, 1, 21, 16, tzinfo=UTC)  # 16:16 CDT
+    assert loss_day(after) == loss_day(before) + timedelta(days=1)
+    # Winter (CST = UTC-6): the boundary is at 22:15 UTC, not 21:15 -> DST-aware.
+    assert loss_day(datetime(2026, 1, 15, 22, 14, tzinfo=UTC)) != loss_day(
+        datetime(2026, 1, 15, 22, 16, tzinfo=UTC)
+    )
+    # 21:15 UTC in January is only 15:15 CST -> still the same (pre-reset) day.
+    assert loss_day(datetime(2026, 1, 15, 21, 14, tzinfo=UTC)) == loss_day(
+        datetime(2026, 1, 15, 21, 16, tzinfo=UTC)
+    )
 
 
 def test_owned_filter_ignores_manual_and_foreign_positions() -> None:
