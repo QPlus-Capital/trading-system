@@ -16,7 +16,6 @@ A sweep config module (under ``config/backtest/``) must define:
 """
 
 import itertools
-import sys
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -24,9 +23,8 @@ from typing import Any
 import pandas as pd
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestRunConfig
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-from research.engine.config import load_config_module, run_backtest
+from research.engine.config import run_backtest
 
 Factory = Callable[[dict[str, Any]], BacktestRunConfig]
 Runner = Callable[[BacktestRunConfig], BacktestResult]
@@ -88,36 +86,3 @@ def _rank(df: pd.DataFrame) -> pd.DataFrame:
     if eligible.empty:
         return df.sort_values("pnl", ascending=False)
     return eligible.sort_values("profit_factor", ascending=False)
-
-
-def main(argv: list[str] | None = None) -> None:
-    """CLI entry point: load a sweep config module, run it, print the ranking."""
-    args = sys.argv[1:] if argv is None else argv
-    if not args:
-        raise SystemExit("usage: python -m research.engine.grid <sweep_config.py>")
-    module = load_config_module(Path(args[0]))
-
-    catalog_dir = Path(module.CATALOG_PATH)
-    needed = str(module.INSTRUMENT.id)
-    have = (
-        {str(i.id) for i in ParquetDataCatalog(str(catalog_dir)).instruments()}
-        if catalog_dir.exists()
-        else set()
-    )
-    if needed not in have:
-        print(f"Instrument {needed} not in catalog -> seeding ...")
-        module.seed_catalog()
-
-    out_path = Path(module.OUT_PATH)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    df = run_sweep(module.build_run_config, module.PARAM_GRID, out_path=out_path)
-
-    ranked = _rank(df)
-    print("\n===== Top 10 (ranked) =====")
-    with pd.option_context("display.width", 200, "display.max_columns", 20):
-        print(ranked.head(10).to_string(index=False))
-    print(f"\nFull results ({len(df)} runs): {out_path}")
-
-
-if __name__ == "__main__":
-    main()
