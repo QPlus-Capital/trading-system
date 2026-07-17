@@ -35,7 +35,7 @@ Full map with diagrams: **[docs/architecture.md](docs/architecture.md)**.
 All day-to-day commands live in the **[`justfile`](justfile)** — type `just` to see them:
 
 ```
-just backtest        # run the research pipeline  -> reports/framework/run_*/
+just backtest        # run the research pipeline  -> reports/research/run_*/
 just report          # open the latest backtest report
 just live-ttp        # start the live runner (add `execute` for real orders)
 just monitor         # the monitoring dashboard

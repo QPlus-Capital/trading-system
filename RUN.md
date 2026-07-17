@@ -100,7 +100,7 @@ operations guide is **[docs/live-runbook.md](docs/live-runbook.md)**. In short:
 
 - **Data** lives in a Parquet catalog under `catalog/` (gitignored), imported from the
   MetaTrader 5 CSVs in `data/` (also gitignored); the backtest seeds it on first use.
-- **The strategy code** lives once in `src/qplus/strategies/` — the same pure signal
+- **The strategy code** lives once in `core/strategies/` — the same pure signal
   engine drives both the backtest and the live MT5 runner, so **live == backtest**.
 - **Configs** under `config/` are where you turn the knobs: `study/` for the research
   sweep, `live/` for the frozen tradeable config.
