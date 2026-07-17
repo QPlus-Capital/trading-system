@@ -64,6 +64,34 @@ def load_config_module(path: Path) -> ModuleType:
     return module
 
 
+def _parse_money(value: object) -> float:
+    """Parse a NautilusTrader money string like ``'1784.69 USD'`` into a float."""
+    return float(str(value).split()[0].replace("_", ""))
+
+
+def extract_trade_pnls(run_config: BacktestRunConfig) -> tuple[list[float], float]:
+    """Run the config and return (realized PnL per trade, starting equity).
+
+    A window can legitimately produce ZERO trades -- a variation with fewer signals (longer EMA),
+    long-only skipping every short, or simply a quiet stretch on one market. NautilusTrader then
+    returns an empty positions report with no ``realized_pnl`` column, so guard for it: no trades is
+    an empty PnL list (a flat, zero-return window), never a crashed task.
+    """
+    node = BacktestNode(configs=[run_config])
+    try:
+        node.run()
+        engine = node.get_engines()[0]
+        positions = engine.trader.generate_positions_report()
+        if "realized_pnl" in positions.columns:
+            pnls = [_parse_money(v) for v in positions["realized_pnl"]]
+        else:
+            pnls = []
+    finally:
+        node.dispose()  # type: ignore[no-untyped-call]
+    start_equity = _parse_money(run_config.venues[0].starting_balances[0])
+    return pnls, start_equity
+
+
 def main(argv: list[str] | None = None) -> None:
     """CLI entry point: load a config module, ensure data exists, run the backtest."""
     args = sys.argv[1:] if argv is None else argv

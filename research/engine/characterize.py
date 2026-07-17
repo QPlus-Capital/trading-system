@@ -19,8 +19,7 @@ return is never the ranking key). It also reports, per variation:
 
 Everything lands in a single timestamped folder ``reports/study/run_<ts>/`` (which is
 git-ignored): ``study.csv`` (full table), ``ranking.csv``, a variation x instrument
-heatmap and Monte-Carlo charts for the top few variations only -- so the reports
-folder does not fill up with one chart per variation.
+heatmap of variation x instrument OOS returns.
 
 A study config module must define ``INSTRUMENTS`` (list of ``(factory, csv, leverage)``),
 ``VARIATIONS`` (``dict[name, config_overrides]``) and ``PARAM_GRID``; it may also set
@@ -48,16 +47,15 @@ from core.paths import REPO_ROOT
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 from research.engine.config import load_config_module
+from research.engine.overfitting import study_trial_budget
 from research.engine.recipe import SweepRecipe
-from research.engine.trial_budget import study_trial_budget
 from research.engine.walkforward import normalized_wfe, walk_forward_efficiency
 from research.engine.walkforward_runner import run_walkforward
 
 _REPO_ROOT = REPO_ROOT
-_START_EQUITY = 200_000.0  # matches SweepRecipe.VENUE starting balance
 
-# Per-task list payloads kept in memory for reporting but dropped from the CSV.
-_LIST_KEYS = ("window_oos", "trade_oos")
+# Per-task list payload kept in memory for reporting but dropped from the CSV.
+_LIST_KEYS = ("window_oos",)
 
 
 def _run_task(
@@ -119,7 +117,6 @@ def _run_task(
         "wfe_norm": round(normalized_wfe(results, train_months, test_months), 3),
         "oos_trades": sum(r.oos_trades for r in results),
         "window_oos": oos,  # per-window OOS returns (for Sharpe / DSR)
-        "trade_oos": [x for r in results for x in r.oos_returns],  # per-trade (for Monte-Carlo)
     }
 
 
@@ -153,29 +150,6 @@ def _plot_heatmap(pivot: pd.DataFrame, path: Path, title: str) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
-
-
-def _top_charts(
-    top_variations: list[str], trades_by_var: dict[str, list[float]], out_dir: Path
-) -> None:
-    """Save an OOS Monte-Carlo fan chart for the top few variations only."""
-    from research.engine.execution import plot_monte_carlo
-    from research.engine.montecarlo import equity_curve, monte_carlo_paths
-
-    for variation in top_variations:
-        trades = trades_by_var.get(variation, [])
-        if len(trades) < 20:
-            continue
-        dollar_pnls = [r * _START_EQUITY for r in trades]
-        paths = monte_carlo_paths(dollar_pnls, n_sims=500, start_equity=_START_EQUITY)
-        actual = equity_curve(dollar_pnls, _START_EQUITY)
-        plot_monte_carlo(
-            paths,
-            actual,
-            _START_EQUITY,
-            out_dir / f"montecarlo_{variation}.png",
-            f"pooled OOS trades -- {variation}",
-        )
 
 
 def variation_pbo(good: list[dict[str, Any]], n_splits: int = 10) -> float:
@@ -225,12 +199,10 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         print("no successful tasks -> no ranking report")
         return
 
-    # Pool each variation's return series across all instruments.
+    # Pool each variation's per-window return series across all instruments.
     win_by_var: dict[str, list[float]] = defaultdict(list)
-    trades_by_var: dict[str, list[float]] = defaultdict(list)
     for r in good:
         win_by_var[r["variation"]].extend(r["window_oos"])
-        trades_by_var[r["variation"]].extend(r["trade_oos"])
 
     variation_sharpe = {v: sharpe_ratio(s) for v, s in win_by_var.items()}
     sharpe_variance = (
@@ -301,8 +273,6 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
             out_dir / "heatmap_by_train.png",
             "Mean OOS return % -- variation x train length",
         )
-
-    _top_charts(order[:3], trades_by_var, out_dir)
 
 
 def main(argv: list[str] | None = None) -> None:
