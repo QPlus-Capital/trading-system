@@ -299,7 +299,7 @@ class LiveRunner:
         self._cycle_signals += 1
         desired: Side = "BUY" if buy else "SELL"
 
-        current = self._bridge.positions(spec.name)
+        current = self._bridge.owned_positions(spec.name)  # never act on manual / foreign-EA trades
         pos = current[0] if current else None
 
         if self._long_only and desired == "SELL":
@@ -406,7 +406,7 @@ class LiveRunner:
             for attempt in range(5):
                 if attempt:
                     time.sleep(0.5)
-                mine = self._bridge.positions(spec.name)
+                mine = self._bridge.owned_positions(spec.name)
                 exact = [p for p in mine if p.ticket == ticket]
                 same_side = [p for p in mine if p.side == sized.side]
                 if exact:
@@ -468,7 +468,7 @@ class LiveRunner:
         self._notify.alert(f"SAFETY HALT: {reason} -- flattening & stopping")
         if self._mode is Mode.EXECUTE:
             for spec in self._markets:
-                for pos in self._bridge.positions(spec.name):
+                for pos in self._bridge.owned_positions(spec.name):  # never flatten manual trades
                     try:
                         self._bridge.close_position(pos)
                     except Exception:
