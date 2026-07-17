@@ -96,6 +96,7 @@ class Position:
     sl: float
     tp: float
     profit: float
+    magic: int = 0  # the EA magic number; ours is MAGIC. 0 / other = manual or a foreign EA.
 
 
 @dataclass(frozen=True)
@@ -311,9 +312,20 @@ class Mt5Bridge:
                     sl=float(p.sl),
                     tp=float(p.tp),
                     profit=float(p.profit),
+                    magic=int(p.magic),
                 )
             )
         return out
+
+    def owned_positions(self, name: str | None = None) -> list[Position]:
+        """Only the positions THIS runner opened (magic == MAGIC).
+
+        Everything the runner opens, closes, modifies or flattens goes through here, so it can
+        never touch a manual trade or another EA's position on the same account. Account-level
+        risk still counts ALL exposure (see the runner) -- ownership limits what we *act on*,
+        not what we *account for*.
+        """
+        return [p for p in self.positions(name) if p.magic == MAGIC]
 
     def history_deals(self, since: datetime) -> list[dict[str, Any]]:
         """Raw closed deals since ``since`` (for monitoring); empty list if none.

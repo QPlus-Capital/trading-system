@@ -10,7 +10,7 @@ from typing import cast
 
 import pytest
 from core.strategies.rsi_wpr_bb_signals import SignalParams
-from live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
+from live.mt5_bridge import MAGIC, AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
 from live.risk_control import RiskController, RiskLimits
 from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, size_order
 
@@ -66,6 +66,9 @@ class StubBridge:
     def positions(self, name: str | None = None) -> list[Position]:
         return list(self.open_positions)
 
+    def owned_positions(self, name: str | None = None) -> list[Position]:
+        return [p for p in self.positions(name) if p.magic == MAGIC]
+
     def latest_bars(self, name: str, n: int) -> list[Bar]:
         return self.bars[-n:]
 
@@ -86,6 +89,7 @@ class StubBridge:
                 sl=sl,
                 tp=tp,
                 profit=0.0,
+                magic=MAGIC,  # positions the runner opens carry our magic
             )
         )
         return 99
@@ -132,17 +136,32 @@ def test_run_once_full_cycle_no_signal_no_orders() -> None:
 def test_run_once_halts_below_trailing_floor() -> None:
     stub = StubBridge()
     stub.equity = 94_000.0  # below the 95k trailing floor (100k - 5%)
-    stub.open_positions = [Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0)]
+    stub.open_positions = [Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
     runner = _runner(stub)
     runner.run_once()
     assert runner._halted  # safety halt engaged
     assert stub.closed == []  # SIGNAL_ONLY never touches the terminal
     stub2 = StubBridge()
     stub2.equity = 94_000.0
-    stub2.open_positions = [Position(8, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0)]
+    stub2.open_positions = [Position(8, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
     runner2 = _runner(stub2, mode=Mode.EXECUTE)
     runner2.run_once()
     assert runner2._halted and stub2.closed == [8]  # EXECUTE flattens for real
+
+
+def test_owned_filter_ignores_manual_and_foreign_positions() -> None:
+    # A manual / foreign-EA position (magic != ours) on our symbol must never be acted on.
+    foreign = Position(555, "XAUUSD", "BUY", 1.0, 2000.0, 1980.0, 2060.0, 0.0, magic=999)
+    stub = StubBridge()
+    stub.equity = 94_000.0  # below the trailing floor -> safety halt this cycle
+    stub.open_positions = [foreign]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    runner.run_once()
+    assert runner._halted  # halt engaged
+    assert stub.closed == []  # the foreign position is NOT flattened
+    # Ownership limits what we act on; account risk still sees all exposure.
+    assert stub.owned_positions("XAUUSD") == []
+    assert stub.positions("XAUUSD") == [foreign]
 
 
 def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
