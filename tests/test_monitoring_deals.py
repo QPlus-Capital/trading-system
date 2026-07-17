@@ -1,7 +1,7 @@
 """Tests for the pure monitoring logic (deals -> trades, equity, live stats)."""
 
 import numpy as np
-from monitoring.live import deals_to_trades, equity_curve, live_stats
+from monitoring.deals import deals_to_trades, equity_curve, live_stats
 
 
 def _deal(
