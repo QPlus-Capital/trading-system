@@ -175,6 +175,8 @@ class LiveRunner:
         state_path: Path | None = None,
         long_only: bool = False,
         notifier: Notifier | None = None,
+        expected_login: int | None = None,
+        expected_currency: str | None = None,
     ) -> None:
         self._bridge = bridge
         self._markets = markets
@@ -183,6 +185,10 @@ class LiveRunner:
         self._mode = mode
         self._history = history_bars
         self._long_only = long_only  # N2: a sell signal flattens instead of going short
+        # Re-checked every cycle (not just at startup): if the terminal ever reconnects to another
+        # account, HALT immediately and do NOT touch positions (they belong to the wrong account).
+        self._expected_login = expected_login
+        self._expected_currency = expected_currency
         self._notify = notifier or Notifier()  # default: log-only (no beep / telegram)
         self._last_bar_time: dict[str, int] = {}  # our name -> epoch of last acted bar
         self._day: date | None = None
@@ -246,6 +252,24 @@ class LiveRunner:
         # resets at the wrong hour and our budget disagrees with TTP's.
         now = now or self._bridge.server_time()
         account = self._bridge.account()
+
+        # Identity re-check EVERY cycle: if the terminal reconnected to another account, halt and
+        # do NOT touch positions (they are the wrong account's). Startup already guarded once.
+        if self._expected_login is not None and (
+            account.login != self._expected_login or account.currency != self._expected_currency
+        ):
+            self._halted = True
+            self._halt_reason = "account identity mismatch"
+            log.critical(
+                "SAFETY HALT: connected account is ***%03d/%s, expected ***%03d/%s "
+                "-- stopping WITHOUT touching positions.",
+                account.login % 1000,
+                account.currency,
+                self._expected_login % 1000,
+                self._expected_currency,
+            )
+            self._notify.alert("SAFETY HALT: account identity mismatch -- stopped")
+            return
 
         # Day roll: bank the prior day's HWM, reset the daily reference. Persist so a restart keeps
         # the true HWM / day-start rather than resetting to the current balance (K1).

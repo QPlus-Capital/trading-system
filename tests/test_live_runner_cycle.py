@@ -166,6 +166,24 @@ def test_loss_day_rolls_at_16_15_chicago_dst_aware() -> None:
     )
 
 
+def test_per_cycle_guard_halts_on_account_mismatch_without_flattening() -> None:
+    # If the terminal reconnects to another account mid-run, halt and DON'T touch its positions.
+    stub = StubBridge()  # stub.account().login == 1, currency == "EUR"
+    stub.open_positions = [Position(3, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, 5.0, MAGIC)]
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        mode=Mode.EXECUTE,
+        expected_login=999,  # != the connected login (1) -> mismatch
+        expected_currency="EUR",
+    )
+    runner.run_once()
+    assert runner._halted
+    assert stub.closed == []  # wrong account -> even our-magic positions are left untouched
+
+
 def test_owned_filter_ignores_manual_and_foreign_positions() -> None:
     # A manual / foreign-EA position (magic != ours) on our symbol must never be acted on.
     foreign = Position(555, "XAUUSD", "BUY", 1.0, 2000.0, 1980.0, 2060.0, 0.0, magic=999)
