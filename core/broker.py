@@ -196,7 +196,7 @@ _TTP_SPECS: dict[str, InstrumentSpec] = {
     "US500": _INDEX,
 }
 
-# Frictionless reference (matches the historical baseline: spread + commission only, no slippage).
+# Frictionless reference: spread + commission only, no slippage (the zero-slippage baseline).
 FRICTIONLESS = BrokerProfile(name="frictionless", prob_slippage=0.0, instrument_specs=_TTP_SPECS)
 
 # The current prop-firm brokers. prob_slippage is a starting estimate for H4 CFDs -- calibrate it
@@ -223,7 +223,7 @@ def dump_swap_snapshot(specs: dict[str, SwapSpec], path: Path) -> None:
 
 
 def load_swap_snapshot(path: Path) -> dict[str, SwapSpec]:
-    """Load a swap-rate snapshot previously written by :func:`dump_swap_snapshot`."""
+    """Load a swap-rate snapshot written by :func:`dump_swap_snapshot`."""
     payload = json.loads(path.read_text())
     return {sym: SwapSpec(**fields) for sym, fields in payload.items()}
 
