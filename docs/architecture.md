@@ -178,6 +178,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `core/strategies/rsi_wpr_bb.py` | Thin NautilusTrader wrapper around the signal engine (backtest execution) |
 | `core/instruments.py` | Instrument definitions for the venues we trade |
 | `core/broker.py` | Swappable broker/market cost profiles; `standard_broker()` = TTP + real swap snapshot |
+| `core/paths.py` | Repo-root resolution (walks up to `pyproject.toml`) — used everywhere for stable paths |
 | `core/data/mt5_csv.py` | Import MT5 CSV exports into the Parquet catalog |
 
 ### Research — engine (backtest + walk-forward machinery)

@@ -1,21 +1,14 @@
-"""Backtest runner (high-level NautilusTrader API).
+"""Backtest execution helpers (high-level NautilusTrader API).
 
-This is a thin, strategy-agnostic orchestrator. It loads a run recipe -- a
-``BacktestRunConfig`` built by a config module under ``config/backtest/`` -- and
-executes it with a ``BacktestNode``. It contains no strategy-specific logic: which
-instrument, data, venue and strategy to use all come from the config.
+Strategy-agnostic library used across the research pipeline:
 
-The config module must define ``build_run_config(catalog_path=...) -> BacktestRunConfig``
-and may define ``seed_catalog(catalog_path=...) -> int`` to populate the data catalog
-if it is empty (used by the synthetic demo).
+- ``run_backtest(run_config)`` executes a ``BacktestRunConfig`` with a ``BacktestNode``;
+- ``extract_trade_pnls(run_config)`` runs it and returns the per-trade realized PnLs;
+- ``load_config_module(path)`` loads a config module by path (it defines
+  ``build_run_config(...) -> BacktestRunConfig`` and, for the synthetic demo, ``seed_catalog``).
 
-Run the bundled demo from the repo root::
-
-    uv run python -m research.engine.config
-
-or point it at another config module::
-
-    uv run python -m research.engine.config config/backtest/rsi_wpr_bb_xauusd.py
+Config modules live under ``research/config/`` (study) and ``live/config/`` (the frozen live
+config). There is no CLI here -- the staged framework (``research.stages``) is the entry point.
 """
 
 

@@ -123,15 +123,21 @@ def compare(mt5_bars: list[Bar], csv_bars: list[Bar], params: SignalParams) -> P
 
 
 def main() -> None:
-    """Connect to the terminal and print a parity report for every configured market."""
+    """Connect to the TTP terminal and print a parity report for every configured market."""
     from research.engine.config import load_config_module
+
+    from live.accounts import get_account
+    from live.mt5_bridge import SYMBOL_MAP
 
     cfg = load_config_module(REPO_ROOT / "live" / "config" / "rsi_wpr_bb.py")
     switches = {k: v for k, v in dict(cfg.STRATEGY_SWITCHES).items() if k != "long_only"}
     params = SignalParams(**switches)
 
-    bridge = Mt5Bridge()
-    bridge.connect()
+    # Attach to the TTP account's terminal with its symbol overrides (USTEC, not the base UT100),
+    # so symbol resolution matches the account that actually trades.
+    ttp = get_account("ttp")
+    bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **ttp.symbol_overrides})
+    bridge.connect(path=ttp.terminal_path)
     try:
         header = f"{'market':8s} {'match':>7s} {'offset':>7s} {'close_dmax':>10s} {'sig a/d':>10s}"
         print(f"{header}  verdict")
