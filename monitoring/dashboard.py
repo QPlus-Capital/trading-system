@@ -25,7 +25,7 @@ from live.accounts import ACCOUNTS
 from live.mt5_bridge import Mt5Bridge
 from live.runner import position_risk
 
-from monitoring.live import deals_to_trades, equity_curve, live_stats
+from monitoring.deals import deals_to_trades, equity_curve, live_stats
 from monitoring.reference import load_reference, mc_band
 from monitoring.study_explorer import METRICS, latest_study_csv, load_study, variant_ranking
 
@@ -101,7 +101,9 @@ def _live_view() -> None:
         days = st.slider("History window (days)", 7, 365, 90)
         if st.button("Refresh now"):
             st.cache_data.clear()
-        st.caption("Live data from MT5 (60s cache). Backtest reference from the latest reports/framework/ run.")
+        st.caption(
+            "Live data from MT5 (60s cache). Backtest reference: the latest reports/framework/ run."
+        )
 
     profile = ACCOUNTS[account_name]
     # -- load --

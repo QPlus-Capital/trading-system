@@ -13,7 +13,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-
 from research.portfolio.stats import edge_stats
 
 
