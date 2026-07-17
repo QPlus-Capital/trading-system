@@ -1,6 +1,6 @@
 """Shared run-book for the staged framework CLI.
 
-A *framework run* is one directory under ``reports/framework/`` that flows through the four
+A *research run* is one directory under ``reports/research/`` that flows through the four
 stages; each stage reads the previous one's artifact from it and writes its own. This module
 holds the run directory + the terminal UX (a stage banner, and the exact NEXT command to run,
 with the run directory already filled in, so the operator never has to guess what to type).
@@ -25,7 +25,7 @@ with contextlib.suppress(Exception):  # pragma: no cover - stream may not suppor
     sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
 
 _REPO_ROOT = REPO_ROOT
-FRAMEWORK_ROOT = _REPO_ROOT / "reports" / "framework"
+RESEARCH_ROOT = _REPO_ROOT / "reports" / "research"
 TOTAL_STAGES = 4
 
 
@@ -37,7 +37,7 @@ class RunDir:
 
     @classmethod
     def create(cls) -> RunDir:
-        p = FRAMEWORK_ROOT / f"run_{datetime.now():%Y%m%d_%H%M}"
+        p = RESEARCH_ROOT / f"run_{datetime.now():%Y%m%d_%H%M}"
         p.mkdir(parents=True, exist_ok=True)
         return cls(p)
 

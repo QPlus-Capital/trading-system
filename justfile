@@ -7,7 +7,7 @@ default:
 
 # ── RESEARCH ────────────────────────────────────────────────────────────
 # Full backtest pipeline stage 1 → prints the next command after each stage.
-# Results land in reports/framework/run_*/  (report.html is the readable one).
+# Results land in reports/research/run_*/  (report.html is the readable one).
 backtest study="research/config/robustness.py":
     uv run python -m research.stages.edge --config {{study}}
 
@@ -18,7 +18,7 @@ verdict run:
 
 # Open the newest report.html in the browser.
 report:
-    uv run python -c "import pathlib,webbrowser; d=sorted(pathlib.Path('reports/framework').glob('run_*'));\
+    uv run python -c "import pathlib,webbrowser; d=sorted(pathlib.Path('reports/research').glob('run_*'));\
  webbrowser.open((d[-1]/'report.html').as_uri()) if d else print('no runs yet')"
 
 # ── LIVE ────────────────────────────────────────────────────────────────

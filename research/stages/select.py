@@ -7,7 +7,7 @@ auto-variation with ``--variation`` to carry forward the one you decided on in S
 
 Usage::
 
-    uv run python -m research.stages.select --run reports/framework/run_X [--variation X]
+    uv run python -m research.stages.select --run reports/research/run_X [--variation X]
 """
 
 from __future__ import annotations

@@ -46,7 +46,7 @@ flowchart LR
 
 | World | Entry point | Output |
 |---|---|---|
-| Research | `uv run python -m research.stages.<stage>` | `reports/framework/run_*/` |
+| Research | `uv run python -m research.stages.<stage>` | `reports/research/run_*/` |
 | Live | `uv run python -m live.run --account {mex,ttp} --mode {signal_only,execute}` | orders on MT5 + `reports/live/<account>/` |
 | Monitoring | `uv run streamlit run monitoring/dashboard.py` | browser dashboard |
 
@@ -54,7 +54,7 @@ flowchart LR
 
 ## 2. Research pipeline — the staged framework
 
-One *framework run* is a directory under `reports/framework/run_*/`. Each stage
+One *research run* is a directory under `reports/research/run_*/`. Each stage
 reads the previous stage's artifact from it and writes its own; every stage prints
 the exact next command. Methodology behind it: [methodology.md](methodology.md).
 
@@ -282,7 +282,7 @@ flowchart TD
 | Path | Contents | Versioned? |
 |---|---|---|
 | `data/` | Parquet catalog + raw CSV exports | no |
-| `reports/framework/run_*/` | one framework run: study.csv, selection.json, trades, verdict, report.html | no |
+| `reports/research/run_*/` | one research run: study.csv, selection.json, trades, verdict, report.html | no |
 | `reports/live/<account>/` | per-account live state: risk_state.json, logs | no |
 | `research/config/` | study definition: variations, grid, instruments, account | yes |
 | `live/config/` | frozen live configs (promotion == adding one) | yes |

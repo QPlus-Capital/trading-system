@@ -1,7 +1,7 @@
 """Load the backtest reference and its Monte-Carlo expectation band for the live comparison.
 
 The reference is the staged framework's full-history trade stream
-(``reports/framework/run_*/full_history_trades.csv``), net of the TTP swap. Everything is in
+(``reports/research/run_*/full_history_trades.csv``), net of the TTP swap. Everything is in
 **R-multiples** (per-trade return in units of risk), so the live account (any size / broker) is
 comparable to the backtest without a currency/scale mismatch.
 """

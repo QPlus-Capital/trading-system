@@ -47,8 +47,8 @@ def _run_study(config: Path) -> Path:
     from research.engine import characterize
 
     characterize.main([str(config)])
-    study_root = rb._REPO_ROOT / "reports" / "study"
-    runs = sorted(study_root.glob("run_*"), key=lambda p: p.stat().st_mtime)
+    study_root = rb._REPO_ROOT / "reports" / "research"
+    runs = sorted(study_root.glob("study_*"), key=lambda p: p.stat().st_mtime)
     if not runs:
         raise SystemExit("study produced no run directory")
     return runs[-1] / "study.csv"

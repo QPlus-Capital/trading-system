@@ -17,9 +17,9 @@ return is never the ranking key). It also reports, per variation:
 * ``dsr`` -- deflated Sharpe, correcting for how many variations were tried, so an
   edge that is really just multiple-testing noise shows up as a low DSR.
 
-Everything lands in a single timestamped folder ``reports/study/run_<ts>/`` (which is
-git-ignored): ``study.csv`` (full table), ``ranking.csv``, a variation x instrument
-heatmap of variation x instrument OOS returns.
+Everything lands in a single timestamped folder ``reports/research/study_<ts>/`` (which is
+git-ignored): ``study.csv`` (full table), ``ranking.csv``, and a variation x instrument
+heatmap of the OOS returns.
 
 A study config module must define ``INSTRUMENTS`` (list of ``(factory, csv, leverage)``),
 ``VARIATIONS`` (``dict[name, config_overrides]``) and ``PARAM_GRID``; it may also set
@@ -292,7 +292,7 @@ def main(argv: list[str] | None = None) -> None:
     holdout_m = int(getattr(cfg, "HOLDOUT_MONTHS", 0))  # reserved final slice, never selected on
     embargo_d = int(getattr(cfg, "EMBARGO_DAYS", 0))  # purge the train/test boundary (F5)
 
-    out_dir = _REPO_ROOT / "reports" / "study" / f"run_{datetime.now():%Y%m%d_%H%M}"
+    out_dir = _REPO_ROOT / "reports" / "research" / f"study_{datetime.now():%Y%m%d_%H%M}"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Seed every instrument's data once (serially); workers then only read the catalog.

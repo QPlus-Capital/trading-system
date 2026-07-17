@@ -7,7 +7,7 @@ Run from the repo root with the MT5 terminal open + logged in::
 Shows how the live account tracks the backtest expectation: the realized equity curve,
 the live edge metrics vs the backtest reference (per market), the cumulative-R path against the
 backtest Monte-Carlo band, and the current risk usage. Reads live data from MT5 and the backtest
-reference from the latest ``reports/framework/`` run; changes nothing on the account.
+reference from the latest ``reports/research/`` run; changes nothing on the account.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ def _live_view() -> None:
         if st.button("Refresh now"):
             st.cache_data.clear()
         st.caption(
-            "Live data from MT5 (60s cache). Backtest reference: the latest reports/framework/ run."
+            "Live data from MT5 (60s cache). Backtest reference: the latest reports/research/ run."
         )
 
     profile = ACCOUNTS[account_name]
@@ -120,7 +120,7 @@ def _live_view() -> None:
     # Newest framework run that actually carries the reference stream (a run dir may be partial).
     runs = [
         d
-        for d in (_REPO / "reports" / "framework").glob("run_*")
+        for d in (_REPO / "reports" / "research").glob("run_*")
         if (d / "full_history_trades.csv").is_file()
     ]
     if not runs:
@@ -260,7 +260,7 @@ def _research_view() -> None:
     st.title("QPlus — Research Explorer")
     csv = latest_study_csv(_REPO / "reports")
     if csv is None:
-        st.warning("No study found under reports/study/. Run `research.engine.characterize`.")
+        st.warning("No study found under reports/research/. Run `research.engine.characterize`.")
         return
     df = load_study(csv)
 

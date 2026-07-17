@@ -36,8 +36,8 @@ def test_variant_ranking_orders_by_metric(tmp_path: Path) -> None:
 
 
 def test_latest_study_csv_finds_the_run(tmp_path: Path) -> None:
-    (tmp_path / "study" / "run_2026").mkdir(parents=True)
-    csv = tmp_path / "study" / "run_2026" / "study.csv"
+    (tmp_path / "research" / "study_2026").mkdir(parents=True)
+    csv = tmp_path / "research" / "study_2026" / "study.csv"
     csv.write_text("x\n")
     assert latest_study_csv(tmp_path) == csv
     assert latest_study_csv(tmp_path / "nope") is None
