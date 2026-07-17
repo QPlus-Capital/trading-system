@@ -179,7 +179,6 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `core/instruments.py` | Instrument definitions for the venues we trade |
 | `core/broker.py` | Swappable broker/market cost profiles; `standard_broker()` = TTP + real swap snapshot |
 | `core/data/mt5_csv.py` | Import MT5 CSV exports into the Parquet catalog |
-| `core/data/synthetic.py` | Deterministic synthetic data for offline tests |
 
 ### Research — engine (backtest + walk-forward machinery)
 

@@ -1,46 +1,41 @@
-# QPlus Trading System — command hub. Run `just` to list everything.
-# (Install once: `winget install --id Casey.Just` or `cargo install just`.)
+# QPlus Trading System — type `just` to see all commands.
+# (Install once: `winget install --id Casey.Just`)
 
-# Show all commands (default when you just type `just`)
+# List all commands
 default:
     @just --list
 
-# ── RESEARCH ────────────────────────────────────────────────────────────
-# Full backtest pipeline stage 1 → prints the next command after each stage.
-# Results land in reports/research/run_*/  (report.html is the readable one).
-backtest study="research/config/robustness.py":
-    uv run python -m research.stages.edge --config {{study}}
+# Run the full research pipeline (stage 1 -> prints the next command)
+backtest:
+    uv run python -m research.stages.edge --config research/config/robustness.py
 
-# Re-run only sizing + verdict on an existing run dir (fast; no re-extraction).
-verdict run:
-    uv run python -m research.stages.portfolio --run {{run}} --risk flat:0.18 --fixed live/config/rsi_wpr_bb.py
-    uv run python -m research.stages.verdict --run {{run}}
-
-# Open the newest report.html in the browser.
+# Open the newest report.html in the browser
 report:
-    uv run python -c "import pathlib,webbrowser; d=sorted(pathlib.Path('reports/research').glob('run_*'));\
- webbrowser.open((d[-1]/'report.html').as_uri()) if d else print('no runs yet')"
+    uv run python -c "import pathlib,webbrowser; d=sorted(pathlib.Path('reports/research').glob('run_*')); print('no runs yet') if not d else webbrowser.open((d[-1]/'report.html').as_uri())"
 
-# ── LIVE ────────────────────────────────────────────────────────────────
-# Real TTP account (real money). Add MODE=execute for real orders.
-live-ttp mode="signal_only":
-    uv run python -m live.run --account ttp --mode {{mode}}
+# Live TTP account — signal-only (safe, no orders)
+live-ttp:
+    uv run python -m live.run --account ttp
 
-# MEX Atlantic demo account.
-live-demo mode="signal_only":
-    uv run python -m live.run --account mex --mode {{mode}}
+# Live TTP account — REAL orders
+live-ttp-execute:
+    uv run python -m live.run --account ttp --mode execute
 
-# GO/NO-GO pre-flight before taking an account live.
-preflight account="ttp":
-    uv run python -m live.preflight --account {{account}}
+# Live MEX demo account — signal-only
+live-demo:
+    uv run python -m live.run --account mex
 
-# ── MONITORING ──────────────────────────────────────────────────────────
-# Live-vs-backtest dashboard (browser). Defaults to the TTP account.
+# GO/NO-GO pre-flight for the TTP account
+preflight:
+    uv run python -m live.preflight --account ttp
+
+# Live-vs-backtest monitoring dashboard
 monitor:
     uv run streamlit run monitoring/dashboard.py
 
-# ── QUALITY GATES (run before every commit) ─────────────────────────────
+# Quality gates — run before every commit (same as CI)
 check:
     uv run ruff check .
     uv run mypy
     uv run pytest -q
+    uvx vulture core research live monitoring --min-confidence 80
