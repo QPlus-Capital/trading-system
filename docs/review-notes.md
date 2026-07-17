@@ -25,7 +25,7 @@ Leitfragen bei jedem Modul:
 ## Lesepfad (vom Konzept zum Detail)
 
 ### Block A — Das Fundament (~30 min)
-- [ ] `README.md` — stimmt die Beschreibung noch mit der Realität überein?
+- [Paper Trading kann raus; Viel zu spezifisch es soll da nicht drin stehen das zum beispiel auf H4 gehandelt wird weil das ist ja nur eine strategie und die readme soll ja allgemein gelten; metatrader auch zu spezfisich wir legen uns ja nicht nur darauf fest; dateistruktur muss komplett angepasst werden wie schon in den kommentaren zur architektur erwähnt; die notizen hier gelten auch für alle anderen dateien die eig allgemein sein sollen aber spezifisch sind ] `README.md` — stimmt die Beschreibung noch mit der Realität überein?
 - [ ] `RUN.md` — könnte ein Fremder damit das System starten?
 - [ ] `CLAUDE.md` — sind die Regeln vollständig und aktuell?
 - [ ] `docs/methodology.md` — die Spezifikation. Deckt sie sich mit dem Code?
