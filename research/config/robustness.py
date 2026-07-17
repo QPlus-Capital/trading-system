@@ -11,18 +11,18 @@ the list as their data + specs arrive.
 from typing import Any
 
 from core.instruments import (
-    audusd_ttp,
-    de40_ttp,
-    eurusd_ttp,
-    gbpusd_ttp,
-    us30_ttp,
-    us500_ttp,
-    usdcad_ttp,
-    usdchf_ttp,
-    usdjpy_ttp,
-    ustec_ttp,
-    xagusd_ttp,
-    xauusd_ttp,
+    audusd,
+    de40,
+    eurusd,
+    gbpusd,
+    us30,
+    us500,
+    usdcad,
+    usdchf,
+    usdjpy,
+    ustec,
+    xagusd,
+    xauusd,
 )
 from research.portfolio.risk import AccountProfile
 
@@ -59,18 +59,18 @@ EMBARGO_DAYS = 7
 
 # (instrument factory, CSV path, leverage). 12 instruments across metals, FX and indices.
 INSTRUMENTS: list[tuple[Any, str, float]] = [
-    (xauusd_ttp, "data/XAUUSD_H4.csv", 10.0),
-    (xagusd_ttp, "data/XAGUSD_H4.csv", 10.0),
-    (eurusd_ttp, "data/EURUSD_H4.csv", 50.0),
-    (gbpusd_ttp, "data/GBPUSD_H4.csv", 50.0),
-    (audusd_ttp, "data/AUDUSD_H4.csv", 50.0),
-    (usdchf_ttp, "data/USDCHF_H4.csv", 50.0),
-    (usdjpy_ttp, "data/USDJPY_H4.csv", 50.0),
-    (usdcad_ttp, "data/USDCAD_H4.csv", 50.0),
-    (us30_ttp, "data/US30_H4.csv", 15.0),
-    (de40_ttp, "data/DE40_H4.csv", 15.0),
-    (us500_ttp, "data/US500_H4.csv", 15.0),
-    (ustec_ttp, "data/USTEC_H4.csv", 15.0),
+    (xauusd, "data/XAUUSD_H4.csv", 10.0),
+    (xagusd, "data/XAGUSD_H4.csv", 10.0),
+    (eurusd, "data/EURUSD_H4.csv", 50.0),
+    (gbpusd, "data/GBPUSD_H4.csv", 50.0),
+    (audusd, "data/AUDUSD_H4.csv", 50.0),
+    (usdchf, "data/USDCHF_H4.csv", 50.0),
+    (usdjpy, "data/USDJPY_H4.csv", 50.0),
+    (usdcad, "data/USDCAD_H4.csv", 50.0),
+    (us30, "data/US30_H4.csv", 15.0),
+    (de40, "data/DE40_H4.csv", 15.0),
+    (us500, "data/US500_H4.csv", 15.0),
+    (ustec, "data/USTEC_H4.csv", 15.0),
 ]
 
 # Full inner grid (buy_rsi_threshold is inert, so it is dropped) -> 24 combos/window.

@@ -3,10 +3,10 @@
 from pathlib import Path
 
 from core.data.mt5_csv import load_mt5_bid_ask_bars, write_mt5_catalog
-from core.instruments import xauusd_ttp
+from core.instruments import xauusd
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
-_INSTRUMENT = xauusd_ttp()
+_INSTRUMENT = xauusd()
 
 # Spread 2 points; tick size 0.01 -> ask = bid + 0.02.
 _SAMPLE = (

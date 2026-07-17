@@ -3,7 +3,6 @@
 import math
 from pathlib import Path
 
-from core.data.synthetic import write_synthetic_catalog
 from core.strategies.rsi_wpr_bb_signals import bollinger, williams_r
 from nautilus_trader.config import (
     BacktestDataConfig,
@@ -16,6 +15,8 @@ from nautilus_trader.config import (
 from nautilus_trader.model.data import BarType
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from research.engine.config import run_backtest
+
+from tests.helpers.synthetic import write_synthetic_catalog
 
 _INSTRUMENT = TestInstrumentProvider.audusd_cfd()
 _BAR_TYPE = BarType.from_str("AUDUSD.OANDA-4-HOUR-LAST-EXTERNAL")

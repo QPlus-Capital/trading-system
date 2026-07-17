@@ -47,18 +47,18 @@ def test_profile_is_frozen() -> None:
 
 def test_recipe_default_venue_is_frictionless() -> None:
     # Default recipe (no broker) must carry no fill model -> baseline unchanged.
-    from core.instruments import xauusd_ttp
+    from core.instruments import xauusd
     from research.engine.recipe import SweepRecipe
 
-    recipe = SweepRecipe(xauusd_ttp(), "data/dummy.csv", leverage=100)
+    recipe = SweepRecipe(xauusd(), "data/dummy.csv", leverage=100)
     assert recipe.VENUE.fill_model is None
 
 
 def test_recipe_with_broker_wires_the_fill_model() -> None:
-    from core.instruments import xauusd_ttp
+    from core.instruments import xauusd
     from research.engine.recipe import SweepRecipe
 
-    recipe = SweepRecipe(xauusd_ttp(), "data/dummy.csv", leverage=100, broker=MEX_ATLANTIC)
+    recipe = SweepRecipe(xauusd(), "data/dummy.csv", leverage=100, broker=MEX_ATLANTIC)
     assert recipe.VENUE.fill_model is not None
     assert recipe.VENUE.fill_model.config["prob_slippage"] == MEX_ATLANTIC.prob_slippage
 
@@ -111,25 +111,25 @@ def test_instrument_spec_drives_commission_and_is_swappable() -> None:
     from decimal import Decimal
 
     from core.broker import TTP_MARKETS, InstrumentSpec
-    from core.instruments import xauusd_ttp
+    from core.instruments import xauusd
 
     # Default profile reproduces the historical gold commission/margin (baseline preserved).
-    assert xauusd_ttp().maker_fee == Decimal("0.000007")
-    assert xauusd_ttp().margin_init == Decimal("0.10")
+    assert xauusd().maker_fee == Decimal("0.000007")
+    assert xauusd().margin_init == Decimal("0.10")
 
     # Swapping the profile swaps the broker terms -- no edit to instruments.py.
     cheap = TTP_MARKETS.with_instruments(
         {"XAUUSD": InstrumentSpec(Decimal("0.000001"), Decimal("0.000001"), Decimal("0.05"))}
     )
-    assert xauusd_ttp(cheap).maker_fee == Decimal("0.000001")
-    assert xauusd_ttp(cheap).margin_init == Decimal("0.05")
+    assert xauusd(cheap).maker_fee == Decimal("0.000001")
+    assert xauusd(cheap).margin_init == Decimal("0.05")
 
 
 def test_instrument_spec_missing_fails_fast() -> None:
     import pytest
     from core.broker import FRICTIONLESS
-    from core.instruments import xauusd_ttp
+    from core.instruments import xauusd
 
     empty = FRICTIONLESS.with_instruments({})
     with pytest.raises(KeyError, match="no instrument spec for 'XAUUSD'"):
-        xauusd_ttp(empty)
+        xauusd(empty)

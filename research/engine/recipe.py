@@ -5,9 +5,9 @@ parameter grid, seed + build_run_config). Rather than copy ~90 lines per instrum
 a config module builds a :class:`SweepRecipe` and re-exports its attributes::
 
     from research.engine.recipe import SweepRecipe
-    from core.instruments import eurusd_ttp
+    from core.instruments import eurusd
 
-    _R = SweepRecipe(eurusd_ttp(), "data/EURUSD_H4.csv", leverage=50.0)
+    _R = SweepRecipe(eurusd(), "data/EURUSD_H4.csv", leverage=50.0)
     INSTRUMENT, CATALOG_PATH, CSV_PATH = _R.INSTRUMENT, _R.CATALOG_PATH, _R.CSV_PATH
     VENUE, PARAM_GRID = _R.VENUE, _R.PARAM_GRID
     seed_catalog, build_run_config = _R.seed_catalog, _R.build_run_config

@@ -31,7 +31,6 @@ from nautilus_trader.backtest.config import ImportableFillModelConfig
 
 from core.paths import REPO_ROOT
 
-_REPO_ROOT = REPO_ROOT
 _INT_YEAR = 360.0  # standard bank year for interest-mode swaps
 
 
@@ -213,7 +212,7 @@ TTP_MARKETS = BrokerProfile(name="ttp_markets", prob_slippage=0.15, instrument_s
 # --------------------------------------------------------------------------------------------
 def swap_snapshot_path(name: str) -> Path:
     """Conventional path of a broker's persisted swap snapshot."""
-    return _REPO_ROOT / "core" / "config" / "broker" / f"{name}_swaps.json"
+    return REPO_ROOT / "core" / "config" / "broker" / f"{name}_swaps.json"
 
 
 def dump_swap_snapshot(specs: dict[str, SwapSpec], path: Path) -> None:
