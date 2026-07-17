@@ -144,7 +144,7 @@ flowchart TD
   enabled, all symbols resolve and are sizable.
 - **`live/parity_check.py`** — does the broker feed produce the same signals as
   our research data?
-- **Frozen config**: `live/config/paper_rsi_wpr_bb.py` (10 markets, per-market
+- **Frozen config**: `live/config/rsi_wpr_bb.py` (10 markets, per-market
   SL/TP). Promotion to live == adding a config here, never new code.
 
 ---

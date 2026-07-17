@@ -1,4 +1,4 @@
-"""MT5 bridge -- data + orders against a running MetaTrader 5 terminal (Phase 2).
+"""MT5 bridge -- data + orders against a running MetaTrader 5 terminal.
 
 Windows-only. Wraps the official ``MetaTrader5`` package into a small, typed surface the
 live runner uses: attach to an **already-logged-in** terminal, pull H4 bars, read the

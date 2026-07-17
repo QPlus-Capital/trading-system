@@ -1,4 +1,4 @@
-"""Live runner -- drive the frozen strategy on MT5, one H4 bar at a time (Phase 4).
+"""Live runner -- drive the frozen strategy on MT5, one H4 bar at a time .
 
 Ties the pieces together: the pure signal engine (identical to the backtest), the MT5
 bridge (data + orders), and the risk-control layer (daily / trailing stops + open-risk cap).
@@ -494,18 +494,18 @@ class LiveRunner:
         log.warning("live runner stopped (halted: %s)", self._halt_reason)
 
 
-def _paper_config() -> object:
-    """Load ``config/live/paper_rsi_wpr_bb.py`` by path (config/ is not an import package)."""
+def _live_config() -> object:
+    """Load ``config/live/rsi_wpr_bb.py`` by path (config/ is not an import package)."""
 
     from research.engine.config import load_config_module
 
     repo_root = REPO_ROOT
-    return load_config_module(repo_root / "live" / "config" / "paper_rsi_wpr_bb.py")
+    return load_config_module(repo_root / "live" / "config" / "rsi_wpr_bb.py")
 
 
-def markets_from_paper_config() -> list[MarketSpec]:
-    """Build the market list from ``config/live/paper_rsi_wpr_bb.py`` (name + fixed SL/TP)."""
-    module = _paper_config()
+def markets_from_live_config() -> list[MarketSpec]:
+    """Build the market list from ``config/live/rsi_wpr_bb.py`` (name + fixed SL/TP)."""
+    module = _live_config()
     specs: list[MarketSpec] = []
     for factory, _csv, _lev, sl, tp in module.MARKETS:  # type: ignore[attr-defined]
         raw_symbol = factory().raw_symbol.value
@@ -513,9 +513,9 @@ def markets_from_paper_config() -> list[MarketSpec]:
     return specs
 
 
-def signal_params_from_paper_config() -> SignalParams:
+def signal_params_from_live_config() -> SignalParams:
     """Build the signal params (default knobs + the frozen no_bb_wpr switches)."""
-    module = _paper_config()
+    module = _live_config()
     switches = {
         k: v
         for k, v in module.STRATEGY_SWITCHES.items()  # type: ignore[attr-defined]
@@ -524,13 +524,13 @@ def signal_params_from_paper_config() -> SignalParams:
     return SignalParams(**switches)
 
 
-def long_only_from_paper_config() -> bool:
+def long_only_from_live_config() -> bool:
     """Read the frozen ``long_only`` switch (N2: not a SignalParam; applied by the runner)."""
-    module = _paper_config()
+    module = _live_config()
     return bool(module.STRATEGY_SWITCHES.get("long_only", False))  # type: ignore[attr-defined]
 
 
-def risk_per_trade_from_paper_config() -> float:
+def risk_per_trade_from_live_config() -> float:
     """Per-trade risk FRACTION from the frozen config (M3: the config is the single source)."""
-    module = _paper_config()
+    module = _live_config()
     return float(module.RISK_PER_TRADE_PCT) / 100.0  # type: ignore[attr-defined]

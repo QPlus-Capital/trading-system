@@ -1,4 +1,4 @@
-"""Live notifications -- a signal ping you cannot miss while paper-trading.
+"""Live notifications -- a signal ping you cannot miss while running live.
 
 The runner calls this on every position change and on a safety halt. Every channel is optional
 and best-effort: a notification failure must NEVER disrupt trading, so all of them swallow their

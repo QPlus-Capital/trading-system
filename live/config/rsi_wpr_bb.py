@@ -1,4 +1,4 @@
-"""Paper/live configuration for the selected strategy (prop-firm phase, via MetaTrader 5).
+"""Live configuration for the selected strategy (prop-firm phase, via MetaTrader 5).
 
 The research pipeline selected: **RsiWprBb** with the Bollinger and Williams-%R buy-
 confirmations OFF (the RSI filter kept), a 36-month parameter fit, **compounding** (fixed-

@@ -1,4 +1,4 @@
-"""Live risk control -- keep the account within the prop-firm limits (Phase 3).
+"""Live risk control -- keep the account within the prop-firm limits.
 
 Pure decision logic; the live runner feeds it the account equity/balance and the open
 positions. It enforces, with safety margins BELOW the hard TTP limits (6% trailing / 3%
@@ -10,7 +10,7 @@ daily), the values Jan chose:
 - **total-open-risk cap** 2.0% -- the sum of all open stop-risks, so even a same-day full
   stop-out of every open position stays under the daily limit.
 
-Everything here is deterministic and unit-tested; the runner (Phase 4) supplies the live
+Everything here is deterministic and unit-tested; the runner  supplies the live
 numbers and acts on the decisions (size / block / flatten).
 """
 

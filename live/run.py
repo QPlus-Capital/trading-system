@@ -1,4 +1,4 @@
-"""Entry point to run the live/paper trader against a running MT5 terminal (Phase 5).
+"""Entry point to run the live trader against a running MT5 terminal.
 
 Safety-first defaults: it attaches to an **already-logged-in** terminal (no credentials in
 code) and runs in **SIGNAL_ONLY** mode -- it logs signals + sizing but places NO orders.
@@ -35,10 +35,10 @@ from live.risk_control import RiskController, RiskLimits
 from live.runner import (
     LiveRunner,
     Mode,
-    long_only_from_paper_config,
-    markets_from_paper_config,
-    risk_per_trade_from_paper_config,
-    signal_params_from_paper_config,
+    long_only_from_live_config,
+    markets_from_live_config,
+    risk_per_trade_from_live_config,
+    signal_params_from_live_config,
 )
 
 log = logging.getLogger("live")
@@ -61,8 +61,8 @@ def _setup_logging(live_dir: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Connect, build the runner from the frozen paper config, and run."""
-    parser = argparse.ArgumentParser(description="QPlus live/paper trader (MT5).")
+    """Connect, build the runner from the frozen live config, and run."""
+    parser = argparse.ArgumentParser(description="QPlus live trader (MT5).")
     parser.add_argument(
         "--mode",
         choices=[m.value.lower() for m in Mode],
@@ -100,14 +100,6 @@ def main(argv: list[str] | None = None) -> None:
     mode = Mode(args.mode.upper())
     state_path = live_dir / "risk_state.json"
 
-    # One-time migration: the demo used to write risk state to reports/live/ directly. Move it
-    # under reports/live/mex/ so the daily/trailing references survive the switch to per-account
-    # dirs (a fresh state would reset the HWM -- K1). Runs once, with the latest legacy state.
-    legacy_state = _LIVE_ROOT / "risk_state.json"
-    if profile.name == "mex" and not state_path.exists() and legacy_state.exists():
-        state_path.write_text(legacy_state.read_text(encoding="utf-8"), encoding="utf-8")
-        log.info("migrated legacy risk state -> %s", state_path)
-
     bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **profile.symbol_overrides})
     bridge.connect(path=profile.terminal_path)  # attach to THIS account's terminal (no creds)
     try:
@@ -128,17 +120,17 @@ def main(argv: list[str] | None = None) -> None:
         start_balance = (
             args.start_balance if args.start_balance is not None else profile.start_balance
         )
-        limits = RiskLimits(risk_per_trade=risk_per_trade_from_paper_config())  # M3: from config
+        limits = RiskLimits(risk_per_trade=risk_per_trade_from_live_config())  # M3: from config
         log.info("risk per trade: %.3f%% of equity (compounding)", limits.risk_per_trade * 100)
         notifier = Notifier(live_dir / "signals.log", beep=True)  # +Telegram if env vars set
         runner = LiveRunner(
             bridge,
-            markets_from_paper_config(),
-            signal_params_from_paper_config(),
+            markets_from_live_config(),
+            signal_params_from_live_config(),
             RiskController(limits, start_balance),
             mode=mode,
             state_path=state_path,
-            long_only=long_only_from_paper_config(),
+            long_only=long_only_from_live_config(),
             notifier=notifier,
         )
         if args.once:
