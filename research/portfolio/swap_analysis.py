@@ -64,15 +64,19 @@ def _profit_factor(pnl: np.ndarray) -> float:
 
 def main() -> None:
     """Run the 9 backtests, apply live swap rates, and report the impact on the edge."""
-    from live.mt5_bridge import Mt5Bridge
+    from live.accounts import get_account
+    from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 
     cfg = load_config_module(_REPO_ROOT / "live" / "config" / "rsi_wpr_bb.py")
     risk_amount = float(cfg.RISK_PER_TRADE_PCT) / 100.0 * _START_BALANCE
     switches = dict(cfg.STRATEGY_SWITCHES)
     names = [str(f().raw_symbol) for f, *_ in cfg.MARKETS]
 
-    bridge = Mt5Bridge()
-    bridge.connect()
+    # The snapshot we write is the TTP profile's, so pull it from the TTP terminal -- never
+    # whatever terminal happens to be the default (which would save MEX swaps as TTP's).
+    ttp = get_account("ttp")
+    bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **ttp.symbol_overrides})
+    bridge.connect(path=ttp.terminal_path)
     try:
         specs = pull_swap_specs(bridge, names)
     finally:

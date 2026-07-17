@@ -30,11 +30,11 @@ Each runner needs *its* terminal open + logged in.
 
 ```bash
 # Demo (unchanged strategy; watched only in MT5). State lives in reports/live/mex/.
-uv run python -m live.run --account mex --mode execute      # or: just live-demo execute
+uv run python -m live.run --account mex --mode execute      # or: just live-demo
 
 # TTP real money — SIGNAL_ONLY first (a few cycles, verify), THEN execute.
 uv run python -m live.run --account ttp                 # dry-run, no orders (just live-ttp)
-uv run python -m live.run --account ttp --mode execute  # REAL orders (just live-ttp execute)
+uv run python -m live.run --account ttp --mode execute  # REAL orders (just live-ttp-execute)
 ```
 
 - State/logs are isolated per account: `reports/live/mex/` vs `reports/live/ttp/`.

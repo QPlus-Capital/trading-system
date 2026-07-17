@@ -76,8 +76,8 @@ full list. (One-time: install `just` — `winget install --id Casey.Just`.)
 | ---- | ------- |
 | List all commands | `just` |
 | Run the backtest pipeline | `just backtest` → `reports/research/run_*/` (open with `just report`) |
-| Live — real TTP account | `just live-ttp execute` |
-| Live — demo account | `just live-demo execute` |
+| Live — real TTP account | `just live-ttp-execute` |
+| Live — demo account | `just live-demo` |
 | Pre-flight before going live | `just preflight ttp` |
 | Monitoring dashboard | `just monitor` |
 | Quality gates (before every commit) | `just check` (ruff + mypy + pytest) |
