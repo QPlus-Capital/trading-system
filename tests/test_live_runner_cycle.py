@@ -12,7 +12,7 @@ import pytest
 from core.strategies.rsi_wpr_bb_signals import SignalParams
 from live.mt5_bridge import MAGIC, AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
 from live.risk_control import RiskController, RiskLimits
-from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, size_order
+from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, loss_day, size_order
 
 _T0 = 1_750_000_000  # arbitrary aligned epoch used as the first bar's open time
 
@@ -401,16 +401,29 @@ def test_a_failed_modify_leaves_the_protective_stop_in_place() -> None:
 def test_run_once_rolls_the_trading_day() -> None:
     stub = StubBridge()
     runner = _runner(stub)
-    runner.run_once()
+    wall = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)  # real UTC drives the loss day (#18)
+    runner.run_once(wall_now=wall)
     first_day = runner._day
     assert first_day is not None
-    # Next cycle a (server) day later, after the balance grew intraday.
+    # Next cycle a day later in REAL time, after the balance grew intraday.
     stub.balance = 101_000.0
-    stub.now = datetime.fromtimestamp(stub.now.timestamp() + 86_400, tz=UTC)
-    runner.run_once()
+    runner.run_once(wall_now=wall + timedelta(days=1))
     assert runner._day != first_day
     assert runner._risk.day_start_balance == 101_000.0  # daily reference rolled
     assert runner._risk.hwm_balance == 101_000.0  # prior day's balance banked into the HWM
+
+
+def test_the_loss_day_follows_real_utc_not_the_brokers_clock() -> None:
+    """#18: MT5 stamps ticks with the SERVER's wall clock, so server_time() is 2-3h ahead of UTC
+    on an EET server. Deriving the 16:15-CT boundary from it would move the reset by that offset.
+    """
+    stub = StubBridge()
+    runner = _runner(stub)
+    # Server clock claims a moment already past the reset; real UTC is still before it.
+    stub.now = datetime(2026, 7, 1, 23, 0, tzinfo=UTC)  # server frame, deliberately misleading
+    before = datetime(2026, 7, 1, 21, 14, tzinfo=UTC)  # 16:14 CDT -- still the old loss day
+    runner.run_once(wall_now=before)
+    assert runner._day == loss_day(before)  # the broker's clock did not move the boundary
 
 
 def test_broker_pricing_shrinks_a_volume_that_would_over_risk() -> None:

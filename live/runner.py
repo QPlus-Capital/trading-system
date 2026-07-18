@@ -26,7 +26,7 @@ import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from datetime import time as dtime
 from enum import StrEnum
 from pathlib import Path
@@ -52,8 +52,12 @@ def loss_day(now_utc: datetime) -> date:
     """The prop-firm 'loss day' a UTC instant belongs to (rolls at 16:15 CT).
 
     An instant at/after 16:15 CT counts toward the NEXT day, so the returned label increments
-    exactly at the reset. ``now_utc`` must be tz-aware; MT5 tick times are UTC per the MetaQuotes
-    Python docs (parity of the feed's clock is tracked separately).
+    exactly at the reset.
+
+    ``now_utc`` must be REAL UTC and tz-aware -- NOT the broker's clock (#18). MT5 encodes tick
+    and bar times as the server's wall clock in Unix seconds, so ``Mt5Bridge.server_time()`` is
+    the server frame; converting that to America/Chicago would shift this boundary by the server's
+    offset (2-3h on an EET server), which is exactly the error this function exists to prevent.
     """
     local = now_utc.astimezone(_CHICAGO)
     return local.date() + timedelta(days=1) if local.time() >= _DAILY_RESET else local.date()
@@ -295,14 +299,22 @@ class LiveRunner:
 
     # -- per-cycle orchestration --
 
-    def run_once(self, now: datetime | None = None) -> None:
-        """Process one polling cycle: day roll, safety check, then each market."""
+    def run_once(self, now: datetime | None = None, wall_now: datetime | None = None) -> None:
+        """Process one polling cycle: day roll, safety check, then each market.
+
+        Two clocks, deliberately (#18). ``now`` is the BROKER's frame: MT5 encodes tick and bar
+        times as the server's wall clock in Unix seconds, so bar-closure comparisons must happen
+        there. ``wall_now`` is real UTC, used for the prop-firm loss day -- that boundary is
+        defined in America/Chicago WALL time, and deriving it from the server frame would shift it
+        by the server's offset (2-3h on an EET server).
+        """
         if self._halted:
             return
         # H3: the daily-limit boundary follows the prop firm's loss day (TTP resets at 16:15 CT on
         # the previous day's closing balance), not UTC/server midnight -- else the daily reference
         # resets at the wrong hour and our budget disagrees with TTP's.
-        now = now or self._bridge.server_time()
+        now = now or self._bridge.server_time()  # BROKER frame -- for bar closure only
+        wall = wall_now or datetime.now(tz=UTC)  # real UTC -- for the prop-firm calendar boundary
         account = self._bridge.account()
 
         # Identity re-check EVERY cycle: if the terminal reconnected to another account, halt and
@@ -325,7 +337,7 @@ class LiveRunner:
 
         # Day roll: bank the prior day's HWM, reset the daily reference. Persist so a restart keeps
         # the true HWM / day-start rather than resetting to the current balance (K1).
-        today = loss_day(now)
+        today = loss_day(wall)  # #18: real UTC, not the server frame
         if self._day is None:
             # First launch (no restored state): anchor the daily floor to the CURRENT balance, not
             # the profile's original balance, so a mid-run start doesn't leave a stale floor.

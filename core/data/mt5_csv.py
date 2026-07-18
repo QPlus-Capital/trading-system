@@ -46,6 +46,33 @@ def _bar_types(instrument: Instrument, bar_spec: str) -> tuple[BarType, BarType]
     return bid, ask
 
 
+def parse_mt5_timestamps(
+    df: pd.DataFrame, *, server_tz: str | None = None, offset_hours: int = 0
+) -> pd.Series:
+    """Bar open times from an MT5 export, as real UTC.
+
+    **The exported timestamps are the BROKER SERVER's wall clock, not UTC** (#18). Verified from
+    the data itself: the FX week starts Monday 00:00 and ends Friday 20:00 in these files, and the
+    week-start hour does NOT shift across the DST changeover. In real UTC an EET server's week
+    would begin Sunday 21:00 in summer and 22:00 in winter -- the absence of that one-hour shift is
+    the signature of server-local time.
+
+    ``server_tz`` is an IANA name (e.g. ``"Europe/Athens"`` for a standard EET/EEST server) and is
+    the correct way to convert, because the server's own offset changes with DST -- which a fixed
+    ``offset_hours`` cannot express. ``offset_hours`` is kept only for the legacy fixed-shift path.
+
+    Both default to "no conversion", which reproduces the historical behaviour EXACTLY: every
+    number produced so far assumed these stamps were UTC, so flipping the default would silently
+    re-date the whole research history. Set it deliberately, and re-run, once the server zone has
+    been confirmed against the terminal.
+    """
+    naive = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S")
+    if server_tz:
+        local = naive.dt.tz_localize(server_tz, ambiguous=True, nonexistent="shift_forward")
+        return local.dt.tz_convert("UTC")
+    return naive.dt.tz_localize("UTC") - pd.Timedelta(hours=offset_hours)
+
+
 def load_mt5_bid_ask_bars(
     csv_path: str | Path,
     instrument: Instrument,
@@ -53,6 +80,7 @@ def load_mt5_bid_ask_bars(
     bar_spec: str = "4-HOUR",
     slippage_points: float = 0.0,
     server_tz_offset_hours: int = 0,
+    server_tz: str | None = None,
 ) -> tuple[list[Bar], list[Bar]]:
     """Parse an MT5 bar-export CSV into (bid_bars, ask_bars).
 
@@ -68,11 +96,7 @@ def load_mt5_bid_ask_bars(
         sep="\t",
         dtype={"<OPEN>": str, "<HIGH>": str, "<LOW>": str, "<CLOSE>": str},
     )
-    timestamps = pd.to_datetime(
-        df["<DATE>"] + " " + df["<TIME>"],
-        format="%Y.%m.%d %H:%M:%S",
-        utc=True,
-    ) - pd.Timedelta(hours=server_tz_offset_hours)
+    timestamps = parse_mt5_timestamps(df, server_tz=server_tz, offset_hours=server_tz_offset_hours)
 
     spreads = df["<SPREAD>"].astype(int).tolist()
     positive = [s for s in spreads if s > 0]
