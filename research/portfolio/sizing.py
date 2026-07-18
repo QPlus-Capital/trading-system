@@ -82,11 +82,15 @@ def simulate(
     def frac(i: int, day: int) -> float:
         return float((prices[mk[i]][day - d0] - entry[i]) / span[i])
 
-    is_long = (
-        trades["is_long"].to_numpy(dtype=bool)
-        if "is_long" in trades.columns
-        else exit_ > entry  # legacy streams: fall back to the price direction
-    )
+    if "is_long" in trades.columns:
+        is_long = trades["is_long"].to_numpy(dtype=bool)
+    else:
+        # Legacy streams (written before is_long existed): direction has to be inferred, and
+        # `exit > entry` alone is WRONG -- it calls every losing long a short and vice versa,
+        # which then marks the position at the wrong daily extreme and can hide an intraday
+        # breach. Combine the price move with the outcome, as core.broker does.
+        won = trades["pnl_base"].to_numpy(dtype=float) > 0
+        is_long = won == (exit_ > entry)
 
     def frac_adverse(i: int, day: int) -> float:
         """Mark at the day's WORST price for this position's direction (#15).

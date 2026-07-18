@@ -15,15 +15,16 @@ from research.engine.walkforward import combo_key
 
 
 def _row(
-    instrument: str, variation: str, tm: int, combos: dict[str, list[float]]
+    instrument: str, variation: str, tm: int, combos: dict[str, dict[str, float]]
 ) -> dict[str, object]:
+    """combo_oos is keyed BY WINDOW LABEL, so instruments with different spans still align."""
     return {"instrument": instrument, "variation": variation, "train_months": tm,
             "combo_oos": combos}
 
 
 def test_candidates_are_variation_times_combo_not_just_variation() -> None:
     good = [
-        _row("X", v, 24, {"sl=1.0": [0.01, 0.02], "sl=2.0": [0.03, 0.04]})
+        _row("X", v, 24, {"sl=1.0": {"w1": 0.01, "w2": 0.02}, "sl=2.0": {"w1": 0.03, "w2": 0.04}})
         for v in ("a", "b", "c")
     ]
     streams = candidate_streams(good)
@@ -36,8 +37,8 @@ def test_instruments_are_averaged_into_windows_not_concatenated() -> None:
     # Two instruments, two windows. Concatenating would give a 4-long "time" axis (the old flaw);
     # averaging keeps real time at 2 windows and averages the instruments within each.
     good = [
-        _row("X", "a", 24, {"sl=1.0": [0.10, 0.20]}),
-        _row("Y", "a", 24, {"sl=1.0": [0.30, 0.40]}),
+        _row("X", "a", 24, {"sl=1.0": {"w1": 0.10, "w2": 0.20}}),
+        _row("Y", "a", 24, {"sl=1.0": {"w1": 0.30, "w2": 0.40}}),
     ]
     stream = candidate_streams(good)[24][("a", "sl=1.0")]
     assert len(stream) == 2  # real time = 2 windows, not 4 concatenated cells
@@ -47,8 +48,8 @@ def test_instruments_are_averaged_into_windows_not_concatenated() -> None:
 def test_training_lengths_stay_separate() -> None:
     # Different train lengths have different window boundaries -> not alignable into one matrix.
     good = [
-        _row("X", "a", 18, {"sl=1.0": [0.01, 0.02, 0.03]}),
-        _row("X", "a", 36, {"sl=1.0": [0.04, 0.05]}),
+        _row("X", "a", 18, {"sl=1.0": {"w1": 0.01, "w2": 0.02, "w3": 0.03}}),
+        _row("X", "a", 36, {"sl=1.0": {"w1": 0.04, "w2": 0.05}}),
     ]
     streams = candidate_streams(good)
     assert set(streams) == {18, 36}
@@ -58,7 +59,7 @@ def test_training_lengths_stay_separate() -> None:
 
 def test_pbo_is_nan_when_no_training_length_has_enough_windows() -> None:
     # Three windows cannot support a CSCV; the study must say "unknown", not invent a number.
-    good = [_row("X", v, 24, {"sl=1.0": [0.01, 0.02, 0.03]}) for v in ("a", "b")]
+    good = [_row("X", v, 24, {"sl=1.0": {"w1": 0.01, "w2": 0.02, "w3": 0.03}}) for v in ("a", "b")]
     assert math.isnan(candidate_pbo(candidate_streams(good)))
 
 
@@ -70,3 +71,15 @@ def test_cscv_splits_adapts_to_short_studies() -> None:
 
 def test_combo_key_is_order_independent() -> None:
     assert combo_key({"tp": 3.0, "sl": 1.0}) == combo_key({"sl": 1.0, "tp": 3.0})
+
+
+def test_instruments_with_different_spans_align_on_shared_windows() -> None:
+    """Codex P2: averaging by list offset mixed window 0 of a long history with window 0 of a
+    later-starting one -- unrelated calendar periods presented as one time slice."""
+    good = [
+        _row("LONG", "a", 24, {"sl=1.0": {"w1": 0.10, "w2": 0.20, "w3": 0.30}}),
+        _row("LATE", "a", 24, {"sl=1.0": {"w2": 0.40, "w3": 0.60}}),  # starts a window later
+    ]
+    stream = candidate_streams(good)[24][("a", "sl=1.0")]
+    # Only w2 and w3 are shared, and they are matched BY LABEL: (0.20+0.40)/2, (0.30+0.60)/2.
+    assert stream == pytest.approx([0.30, 0.45])

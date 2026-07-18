@@ -33,6 +33,7 @@ Usage (append a number to limit windows for a quick test)::
 """
 
 
+import shutil
 import sys
 import time
 from collections import defaultdict
@@ -122,8 +123,12 @@ def _run_task(
         # #13: {combo_key: [per-window OOS return]} -- every grid candidate scored on the SAME
         # windows, so candidates are chronologically aligned and PBO/CSCV can run over the real
         # search space instead of over variations.
+        # Keyed BY WINDOW LABEL, not by position: instruments have different CSV spans, so
+        # window 0 of a long gold history is a different calendar period than window 0 of a
+        # later-starting index. Averaging by list offset would mix unrelated periods and make the
+        # CSCV time slices synthetic rather than chronological.
         "combo_oos": {
-            key: [r.oos_by_combo[key] for r in results]
+            key: {r.window: r.oos_by_combo[key] for r in results}
             for key in (results[0].oos_by_combo if results else {})
         },
     }
@@ -172,7 +177,7 @@ def candidate_streams(good: list[dict[str, Any]]) -> dict[int, dict[tuple[str, s
     put instrument blocks on the time axis, which is exactly the flaw that made the old
     variation-level PBO unsound (#13).
     """
-    per_train: dict[int, dict[tuple[str, str], dict[str, list[float]]]] = defaultdict(
+    per_train: dict[int, dict[tuple[str, str], dict[str, dict[str, float]]]] = defaultdict(
         lambda: defaultdict(dict)
     )
     for r in good:
@@ -187,11 +192,15 @@ def candidate_streams(good: list[dict[str, Any]]) -> dict[int, dict[tuple[str, s
         if not common:
             continue
         insts = sorted(common)
-        n_win = min(len(cands[c][i]) for c in cands for i in insts)
-        if n_win < 2:
+        # Only the windows every instrument actually has, in chronological label order.
+        labels = set.intersection(
+            *(set(cands[c][i].keys()) for c in cands for i in insts)
+        )
+        if len(labels) < 2:
             continue
+        ordered = sorted(labels)
         out[tm] = {
-            c: [sum(cands[c][i][w] for i in insts) / len(insts) for w in range(n_win)]
+            c: [sum(cands[c][i][w] for i in insts) / len(insts) for w in ordered]
             for c in cands
         }
     return out
@@ -422,7 +431,10 @@ def main(argv: list[str] | None = None) -> None:
     # is skipped per instrument, so stale bars would otherwise be mixed with window/day logic
     # parsed in the current frame and shift everything by the server offset (#18).
     if catalog_frame_is_stale(catalog):
-        print("catalog was written in a different timestamp frame -> re-seeding all instruments")
+        # DELETE it, do not just re-seed into it: writing new bars beside the old ones leaves both
+        # frames readable by the backtest -- precisely the mixed state this is meant to prevent.
+        print("catalog was written in a different timestamp frame -> rebuilding it from scratch")
+        shutil.rmtree(catalog, ignore_errors=True)
         have = set()
     for factory, csv, leverage in cfg.INSTRUMENTS:
         recipe = SweepRecipe(factory(), csv, leverage=leverage)

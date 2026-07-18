@@ -83,8 +83,14 @@ def main(argv: list[str] | None = None) -> None:
     else:
         policy = FlatRisk(float(spec["ceiling_pct"]))
     result = evaluate_policy(trades, daily_close, account, policy, cap, daily_low_high=daily_hl)
-    sized_pnl = result.trade_pnl
-    equity = daily_equity(trades, sized_pnl, daily_close, start_balance=account.start_balance)
+    sized_pnl = result.trade_pnl  # NET -- what the edge stats and Monte-Carlo should see
+    # ...but the mark-to-market curve must book swap at CLOSE, not smear it across the holding
+    # period, so hand daily_equity the gross leg and the swap separately.
+    eq_trades = trades.copy()
+    eq_trades["swap_base"] = result.trade_swap
+    equity = daily_equity(
+        eq_trades, sized_pnl - result.trade_swap, daily_close, start_balance=account.start_balance
+    )
     stats = {**edge_stats(sized_pnl), **risk_stats(equity, start_balance=account.start_balance)}
 
     # #16: resample whole trading days, not single trades -- our correlated markets lose together
@@ -115,8 +121,16 @@ def main(argv: list[str] | None = None) -> None:
         else None
     )
     pbo_txt = "n/a" if pbo is None else f"{pbo:.2f}"
+    # A contaminated holdout is IN-SAMPLE for the deployed config, so its numbers cannot support a
+    # deployable verdict. Printing that warning next to "PASS - handelbar" contradicted itself.
+    contaminated = bool(getattr(cfg, "HOLDOUT_CONTAMINATED", False))
+    # Missing DSR/PBO artifacts are not a pass either: those gates exist to reject overfit
+    # searches, and "we never measured it" is not evidence that it is fine. An older study without
+    # them has to be re-run rather than waved through.
     checks = [
-        (pbo is None or pbo <= PBO_MAX, f"PBO {pbo_txt} <= {PBO_MAX:.2f} (nicht ueberfittet)"),
+        (pbo is not None and pbo <= PBO_MAX, f"PBO {pbo_txt} <= {PBO_MAX:.2f} (gemessen)"),
+        (gates.get("dsr") is not None, f"DSR gemessen ({dsr_txt})"),
+        (not contaminated, "Holdout ist echtes Out-of-Sample (nicht kontaminiert)"),
         (gated_pick, f"Auswahl gegated (eligible + DSR {dsr_txt}, nicht erzwungen)"),
         (fixed_config is not None, "gegen die eingefrorene Live-Config geprueft (--fixed)"),
         (result.n_trades >= 30, f"genug Trades ({result.n_trades} >= 30)"),
@@ -136,7 +150,7 @@ def main(argv: list[str] | None = None) -> None:
             "\n  beschreiben NICHT die Live-Config und taugen nicht als Go-Live-Entscheidung."
         )
     # #12: never let a contaminated holdout be read as clean out-of-sample evidence.
-    if bool(getattr(cfg, "HOLDOUT_CONTAMINATED", False)):
+    if contaminated:
         freeze = getattr(cfg, "DEPLOY_FREEZE_DATE", "?")
         print(
             "\n  HOLDOUT KONTAMINIERT: Deploy-Entscheidungen (Stops, Universum, Risiko) wurden"

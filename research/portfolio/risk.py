@@ -246,6 +246,11 @@ class PolicyResult:
     max_drawdown_pct: float
     breached: bool  # did it ever break the account's hard daily or trailing limit?
     trade_pnl: np.ndarray  # each trade's EUR contribution AT the policy's size (for edge metrics)
+    # The swap component of trade_pnl, sized the same way. Kept separate so a caller that MARKS
+    # TO MARKET can book it at close instead: swap is a realized cost of carry, and smearing it
+    # linearly across the holding period (as base_curves does with pnl_base) would recognise it
+    # before the trade closed, distorting the equity curve, Sharpe and drawdown.
+    trade_swap: np.ndarray
 
 
 def evaluate_policy(
@@ -308,7 +313,10 @@ def evaluate_policy(
     )
     years = max((d1 - d0) / 365.25, 1e-9)
     total = (float(realized[-1]) - account.start_balance) / account.start_balance
-    peak = np.maximum.accumulate(equity)
+    # Report the drawdown from the SAME path the breach gate judges: with intraday marks a day can
+    # dip below the floor and recover by the close, so a close-based figure would show a small
+    # drawdown next to breached=True -- understating the risk the operator actually ran.
+    peak = np.maximum.accumulate(min_equity)
     return PolicyResult(
         label=resolved.label,
         ceiling_pct=resolved.ceiling_pct,
@@ -318,12 +326,13 @@ def evaluate_policy(
         total_return_pct=round(total * 100, 1),
         ann_return_pct=round(total / years * 100, 1),
         ann_return_eur=round(float(realized[-1]) - account.start_balance, 0) / years,
-        max_drawdown_pct=round(float(((equity - peak) / peak).min()) * 100, 2),
+        max_drawdown_pct=round(float(((min_equity - peak) / peak).min()) * 100, 2),
         breached=breached,
         # #10: the SAME net stream simulate() books -- realized += (pnl + swap) * size. Handing a
         # gross per-trade PnL downstream would run Monte-Carlo and the edge stats on gross while
         # this result's own return/drawdown are net.
         trade_pnl=(t["pnl_base"].to_numpy(dtype=float) + _swap_base(t)) * sizes,
+        trade_swap=_swap_base(t) * sizes,
     )
 
 

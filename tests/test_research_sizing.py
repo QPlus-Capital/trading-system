@@ -159,3 +159,20 @@ def test_the_trailing_floor_also_reads_the_intraday_mark() -> None:
     intraday_low = np.array([100_000.0, 93_000.0])  # but dipped below the 95k floor (5% of 100k)
     assert not evaluate(close_equity, realized, 100_000.0, 0.05).breached
     assert evaluate(intraday_low, realized, 100_000.0, 0.05).breached
+
+
+def test_a_legacy_stream_infers_direction_from_the_outcome_too() -> None:
+    """Codex P2: `exit > entry` alone calls every LOSING long a short, which then marks it at the
+    day's high instead of its low -- hiding exactly the intraday breach the mark exists to find."""
+    # A losing long: bought at 100, stopped at 99. No is_long column (legacy stream).
+    trades = pd.DataFrame(
+        {"market": ["X"], "od": [1], "cd": [1], "pnl_base": [-1_000.0],
+         "entry": [100.0], "exit": [99.0]}
+    )
+    closes = {"X": np.array([100.0, 99.0, 99.0])}
+    lows = {"X": np.array([100.0, 90.0, 99.0])}  # dipped hard -- the LOW is the adverse side
+    highs = {"X": np.array([100.0, 101.0, 101.0])}
+    _r, eq, _s, min_eq = simulate(
+        trades, closes, 0, 2, 100_000.0, 0.06, flat(1.0), adverse=(lows, highs)
+    )
+    assert min_eq[1] < eq[1]  # marked at the low, as a long should be
