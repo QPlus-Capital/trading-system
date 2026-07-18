@@ -67,7 +67,9 @@ def main(argv: list[str] | None = None) -> None:
     if not instruments:
         print("    (keine - die Schwellen hat kein Markt geschafft)")
 
-    nxt = rb.cmd("portfolio", "--run", str(run.path))
+    # --fixed by default (#11): the deployable verdict must trade the frozen live stops. Drop the
+    # flag only to explore, and the verdict will mark that run exploratory.
+    nxt = rb.cmd("portfolio", "--run", str(run.path), "--fixed", "live/config/rsi_wpr_bb.py")
     rb.next_step(nxt, "Portfolio bauen & Risiko wählen (--risk flat:0.15 oder throttle:0.15,floor)")
 
 
