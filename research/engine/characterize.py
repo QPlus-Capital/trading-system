@@ -43,9 +43,8 @@ from typing import Any
 
 import pandas as pd
 from core.broker import TTP_MARKETS
-from core.data.mt5_csv import catalog_frame_is_stale
+from core.data.mt5_csv import seeded_instruments
 from core.paths import REPO_ROOT
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 from research.engine.config import load_config_module
 from research.engine.overfitting import study_trial_budget
@@ -421,18 +420,9 @@ def main(argv: list[str] | None = None) -> None:
 
     # Seed every instrument's data once (serially); workers then only read the catalog.
     catalog = _REPO_ROOT / "catalog"
-    have = (
-        {str(i.id) for i in ParquetDataCatalog(str(catalog)).instruments()}
-        if catalog.exists()
-        else set()
-    )
-    # A catalog written under a different timestamp frame must be re-imported, not reused: seeding
-    # is skipped per instrument, so stale bars would otherwise be mixed with window/day logic
-    # parsed in the current frame and shift everything by the server offset (#18).
-    if catalog_frame_is_stale(catalog):
-        # write_mt5_catalog does the actual wipe (it is the single funnel for bar imports); this
-        # only has to stop trusting the instrument list we read from the stale catalog.
-        have = set()
+    # The presence check discards a stale-frame catalog outright, so the per-instrument seeding
+    # below re-imports everything through the write funnel (which stamps the new frame).
+    have = seeded_instruments(catalog)
     for factory, csv, leverage in cfg.INSTRUMENTS:
         recipe = SweepRecipe(factory(), csv, leverage=leverage)
         if str(recipe.INSTRUMENT.id) not in have:

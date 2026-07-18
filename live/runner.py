@@ -417,17 +417,43 @@ class LiveRunner:
         return priced if priced is not None else position_risk(pos, info)
 
     def _total_open_risk(self) -> float:
-        total = 0.0
+        """Total entry->stop risk of EVERY position on the account -- not just our markets.
+
+        A manual or foreign-EA position on an unconfigured symbol contributes its PnL to the
+        equity this runner trades against, so its stop-risk must count against the open-risk cap
+        too; visiting only ``self._markets`` let check_open admit new trades past the 2% cap.
+        The terminal prices any symbol (#6/#19); the tick arithmetic needs our SymbolInfo and is
+        only available for configured markets. Exposure we cannot price at all fails CLOSED:
+        ``inf`` blocks every new entry until the operator resolves the position, and touches
+        nothing (the ownership filter still keeps us from managing it).
+        """
+        infos: dict[str, SymbolInfo] = {}
         for spec in self._markets:
             info = self._bridge.symbol_info(spec.name)
-            for pos in self._bridge.positions(spec.name):
-                if pos.sl <= 0:  # H5: unbounded downside -> loud warning + worst-case charge
-                    log.warning(
-                        "[%s] open position %s has NO stop-loss -> charged at worst case",
-                        spec.name,
-                        pos.ticket,
-                    )
-                total += self._position_risk(pos, info)
+            infos[info.name] = info  # keyed by TERMINAL symbol, which is what positions carry
+        total = 0.0
+        for pos in self._bridge.positions():
+            if pos.sl <= 0:  # H5: unbounded downside -> loud warning + worst-case charge below
+                log.warning(
+                    "open position %s (%s) has NO stop-loss -> charged at worst case",
+                    pos.ticket,
+                    pos.symbol,
+                )
+            priced = self._bridge.loss_to_stop(pos)
+            if priced is not None:
+                total += priced
+                continue
+            known = infos.get(pos.symbol)
+            if known is not None:
+                total += position_risk(pos, known)  # arithmetic fallback, worst case if stop-less
+                continue
+            log.critical(
+                "cannot price position %s on unconfigured symbol %s -> blocking new entries "
+                "until it is closed or priceable",
+                pos.ticket,
+                pos.symbol,
+            )
+            return float("inf")
         return total
 
     def _process_market(self, spec: MarketSpec, equity: float, now_epoch: float) -> None:

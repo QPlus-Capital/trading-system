@@ -71,21 +71,35 @@ def _block_sample(
     block_days: int,
     rng: np.random.Generator,
 ) -> np.ndarray:
-    """Resample contiguous runs of whole trading days until each path has ``n_trades`` trades."""
+    """Resample contiguous runs of whole trading days; a day bundle is NEVER split.
+
+    Truncating the concatenated blocks at ``n_trades`` could cut through the very gap-day bundle
+    this bootstrap exists to preserve (keeping 2 of 4 correlated losses understates the tail in
+    exactly the macro-gap scenario under test). Instead, a day that would overflow the remaining
+    slots ends the path, and the unfilled tail stays at zero -- "no trade" slots that leave the
+    cumulative equity and drawdown of the sampled days untouched. The horizon shortfall is at most
+    one day's trades out of ``n_trades``; splitting the bundle would bias the tail itself.
+    """
     order = np.argsort(days, kind="stable")  # group trades by day, chronologically
     groups = np.split(pnls[order], np.unique(days[order], return_index=True)[1][1:])
     n_days = len(groups)
     block = max(1, min(int(block_days), n_days))
-    out = np.empty((n_sims, n_trades), dtype=float)
+    out = np.zeros((n_sims, n_trades), dtype=float)
     for s in range(n_sims):
-        chunks: list[np.ndarray] = []
         total = 0
-        while total < n_trades:
+        full = False
+        while not full and total < n_trades:
             start = int(rng.integers(0, n_days))  # a random run of `block` consecutive days
             for d in range(start, min(start + block, n_days)):
-                chunks.append(groups[d])
-                total += groups[d].size
-        out[s] = np.concatenate(chunks)[:n_trades]
+                g = groups[d]
+                if total + g.size > n_trades:
+                    if total == 0:  # degenerate: one day exceeds the whole path -> must split
+                        out[s, :] = g[:n_trades]
+                        total = n_trades
+                    full = True  # stop rather than split the day across the cut
+                    break
+                out[s, total : total + g.size] = g
+                total += g.size
     return out
 
 

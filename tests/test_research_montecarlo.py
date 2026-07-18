@@ -71,3 +71,17 @@ def test_block_bootstrap_keeps_shape_and_determinism() -> None:
     assert a.shape == (20, len(pnls) + 1)
     assert np.array_equal(a, b)
     assert np.all(a[:, 0] == 500.0)
+
+
+def test_a_correlated_day_bundle_is_never_split_by_the_path_length() -> None:
+    """Codex round-5 P2: truncating the concatenated blocks at n_trades could cut through the
+    very gap-day bundle the block bootstrap exists to preserve -- e.g. keeping 2 of 4 correlated
+    losses, understating drawdown in exactly the macro-gap scenario being tested."""
+    pnls = [10.0] * 50 + [-200.0] * 4  # one 4-position correlated gap day
+    days = list(range(50)) + [99] * 4
+    paths = monte_carlo_paths(
+        pnls, n_sims=300, start_equity=10_000.0, seed=5, days=days, block_days=1
+    )
+    steps = np.diff(paths, axis=1)
+    losses_per_path = np.count_nonzero(steps == -200.0, axis=1)
+    assert (losses_per_path % 4 == 0).all()  # the gap day appears whole or not at all

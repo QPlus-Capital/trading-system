@@ -116,11 +116,6 @@ def main(argv: list[str] | None = None) -> None:
             account.currency,
             mode.value,
         )
-        # Provisional reference for the FIRST run only; if a saved state exists the runner
-        # restores it and this is ignored (K1: restarts must not reset the risk references).
-        start_balance = (
-            args.start_balance if args.start_balance is not None else profile.start_balance
-        )
         limits = RiskLimits(risk_per_trade=risk_per_trade_from_live_config())  # M3: from config
         log.info("risk per trade: %.3f%% of equity (compounding)", limits.risk_per_trade * 100)
         notifier = Notifier(live_dir / "signals.log", beep=True)  # +Telegram if env vars set
@@ -128,7 +123,11 @@ def main(argv: list[str] | None = None) -> None:
             bridge,
             markets_from_live_config(),
             signal_params_from_live_config(),
-            RiskController(limits, start_balance),
+            # The trailing/account reference is the PROFILE's, always. --start-balance is the
+            # loss day's opening balance and must never leak into this: passing a mid-day 49k on
+            # a 50k profile would lower the trailing floor from 47,500 to 46,550 -- loosening the
+            # very limit the flag exists to protect. (Saved state still wins on restore, K1.)
+            RiskController(limits, profile.start_balance),
             mode=mode,
             state_path=state_path,
             long_only=long_only_from_live_config(),
