@@ -94,7 +94,16 @@ def main(argv: list[str] | None = None) -> None:
     # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
     # live account does not have -- such a run is exploratory, never a go-live decision.
     fixed_config = spec.get("fixed_config")
+    # #2: the verdict must TEST the selection gates, not assume selection applied them. A forced
+    # (--variation) pick bypassed them by definition and can never be a deployable PASS.
+    sel_manifest = run.load_json("selection.json") if run.file("selection.json").exists() else {}
+    gates = sel_manifest.get("gates", {})
+    gated_pick = (
+        bool(gates.get("eligible")) and bool(gates.get("dsr_ok")) and not sel_manifest.get("forced")
+    )
+    dsr_txt = "n/a" if gates.get("dsr") is None else f"{gates['dsr']:.2f}"
     checks = [
+        (gated_pick, f"Auswahl gegated (eligible + DSR {dsr_txt}, nicht erzwungen)"),
         (fixed_config is not None, "gegen die eingefrorene Live-Config geprueft (--fixed)"),
         (result.n_trades >= 30, f"genug Trades ({result.n_trades} >= 30)"),
         (not result.breached, "haelt die harten Konto-Limits (3%/Tag, 6% trailing)"),

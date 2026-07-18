@@ -39,6 +39,9 @@ def main(argv: list[str] | None = None) -> None:
     run = rb.RunDir.open(args.run)
     rb.banner(2, "SELECT - Struktur & Universum", run)
     df = pd.read_csv(run.require("study.csv", "edge"))
+    # #2: the GATED ranking is the only admissible input for an automatic pick. Reading study.csv
+    # alone re-derived the choice without the statistical gates the edge stage had applied.
+    ranking = pd.read_csv(run.require("edge_ranking.csv", "edge"))
 
     if args.variation:
         variation = args.variation
@@ -46,9 +49,33 @@ def main(argv: list[str] | None = None) -> None:
         instruments = universe.select_universe(df, variation, train_months)
         how = f"erzwungen (--variation {variation})"
     else:
-        sel = universe.select(df)
-        variation, train_months, instruments = sel.variation, sel.train_months, sel.instruments
-        how = "Auto (Rendite-first, Risiko-Gate)"
+        gated = ranking[ranking["eligible"].astype(bool) & ranking["dsr_ok"].astype(bool)]
+        if gated.empty:
+            raise SystemExit(
+                "\n  ABBRUCH: keine Variation besteht die Gates (eligible + DSR).\n"
+                "  Es gibt nichts Handelbares - das ist ein Ergebnis, kein Fehler.\n"
+                "  Mit --variation laesst sich eine Wahl erzwingen; der Lauf gilt dann als\n"
+                "  explorativ und faellt im Verdict durch."
+            )
+        top = gated.sort_values("mean_ret", ascending=False).iloc[0]
+        variation, train_months = str(top["variation"]), int(top["train_months"])
+        instruments = universe.select_universe(df, variation, train_months)
+        how = "Auto (Rendite-first, Risiko- + DSR-Gate)"
+
+    # Manifest (#2): carry the gate evidence for the pick forward so the verdict can require it
+    # rather than trusting that selection was gated at all.
+    row = ranking[ranking["variation"] == variation]
+    gates = (
+        {
+            "eligible": bool(row.iloc[0]["eligible"]),
+            "dsr_ok": bool(row.iloc[0]["dsr_ok"]),
+            "dsr": None if pd.isna(row.iloc[0]["dsr"]) else float(row.iloc[0]["dsr"]),
+            "frac_positive": float(row.iloc[0]["frac_positive"]),
+            "mean_rpd": float(row.iloc[0]["mean_rpd"]),
+        }
+        if not row.empty
+        else {"eligible": False, "dsr_ok": False, "dsr": None}
+    )
 
     run.save_json(
         "selection.json",
@@ -57,6 +84,8 @@ def main(argv: list[str] | None = None) -> None:
             "train_months": train_months,
             "instruments": instruments,
             "how": how,
+            "forced": bool(args.variation),
+            "gates": gates,
         },
     )
 

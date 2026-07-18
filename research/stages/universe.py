@@ -21,6 +21,10 @@ from dataclasses import dataclass
 import pandas as pd
 
 
+class NoEligibleConfig(RuntimeError):
+    """Raised when no configuration passes the risk gates -- selection must fail closed (#2)."""
+
+
 @dataclass(frozen=True)
 class Selection:
     """The chosen global structure and tradeable universe."""
@@ -49,16 +53,25 @@ def select_structure(
     a config is eligible only if it is OOS-positive on at least ``min_frac_positive`` of
     instruments (robustness) AND its risk-adjusted return (``mean_rpd``) is at least
     ``rpd_tolerance`` of the best config's (so a bit more return is never taken at the cost of
-    a much worse drawdown profile). Among the eligible, the highest mean OOS return wins. If
-    none qualify, fall back to the full pool so a choice is always returned.
+    a much worse drawdown profile). Among the eligible, the highest mean OOS return wins.
+
+    Fails CLOSED (#2): if nothing qualifies this raises instead of falling back to the ungated
+    pool. The old fallback returned the highest RAW return precisely in the situation where the
+    risk gates had rejected everything -- turning "no candidate is good enough" into a
+    recommendation to trade the most reckless one.
     """
     g = per_config(df)
     best_rpd = float(g["mean_rpd"].max())
     eligible = g[
         (g["frac_positive"] >= min_frac_positive) & (g["mean_rpd"] >= rpd_tolerance * best_rpd)
     ]
-    pool = eligible if not eligible.empty else g
-    best = pool["mean_ret"].idxmax()  # (variation, train_months) with the most return
+    if eligible.empty:
+        raise NoEligibleConfig(
+            f"no (variation, train_months) passes the gates "
+            f"(frac_positive >= {min_frac_positive:.0%}, mean_rpd >= "
+            f"{rpd_tolerance:.0%} of best {best_rpd:.2f}) -- nothing is deployable"
+        )
+    best = eligible["mean_ret"].idxmax()  # (variation, train_months) with the most return
     return str(best[0]), int(best[1])
 
 
