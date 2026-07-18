@@ -64,6 +64,24 @@ def equity_curve(trades: pd.DataFrame, start_balance: float) -> pd.DataFrame:
     return pd.DataFrame({"close_time": trades["close_time"], "equity": eq})
 
 
+def per_trade_risk(
+    trades: pd.DataFrame, start_balance: float, risk_frac: float
+) -> np.ndarray:
+    """Each trade's risked amount, off the equity as it stood BEFORE that trade (#20).
+
+    Live sizing compounds: risk is a fraction of equity at entry, so a 1R win early in a smaller
+    account is a smaller number of euros than a 1R win today. Dividing the whole history by
+    ``risk_frac * today's equity`` therefore shrinks the early trades -- an account that grew
+    $50k -> $60k would show its early 1R wins as 0.83R, distorting expectancy and any drift check.
+
+    Reconstructed from realized PnL, which is what the deal history gives us; floating equity at
+    the moment of entry is not recoverable after the fact.
+    """
+    prior = start_balance + trades["net_pnl"].cumsum().shift(1, fill_value=0.0)
+    risk: np.ndarray = (risk_frac * prior).to_numpy(dtype=float)
+    return risk
+
+
 def live_stats(net_pnl: np.ndarray) -> dict[str, float]:
     """Edge metrics for a set of live trades (hit rate, payoff, profit factor, expectancy)."""
     wins, losses = net_pnl[net_pnl > 0], net_pnl[net_pnl < 0]

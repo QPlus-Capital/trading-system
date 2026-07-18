@@ -23,14 +23,17 @@ import streamlit as st
 from core.paths import REPO_ROOT
 from live.accounts import ACCOUNTS
 from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
-from live.runner import position_risk
+from live.runner import position_risk, risk_per_trade_from_live_config
 
-from monitoring.deals import deals_to_trades, equity_curve, live_stats
+from monitoring.deals import deals_to_trades, equity_curve, live_stats, per_trade_risk
 from monitoring.reference import load_reference, mc_band
 from monitoring.study_explorer import METRICS, latest_study_csv, load_study, variant_ranking
 
 _REPO = REPO_ROOT
-_LIVE_RISK_PCT = 0.0018  # 0.18% flat, matches the live config (the gap tail cap)
+# #20: read the risk fraction from the live config rather than restating it here -- a hardcoded
+# copy silently goes stale the moment the deployed value changes, and every R on this page is
+# measured against it.
+_LIVE_RISK_PCT = risk_per_trade_from_live_config()
 # Validated data-viz palette (see the dataviz skill's reference palette).
 _BLUE, _MUTED, _GRID = "#2a78d6", "#898781", "#e1e0d9"
 _GOOD, _WARN, _CRIT = "#0ca30c", "#fab219", "#d03b3b"
@@ -132,8 +135,10 @@ def _live_view() -> None:
     trades["market"] = trades["symbol"].map(live["term_to_research"]).fillna(trades["symbol"])
     state = _risk_state(profile.name)
     start_balance = float(state.get("start_balance", live["balance"]))
-    # Compounding: risk tracks current equity, so normalise per-trade expectancy to R off equity.
-    live_risk = _LIVE_RISK_PCT * float(live["equity"])
+    # #20: normalise EACH trade off the equity it was actually sized against, not off today's.
+    # Sizing compounds, so one risk figure from current equity shrinks the early trades' R as the
+    # account grows -- which would read as performance drift that never happened.
+    trade_risk = per_trade_risk(trades, start_balance, _LIVE_RISK_PCT)
 
     # -- account / risk header --
     c1, c2, c3, c4 = st.columns(4)
@@ -165,7 +170,7 @@ def _live_view() -> None:
         with k4:
             _stat_row(
                 "Expectancy / trade (R)",
-                ls["expectancy"] / live_risk,
+                float(np.mean(net / trade_risk)) if len(net) else 0.0,
                 ro["expectancy"],
                 "+.2f",
             )
@@ -194,7 +199,7 @@ def _live_view() -> None:
         )
         band = mc_band(ref["r_multiples"], len(trades))
         live_r = pd.DataFrame(
-            {"trade": np.arange(1, len(trades) + 1), "cum_r": np.cumsum(net / live_risk)}
+            {"trade": np.arange(1, len(trades) + 1), "cum_r": np.cumsum(net / trade_risk)}
         )
         area = (
             alt.Chart(band)
