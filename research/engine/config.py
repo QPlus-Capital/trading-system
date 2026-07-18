@@ -16,6 +16,7 @@ import importlib.util
 from pathlib import Path
 from types import ModuleType
 
+import pandas as pd
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestRunConfig
@@ -56,13 +57,20 @@ def _parse_money(value: object) -> float:
     return float(str(value).split()[0].replace("_", ""))
 
 
-def extract_trade_pnls(run_config: BacktestRunConfig) -> tuple[list[float], float]:
+def extract_trade_pnls(
+    run_config: BacktestRunConfig, *, closed_from: pd.Timestamp | None = None
+) -> tuple[list[float], float]:
     """Run the config and return (realized PnL per trade, starting equity).
 
     A window can legitimately produce ZERO trades -- a variation with fewer signals (longer EMA),
     long-only skipping every short, or simply a quiet stretch on one market. NautilusTrader then
     returns an empty positions report with no ``realized_pnl`` column, so guard for it: no trades is
     an empty PnL list (a flat, zero-return window), never a crashed task.
+
+    ``closed_from`` keeps only positions that CLOSED at or after that moment (#14). It pairs with a
+    pre-roll: the run starts before the window so the indicators are warm and a position opened
+    just before the boundary is carried, and this filter then attributes each trade to exactly the
+    window it resolved in -- no gaps, no double counting.
     """
     node = BacktestNode(configs=[run_config])
     try:
@@ -70,7 +78,12 @@ def extract_trade_pnls(run_config: BacktestRunConfig) -> tuple[list[float], floa
         engine = node.get_engines()[0]
         positions = engine.trader.generate_positions_report()
         if "realized_pnl" in positions.columns:
-            pnls = [_parse_money(v) for v in positions["realized_pnl"]]
+            closed = positions
+            if "ts_closed" in positions.columns:  # absent only when nothing ever closed
+                closed = closed[closed["ts_closed"].notna()]
+                if closed_from is not None:
+                    closed = closed[pd.to_datetime(closed["ts_closed"], utc=True) >= closed_from]
+            pnls = [_parse_money(v) for v in closed["realized_pnl"]]
         else:
             pnls = []
     finally:
