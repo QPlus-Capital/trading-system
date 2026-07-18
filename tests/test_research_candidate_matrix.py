@@ -14,7 +14,9 @@ from research.engine.overfitting import cscv_splits
 from research.engine.walkforward import combo_key
 
 
-def _row(instrument: str, variation: str, tm: int, combos: dict[str, list[float]]) -> dict:
+def _row(
+    instrument: str, variation: str, tm: int, combos: dict[str, list[float]]
+) -> dict[str, object]:
     return {"instrument": instrument, "variation": variation, "train_months": tm,
             "combo_oos": combos}
 
