@@ -54,7 +54,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 4 (VERDICT): accept/reject + full report.")
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument(
-        "--config", type=Path, default=Path("research/config/robustness.py"), help="study config"
+        "--config", type=Path, default=None,
+        help="study config (default: the one Stage 1 recorded in the run)"
     )
     args = parser.parse_args(argv)
 
@@ -63,7 +64,7 @@ def main(argv: list[str] | None = None) -> None:
     run.require("portfolio.json", "portfolio")
     spec = run.load_json("portfolio.json")
     trades = pd.read_csv(run.require("portfolio_trades.csv", "portfolio"))
-    cfg = load_config_module(args.config)
+    cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
     universe = [m for m in spec["instruments"] if m in specs]
