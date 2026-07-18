@@ -58,5 +58,10 @@ trials — the number the DSR deflates by (see `foundation/trial_budget.py`).
 - **Frozen:** the signal logic and its indicator periods (mirror the Pine source), the confirmation
   structure above, the cost model, the walk-forward scheme (purged, embargoed, non-overlapping).
 - **Free (chosen inside the walk-forward):** stop/target per window from the grid.
-- **A sizing choice, not a signal choice (Stage 5):** the risk-aversion parameters (α, β) and the
-  per-market deployed stop. These do not change *which* trades happen.
+- **Chosen at Stage 5:** the risk-aversion parameters (α, β) and the per-market deployed stop.
+  These do not change *which* entry signals fire — but they are still strategy parameters, not
+  free choices: the stop determines every **exit**, hence every R and the entire equity path.
+  Fitting them on a window that overlaps the reserved holdout makes that holdout in-sample for the
+  deployed config (see `HOLDOUT_CONTAMINATED` in `research/config/robustness.py`). The holdout
+  numbers are therefore an optimistic estimate; the clean out-of-sample evidence is the live track
+  record from the freeze date onward.

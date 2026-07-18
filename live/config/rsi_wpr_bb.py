@@ -10,6 +10,11 @@ holds at every equity level (see the runner's ``_risk_amount``).
 Stop-loss / take-profit are FIXED per market (fit on the most recent 36 months; re-fit
 periodically). This module is the single source of truth for those decisions; the live MT5
 runner (live.run) reads it and enforces the drawdown limits -- see the note at the bottom.
+
+Note on evidence (#12): that 36-month fit window OVERLAPS the 24-month research holdout, so the
+holdout is in-sample for these stops and its numbers overstate what to expect. The honest
+out-of-sample record for this config is the live one, from the freeze date in
+``research/config/robustness.py`` onward.
 """
 
 from typing import Any
