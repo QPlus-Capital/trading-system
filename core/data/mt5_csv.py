@@ -46,8 +46,17 @@ def _bar_types(instrument: Instrument, bar_spec: str) -> tuple[BarType, BarType]
     return bid, ask
 
 
+# The broker's server timezone, VERIFIED (#18) rather than assumed, two independent ways:
+#   1. In the exported CSVs the FX week runs Monday 00:00 to Friday 20:00 and the week-start hour
+#      does NOT shift across the DST changeover -- the signature of server-local time.
+#   2. Against the live terminal: the last tick before the weekend is Friday 23:56:59 server time,
+#      while the market closes 17:00 New York = 21:00 UTC. So 24:00 server = 21:00 UTC -> UTC+3 in
+#      July, i.e. EEST. With (1)'s DST behaviour that is EET/EEST = Europe/Athens.
+MT5_SERVER_TZ = "Europe/Athens"
+
+
 def parse_mt5_timestamps(
-    df: pd.DataFrame, *, server_tz: str | None = None, offset_hours: int = 0
+    df: pd.DataFrame, *, server_tz: str | None = MT5_SERVER_TZ, offset_hours: int = 0
 ) -> pd.Series:
     """Bar open times from an MT5 export, as real UTC.
 

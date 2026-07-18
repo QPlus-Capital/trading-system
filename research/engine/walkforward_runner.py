@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from core.data.mt5_csv import parse_mt5_timestamps
 from core.paths import REPO_ROOT
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
@@ -54,7 +55,9 @@ PREROLL = pd.Timedelta(days=45)
 def _data_span(csv_path: str | Path) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Return (first, last) bar timestamp from an MT5 CSV (fast date-only read)."""
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>"])
-    stamps = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S", utc=True)
+    # #18: same conversion as the bars themselves -- the span sets every window boundary, so a
+    # server-frame span against real-UTC bars would offset train/test/holdout splits by hours.
+    stamps = parse_mt5_timestamps(df)
     return stamps.iloc[0], stamps.iloc[-1]
 
 

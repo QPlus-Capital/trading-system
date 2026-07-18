@@ -10,11 +10,19 @@ import pandas as pd
 from core.data.mt5_csv import parse_mt5_timestamps
 
 
-def test_timestamps_default_to_the_historical_utc_reading() -> None:
-    """The default must NOT change silently: every number produced so far read these stamps as
-    UTC, so flipping it would re-date the entire research history without anyone asking."""
-    df = pd.DataFrame({"<DATE>": ["2024.07.01"], "<TIME>": ["00:00:00"]})
+def test_the_default_converts_from_the_verified_server_zone() -> None:
+    """Confirmed against the live terminal: the last tick before the weekend is Friday 23:56:59
+    server time while the market closes 17:00 New York = 21:00 UTC, so 24:00 server = 21:00 UTC
+    -> UTC+3 in July. With the CSV week structure that pins EET/EEST."""
+    df = pd.DataFrame({"<DATE>": ["2024.07.01"], "<TIME>": ["03:00:00"]})
     assert parse_mt5_timestamps(df)[0] == pd.Timestamp("2024-07-01 00:00", tz="UTC")
+
+
+def test_the_old_utc_reading_is_still_reachable_explicitly() -> None:
+    # Every number produced BEFORE this fix read the stamps as UTC; keep that reproducible so an
+    # old result can be recomputed and compared rather than merely disbelieved.
+    df = pd.DataFrame({"<DATE>": ["2024.07.01"], "<TIME>": ["00:00:00"]})
+    assert parse_mt5_timestamps(df, server_tz=None)[0] == pd.Timestamp("2024-07-01", tz="UTC")
 
 
 def test_an_iana_zone_converts_dst_aware() -> None:
