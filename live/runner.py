@@ -339,8 +339,12 @@ class LiveRunner:
         # the true HWM / day-start rather than resetting to the current balance (K1).
         today = loss_day(wall)  # #18: real UTC, not the server frame
         if self._day is None:
-            # First launch (no restored state): anchor the daily floor to the CURRENT balance, not
-            # the profile's original balance, so a mid-run start doesn't leave a stale floor.
+            # First launch (no restored state): anchor BOTH references to the CURRENT balance, not
+            # the profile's original one. Banking the HWM matters as much as the daily reference:
+            # starting a 50k profile at a 52k balance would otherwise leave the trailing floor at
+            # 47.5k instead of 49.5k -- looser than the prop firm's own 6% floor, and it would stay
+            # that way until the next loss-day roll.
+            self._risk.on_eod(account.balance)
             self._risk.on_new_day(account.balance)
             self._day = today
             self._persist()

@@ -157,19 +157,24 @@ def extract_market_trades(
         else:
             best, best_score = combos[0], float("-inf")
             for params in combos:
+                # Warm this pass the same way as the walk-forward runner's: a cold train window
+                # here would pick different params than Stage 1 did, so the portfolio numbers
+                # would no longer describe the methodology that was selected.
                 pnls, equity = extract_trade_pnls(
                     recipe.build_run_config(
                         params,
-                        start=window.train_start.isoformat(),
+                        start=(window.train_start - PREROLL).isoformat(),
                         end=window.train_end.isoformat(),
-                    )
+                        trade_from=window.train_start.isoformat(),
+                    ),
+                    closed_from=window.train_start,
                 )
                 score = calmar_score(pnls, equity)
                 if score > best_score:
                     best_score, best = score, params
-        # #14: pre-roll the data so indicators enter the window warm and a position opened just
-        # before the boundary is carried; timed_trades_from_report then keeps only what RESOLVED
-        # inside the window, so trades are neither dropped at a seam nor counted twice.
+        # #14: READ-ONLY pre-roll -- the bars warm the indicators, trade_from stops them placing
+        # orders. Positions are therefore NOT carried across the boundary (see
+        # timed_trades_from_report); that seam gap is deliberate and tracked in #23.
         cfg = recipe.build_run_config(
             best,
             start=(window.test_start - PREROLL).isoformat(),

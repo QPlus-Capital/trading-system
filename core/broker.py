@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 from nautilus_trader.backtest.config import ImportableFillModelConfig
 
+from core.data.mt5_csv import MT5_SERVER_TZ
 from core.paths import REPO_ROOT
 
 _INT_YEAR = 360.0  # standard bank year for interest-mode swaps
@@ -78,9 +79,14 @@ def night_units(open_ns: int, close_ns: int, rollover_py: int) -> float:
 
     Weekends carry no separate charge -- the triple on the rollover weekday pre-charges them
     (the standard MetaTrader model).
+
+    Counted on the BROKER SERVER's calendar, not UTC: MT5 rolls swaps at server midnight. The
+    trade timestamps are real UTC (see ``core.data.mt5_csv``), so a position held 20:30->22:00 UTC
+    in summer crosses the EET rollover while staying on one UTC date -- counting UTC dates would
+    charge zero nights instead of one.
     """
-    o = pd.Timestamp(open_ns).date()
-    c = pd.Timestamp(close_ns).date()
+    o = pd.Timestamp(open_ns, tz="UTC").tz_convert(MT5_SERVER_TZ).date()
+    c = pd.Timestamp(close_ns, tz="UTC").tz_convert(MT5_SERVER_TZ).date()
     units = 0.0
     d = o
     while d < c:  # a rollover happens at the end of each held day before the close day

@@ -24,7 +24,8 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-_DAY_NS = 86_400_000_000_000
+from research.portfolio.curves import to_day
+
 _DAILY_HARD = 0.03  # TTP hard daily loss limit (account death)
 _TRAILING_HARD = 0.06  # TTP hard trailing max-drawdown limit
 
@@ -40,7 +41,10 @@ def worst_day_r(trades: pd.DataFrame) -> float:
     positions gapping on the same day, which the hard *daily* limit sees as one loss."""
     if len(trades) == 0:
         return 0.0
-    day = (trades["ts_closed"].to_numpy() // _DAY_NS).astype(int)
+    # The PROP LOSS DAY, not the UTC date: two stop-outs at 22:00 and 02:00 UTC are the same TTP
+    # day. Splitting them across UTC dates made the worst day look smaller -- and this number sets
+    # the risk CEILING, so a too-small worst day licenses too much risk.
+    day = np.array([to_day(x) for x in trades["ts_closed"].to_numpy()])
     by_day = pd.Series(trades["r"].to_numpy(dtype=float)).groupby(day).sum()
     return float(by_day.min())
 

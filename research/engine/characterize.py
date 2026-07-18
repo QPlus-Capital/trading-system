@@ -43,6 +43,7 @@ from typing import Any
 
 import pandas as pd
 from core.broker import TTP_MARKETS
+from core.data.mt5_csv import catalog_frame_is_stale
 from core.paths import REPO_ROOT
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
@@ -417,6 +418,12 @@ def main(argv: list[str] | None = None) -> None:
         if catalog.exists()
         else set()
     )
+    # A catalog written under a different timestamp frame must be re-imported, not reused: seeding
+    # is skipped per instrument, so stale bars would otherwise be mixed with window/day logic
+    # parsed in the current frame and shift everything by the server offset (#18).
+    if catalog_frame_is_stale(catalog):
+        print("catalog was written in a different timestamp frame -> re-seeding all instruments")
+        have = set()
     for factory, csv, leverage in cfg.INSTRUMENTS:
         recipe = SweepRecipe(factory(), csv, leverage=leverage)
         if str(recipe.INSTRUMENT.id) not in have:

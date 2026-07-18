@@ -72,6 +72,7 @@ def daily_breach(
     equity: Sequence[float] | np.ndarray,
     day_loss_frac: float,
     prior: Sequence[float] | np.ndarray | None = None,
+    start_balance: float | None = None,
 ) -> bool:
     """True if any day's equity drop exceeds ``day_loss_frac`` of the PRIOR day's equity.
 
@@ -83,10 +84,17 @@ def daily_breach(
     With intraday marks this errs on the conservative side -- it assumes every open position hits
     its extreme together -- which is the right direction for a hard-limit gate. It used to be a
     lower bound while being used as one. ``day_loss_frac <= 0`` disables the check.
+
+    ``start_balance`` closes the first-day hole: comparing consecutive entries never tests day 0
+    against anything, so a simulation whose FIRST loss day dipped through the limit reported no
+    breach at all.
     """
     eq = np.asarray(equity, dtype=float)
     base = eq if prior is None else np.asarray(prior, dtype=float)
-    if eq.size < 2 or day_loss_frac <= 0:
+    if eq.size == 0 or day_loss_frac <= 0:
         return False
-    losses = base[:-1] - eq[1:]  # positive when today's worst is below yesterday's close
-    return bool((losses > day_loss_frac * base[:-1]).any())
+    # Each day's worst mark against the previous day's baseline; day 0 against the opening balance.
+    opening = base[0] if start_balance is None else float(start_balance)
+    baselines = np.concatenate([[opening], base[:-1]])
+    losses = baselines - eq
+    return bool((losses > day_loss_frac * baselines).any())

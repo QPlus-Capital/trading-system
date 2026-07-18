@@ -55,6 +55,29 @@ def _bar_types(instrument: Instrument, bar_spec: str) -> tuple[BarType, BarType]
 MT5_SERVER_TZ = "Europe/Athens"
 
 
+_FRAME_MARKER = ".timestamp_frame"
+
+
+def _stamp_catalog_frame(catalog_path: str | Path, server_tz: str | None) -> None:
+    """Record which timestamp frame a catalog was written in."""
+    (Path(catalog_path) / _FRAME_MARKER).write_text(server_tz or "UTC", encoding="utf-8")
+
+
+def catalog_frame_is_stale(catalog_path: str | Path, server_tz: str | None = MT5_SERVER_TZ) -> bool:
+    """True if the catalog was written in a DIFFERENT timestamp frame than we now parse in.
+
+    Seeding is skipped whenever an instrument is already in the catalog, so without this a
+    pre-existing catalog written under the old server-as-UTC assumption would be silently mixed
+    with window and day logic parsed in the new frame -- shifting everything by the server offset
+    until someone thought to delete ``catalog/`` by hand. An unmarked catalog predates the marker,
+    so it is stale by definition.
+    """
+    marker = Path(catalog_path) / _FRAME_MARKER
+    if not marker.exists():
+        return Path(catalog_path).exists()  # unmarked but populated -> written before the marker
+    return marker.read_text(encoding="utf-8").strip() != (server_tz or "UTC")
+
+
 def parse_mt5_timestamps(
     df: pd.DataFrame, *, server_tz: str | None = MT5_SERVER_TZ, offset_hours: int = 0
 ) -> pd.Series:
@@ -174,6 +197,7 @@ def write_mt5_catalog(
     """
     Path(catalog_path).mkdir(parents=True, exist_ok=True)
     catalog = ParquetDataCatalog(str(catalog_path))
+    _stamp_catalog_frame(catalog_path, server_tz)
 
     bid_bars, ask_bars = load_mt5_bid_ask_bars(
         csv_path,
