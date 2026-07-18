@@ -43,6 +43,8 @@ class StubBridge:
         self.modify_error: Exception | None = None
         # What the terminal prices entry->stop as; None = it cannot price it (arithmetic fallback).
         self.terminal_risk: float | None = None
+        # Broker-priced loss per lot for a candidate order; None = unpriceable (#19).
+        self.order_loss_per_lot: float | None = None
         # Server time: just after the LAST bar's open -> that bar is still forming.
         self.now = datetime.fromtimestamp(self.bars[-1].time + 60, tz=UTC)
 
@@ -77,6 +79,14 @@ class StubBridge:
     def loss_to_stop(self, position: Position) -> float | None:
         # Default: the terminal cannot price it -> the runner falls back to the arithmetic.
         return self.terminal_risk
+
+    def loss_for_order(
+        self, name: str, side: str, entry: float, sl: float, volume: float
+    ) -> float | None:
+        # None = the terminal cannot price the candidate -> keep the arithmetic volume.
+        if self.order_loss_per_lot is None:
+            return None
+        return volume * self.order_loss_per_lot
 
     def place_order(self, name: str, side: str, volume: float, **kw: object) -> int:
         self.placed.append((name, side, volume))
@@ -401,3 +411,43 @@ def test_run_once_rolls_the_trading_day() -> None:
     assert runner._day != first_day
     assert runner._risk.day_start_balance == 101_000.0  # daily reference rolled
     assert runner._risk.hwm_balance == 101_000.0  # prior day's balance banked into the HWM
+
+
+def test_broker_pricing_shrinks_a_volume_that_would_over_risk() -> None:
+    """#19: trade_tick_value is one generic number per symbol. When the broker really loses more
+    per lot than that implies, sizing off the arithmetic alone exceeds the intended risk -- the
+    terminal's own pricing must pull the volume back down."""
+    stub = StubBridge()
+    info = stub.symbol_info("XAUUSD")
+    # Arithmetic: loss_per_lot = (20 / 0.01) * 0.01 = 20 -> 400 / 20 = 20 lots.
+    plain = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
+    assert plain is not None and plain.volume == 20.0
+
+    # The broker actually loses twice that per lot (conversion / asymmetric tick value).
+    priced = size_order(
+        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        loss_fn=lambda _s, _e, _sl, vol: vol * 40.0,
+    )
+    assert priced is not None
+    assert priced.volume == 10.0  # halved, so the real stop-out still costs 400
+    assert priced.risk_amount == 400.0  # and the recorded risk is the BROKER's number
+
+
+def test_sizing_refuses_when_even_the_minimum_lot_over_risks() -> None:
+    # Never silently accept more than the intended risk.
+    stub = StubBridge()
+    info = stub.symbol_info("XAUUSD")
+    assert size_order(
+        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        loss_fn=lambda _s, _e, _sl, vol: vol * 1_000_000.0,
+    ) is None
+
+
+def test_unpriceable_candidates_keep_the_arithmetic_volume() -> None:
+    stub = StubBridge()
+    info = stub.symbol_info("XAUUSD")
+    sized = size_order(
+        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        loss_fn=lambda _s, _e, _sl, _v: None,
+    )
+    assert sized is not None and sized.volume == 20.0

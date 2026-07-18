@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from datetime import time as dtime
@@ -57,6 +59,10 @@ def loss_day(now_utc: datetime) -> date:
     return local.date() + timedelta(days=1) if local.time() >= _DAILY_RESET else local.date()
 
 _H4_SECONDS = 4 * 3600  # an H4 bar with open time t is closed once server time >= t + 4h
+
+# Prices a candidate order's entry->stop loss in account currency: (side, entry, sl, volume).
+# Returns None when the terminal cannot price it, so the caller falls back to the arithmetic.
+LossFn = Callable[[Side, float, float, float], float | None]
 
 
 class Mode(StrEnum):
@@ -109,11 +115,18 @@ def size_order(
     take_profit_pct: float,
     info: SymbolInfo,
     risk_amount: float,
+    loss_fn: LossFn | None = None,
 ) -> SizedOrder | None:
     """Size an entry so a stop-out loses ~``risk_amount``; ``None`` if it can't be sized.
 
     Pure: computes the SL/TP prices and the lot volume (rounded to the broker's step, capped
     at the max lot, skipped if below the min lot) and the ACTUAL money risked after rounding.
+
+    ``loss_fn`` (#19) prices a candidate volume's entry-to-stop loss with the terminal's own
+    ``order_calc_profit``. ``trade_tick_value`` is a single generic number and can differ from the
+    loss-side value on converted or asymmetric symbols, so sizing off it alone can overshoot the
+    intended risk. Passing the callback keeps this function pure and testable while letting the
+    broker have the last word; without it the arithmetic stands.
 
     The SL/TP here are anchored to ``ref_price`` and are PROVISIONAL: they ride along with the
     market order so the position is never naked for a single tick. Once it fills, the runner
@@ -137,6 +150,11 @@ def size_order(
         return None
     loss_per_lot = (stop_distance / info.tick_size) * info.tick_value
     actual_risk = volume * loss_per_lot
+    if loss_fn is not None:
+        refined = _refine_volume(side, ref_price, sl, volume, risk_amount, info, loss_fn)
+        if refined is None:
+            return None
+        volume, actual_risk = refined
     return SizedOrder(
         side=side,
         volume=volume,
@@ -144,6 +162,40 @@ def size_order(
         tp=round(tp, info.digits),
         risk_amount=actual_risk,
     )
+
+
+def _refine_volume(
+    side: Side,
+    entry: float,
+    sl: float,
+    volume: float,
+    risk_amount: float,
+    info: SymbolInfo,
+    loss_fn: LossFn,
+) -> tuple[float, float] | None:
+    """Re-solve ``volume`` against the broker's own entry->stop pricing (#19).
+
+    Scales the arithmetic volume by how far the terminal's loss differs from the target, rounds
+    DOWN to the lot step, then re-prices and steps down while the rounded volume would still
+    over-risk. Returns ``(volume, actual_loss)``, or ``None`` when even the minimum lot over-risks
+    -- never silently accepting more than ``risk_amount``.
+    """
+    priced = loss_fn(side, entry, sl, volume)
+    if priced is None or priced <= 0:
+        return volume, volume * (abs(entry - sl) / info.tick_size) * info.tick_value
+    scaled = volume * (risk_amount / priced)
+    vol = math.floor(scaled / info.volume_step) * info.volume_step
+    vol = min(vol, info.volume_max)
+    for _ in range(3):  # rounding can still leave it a hair over; step down, don't hope
+        if vol < info.volume_min:
+            return None
+        loss = loss_fn(side, entry, sl, vol)
+        if loss is None:
+            return vol, vol * (abs(entry - sl) / info.tick_size) * info.tick_value
+        if loss <= risk_amount:
+            return vol, loss
+        vol = round(vol - info.volume_step, 8)
+    return None
 
 
 def position_risk(pos: Position, info: SymbolInfo) -> float:
@@ -391,6 +443,9 @@ class LiveRunner:
             spec.take_profit_pct,
             info,
             self._risk_amount(equity),
+            # #19: let the terminal price the candidate volume, so lot rounding cannot leave the
+            # real stop-out above the intended risk on a converted or asymmetric symbol.
+            loss_fn=lambda s, e, stop, vol: self._bridge.loss_for_order(spec.name, s, e, stop, vol),
         )
         if sized is None:
             log.info("[%s] %s signal but not sizable (min-lot/stop) -> skip", spec.name, desired)

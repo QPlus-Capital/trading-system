@@ -327,6 +327,24 @@ class Mt5Bridge:
         """
         return [p for p in self.positions(name) if p.magic == MAGIC]
 
+    def loss_for_order(self, name: str, side: Side, entry: float, sl: float, volume: float) -> (
+        float | None
+    ):
+        """What ``volume`` lots of ``name`` would lose going from ``entry`` to ``sl``, in account
+        currency, priced by the terminal (#19).
+
+        ``trade_tick_value`` is one generic number per symbol and can differ from the loss-side
+        value on converted or asymmetric symbols, so sizing off it alone can quietly exceed the
+        intended risk. ``order_calc_profit`` applies the broker's own conversion. ``None`` when the
+        terminal cannot price it -- the caller then keeps the arithmetic result.
+        """
+        m = self._require()
+        order_type = m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL
+        profit = m.order_calc_profit(order_type, self.terminal_symbol(name), volume, entry, sl)
+        if profit is None:
+            return None
+        return max(0.0, -float(profit))
+
     def loss_to_stop(self, position: Position) -> float | None:
         """Account-currency loss if ``position`` ran from its ENTRY to its stop.
 
