@@ -10,6 +10,11 @@ daily), the values Jan chose:
 - **total-open-risk cap** 2.0% -- the sum of all open stop-risks, so even a same-day full
   stop-out of every open position stays under the daily limit.
 
+The pre-trade gate models the tail conservatively: a correlated gap can blow through every open
+stop at once by a ``stress_mult`` overshoot, and floating profit can vanish in the same move, so
+the stressed aggregate tail is checked against a loss budget anchored to the day-start balance --
+never the (possibly inflated) current equity.
+
 Everything here is deterministic and unit-tested; the runner  supplies the live
 numbers and acts on the decisions (size / block / flatten).
 """
@@ -24,9 +29,15 @@ class RiskLimits:
     """Risk parameters (fractions of balance/equity). Defaults = Jan's chosen values."""
 
     risk_per_trade: float = 0.0018  # 0.18% of the initial balance per trade (config is source)
-    daily_stop: float = 0.025  # halt for the day at 2.5% loss (hard TTP = 3%)
+    daily_stop: float = 0.025  # HALT for the day at 2.5% loss (hard TTP = 3%)
+    # Pre-trade tail budget, deliberately looser than daily_stop so a full book of 10 markets
+    # (10 x 0.18% x 1.5 = 2.7%) is not blocked. The HALT still fires at daily_stop (2.5%), so
+    # flattening starts early and keeps the full 0.5pp of execution room below TTP's hard 3%.
+    gate_daily_stop: float = 0.027
+    prop_daily_stop: float = 0.03  # the prop firm's HARD daily limit -- the outer budget
     trailing_stop: float = 0.05  # halt at 5% trailing drawdown (hard TTP = 6%)
     open_risk_cap: float = 0.020  # max combined open stop-risk = 2.0% (fits all 10 markets @ 0.18%)
+    stress_mult: float = 1.5  # gap/slippage overshoot beyond the nominal stop -> the tail factor
 
 
 @dataclass(frozen=True)
@@ -107,8 +118,16 @@ class RiskController:
         )
 
     def daily_floor(self) -> float:
-        """Equity floor from the daily stop (relative to the day's starting balance)."""
+        """Equity floor from the internal daily stop (relative to the day's starting balance)."""
         return self.day_start_balance - self.limits.daily_stop * self.day_start_balance
+
+    def gate_daily_floor(self) -> float:
+        """Floor behind the PRE-TRADE tail budget; looser than :meth:`daily_floor`, which halts."""
+        return self.day_start_balance - self.limits.gate_daily_stop * self.day_start_balance
+
+    def prop_daily_floor(self) -> float:
+        """Equity floor from the prop firm's HARD daily limit -- the outer budget we stay inside."""
+        return self.day_start_balance - self.limits.prop_daily_stop * self.day_start_balance
 
     def must_flatten(self, equity: float) -> Decision:
         """Hard stop: if equity is at/below a safety floor, flatten everything and halt."""
@@ -125,20 +144,43 @@ class RiskController:
     def check_open(
         self, trade_risk: float, equity: float, *, exclude_risk: float = 0.0
     ) -> Decision:
-        """Pre-trade gate: block the entry if its worst case could breach a safety limit.
+        """Pre-trade gate: block the entry if its STRESSED worst case could breach a loss budget.
 
         ``exclude_risk`` (M2) is the stop-risk of a position being CLOSED as part of this action
         (a reversal): it is removed from the open total so a valid reversal is not blocked by the
         risk of the very position it replaces.
+
+        Two guards (#5):
+
+        1. **Nominal open-risk cap** -- the sum of stop-risks stays within ``open_risk_cap`` of
+           equity.
+        2. **Stressed aggregate tail** -- a correlated gap can blow through *every* open stop by
+           ``stress_mult`` at once, so the tail is ``stress_mult x (open + this trade)``. It must
+           fit the tightest remaining loss budget. The budget is anchored to the DAY-START balance
+           (``min(equity, day_start)``): floating profit can evaporate in the very same gap, so a
+           run-up in equity must never enlarge the budget or let sizing (which is off current
+           equity) outgrow the fixed daily allowance.
+
+        The daily budget here uses ``gate_daily_stop`` (2.7%), NOT the ``daily_stop`` (2.5%) that
+        triggers the halt: a full book of 10 markets is pre-authorised, while the halt still fires
+        0.2pp earlier so flattening begins with the full execution buffer below TTP's hard 3%.
         """
         effective_open = max(0.0, self.open_risk - exclude_risk)
         if effective_open + trade_risk > self.limits.open_risk_cap * equity:
             return Decision(
                 False, f"open-risk cap {self.limits.open_risk_cap:.1%} would be exceeded"
             )
-        worst = equity - (effective_open + trade_risk)  # everything still open + this trade stops
-        if worst <= self.daily_floor():
-            return Decision(False, "worst case would breach the daily stop")
-        if worst <= self.trailing_floor():
-            return Decision(False, "worst case would breach the trailing stop")
+        stressed_tail = self.limits.stress_mult * (effective_open + trade_risk)
+        ref = min(equity, self.day_start_balance)  # floating profit does not enlarge the budget
+        budgets = {
+            "internal daily budget": ref - self.gate_daily_floor(),
+            "prop daily limit": ref - self.prop_daily_floor(),
+            "trailing stop": min(equity, self.hwm_balance) - self.trailing_floor(),
+        }
+        name, budget = min(budgets.items(), key=lambda kv: kv[1])
+        if stressed_tail > budget:
+            return Decision(
+                False,
+                f"stressed tail {stressed_tail:.0f} would breach the {name} budget ({budget:.0f})",
+            )
         return Decision(True, "ok")

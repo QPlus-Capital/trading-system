@@ -49,9 +49,36 @@ TEST_MONTHS = 6
 STEP_MONTHS = 6
 
 # Reserve the last HOLDOUT_MONTHS: no stage (study/selection) ever sees them, and the
-# chosen config is scored once on them by the portfolio + verdict stages -- the honest guard
-# against selecting on out-of-sample results.
+# chosen config is scored once on them by the portfolio + verdict stages.
 HOLDOUT_MONTHS = 24
+
+# --- Holdout status (#12) -- READ BEFORE QUOTING ANY HOLDOUT NUMBER --------------------------
+# The reserved slice is clean for the STUDY and SELECTION stages: characterize/select never see
+# it. It is NOT clean for the DEPLOYED configuration, because deploy decisions were made after
+# looking at it:
+#   - the per-market stop/target that live trades was fit on the most recent 36 months -- a
+#     window that OVERLAPS the 24-month holdout;
+#   - silver (XAGUSD) was added to the universe as a manual full-history pick;
+#   - two configurations were compared on the "untouched" holdout before deployment.
+# Stops, universe and risk ARE strategy parameters. That they do not change which entry signals
+# fire is beside the point: they determine every exit, hence every R, hence the whole equity
+# path. Choosing them with holdout information makes the holdout in-sample for the deployed
+# config, so its numbers are an optimistic estimate, NOT out-of-sample evidence.
+#
+# The honest forward holdout is the LIVE track record from the freeze date onward. Re-fitting any
+# deploy decision on live data restarts that clock.
+HOLDOUT_CONTAMINATED = True
+DEPLOY_FREEZE_DATE = "2026-07-16"  # go-live; live results after this are the clean OOS set
+
+# Manual decisions count as trials: each was a human choosing after seeing results, so they
+# enlarge the effective search space that a deflated Sharpe has to deflate for (#13).
+MANUAL_TRIALS = (
+    "variation picked from the stage-1 ranking",
+    "silver (XAGUSD) added to the universe by hand, on full history",
+    "per-market stop/target re-fit on the most recent 36 months",
+    "risk policy and ceiling chosen at the portfolio stage",
+    "two configurations compared on the reserved holdout",
+)
 
 # Purge the train/test boundary: a gap so trailing-window indicators / straddling positions
 # cannot leak train info into the test (F5, Lopez de Prado purged/embargoed CV).

@@ -26,8 +26,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from core.data.mt5_csv import parse_mt5_timestamps, seeded_instruments
 from core.paths import REPO_ROOT
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 from research.engine.config import extract_trade_pnls, load_config_module
 from research.engine.grid import expand_grid
@@ -44,11 +44,19 @@ from research.engine.walkforward import (
 _REPO_ROOT = REPO_ROOT
 _TRAIN_MONTHS, _TEST_MONTHS, _STEP_MONTHS = 24, 6, 6
 
+# #14: read-only warm-up ahead of every window. The signal engine needs ~26 bars before it
+# reports "warmed up", but the Wilder-smoothed RSI/EMA keep converging well past that, so this is
+# sized generously: 45 days is roughly 190 H4 bars. Trades that resolve inside the pre-roll are
+# filtered out (closed_from), so it only ever informs indicators and carries open positions.
+PREROLL = pd.Timedelta(days=45)
+
 
 def _data_span(csv_path: str | Path) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Return (first, last) bar timestamp from an MT5 CSV (fast date-only read)."""
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>"])
-    stamps = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S", utc=True)
+    # #18: same conversion as the bars themselves -- the span sets every window boundary, so a
+    # server-frame span against real-UTC bars would offset train/test/holdout splits by hours.
+    stamps = parse_mt5_timestamps(df)
     return stamps.iloc[0], stamps.iloc[-1]
 
 
@@ -62,6 +70,7 @@ def run_walkforward(
     holdout_months: int = 0,
     phase: str = "select",
     embargo_days: int = 0,
+    collect_matrix: bool = False,
 ) -> list[WalkForwardResult]:
     """Run the full walk-forward for a recipe (config module or SweepRecipe).
 
@@ -71,6 +80,11 @@ def run_walkforward(
     With ``holdout_months > 0`` the last ``holdout_months`` are reserved: ``phase="select"``
     runs only the pre-holdout windows (for study/selection), ``phase="holdout"`` runs only
     the reserved windows (the honest final evaluation of an already-chosen config).
+
+    ``collect_matrix`` additionally scores EVERY grid candidate on each test window, so the
+    overfitting statistics get a real per-candidate performance matrix instead of comparing a
+    handful of variations (#13). It costs roughly 20-25% more runtime -- the train-window grid
+    search already dominates -- so the study opts in and ad-hoc runs do not pay for it.
     """
     start, end = _data_span(recipe.CSV_PATH)
     windows = walk_forward_windows(
@@ -96,8 +110,12 @@ def run_walkforward(
         for params in combos:
             pnls, start_equity = extract_trade_pnls(
                 recipe.build_run_config(
-                    params, start=train_start.isoformat(), end=train_end.isoformat()
-                )
+                    params,
+                    start=(train_start - PREROLL).isoformat(),
+                    end=train_end.isoformat(),
+                    trade_from=train_start.isoformat(),
+                ),
+                closed_from=train_start,
             )
             score = calmar_score(pnls, start_equity)
             if score > best_score:
@@ -110,11 +128,20 @@ def run_walkforward(
     def evaluate(
         params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
     ) -> tuple[list[float], float]:
+        # #14: READ-ONLY pre-roll -- bars before test_start warm the indicators (live never
+        # restarts cold) but trade_from suppresses orders, so a pre-roll trade can never move the
+        # balance that the reported trades are sized from. closed_from stays as a safety net.
         return extract_trade_pnls(
-            recipe.build_run_config(params, start=test_start.isoformat(), end=test_end.isoformat())
+            recipe.build_run_config(
+                params,
+                start=(test_start - PREROLL).isoformat(),
+                end=test_end.isoformat(),
+                trade_from=test_start.isoformat(),
+            ),
+            closed_from=test_start,
         )
 
-    return run_walk_forward(windows, optimize, evaluate)
+    return run_walk_forward(windows, optimize, evaluate, combos if collect_matrix else None)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -130,11 +157,9 @@ def main(argv: list[str] | None = None) -> None:
 
     catalog_dir = Path(module.CATALOG_PATH)
     needed = str(module.INSTRUMENT.id)
-    have = (
-        {str(i.id) for i in ParquetDataCatalog(str(catalog_dir)).instruments()}
-        if catalog_dir.exists()
-        else set()
-    )
+    # The presence check IS the staleness gate: a stale catalog is discarded here, so the seeding
+    # below cannot be skipped just because the old-frame instrument happened to be present.
+    have = seeded_instruments(catalog_dir)
     if needed not in have:
         print(f"Instrument {needed} not in catalog -> seeding ...")
         module.seed_catalog()

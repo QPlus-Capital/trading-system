@@ -43,3 +43,12 @@ def test_survives_gate() -> None:
     t = _trades()  # worst day -5R; at stress 1.5 -> 7.5R; safe = 3%/7.5 = 0.4%
     assert survives(t, 0.003, stress_mult=1.5)  # 0.3% <= 0.4% -> survives
     assert not survives(t, 0.005, stress_mult=1.5)  # 0.5% > 0.4% -> breaches under stress
+
+
+def test_worst_day_groups_by_the_prop_loss_day() -> None:
+    """Codex P1: two stop-outs at 22:00 and 02:00 UTC are the SAME TTP loss day (it resets at
+    16:15 CT). Splitting them across UTC dates made the worst day look smaller -- and this number
+    sets the risk ceiling, so a too-small worst day licenses too much risk."""
+    ts = [pd.Timestamp("2026-07-01 22:00", tz="UTC"), pd.Timestamp("2026-07-02 02:00", tz="UTC")]
+    trades = pd.DataFrame({"ts_closed": [t.value for t in ts], "r": [-6.0, -5.0]})
+    assert worst_day_r(trades) == -11.0  # one loss day, not two of -6 and -5

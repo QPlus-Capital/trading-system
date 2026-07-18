@@ -89,8 +89,9 @@ def main(argv: list[str] | None = None) -> None:
         "--start-balance",
         type=float,
         default=None,
-        help="pin the account's INITIAL balance (the trailing/daily reference). Only used on the "
-        "first run; afterwards the saved risk state wins. Default: the balance at first launch.",
+        help="the OPENING balance of the current prop loss day (resets 16:15 CT). REQUIRED on a "
+        "first run with no saved risk state -- the runner halts rather than guess it, because "
+        "guessing can hand out a second daily loss budget. Afterwards the saved state wins.",
     )
     args = parser.parse_args(argv)
 
@@ -107,18 +108,13 @@ def main(argv: list[str] | None = None) -> None:
         # SAFETY: refuse to run unless we are really on the expected account (login + currency).
         guard_account(account, profile, execute=(mode == Mode.EXECUTE))
         log.info(
-            "connected: account=%d (%s) balance=%.2f equity=%.2f %s | mode=%s",
-            account.login,
+            "connected: account=***%03d (%s) balance=%.2f equity=%.2f %s | mode=%s",
+            account.login % 1000,  # masked: the full login is not written to logs
             profile.name,
             account.balance,
             account.equity,
             account.currency,
             mode.value,
-        )
-        # Provisional reference for the FIRST run only; if a saved state exists the runner
-        # restores it and this is ignored (K1: restarts must not reset the risk references).
-        start_balance = (
-            args.start_balance if args.start_balance is not None else profile.start_balance
         )
         limits = RiskLimits(risk_per_trade=risk_per_trade_from_live_config())  # M3: from config
         log.info("risk per trade: %.3f%% of equity (compounding)", limits.risk_per_trade * 100)
@@ -127,11 +123,20 @@ def main(argv: list[str] | None = None) -> None:
             bridge,
             markets_from_live_config(),
             signal_params_from_live_config(),
-            RiskController(limits, start_balance),
+            # The trailing/account reference is the PROFILE's, always. --start-balance is the
+            # loss day's opening balance and must never leak into this: passing a mid-day 49k on
+            # a 50k profile would lower the trailing floor from 47,500 to 46,550 -- loosening the
+            # very limit the flag exists to protect. (Saved state still wins on restore, K1.)
+            RiskController(limits, profile.start_balance),
             mode=mode,
             state_path=state_path,
             long_only=long_only_from_live_config(),
             notifier=notifier,
+            expected_login=profile.expected_login,
+            expected_currency=profile.expected_currency,
+            # Only what the operator passed explicitly: the profile's balance is the ACCOUNT
+            # reference, not this loss day's opening balance, so it must not stand in for one.
+            day_start_balance=args.start_balance,
         )
         if args.once:
             try:  # N3: a single cycle must not crash with a bare traceback on a transient error

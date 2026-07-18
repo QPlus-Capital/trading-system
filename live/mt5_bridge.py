@@ -96,6 +96,7 @@ class Position:
     sl: float
     tp: float
     profit: float
+    magic: int = 0  # the EA magic number; ours is MAGIC. 0 / other = manual or a foreign EA.
 
 
 @dataclass(frozen=True)
@@ -311,9 +312,68 @@ class Mt5Bridge:
                     sl=float(p.sl),
                     tp=float(p.tp),
                     profit=float(p.profit),
+                    magic=int(p.magic),
                 )
             )
         return out
+
+    def owned_positions(self, name: str | None = None) -> list[Position]:
+        """Only the positions THIS runner opened (magic == MAGIC).
+
+        Everything the runner opens, closes, modifies or flattens goes through here, so it can
+        never touch a manual trade or another EA's position on the same account. Account-level
+        risk still counts ALL exposure (see the runner) -- ownership limits what we *act on*,
+        not what we *account for*.
+        """
+        return [p for p in self.positions(name) if p.magic == MAGIC]
+
+    def loss_for_order(self, name: str, side: Side, entry: float, sl: float, volume: float) -> (
+        float | None
+    ):
+        """What ``volume`` lots of ``name`` would lose going from ``entry`` to ``sl``, in account
+        currency, priced by the terminal (#19).
+
+        ``trade_tick_value`` is one generic number per symbol and can differ from the loss-side
+        value on converted or asymmetric symbols, so sizing off it alone can quietly exceed the
+        intended risk. ``order_calc_profit`` applies the broker's own conversion. ``None`` when the
+        terminal cannot price it -- the caller then keeps the arithmetic result.
+
+        Measured against the live TTP terminal (2026-07-18): the arithmetic matches the broker to
+        1.000 on eight of ten markets, but **DE40 is out by a factor of 1.144** (EUR-quoted index
+        on a USD account) and USDJPY by 1.005. Sized off the arithmetic alone, a DE40 stop-out
+        cost 0.206% instead of the intended 0.18%. This is not a theoretical correction.
+        """
+        m = self._require()
+        order_type = m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL
+        profit = m.order_calc_profit(order_type, self.terminal_symbol(name), volume, entry, sl)
+        if profit is None:
+            return None
+        return max(0.0, -float(profit))
+
+    def loss_to_stop(self, position: Position) -> float | None:
+        """Account-currency loss if ``position`` ran from its ENTRY to its stop.
+
+        Priced by the terminal itself (``order_calc_profit``), so the currency conversion and
+        contract specifics are the broker's rather than our own tick arithmetic (#6) -- which is
+        what goes wrong on cross-currency symbols whose ``tick_value`` is not in account currency.
+
+        Entry->stop (not current->stop) is the measure that matches the risk budgets, which are
+        anchored to the DAY-START balance: floating profit is excluded on both sides, so counting
+        it here too would charge it twice.
+
+        Returns ``None`` when the position has no stop or the terminal cannot price it; the caller
+        then falls back to the arithmetic estimate.
+        """
+        if position.sl <= 0:
+            return None  # unbounded downside -> the caller charges the worst case
+        m = self._require()
+        order_type = m.ORDER_TYPE_BUY if position.side == "BUY" else m.ORDER_TYPE_SELL
+        profit = m.order_calc_profit(
+            order_type, position.symbol, position.volume, position.price_open, position.sl
+        )
+        if profit is None:
+            return None
+        return max(0.0, -float(profit))
 
     def history_deals(self, since: datetime) -> list[dict[str, Any]]:
         """Raw closed deals since ``since`` (for monitoring); empty list if none.

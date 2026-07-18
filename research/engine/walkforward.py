@@ -9,8 +9,8 @@ This module only computes the window boundaries; running and scoring them lives 
 the walk-forward runner (built on top of this).
 """
 
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
@@ -134,6 +134,15 @@ class WalkForwardResult:
     oos_trades: int
     oos_max_dd: float
     oos_returns: list[float]  # per-trade OOS returns (pnl / window start equity)
+    # #13: OOS return of EVERY grid candidate on this window, keyed by :func:`combo_key`. Empty
+    # unless the caller asked for the full matrix. Every candidate is scored on the same windows,
+    # so these streams are chronologically aligned across candidates -- the matrix CSCV needs.
+    oos_by_combo: dict[str, float] = field(default_factory=dict)
+
+
+def combo_key(params: Mapping[str, Any]) -> str:
+    """Stable identifier for a parameter combination (order-independent)."""
+    return ",".join(f"{k}={params[k]}" for k in sorted(params))
 
 
 # Optimize on a train window -> (best params, that set's in-sample return).
@@ -146,14 +155,31 @@ def run_walk_forward(
     windows: Sequence[WalkForwardWindow],
     optimize: Optimize,
     evaluate: EvaluateOOS,
+    all_params: Sequence[Mapping[str, Any]] | None = None,
 ) -> list[WalkForwardResult]:
-    """Optimize per train window and score the chosen params on the next test window."""
+    """Optimize per train window and score the chosen params on the next test window.
+
+    With ``all_params`` every grid candidate is ALSO scored on each test window, giving one
+    chronologically-aligned OOS stream per candidate (#13). Without it the honest trial count
+    (the whole grid) has no matching performance matrix, so PBO/CSCV has to fall back to
+    comparing variations -- far fewer trials than were really searched. The extra cost is modest:
+    the train-window grid search already dominates, and these are short test windows.
+    """
     results: list[WalkForwardResult] = []
     for window in windows:
         best_params, is_return = optimize(window.train_start, window.train_end)
         pnls, start_equity = evaluate(best_params, window.test_start, window.test_end)
         equity = equity_curve(pnls, start_equity)
         oos_return = (float(equity[-1]) - start_equity) / start_equity
+        by_combo: dict[str, float] = {}
+        for params in all_params or ():
+            key = combo_key(params)
+            if params == best_params:  # already evaluated above -- don't pay for it twice
+                by_combo[key] = oos_return
+                continue
+            c_pnls, c_start = evaluate(dict(params), window.test_start, window.test_end)
+            c_equity = equity_curve(c_pnls, c_start)
+            by_combo[key] = (float(c_equity[-1]) - c_start) / c_start if c_start else 0.0
         results.append(
             WalkForwardResult(
                 window=window.label,
@@ -163,6 +189,7 @@ def run_walk_forward(
                 oos_trades=len(pnls),
                 oos_max_dd=max_drawdown(equity),
                 oos_returns=[p / start_equity for p in pnls] if start_equity else [],
+                oos_by_combo=by_combo,
             ),
         )
     return results

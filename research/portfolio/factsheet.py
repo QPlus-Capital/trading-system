@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from research.portfolio import regime
-from research.portfolio.curves import DAY_NS, align_prices
+from research.portfolio.curves import DAY_NS, align_prices, to_day
 from research.portfolio.risk import AccountProfile, flat_base_pnl
 from research.portfolio.sizing import flat, simulate
 from research.portfolio.stats import edge_stats, risk_stats
@@ -83,15 +83,17 @@ def _daily_equity(
     t = trades.copy()
     ns_open = pd.to_datetime(t["ts_opened"]).astype("int64")
     ns_close = pd.to_datetime(t["ts_closed"]).astype("int64")
-    t["od"] = ns_open // DAY_NS
-    t["cd"] = ns_close // DAY_NS
+    # Same loss-day axis as the price series this simulate() call indexes into; UTC day numbers
+    # here would reindex trades and prices on different axes near the 16:15 CT reset.
+    t["od"] = [to_day(x) for x in ns_open]
+    t["cd"] = [to_day(x) for x in ns_close]
     t["pnl_base"] = flat_base_pnl(t, account)  # r * base_risk_frac * start (flat EUR at live risk)
     if "swap_r" in t.columns:  # realized cost of carry, booked at close (never marked to market)
         base = account.base_risk_frac * account.start_balance
         t["swap_base"] = t["swap_r"].to_numpy(dtype=float) * base
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
-    _real, eq, _sizes = simulate(
+    _real, eq, _sizes, _min = simulate(
         t,
         prices,
         d0,
@@ -101,6 +103,8 @@ def _daily_equity(
         flat(1.0),
         compound=compound,
     )
+    # d0..d1 are LOSS-day numbers (to_day); rendering them via DAY_NS labels each point with that
+    # loss day's date, which is what the index should read. Not a UTC-axis leak.
     idx = pd.to_datetime(np.arange(d0, d1 + 1) * DAY_NS)
     return pd.Series(eq, index=idx)
 

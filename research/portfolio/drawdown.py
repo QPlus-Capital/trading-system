@@ -68,16 +68,33 @@ def evaluate(
     )
 
 
-def daily_breach(equity: Sequence[float] | np.ndarray, day_loss_frac: float) -> bool:
-    """True if any day-over-day equity drop exceeds ``day_loss_frac`` of the prior EOD equity.
+def daily_breach(
+    equity: Sequence[float] | np.ndarray,
+    day_loss_frac: float,
+    prior: Sequence[float] | np.ndarray | None = None,
+    start_balance: float | None = None,
+) -> bool:
+    """True if any day's equity drop exceeds ``day_loss_frac`` of the PRIOR day's equity.
 
-    A daily-resolution proxy for the prop-firm daily loss limit (TTP: 3%). It compares
-    consecutive end-of-day equities; the true intraday low can be lower, so this is a *lower
-    bound* on the daily drawdown (it can miss an intraday-only breach). ``day_loss_frac <= 0``
-    disables the check.
+    Proxy for the prop-firm daily loss limit (TTP: 3%). ``equity`` should be the day's WORST mark
+    and ``prior`` the end-of-day series it is measured against (#15): the limit reacts to the
+    intraday low, so comparing end-of-day closes alone missed a day that dipped through the limit
+    and recovered by the close. Passing only ``equity`` keeps the old end-of-day comparison.
+
+    With intraday marks this errs on the conservative side -- it assumes every open position hits
+    its extreme together -- which is the right direction for a hard-limit gate. It used to be a
+    lower bound while being used as one. ``day_loss_frac <= 0`` disables the check.
+
+    ``start_balance`` closes the first-day hole: comparing consecutive entries never tests day 0
+    against anything, so a simulation whose FIRST loss day dipped through the limit reported no
+    breach at all.
     """
     eq = np.asarray(equity, dtype=float)
-    if eq.size < 2 or day_loss_frac <= 0:
+    base = eq if prior is None else np.asarray(prior, dtype=float)
+    if eq.size == 0 or day_loss_frac <= 0:
         return False
-    losses = eq[:-1] - eq[1:]  # positive on a down day
-    return bool((losses > day_loss_frac * eq[:-1]).any())
+    # Each day's worst mark against the previous day's baseline; day 0 against the opening balance.
+    opening = base[0] if start_balance is None else float(start_balance)
+    baselines = np.concatenate([[opening], base[:-1]])
+    losses = baselines - eq
+    return bool((losses > day_loss_frac * baselines).any())

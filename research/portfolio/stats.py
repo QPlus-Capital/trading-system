@@ -100,6 +100,8 @@ def daily_equity(
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
     realized, unrealized = base_curves(t, prices, d0, d1)
+    # d0..d1 are LOSS-day numbers (to_day); rendering them via DAY_NS labels each point with that
+    # loss day's date, which is what the index should read. Not a UTC-axis leak.
     idx = pd.to_datetime(np.arange(d0, d1 + 1) * DAY_NS)
     return pd.Series(start_balance + realized + unrealized, index=idx)
 

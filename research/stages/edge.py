@@ -32,7 +32,7 @@ _RPD_TOLERANCE = 0.85  # structure gate: risk-adjusted return within 85% of the 
 # Statistical gate (Stage 2, methodology.md): the deflated Sharpe must clear this after correcting
 # for the trial budget, and the study-level PBO must stay below its ceiling.
 _DSR_MIN = 0.90
-_PBO_MAX = 0.20
+PBO_MAX = 0.20
 
 
 def _study_csv_from(source: Path) -> Path:
@@ -91,13 +91,25 @@ def ranking(
     best_rpd = float(g["mean_rpd"].max()) if not g.empty else 0.0
     gate_pos = g["frac_positive"] >= min_frac_positive
     gate_rpd = g["mean_rpd"] >= rpd_tolerance * best_rpd
-    g["eligible"] = gate_pos & gate_rpd
+    # #17: a task that FAILED leaves a row with no mean_oos_pct, which dropna then removes -- so a
+    # config that crashed on its hardest markets would be averaged over the survivors only, and
+    # look better for having failed. Require the full instrument set per (variation, train_months);
+    # an incomplete cell set is ineligible, not a smaller sample.
+    expected_cells = int(df["instrument"].nunique())
+    have = valid.groupby(["variation", "train_months"])["instrument"].nunique()
+    g["cells"] = [
+        int(have.get((r.variation, r.train_months), 0)) for r in g.itertuples(index=False)
+    ]
+    g["complete"] = g["cells"] >= expected_cells
+    g["eligible"] = gate_pos & gate_rpd & g["complete"]
     dsr_map = dsr_by_variation or {}
     g["dsr"] = g["variation"].map(dsr_map)  # NaN where unavailable
     g["dsr_ok"] = g["dsr"].isna() | (g["dsr"] >= _DSR_MIN)  # unknown DSR does not gate out
-    # One row per variation: its best training length by return (what Stage 2 would pick).
-    best_idx = g.groupby("variation")["mean_ret"].idxmax()
-    return g.loc[best_idx].sort_values("mean_ret", ascending=False).reset_index(drop=True)
+    # EVERY (variation, train_months) row, gated individually. Reducing to each variation's
+    # best-return length dropped eligible candidates: if the best length was incomplete or gated
+    # out while a lower-return length passed, selection saw no eligible row at all and failed
+    # closed on a deployable candidate (Codex round 6).
+    return g.sort_values("mean_ret", ascending=False).reset_index(drop=True)
 
 
 def _print_table(top: pd.DataFrame) -> str:
@@ -109,7 +121,11 @@ def _print_table(top: pd.DataFrame) -> str:
     auto = ""
     for _, r in top.iterrows():
         ok = bool(r["eligible"]) and bool(r["dsr_ok"])
-        gate = "ok eligible" if ok else "   gated out"
+        # Name the reason: an incomplete cell set is a different problem from a weak result (#17).
+        if ok:
+            gate = "ok eligible"
+        else:
+            gate = "unvollstaendig" if not r.get("complete", True) else "   gated out"
         if ok and not auto:
             auto, gate = str(r["variation"]), "<< AUTO-PICK"
         dsr_txt = "  n/a" if pd.isna(r["dsr"]) else f"{r['dsr']:5.2f}"
@@ -134,6 +150,10 @@ def main(argv: list[str] | None = None) -> None:
 
     run = rb.RunDir.open(args.run) if args.run else rb.RunDir.create()
     rb.banner(1, "EDGE - Kante & Robustheit", run)
+    # #3: anchor the study config IN the run. Later stages default to it instead of falling back
+    # to research/config/robustness.py -- a run started from config B must not be finished with
+    # config A's instruments, account profile and variation definitions.
+    run.save_json("run_manifest.json", {"config": str(args.config)})
 
     study_csv = _study_csv_from(args.source) if args.source else _run_study(args.config)
     shutil.copyfile(study_csv, run.file("study.csv"))  # anchor the study in this run
@@ -164,8 +184,8 @@ def main(argv: list[str] | None = None) -> None:
     else:
         print("  Statistik-Gate: DSR n/a - Studie neu laufen lassen fuer DSR/PBO.")
     if pbo is not None:
-        verdict = "ok" if pbo <= _PBO_MAX else "ZU HOCH"
-        print(f"  PBO (Overfitting-Wahrsch. der Auswahl): {pbo:.2f} <= {_PBO_MAX:.2f}? {verdict}")
+        verdict = "ok" if pbo <= PBO_MAX else "ZU HOCH"
+        print(f"  PBO (Overfitting-Wahrsch. der Auswahl): {pbo:.2f} <= {PBO_MAX:.2f}? {verdict}")
     else:
         print("  PBO: n/a - Studie neu laufen lassen.")
     print(f"  Auto-Auswahl (hoechste Rendite unter eligible): {auto or '- (keine eligible)'}")

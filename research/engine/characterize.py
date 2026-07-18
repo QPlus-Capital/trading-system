@@ -43,8 +43,8 @@ from typing import Any
 
 import pandas as pd
 from core.broker import TTP_MARKETS
+from core.data.mt5_csv import seeded_instruments
 from core.paths import REPO_ROOT
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 from research.engine.config import load_config_module
 from research.engine.overfitting import study_trial_budget
@@ -55,7 +55,7 @@ from research.engine.walkforward_runner import run_walkforward
 _REPO_ROOT = REPO_ROOT
 
 # Per-task list payload kept in memory for reporting but dropped from the CSV.
-_LIST_KEYS = ("window_oos",)
+_LIST_KEYS = ("window_oos", "combo_oos")  # in-memory payloads, never written to the CSV
 
 
 def _run_task(
@@ -95,6 +95,7 @@ def _run_task(
         holdout_months=holdout_months,
         phase="select",
         embargo_days=embargo_days,
+        collect_matrix=True,  # #13: one aligned OOS stream per grid candidate, for PBO/DSR
     )
     oos = [r.oos_return for r in results]
     mean_oos = sum(oos) / len(oos) if oos else 0.0
@@ -117,6 +118,17 @@ def _run_task(
         "wfe_norm": round(normalized_wfe(results, train_months, test_months), 3),
         "oos_trades": sum(r.oos_trades for r in results),
         "window_oos": oos,  # per-window OOS returns (for Sharpe / DSR)
+        # #13: {combo_key: [per-window OOS return]} -- every grid candidate scored on the SAME
+        # windows, so candidates are chronologically aligned and PBO/CSCV can run over the real
+        # search space instead of over variations.
+        # Keyed BY WINDOW LABEL, not by position: instruments have different CSV spans, so
+        # window 0 of a long gold history is a different calendar period than window 0 of a
+        # later-starting index. Averaging by list offset would mix unrelated periods and make the
+        # CSCV time slices synthetic rather than chronological.
+        "combo_oos": {
+            key: {r.window: r.oos_by_combo[key] for r in results}
+            for key in (results[0].oos_by_combo if results else {})
+        },
     }
 
 
@@ -150,6 +162,72 @@ def _plot_heatmap(pivot: pd.DataFrame, path: Path, title: str) -> None:
     fig.tight_layout()
     fig.savefig(path, dpi=120)
     plt.close(fig)
+
+
+def candidate_streams(good: list[dict[str, Any]]) -> dict[int, dict[tuple[str, str], list[float]]]:
+    """Per training length, each candidate's per-window OOS return averaged across instruments.
+
+    A candidate is a (variation, grid-combo) pair -- the thing that could actually be deployed.
+    Training lengths are kept apart because they have different window boundaries; within one,
+    every candidate is scored on the SAME windows, so the streams are chronologically aligned.
+
+    Instruments are AVERAGED into each window rather than concatenated: concatenating them would
+    put instrument blocks on the time axis, which is exactly the flaw that made the old
+    variation-level PBO unsound (#13).
+    """
+    per_train: dict[int, dict[tuple[str, str], dict[str, dict[str, float]]]] = defaultdict(
+        lambda: defaultdict(dict)
+    )
+    for r in good:
+        for key, series in r.get("combo_oos", {}).items():
+            per_train[int(r["train_months"])][(r["variation"], key)][r["instrument"]] = series
+
+    out: dict[int, dict[tuple[str, str], list[float]]] = {}
+    for tm, cands in per_train.items():
+        if not cands:
+            continue
+        common = set.intersection(*(set(inst.keys()) for inst in cands.values()))
+        if not common:
+            continue
+        insts = sorted(common)
+        # Only the windows every instrument actually has, in chronological label order.
+        labels = set.intersection(
+            *(set(cands[c][i].keys()) for c in cands for i in insts)
+        )
+        if len(labels) < 2:
+            continue
+        ordered = sorted(labels)
+        out[tm] = {
+            c: [sum(cands[c][i][w] for i in insts) / len(insts) for w in ordered]
+            for c in cands
+        }
+    return out
+
+
+def candidate_pbo(streams: dict[int, dict[tuple[str, str], list[float]]]) -> float:
+    """PBO across the REAL candidate matrix (rows = windows, cols = variation x grid combo).
+
+    Computed per training length and reported as the WORST (highest) value: if any training
+    length's search is overfit, the study is. Returns NaN when no training length has enough
+    windows for a meaningful CSCV.
+    """
+    from research.engine.overfitting import cscv_splits, pbo
+
+    values: list[float] = []
+    for cands in streams.values():
+        if len(cands) < 2:
+            continue
+        cols = list(cands.values())
+        n_time = len(cols[0])
+        splits = cscv_splits(n_time)
+        if not splits:
+            continue
+        matrix = [[col[w] for col in cols] for w in range(n_time)]  # rows = windows (real time)
+        try:
+            values.append(pbo(matrix, n_splits=splits))
+        except ValueError:
+            continue
+    return max(values) if values else float("nan")
 
 
 def variation_pbo(good: list[dict[str, Any]], n_splits: int = 10) -> float:
@@ -201,28 +279,58 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
 
     # Pool each variation's per-window return series across all instruments.
     win_by_var: dict[str, list[float]] = defaultdict(list)
+    # ...and, separately, per CANDIDATE -- a (variation, train_months) pair, which is the unit
+    # selection actually chooses among (#13).
+    win_by_cand: dict[tuple[str, int], list[float]] = defaultdict(list)
     for r in good:
         win_by_var[r["variation"]].extend(r["window_oos"])
+        win_by_cand[(r["variation"], int(r["train_months"]))].extend(r["window_oos"])
 
     variation_sharpe = {v: sharpe_ratio(s) for v, s in win_by_var.items()}
-    sharpe_variance = (
-        float(np.var(list(variation_sharpe.values()), ddof=1)) if len(variation_sharpe) > 1 else 0.0
-    )
-    # Study-level overfitting gate: PBO across variations (Stage 2 criterion, methodology.md).
-    pbo_value = variation_pbo(good)
+    # #13: the deflation benchmark needs the Sharpe dispersion ACROSS THE TRIALS being selected
+    # among. Measuring it across pooled per-variation streams averaged the train-length dimension
+    # away, so the variance came from a handful of numbers while n_trials counted the whole grid.
+    # Too little dispersion -> too low an expected-max-Sharpe -> DSR too high: the optimistic
+    # direction. Candidate-level Sharpes are the honest population.
+    # Best available population: the real (variation x grid-combo) candidates when the matrix was
+    # collected, otherwise the coarser (variation, train_months) fallback.
+    streams = candidate_streams(good)
+    grid_sharpes = [sharpe_ratio(s) for cands in streams.values() for s in cands.values()]
+    if len(grid_sharpes) > 1:
+        sharpe_variance = float(np.var(grid_sharpes, ddof=1))
+        n_candidates = len(grid_sharpes)
+    else:
+        candidate_sharpe = {c: sharpe_ratio(s) for c, s in win_by_cand.items()}
+        sharpe_variance = (
+            float(np.var(list(candidate_sharpe.values()), ddof=1))
+            if len(candidate_sharpe) > 1
+            else 0.0
+        )
+        n_candidates = len(candidate_sharpe)
+    # Study-level overfitting gate. Prefer CSCV over the real candidate matrix; fall back to the
+    # variation-level estimate only when the matrix is unavailable (#13).
+    pbo_value = candidate_pbo(streams)
+    pbo_source = "candidates"
+    if np.isnan(pbo_value):
+        pbo_value = variation_pbo(good)
+        pbo_source = "variations"
     (out_dir / "overfitting.json").write_text(
         json.dumps(
             {
                 "pbo": None if np.isnan(pbo_value) else round(pbo_value, 4),
+                "pbo_source": pbo_source,  # "candidates" = the real matrix, "variations" = fallback
                 "n_trials": n_trials,
                 "n_variations": len(win_by_var),
+                "n_candidates": n_candidates,
                 "sharpe_variance": round(sharpe_variance, 6),
             },
             indent=2,
         ),
         encoding="utf-8",
     )
-    print(f"\nPBO (CSCV over {len(win_by_var)} variations): {pbo_value:.3f} | trials: {n_trials}")
+    print(
+        f"\nPBO (CSCV over {n_candidates} {pbo_source}): {pbo_value:.3f} | trials: {n_trials}"
+    )
 
     agg = (
         df.dropna(subset=["mean_oos_pct"])
@@ -238,8 +346,23 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         )
     )
     agg["oos_sharpe"] = agg.index.map(variation_sharpe)
+    # #13: deflate the SELECTED candidate's own sample, not a stream pooled over train lengths the
+    # deployment will never use. Each variation is represented by the training length that would
+    # actually be picked (its best mean OOS return) -- that is the strategy being judged.
+    best_tm = (
+        df.dropna(subset=["mean_oos_pct"])
+        .groupby(["variation", "train_months"])["mean_oos_pct"]
+        .mean()
+        .groupby("variation")
+        .idxmax()
+    )
+    agg["train_months"] = agg.index.map(lambda v: int(best_tm[v][1]) if v in best_tm else 0)
     agg["dsr"] = agg.index.map(
-        lambda v: deflated_sharpe_ratio(win_by_var[v], n_trials, sharpe_variance)
+        lambda v: deflated_sharpe_ratio(
+            win_by_cand.get((v, int(best_tm[v][1])), win_by_var[v]), n_trials, sharpe_variance
+        )
+        if v in best_tm
+        else float("nan")
     )
     # Risk lens: rank by risk-adjusted return-per-drawdown, NOT raw return.
     agg = agg.sort_values("return_per_dd", ascending=False)
@@ -297,11 +420,9 @@ def main(argv: list[str] | None = None) -> None:
 
     # Seed every instrument's data once (serially); workers then only read the catalog.
     catalog = _REPO_ROOT / "catalog"
-    have = (
-        {str(i.id) for i in ParquetDataCatalog(str(catalog)).instruments()}
-        if catalog.exists()
-        else set()
-    )
+    # The presence check discards a stale-frame catalog outright, so the per-instrument seeding
+    # below re-imports everything through the write funnel (which stamps the new frame).
+    have = seeded_instruments(catalog)
     for factory, csv, leverage in cfg.INSTRUMENTS:
         recipe = SweepRecipe(factory(), csv, leverage=leverage)
         if str(recipe.INSTRUMENT.id) not in have:

@@ -64,6 +64,42 @@ def equity_curve(trades: pd.DataFrame, start_balance: float) -> pd.DataFrame:
     return pd.DataFrame({"close_time": trades["close_time"], "equity": eq})
 
 
+def per_trade_risk(
+    trades: pd.DataFrame, start_balance: float, risk_frac: float
+) -> np.ndarray:
+    """Each trade's risked amount, off the equity as it stood BEFORE that trade (#20).
+
+    Live sizing compounds: risk is a fraction of equity at entry, so a 1R win early in a smaller
+    account is a smaller number of euros than a 1R win today. Dividing the whole history by
+    ``risk_frac * today's equity`` therefore shrinks the early trades -- an account that grew
+    $50k -> $60k would show its early 1R wins as 0.83R, distorting expectancy and any drift check.
+
+    Reconstructed from realized PnL, which is what the deal history gives us; floating equity at
+    the moment of entry is not recoverable after the fact.
+
+    The balance is walked in CLOSE order (that is when PnL is booked) but each trade is charged
+    the balance as it stood at its OWN OPEN. With overlapping positions -- our normal case, ten
+    markets at once -- a later-opening trade can close first, and crediting its PnL to an earlier
+    trade's basis would attribute money that did not exist when that trade was sized, distorting
+    exactly the multi-market drift this monitor exists to detect.
+    """
+    booked = trades["net_pnl"].to_numpy(dtype=float)
+    close_ns = trades["close_time"].astype("int64").to_numpy()
+    open_ns = trades["open_time"].astype("int64").to_numpy()
+    order = np.argsort(close_ns, kind="stable")  # PnL lands in close order
+    running, balance_at = start_balance, np.empty(len(trades))
+    ledger: list[tuple[int, float]] = [(np.iinfo(np.int64).min, start_balance)]
+    for i in order:
+        running += booked[i]
+        ledger.append((int(close_ns[i]), running))
+    stamps = np.array([t for t, _ in ledger])
+    values = np.array([v for _, v in ledger])
+    for i in range(len(trades)):  # balance as of each trade's OWN open
+        balance_at[i] = values[np.searchsorted(stamps, open_ns[i], side="right") - 1]
+    risk: np.ndarray = risk_frac * balance_at
+    return risk
+
+
 def live_stats(net_pnl: np.ndarray) -> dict[str, float]:
     """Edge metrics for a set of live trades (hit rate, payoff, profit factor, expectancy)."""
     wins, losses = net_pnl[net_pnl > 0], net_pnl[net_pnl < 0]
