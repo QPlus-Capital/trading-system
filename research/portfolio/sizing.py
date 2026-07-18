@@ -14,28 +14,27 @@ from collections.abc import Callable
 import numpy as np
 import pandas as pd
 
+_OPEN, _CLOSE = 0, 1
 
-def _events(trades: pd.DataFrame) -> tuple[dict[int, list[int]], dict[int, list[int]]]:
-    """Trade indices opening / closing on each day, ordered by their actual timestamp (#15).
 
-    Within a day the H4 order matters: a close at 08:00 frees risk budget that an open at 20:00
-    should see. Grouping by day alone left the order arbitrary. Sorting by timestamp keeps the
-    one invariant the sizing loop depends on -- a trade always opens before it closes -- while
-    respecting the real sequence.
+def _events(trades: pd.DataFrame) -> dict[int, list[tuple[int, int]]]:
+    """Per day, the ``(kind, trade-index)`` events in TRUE intraday order.
+
+    One merged stream, sorted by ``(timestamp, kind)`` -- not separate open/close lists. Sorting
+    the lists separately still processed every open before any close, so a trade closing at 08:00
+    could not inform the sizing of one opening at 20:00 (Codex round 5). At equal timestamps opens
+    sort first, which keeps the invariant a same-bar round trip depends on: it opens before it
+    closes. Streams without timestamp columns fall back to day numbers, where all of a day's
+    stamps tie and the old opens-then-closes order is reproduced.
     """
-    openers: dict[int, list[int]] = defaultdict(list)
-    closers: dict[int, list[int]] = defaultdict(list)
     od, cd = trades["od"].to_numpy(), trades["cd"].to_numpy()
-
-    def order_by(col: str, fallback: np.ndarray) -> np.ndarray:
-        key = trades[col].to_numpy() if col in trades.columns else fallback
-        return np.argsort(key, kind="stable")
-
-    for i in order_by("ts_opened", od):
-        openers[int(od[i])].append(int(i))
-    for i in order_by("ts_closed", cd):
-        closers[int(cd[i])].append(int(i))
-    return openers, closers
+    ts_o = trades["ts_opened"].to_numpy() if "ts_opened" in trades.columns else od
+    ts_c = trades["ts_closed"].to_numpy() if "ts_closed" in trades.columns else cd
+    raw: dict[int, list[tuple[int, int, int]]] = defaultdict(list)
+    for i in range(len(trades)):
+        raw[int(od[i])].append((int(ts_o[i]), _OPEN, i))
+        raw[int(cd[i])].append((int(ts_c[i]), _CLOSE, i))
+    return {day: [(kind, i) for _, kind, i in sorted(evs)] for day, evs in raw.items()}
 
 
 def simulate(
@@ -65,7 +64,7 @@ def simulate(
     The returned ``sizes`` array (aligned to ``trades``' rows) is what makes per-trade metrics
     honest under a dynamic policy: each trade's PnL contribution is ``pnl_base * size``.
     """
-    openers, closers = _events(trades)
+    day_events = _events(trades)
     mk = trades["market"].to_numpy()
     pnl = trades["pnl_base"].to_numpy(dtype=float)
     # Swap is a REALIZED cost of carry -- booked at close, never marked to market (see base_curves).
@@ -113,30 +112,31 @@ def simulate(
     min_equity_series = np.empty(d1 - d0 + 1)  # worst intraday mark, for the daily-limit gate
 
     for k, day in enumerate(range(d0, d1 + 1)):
-        # 1. size & open today's openers FIRST (before closers), so a trade that opens and
-        # closes the same day is sized before it is realized -- otherwise it would book at
-        # size 0 and linger in open_set forever with bogus unrealized PnL.
-        if openers.get(day):
-            peak_bal = max(peak_bal, start_balance + realized)
-            floor = min(start_balance, peak_bal - budget)
-            unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)
-            equity = start_balance + realized + unreal
-            used = min(1.0, max(0.0, 1.0 - (equity - floor) / budget))
-            r = risk_fn(used)
-            if compound:
-                r *= equity / start_balance  # fixed-fractional: risk tracks current equity
-            for i in openers[day]:
-                size[i] = r
-                open_set.add(i)
-        # Everything that was open at ANY point today, including trades that close later today.
-        # Snapshot it BEFORE realizing the closers: a position that dips through the daily limit
-        # and then closes (or recovers) still breached, and dropping it from the intraday mark was
-        # a false pass for exactly the closing-day and same-day trades.
+        # Everything open at ANY point today feeds the intraday worst mark below -- positions
+        # carried in, plus every open that happens during the day (added as it occurs).
         active_today = set(open_set)
         realized_before = realized  # the day's opening balance -- see the worst mark below
-        for i in closers.get(day, ()):  # 2. realize closers (now correctly sized) + their swap
-            realized += (pnl[i] + swap[i]) * size[i]
-            open_set.discard(i)
+        # 1. Replay the day's events in TRUE intraday order: a close at 08:00 books its PnL
+        # before an open at 20:00 sizes off the balance. Each open is sized off the equity at
+        # ITS moment (realized so far + the current open set's mark), so a morning loss can no
+        # longer be invisible to an evening entry -- which overstated compound/throttle sizes
+        # and understated the chance of hitting the daily/trailing limits.
+        for kind, i in day_events.get(day, ()):
+            if kind == _OPEN:
+                peak_bal = max(peak_bal, start_balance + realized)
+                floor = min(start_balance, peak_bal - budget)
+                unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)
+                equity = start_balance + realized + unreal
+                used = min(1.0, max(0.0, 1.0 - (equity - floor) / budget))
+                r = risk_fn(used)
+                if compound:
+                    r *= equity / start_balance  # fixed-fractional: risk tracks current equity
+                size[i] = r
+                open_set.add(i)
+                active_today.add(i)
+            else:  # 2. realize the closer (sized at its own open) + its swap
+                realized += (pnl[i] + swap[i]) * size[i]
+                open_set.discard(i)
         peak_bal = max(peak_bal, start_balance + realized)
         unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)  # 3. EOD mark
         # 4. Worst intraday mark: every position that traded today at its own adverse extreme, and

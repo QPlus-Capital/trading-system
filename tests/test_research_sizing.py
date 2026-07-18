@@ -1,9 +1,11 @@
 """Tests for the sizing policies (flat vs drawdown-throttle)."""
 
 import math
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 from research.portfolio.curves import base_curves
 from research.portfolio.drawdown import daily_breach
 from research.portfolio.sizing import flat, simulate, throttle
@@ -176,3 +178,53 @@ def test_a_legacy_stream_infers_direction_from_the_outcome_too() -> None:
         trades, closes, 0, 2, 100_000.0, 0.06, flat(1.0), adverse=(lows, highs)
     )
     assert min_eq[1] < eq[1]  # marked at the low, as a long should be
+
+
+def test_a_morning_close_updates_the_balance_before_an_evening_open() -> None:
+    """Codex round-5 P1: sorting opens and closes separately still processed ALL opens before
+    ANY close. A trade closing at 08:00 must book its loss before a 20:00 open sizes off the
+    balance -- otherwise compound/throttle sizing uses equity a morning loss already destroyed."""
+    hour_ns = 3_600_000_000_000
+    day_ns = 24 * hour_ns
+    trades = pd.DataFrame(
+        {
+            "market": ["A", "A"],
+            "od": [0, 1],
+            "cd": [1, 2],
+            "ts_opened": [0, 1 * day_ns + 20 * hour_ns],  # B opens day 1 at 20:00
+            "ts_closed": [1 * day_ns + 8 * hour_ns, 2 * day_ns],  # A closes day 1 at 08:00
+            "pnl_base": [-10_000.0, 1_000.0],
+            "entry": [100.0, 100.0],
+            "exit": [90.0, 101.0],
+            "is_long": [True, True],
+        }
+    )
+    # Day 1's close price sits back at A's entry, so the unrealized mark hides the loss --
+    # only the REALIZED booking at 08:00 can inform B's sizing.
+    prices = {"A": np.array([100.0, 100.0, 101.0])}
+    _r, _e, sizes, _m = simulate(
+        trades, prices, 0, 2, 100_000.0, 0.06, flat(1.0), compound=True
+    )
+    assert sizes[1] == pytest.approx(0.9)  # sized AFTER the -10k booked: 90k / 100k
+
+
+def test_a_reset_straddling_bar_charges_its_extremes_to_both_loss_days(
+    tmp_path: Path,
+) -> None:
+    """Codex round-5 P1: the H4 bar stamped 00:00 server (summer) opens 21:00 UTC -- fifteen
+    minutes BEFORE the 16:15 CT reset -- and closes after it. Bucketing its low/high only by the
+    close time hides a pre-reset dip from the day it happened in. A straddling bar's extremes
+    belong to BOTH adjacent loss days; over-charging one bar is the conservative side."""
+    from research.portfolio.curves import load_daily_low_high, to_day
+
+    csv = tmp_path / "X_H4.csv"
+    csv.write_text(
+        "<DATE>\t<TIME>\t<LOW>\t<HIGH>\n2026.07.02\t00:00:00\t93.0\t101.0\n",
+        encoding="utf-8",
+    )
+    low, high = load_daily_low_high(str(csv))
+    d_before = to_day(pd.Timestamp("2026-07-01 21:00", tz="UTC").value)  # pre-reset side
+    d_after = to_day(pd.Timestamp("2026-07-02 01:00", tz="UTC").value)  # post-reset side
+    assert d_after == d_before + 1  # the bar really does straddle the reset
+    assert low.loc[d_before] == 93.0 and low.loc[d_after] == 93.0
+    assert high.loc[d_before] == 101.0 and high.loc[d_after] == 101.0

@@ -79,6 +79,40 @@ def catalog_frame_is_stale(catalog_path: str | Path, server_tz: str | None = MT5
     return marker.read_text(encoding="utf-8").strip() != (server_tz or "UTC")
 
 
+def seeded_instruments(catalog_path: str | Path) -> set[str]:
+    """Instrument ids present in the catalog -- AFTER discarding a stale-frame catalog.
+
+    This is the gate every seeding decision must pass. Checking staleness only inside the write
+    funnel missed the skip path: in the stale case the instrument IS present, so the caller skips
+    the write and the funnel never runs. Here the stale catalog is deleted at the presence check
+    itself, the instrument set comes back empty, and the caller re-seeds through the write funnel
+    (which stamps the new frame).
+    """
+    path = Path(catalog_path)
+    if catalog_frame_is_stale(path):
+        print(f"catalog {path} is in a different timestamp frame -> discarding it")
+        shutil.rmtree(path, ignore_errors=True)
+        return set()
+    if not path.exists():
+        return set()
+    return {str(i.id) for i in ParquetDataCatalog(str(path)).instruments()}
+
+
+def require_current_frame(catalog_path: str | Path) -> None:
+    """Fail closed if the catalog was written in a different timestamp frame.
+
+    For READ paths that never seed (the portfolio stage backtests straight off the catalog): they
+    cannot rebuild it themselves without silently redoing hours of study work, so they refuse with
+    instructions instead of mixing old-frame bars into new-frame calendar logic.
+    """
+    if catalog_frame_is_stale(catalog_path):
+        raise RuntimeError(
+            f"catalog {catalog_path} was written in a different timestamp frame than the code "
+            "now parses. Re-seed it (re-run the study, or delete the directory and seed) before "
+            "running backtests -- mixing frames shifts every window and day bucket."
+        )
+
+
 def parse_mt5_timestamps(
     df: pd.DataFrame, *, server_tz: str | None = MT5_SERVER_TZ, offset_hours: int = 0
 ) -> pd.Series:

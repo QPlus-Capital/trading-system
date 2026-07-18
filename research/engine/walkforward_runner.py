@@ -26,9 +26,8 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from core.data.mt5_csv import parse_mt5_timestamps
+from core.data.mt5_csv import parse_mt5_timestamps, seeded_instruments
 from core.paths import REPO_ROOT
-from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 
 from research.engine.config import extract_trade_pnls, load_config_module
 from research.engine.grid import expand_grid
@@ -158,11 +157,9 @@ def main(argv: list[str] | None = None) -> None:
 
     catalog_dir = Path(module.CATALOG_PATH)
     needed = str(module.INSTRUMENT.id)
-    have = (
-        {str(i.id) for i in ParquetDataCatalog(str(catalog_dir)).instruments()}
-        if catalog_dir.exists()
-        else set()
-    )
+    # The presence check IS the staleness gate: a stale catalog is discarded here, so the seeding
+    # below cannot be skipped just because the old-frame instrument happened to be present.
+    have = seeded_instruments(catalog_dir)
     if needed not in have:
         print(f"Instrument {needed} not in catalog -> seeding ...")
         module.seed_catalog()

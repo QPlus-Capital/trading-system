@@ -6,7 +6,10 @@ week-start hour does not shift across the DST changeover -- in real UTC an EET s
 begin Sunday 21:00 in summer and 22:00 in winter.
 """
 
+from pathlib import Path
+
 import pandas as pd
+import pytest
 from core.data.mt5_csv import parse_mt5_timestamps
 
 
@@ -59,3 +62,32 @@ def test_every_loader_defaults_to_the_same_frame() -> None:
     for fn in (parse_mt5_timestamps, load_mt5_bid_ask_bars, write_mt5_catalog):
         default = inspect.signature(fn).parameters["server_tz"].default
         assert default == MT5_SERVER_TZ, f"{fn.__name__} would import in a different frame"
+
+
+def test_the_presence_check_itself_discards_a_stale_catalog(tmp_path: Path) -> None:
+    """Codex round-5 P1: the staleness check lived only in the WRITE funnel, but the seeding
+    CLIs skip the write entirely when the instrument is already present -- which it is, in
+    exactly the stale case. The presence check must therefore be the gate."""
+    from core.data.mt5_csv import seeded_instruments
+
+    cat = tmp_path / "catalog"
+    cat.mkdir()
+    (cat / "old_frame.parquet").write_text("x", encoding="utf-8")  # unmarked -> stale
+    assert seeded_instruments(cat) == set()  # nothing usable in a stale catalog
+    assert not cat.exists()  # ...and it is GONE, so every caller re-seeds through the funnel
+    assert seeded_instruments(cat) == set()  # absent catalog: empty, no crash
+
+
+def test_build_run_config_fails_closed_on_a_stale_catalog(tmp_path: Path) -> None:
+    """Stage 3 reads the catalog without ever seeding, so it never passes the write funnel.
+    The backtest-config builder is the one road every engine run takes -- it must refuse."""
+    from core.instruments import xauusd
+    from research.engine.recipe import SweepRecipe
+
+    stale = tmp_path / "catalog"
+    stale.mkdir()
+    (stale / "bars.parquet").write_text("x", encoding="utf-8")  # unmarked -> old frame
+    recipe = SweepRecipe(xauusd(), "data/dummy.csv", leverage=100)
+    recipe.CATALOG_PATH = stale  # point the recipe at the stale catalog
+    with pytest.raises(RuntimeError, match="timestamp frame"):
+        recipe.build_run_config({"stop_loss_pct": 1.0, "take_profit_pct": 3.0})

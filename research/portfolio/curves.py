@@ -92,9 +92,18 @@ def load_daily_low_high(csv_path: str) -> tuple[pd.Series, pd.Series]:
     """
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>"])
     ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC
-    day = _loss_day_numbers(ts, _BAR_HOURS)  # by bar CLOSE, on the trades' loss-day axis
-    low = pd.Series(df["<LOW>"].to_numpy(dtype=float), index=day).groupby(level=0).min()
-    high = pd.Series(df["<HIGH>"].to_numpy(dtype=float), index=day).groupby(level=0).max()
+    day_close = _loss_day_numbers(ts, _BAR_HOURS)
+    day_open = _loss_day_numbers(ts, 0.0)
+    # A bar that STRADDLES the 16:15 CT reset (opens before it, closes after -- the summer 21:00
+    # UTC bar does) charges its extremes to BOTH adjacent loss days: bucketing only by the close
+    # would hide a pre-reset dip from the day it happened in. Over-charging that one bar per day
+    # is the conservative side for a hard-limit gate.
+    straddle = day_open != day_close
+    day = np.concatenate([day_close, day_open[straddle]])
+    lo = df["<LOW>"].to_numpy(dtype=float)
+    hi = df["<HIGH>"].to_numpy(dtype=float)
+    low = pd.Series(np.concatenate([lo, lo[straddle]]), index=day).groupby(level=0).min()
+    high = pd.Series(np.concatenate([hi, hi[straddle]]), index=day).groupby(level=0).max()
     return low, high
 
 

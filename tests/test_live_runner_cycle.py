@@ -502,3 +502,29 @@ def test_an_explicit_day_start_is_used_and_the_hwm_banks_the_balance() -> None:
     assert not runner._halted
     assert runner._risk.day_start_balance == 103_000.0  # the operator's number, not the balance
     assert runner._risk.hwm_balance == 104_000.0  # HWM banks the balance -> raises the floor
+
+
+def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk() -> None:
+    """Codex round-5 P1: open risk only visited configured markets, so a manual position on any
+    OTHER symbol contributed its PnL to equity while its stop-risk never entered the total --
+    check_open could admit new trades past the 2% cap. Unpriceable exposure must fail closed."""
+    stub = StubBridge()
+    stub.open_positions = [
+        Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)  # not configured
+    ]
+    runner = _runner(stub)  # terminal_risk None -> the terminal cannot price it either
+    runner.run_once()
+    assert runner._risk.open_risk == float("inf")  # fail closed
+    assert not runner._risk.check_open(1.0, stub.equity).allowed  # nothing new gets in
+
+
+def test_a_priceable_foreign_position_is_charged_into_open_risk() -> None:
+    # Same situation, but the terminal CAN price it -> its stop-risk joins the total normally.
+    stub = StubBridge()
+    stub.open_positions = [
+        Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)
+    ]
+    stub.terminal_risk = 500.0
+    runner = _runner(stub)
+    runner.run_once()
+    assert runner._risk.open_risk == 500.0
