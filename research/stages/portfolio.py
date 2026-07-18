@@ -75,7 +75,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 3 (PORTFOLIO): combine + size.")
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument(
-        "--config", type=Path, default=Path("research/config/robustness.py"), help="study config"
+        "--config", type=Path, default=None,
+        help="study config (default: the one Stage 1 recorded in the run)"
     )
     parser.add_argument("--risk", default="flat:0.15", help="policy: flat:PCT or throttle:FLOORPCT")
     parser.add_argument(
@@ -97,7 +98,7 @@ def main(argv: list[str] | None = None) -> None:
     run.require("selection.json", "select")
     sel = run.load_json("selection.json")
     policy = parse_risk(args.risk)
-    cfg = load_config_module(args.config)
+    cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
     # The account/prop-firm rules come from config; the code never assumes a balance or a limit.
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
