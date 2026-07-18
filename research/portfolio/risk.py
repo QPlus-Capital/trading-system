@@ -198,12 +198,26 @@ class KellyRisk:
 
     def fraction(self, trades: pd.DataFrame, account: AccountProfile) -> float:
         alpha = 1.0 - account.trailing_hard
-        return rck_fraction(trades["r"].to_numpy(dtype=float), alpha=alpha, beta=self.beta)
+        return rck_fraction(net_r(trades).tolist(), alpha=alpha, beta=self.beta)
 
 
 # A risk policy the stage can request. Flat/Throttle resolve directly against the tail cap;
 # KellyRisk first derives its flat fraction from the trade distribution, then is sized flat.
 RiskPolicy = FlatRisk | ThrottleRisk | KellyRisk
+
+
+def net_r(trades: pd.DataFrame) -> np.ndarray:
+    """Each trade's R **net of every modelled cost** -- the one return the whole stack must use.
+
+    ``r`` is gross price R (spread/commission/slippage are already inside it, swap is not, because
+    swap is a realized carry cost booked at close rather than marked to market). Sizing, Kelly,
+    Monte-Carlo and the reported return must all read the SAME stream, or the headline return is
+    net while the risk statistics are gross (#10).
+    """
+    r: np.ndarray = trades["r"].to_numpy(dtype=float)
+    if "swap_r" in trades.columns:
+        r = r + trades["swap_r"].to_numpy(dtype=float)  # signed: carry can pay or cost
+    return r
 
 
 def flat_base_pnl(trades: pd.DataFrame, account: AccountProfile) -> np.ndarray:
@@ -283,5 +297,16 @@ def evaluate_policy(
         ann_return_eur=round(float(realized[-1]) - account.start_balance, 0) / years,
         max_drawdown_pct=round(float(((equity - peak) / peak).min()) * 100, 2),
         breached=breached,
-        trade_pnl=t["pnl_base"].to_numpy(dtype=float) * sizes,
+        # #10: the SAME net stream simulate() books -- realized += (pnl + swap) * size. Handing a
+        # gross per-trade PnL downstream would run Monte-Carlo and the edge stats on gross while
+        # this result's own return/drawdown are net.
+        trade_pnl=(t["pnl_base"].to_numpy(dtype=float) + _swap_base(t)) * sizes,
     )
+
+
+def _swap_base(t: pd.DataFrame) -> np.ndarray:
+    """The per-trade swap in EUR at base risk, or zeros when the stream carries no swap."""
+    if "swap_base" in t.columns:
+        swap: np.ndarray = t["swap_base"].to_numpy(dtype=float)
+        return swap
+    return np.zeros(len(t), dtype=float)

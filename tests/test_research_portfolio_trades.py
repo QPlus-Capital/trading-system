@@ -20,6 +20,9 @@ def test_extraction_keeps_snapshots_and_skips_open() -> None:
             "realized_pnl": ["100.5 USD", "-50.0 USD", "0 USD"],
             "avg_px_open": [10.0, 11.0, 12.0],
             "avg_px_close": [10.5, 10.5, 12.0],
+            # The report carries the direction; note its "entry" means the entry SIDE, while the
+            # extracted "entry" is the entry PRICE.
+            "side": ["LONG", "SHORT", "LONG"],
             "is_snapshot": [True, False, False],  # a snapshot round-trip is still a real trade
         }
     )
@@ -30,5 +33,9 @@ def test_extraction_keeps_snapshots_and_skips_open() -> None:
     assert trades[0]["entry"] == 10.0
     assert trades[0]["exit"] == 10.5
     assert trades[0]["sl_pct"] == 1.5
+    # Direction is taken from the report, not inferred: trade 1 is a SHORT that lost, which the
+    # outcome-based inference would have read as a long.
+    assert trades[0]["is_long"] is True
+    assert trades[1]["is_long"] is False
     assert trades[0]["ts_opened"] == pd.Timestamp("2020-01-01", tz="UTC").value
     assert trades[1]["pnl_base"] == -50.0

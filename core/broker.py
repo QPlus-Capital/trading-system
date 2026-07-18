@@ -102,14 +102,22 @@ def swap_r_per_trade(trades: pd.DataFrame, spec: SwapSpec) -> np.ndarray:
     risk amount and nets directly onto the R-multiple stream (``r += swap_r``). Negative = a cost,
     positive = a credit (index shorts).
 
-    Requires columns ``entry``, ``exit``, ``ts_opened``, ``ts_closed``, ``sl_pct`` and a win-sign
-    column (``r`` if present, else ``pnl_base``) -- direction is inferred as in the swap phase.
+    Requires columns ``entry``, ``exit``, ``ts_opened``, ``ts_closed``, ``sl_pct`` and the trade
+    direction. Direction comes from an explicit ``is_long`` column; only legacy streams written
+    before that column existed fall back to inferring it from the outcome, which misclassifies any
+    trade whose costs flip the sign of ``r`` (the price moved our way, the net result did not) and
+    then books the swap with the WRONG sign -- index shorts earn a credit that longs pay (#10).
     """
-    win_col = "r" if "r" in trades.columns else "pnl_base"
-    won = trades[win_col].to_numpy(dtype=float) > 0
+    if "is_long" in trades.columns:
+        long_flags = trades["is_long"].to_numpy(dtype=bool)
+    else:
+        win_col = "r" if "r" in trades.columns else "pnl_base"
+        won = trades[win_col].to_numpy(dtype=float) > 0
+        exits = trades["exit"].to_numpy(dtype=float) > trades["entry"].to_numpy(dtype=float)
+        long_flags = won == exits
     out = np.zeros(len(trades))
     for i, t in enumerate(trades.itertuples(index=False)):
-        is_long = bool(won[i]) == (t.exit > t.entry)
+        is_long = bool(long_flags[i])
         loss_per_lot = (t.entry * t.sl_pct / 100.0 / spec.tick_size) * spec.tick_value
         if loss_per_lot <= 0:
             continue

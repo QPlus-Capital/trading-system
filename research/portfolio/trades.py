@@ -27,7 +27,9 @@ from research.engine.walkforward_runner import _data_span
 # (risk_per_trade=1%), i.e. money -- not a percentage. It COMPOUNDS with the growing equity, so it
 # must never be scaled linearly to another risk. ``r`` is the scale-invariant twin: the PnL divided
 # by the risk that trade actually took. Re-book ``r * risk_amount`` to size at any flat risk.
-_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "r"]
+_COLUMNS = [
+    "market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "is_long", "r"
+]
 
 
 def assign_r(
@@ -74,6 +76,11 @@ def timed_trades_from_report(
                 "entry": float(row["avg_px_open"]),
                 "exit": float(row["avg_px_close"]),
                 "sl_pct": float(sl_pct),
+                # Direction straight from the report (#10). NOTE: our "entry" is the entry PRICE
+                # while the report's "entry" is the entry SIDE -- read "side" and read it here,
+                # before the name is reused. Swap is direction-dependent, and inferring direction
+                # from the outcome misclassifies any trade whose costs flip its sign.
+                "is_long": str(row["side"]).upper() == "LONG",
             }
         )
     return out
