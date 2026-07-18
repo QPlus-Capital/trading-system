@@ -13,8 +13,9 @@ from __future__ import annotations
 import argparse
 
 from live.accounts import ACCOUNTS, get_account
-from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
+from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge, Side
 from live.runner import (
+    LossFn,
     markets_from_live_config,
     risk_per_trade_from_live_config,
     size_order,
@@ -54,8 +55,11 @@ def _checks(bridge: Mt5Bridge, account_name: str) -> tuple[list[tuple[str, bool,
             term = bridge.terminal_symbol(spec.name)
             tick = mt5.symbol_info_tick(term) if mt5 is not None else None
             price = float(tick.ask or tick.bid) if tick else 0.0
+            # Same pricing as the EXECUTE path (#19): sizing off tick-value arithmetic alone
+            # reported GO with volumes the runner would shrink (DE40: measured 14.4% apart).
             sized = size_order(
-                "BUY", price, spec.stop_loss_pct, spec.take_profit_pct, info, risk_amount
+                "BUY", price, spec.stop_loss_pct, spec.take_profit_pct, info, risk_amount,
+                loss_fn=_loss_fn_for(bridge, spec.name),
             )
             ok = sized is not None and price > 0.0
             detail = f"-> {term}, vol {sized.volume}" if sized else "NICHT sizable (< min-Lot!)"
@@ -63,6 +67,15 @@ def _checks(bridge: Mt5Bridge, account_name: str) -> tuple[list[tuple[str, bool,
         except Exception as exc:  # noqa: BLE001 -- report per-market failure, keep checking the rest
             rows.append((spec.name, False, f"Fehler: {exc}"))
     return rows, risk_amount
+
+
+def _loss_fn_for(bridge: Mt5Bridge, name: str) -> LossFn:
+    """The broker-priced loss callback for one market -- identical to the runner's wiring."""
+
+    def loss(side: Side, entry: float, sl: float, volume: float) -> float | None:
+        return bridge.loss_for_order(name, side, entry, sl, volume)
+
+    return loss
 
 
 def main(argv: list[str] | None = None) -> None:

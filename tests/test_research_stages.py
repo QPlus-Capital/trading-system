@@ -66,8 +66,11 @@ def test_edge_ranking_is_return_sorted_and_gated() -> None:
         }
     )
     top = ranking(df)
-    assert list(top["variation"]) == ["a", "b"]  # best row per variation, sorted by return
-    assert int(top.iloc[0]["train_months"]) == 36  # a's best train is the higher-return one
+    # EVERY (variation, train_months) row survives, sorted by return: reducing to one row per
+    # variation dropped eligible candidates whenever a variation's best length was gated out
+    # while a lower-return length passed (Codex round 6).
+    assert list(top["variation"]) == ["a", "a", "b", "b"]
+    assert [int(t) for t in top["train_months"]] == [36, 24, 36, 24]  # return-sorted
 
 
 def test_edge_ranking_dsr_gate_excludes_low_dsr() -> None:

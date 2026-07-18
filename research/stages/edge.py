@@ -105,9 +105,11 @@ def ranking(
     dsr_map = dsr_by_variation or {}
     g["dsr"] = g["variation"].map(dsr_map)  # NaN where unavailable
     g["dsr_ok"] = g["dsr"].isna() | (g["dsr"] >= _DSR_MIN)  # unknown DSR does not gate out
-    # One row per variation: its best training length by return (what Stage 2 would pick).
-    best_idx = g.groupby("variation")["mean_ret"].idxmax()
-    return g.loc[best_idx].sort_values("mean_ret", ascending=False).reset_index(drop=True)
+    # EVERY (variation, train_months) row, gated individually. Reducing to each variation's
+    # best-return length dropped eligible candidates: if the best length was incomplete or gated
+    # out while a lower-return length passed, selection saw no eligible row at all and failed
+    # closed on a deployable candidate (Codex round 6).
+    return g.sort_values("mean_ret", ascending=False).reset_index(drop=True)
 
 
 def _print_table(top: pd.DataFrame) -> str:
