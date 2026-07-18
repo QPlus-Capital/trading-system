@@ -29,7 +29,11 @@ class RiskLimits:
     """Risk parameters (fractions of balance/equity). Defaults = Jan's chosen values."""
 
     risk_per_trade: float = 0.0018  # 0.18% of the initial balance per trade (config is source)
-    daily_stop: float = 0.025  # halt for the day at 2.5% loss (hard TTP = 3%)
+    daily_stop: float = 0.025  # HALT for the day at 2.5% loss (hard TTP = 3%)
+    # Pre-trade tail budget, deliberately looser than daily_stop so a full book of 10 markets
+    # (10 x 0.18% x 1.5 = 2.7%) is not blocked. The HALT still fires at daily_stop (2.5%), so
+    # flattening starts early and keeps the full 0.5pp of execution room below TTP's hard 3%.
+    gate_daily_stop: float = 0.027
     prop_daily_stop: float = 0.03  # the prop firm's HARD daily limit -- the outer budget
     trailing_stop: float = 0.05  # halt at 5% trailing drawdown (hard TTP = 6%)
     open_risk_cap: float = 0.020  # max combined open stop-risk = 2.0% (fits all 10 markets @ 0.18%)
@@ -117,6 +121,10 @@ class RiskController:
         """Equity floor from the internal daily stop (relative to the day's starting balance)."""
         return self.day_start_balance - self.limits.daily_stop * self.day_start_balance
 
+    def gate_daily_floor(self) -> float:
+        """Floor behind the PRE-TRADE tail budget; looser than :meth:`daily_floor`, which halts."""
+        return self.day_start_balance - self.limits.gate_daily_stop * self.day_start_balance
+
     def prop_daily_floor(self) -> float:
         """Equity floor from the prop firm's HARD daily limit -- the outer budget we stay inside."""
         return self.day_start_balance - self.limits.prop_daily_stop * self.day_start_balance
@@ -152,6 +160,10 @@ class RiskController:
            (``min(equity, day_start)``): floating profit can evaporate in the very same gap, so a
            run-up in equity must never enlarge the budget or let sizing (which is off current
            equity) outgrow the fixed daily allowance.
+
+        The daily budget here uses ``gate_daily_stop`` (2.7%), NOT the ``daily_stop`` (2.5%) that
+        triggers the halt: a full book of 10 markets is pre-authorised, while the halt still fires
+        0.2pp earlier so flattening begins with the full execution buffer below TTP's hard 3%.
         """
         effective_open = max(0.0, self.open_risk - exclude_risk)
         if effective_open + trade_risk > self.limits.open_risk_cap * equity:
@@ -161,7 +173,7 @@ class RiskController:
         stressed_tail = self.limits.stress_mult * (effective_open + trade_risk)
         ref = min(equity, self.day_start_balance)  # floating profit does not enlarge the budget
         budgets = {
-            "internal daily stop": ref - self.daily_floor(),
+            "internal daily budget": ref - self.gate_daily_floor(),
             "prop daily limit": ref - self.prop_daily_floor(),
             "trailing stop": min(equity, self.hwm_balance) - self.trailing_floor(),
         }

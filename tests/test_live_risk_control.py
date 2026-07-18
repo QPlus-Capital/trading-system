@@ -62,17 +62,26 @@ def test_check_open_exclude_risk_allows_reversal() -> None:
     assert c.check_open(400, 200_000, exclude_risk=3_800).allowed  # excluded -> 0 + 400, fine
 
 
-def test_check_open_blocks_when_the_stressed_tail_breaches_the_daily_budget() -> None:
-    # #5: a full book of 0.18% trades has a NOMINAL open risk under the 2% cap, but the stressed
-    # tail (1.5x on a correlated gap) can exceed the 2.5% daily budget. Day-start 50k -> daily
-    # budget 1250; 9 markets @ 90 = 810 open. The 10th (90) is fine at 9 (1.5*810=1215<1250) but
-    # blocked at 10 (1.5*900=1350>1250).
+def test_the_gate_budget_admits_a_full_book_but_blocks_beyond_it() -> None:
+    # #5: the pre-trade budget is gate_daily_stop (2.7%), sized so a FULL book of 10 markets
+    # @ 0.18% fits its stressed tail exactly: day-start 50k -> budget 1350; 10 x 90 = 900
+    # nominal, 1.5 * 900 = 1350. An 11th entry (1.5 * 990 = 1485) breaches it.
     c = RiskController(RiskLimits(), 50_000)
-    c.open_risk = 720  # 8 markets already open @ 90
-    assert c.check_open(90, 50_000).allowed  # 9th: 1.5*810=1215 <= 1250
-    c.open_risk = 810  # 9 markets open
-    d = c.check_open(90, 50_000)  # 10th: 1.5*900=1350 > 1250
+    c.open_risk = 810  # 9 markets already open @ 90
+    assert c.check_open(90, 50_000).allowed  # 10th: 1.5*900 = 1350 <= 1350
+    c.open_risk = 900  # the full book of 10
+    d = c.check_open(90, 50_000)  # an 11th: 1.5*990 = 1485 > 1350
     assert not d.allowed and "daily" in d.reason
+
+
+def test_the_halt_stays_stricter_than_the_gate_budget() -> None:
+    # The gate pre-authorises a 2.7% tail, but the HALT must still fire at 2.5% so flattening
+    # starts early and keeps the full execution buffer below TTP's hard 3%.
+    c = RiskController(RiskLimits(), 50_000)
+    assert c.daily_floor() == 48_750  # halt at -2.5%
+    assert c.gate_daily_floor() == 48_650  # gate budget reaches -2.7%
+    assert c.prop_daily_floor() == 48_500  # TTP's hard -3% stays the outer bound
+    assert c.must_flatten(48_700).allowed  # between the two -> already halting
 
 
 def test_floating_profit_does_not_enlarge_the_loss_budget() -> None:

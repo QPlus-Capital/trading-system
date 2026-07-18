@@ -41,6 +41,8 @@ class StubBridge:
         # When set, a placed order fills HERE instead of at the requested price (slippage).
         self.fill_price: float | None = None
         self.modify_error: Exception | None = None
+        # What the terminal prices entry->stop as; None = it cannot price it (arithmetic fallback).
+        self.terminal_risk: float | None = None
         # Server time: just after the LAST bar's open -> that bar is still forming.
         self.now = datetime.fromtimestamp(self.bars[-1].time + 60, tz=UTC)
 
@@ -71,6 +73,10 @@ class StubBridge:
 
     def latest_bars(self, name: str, n: int) -> list[Bar]:
         return self.bars[-n:]
+
+    def loss_to_stop(self, position: Position) -> float | None:
+        # Default: the terminal cannot price it -> the runner falls back to the arithmetic.
+        return self.terminal_risk
 
     def place_order(self, name: str, side: str, volume: float, **kw: object) -> int:
         self.placed.append((name, side, volume))
@@ -221,6 +227,19 @@ def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
         state_path=state,
     )
     assert r2._last_bar_time == {"XAUUSD": handled}  # restored -> the bar is already marked
+
+
+def test_open_risk_prefers_the_terminals_price_and_falls_back_to_arithmetic() -> None:
+    # #6: entry->stop risk is priced by the terminal (order_calc_profit) so the broker's own
+    # currency conversion applies; our tick arithmetic is only the fallback.
+    pos = Position(1, "XAUUSD", "BUY", 1.0, 2000.0, 1980.0, 2060.0, 0.0, MAGIC)
+    stub = StubBridge()
+    stub.open_positions = [pos]
+    runner = _runner(stub)
+    # Arithmetic: volume * (distance / tick_size) * tick_value = 1 * (20 / 0.01) * 0.01 = 20.
+    assert runner._total_open_risk() == 20.0  # terminal_risk is None -> fallback
+    stub.terminal_risk = 33.0  # the broker prices the same stop differently (conversion)
+    assert runner._total_open_risk() == 33.0  # the terminal's number wins
 
 
 def test_rejected_order_leaves_the_bar_unmarked_and_retries_next_cycle(
