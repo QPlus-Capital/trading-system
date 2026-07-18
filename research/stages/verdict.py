@@ -121,6 +121,17 @@ def main(argv: list[str] | None = None) -> None:
             "\n  EXPLORATIV: ohne --fixed wurden die Stops pro Fenster neu optimiert. Diese Zahlen"
             "\n  beschreiben NICHT die Live-Config und taugen nicht als Go-Live-Entscheidung."
         )
+    # #12: never let a contaminated holdout be read as clean out-of-sample evidence.
+    if bool(getattr(cfg, "HOLDOUT_CONTAMINATED", False)):
+        freeze = getattr(cfg, "DEPLOY_FREEZE_DATE", "?")
+        print(
+            "\n  HOLDOUT KONTAMINIERT: Deploy-Entscheidungen (Stops, Universum, Risiko) wurden"
+            "\n  getroffen, nachdem der Holdout eingesehen wurde -- er ist fuer diese Config"
+            "\n  IN-SAMPLE. Die Zahlen oben sind eine optimistische Schaetzung, KEIN Out-of-Sample."
+            f"\n  Sauberer OOS-Nachweis ist der Live-Track-Record ab {freeze}."
+        )
+        for trial in getattr(cfg, "MANUAL_TRIALS", ()):
+            print(f"    - manuelle Entscheidung (zaehlt als Trial): {trial}")
 
     risk_txt = (
         f"{result.ceiling_pct:.3f}%/Trade"
