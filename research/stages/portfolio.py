@@ -212,6 +212,10 @@ def main(argv: list[str] | None = None) -> None:
             "variation": sel["variation"],
             "train_months": sel["train_months"],
             "instruments": universe,
+            # Provenance (#11): which per-market stops these numbers were produced with. Without a
+            # frozen config the stops were re-optimised per window, so the result is EXPLORATORY --
+            # the verdict refuses to call such a run deployable.
+            "fixed_config": str(args.fixed) if args.fixed else None,
             "risk_policy": args.risk,
             "stress_mult": args.stress_mult,
             "tail_source": args.tail,

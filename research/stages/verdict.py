@@ -85,7 +85,12 @@ def main(argv: list[str] | None = None) -> None:
 
     paths = monte_carlo_paths(sized_pnl.tolist(), n_sims=1000, start_equity=account.start_balance)
     prob_profit = float(summarize(paths, account.start_balance)["prob_profit"])
+    # #11: a deployable verdict must describe the stops we actually TRADE. Without --fixed the
+    # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
+    # live account does not have -- such a run is exploratory, never a go-live decision.
+    fixed_config = spec.get("fixed_config")
     checks = [
+        (fixed_config is not None, "gegen die eingefrorene Live-Config geprueft (--fixed)"),
         (result.n_trades >= 30, f"genug Trades ({result.n_trades} >= 30)"),
         (not result.breached, "haelt die harten Konto-Limits (3%/Tag, 6% trailing)"),
         (result.ann_return_pct > 0, f"Rendite positiv ({result.ann_return_pct:+.1f}%/Jahr)"),
@@ -97,6 +102,11 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\n  URTEIL: {'PASS - handelbar' if passed else 'FAIL - nicht handelbar'}")
     for ok, msg in checks:
         print(f"    {'PASS' if ok else 'FAIL'}: {msg}")
+    if fixed_config is None:
+        print(
+            "\n  EXPLORATIV: ohne --fixed wurden die Stops pro Fenster neu optimiert. Diese Zahlen"
+            "\n  beschreiben NICHT die Live-Config und taugen nicht als Go-Live-Entscheidung."
+        )
 
     risk_txt = (
         f"{result.ceiling_pct:.3f}%/Trade"

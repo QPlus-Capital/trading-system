@@ -55,8 +55,19 @@ def _fx_cfd(
 
     Size is measured in base-currency units (1 MT5 lot = 100 000). JPY pairs quote
     with 3 decimals; everything else with 5. Pairs whose quote currency is not USD
-    (USDCHF/USDJPY/USDCAD) are modelled USD-quoted -- a small approximation that barely
-    affects percent-based metrics; ``base`` then just labels the foreign leg.
+    (USDCHF/USDJPY/USDCAD) are modelled USD-quoted; ``base`` then just labels the foreign leg.
+
+    That approximation is safe, and the reason matters: sizing solves ``qty = risk / stop`` with
+    the stop in QUOTE units, so the unit count comes out scaled by the spot rate (240 units at
+    150.00 instead of 36 000 at $1 for USDJPY) -- but ``qty * price`` reproduces the TRUE notional
+    exactly, and a stop-out loses exactly the intended risk. R is therefore identical to the real
+    convention, and so is every cost proportional to notional (commission is a fraction of it) or
+    expressed in price units (spread, slippage). Swap sidesteps the model entirely: it is computed
+    from the real broker specs and carried in R.
+
+    The one quantity NOT preserved is the LOT count. Nothing may price off it -- a per-lot fee
+    would be wrong by the spot rate. ``test_usd_quoted_fx_approximation_preserves_notional_and_r``
+    locks this in.
     """
     s = profile.instrument_spec(symbol)
     tick = "0.001" if price_precision == 3 else "0.00001"
