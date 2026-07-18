@@ -91,7 +91,7 @@ def _daily_equity(
         t["swap_base"] = t["swap_r"].to_numpy(dtype=float) * base
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
-    _real, eq, _sizes = simulate(
+    _real, eq, _sizes, _min = simulate(
         t,
         prices,
         d0,

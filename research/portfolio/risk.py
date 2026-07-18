@@ -256,6 +256,7 @@ def evaluate_policy(
     cap_frac: float,
     *,
     compound: bool = False,
+    daily_low_high: dict[str, tuple[pd.Series, pd.Series]] | None = None,
 ) -> PolicyResult:
     """Run ``policy`` over the trade stream day by day and report its honest return / drawdown.
 
@@ -273,15 +274,27 @@ def evaluate_policy(
         t["swap_base"] = t["swap_r"].to_numpy(dtype=float) * base
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
+    # #15: the day's extremes drive the intraday limit check; without them it degrades to the old
+    # end-of-day comparison rather than silently claiming intraday coverage.
+    adverse = (
+        (
+            {m: align_prices(daily_low_high[m][0], d0, d1) for m in t["market"].unique()},
+            {m: align_prices(daily_low_high[m][1], d0, d1) for m in t["market"].unique()},
+        )
+        if daily_low_high
+        else None
+    )
 
     resolved = policy.resolve(cap_frac, account)
-    realized, equity, sizes = simulate(
+    realized, equity, sizes, min_equity = simulate(
         t, prices, d0, d1, account.start_balance, account.trailing_hard, resolved.risk_fn,
-        compound=compound,
+        compound=compound, adverse=adverse,
     )
+    # #15: the daily-limit gate reads the worst INTRADAY mark, not the end-of-day equity -- a day
+    # that dips 3% and closes at -0.5% breaches live but was invisible to an EOD-only series.
     breached = bool(
         evaluate(equity, realized, account.start_balance, account.trailing_hard).breached
-        or daily_breach(equity, account.daily_hard)
+        or daily_breach(min_equity, account.daily_hard, prior=equity)
     )
     years = max((d1 - d0) / 365.25, 1e-9)
     total = (float(realized[-1]) - account.start_balance) / account.start_balance

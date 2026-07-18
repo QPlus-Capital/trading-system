@@ -41,6 +41,21 @@ def load_daily_close(csv_path: str) -> pd.Series:
     return pd.Series(df["<CLOSE>"].to_numpy(dtype=float), index=day).groupby(level=0).last()
 
 
+def load_daily_low_high(csv_path: str) -> tuple[pd.Series, pd.Series]:
+    """Per-day (low, high) from an MT5 H4 CSV, indexed by day number.
+
+    The daily extremes are the closest thing to an intraday path the H4 data gives us, and they
+    are what the prop firm's *intraday* equity rule actually reacts to (#15): a day can dip 3%
+    and close at -0.5%, which an end-of-day series cannot see.
+    """
+    df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>"])
+    ts = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S", utc=True)
+    day = ((ts - _EPOCH) // pd.Timedelta(days=1)).to_numpy()
+    low = pd.Series(df["<LOW>"].to_numpy(dtype=float), index=day).groupby(level=0).min()
+    high = pd.Series(df["<HIGH>"].to_numpy(dtype=float), index=day).groupby(level=0).max()
+    return low, high
+
+
 def align_prices(daily_close: pd.Series, d0: int, d1: int) -> np.ndarray:
     """Reindex a per-day close series onto the contiguous ``[d0, d1]`` range (ffill/bfill)."""
     aligned = daily_close.reindex(range(d0, d1 + 1)).ffill().bfill().to_numpy()
