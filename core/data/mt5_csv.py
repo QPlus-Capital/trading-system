@@ -18,6 +18,7 @@ Prices are parsed as strings into ``Decimal`` and rounded via ``make_price`` -- 
 float is used for prices.
 """
 
+import shutil
 from decimal import Decimal
 from pathlib import Path
 
@@ -195,6 +196,13 @@ def write_mt5_catalog(
 
     Returns the number of bars per side (bid and ask have the same count).
     """
+    # Staleness is checked HERE, in the one funnel every bar import passes through, rather than at
+    # each caller: putting it in the callers meant the walk-forward CLI missed it and kept mixing
+    # old-frame bars with new-frame window boundaries. Wipe once, then the fresh marker makes
+    # subsequent instruments in the same run non-stale.
+    if catalog_frame_is_stale(catalog_path, server_tz):
+        print(f"catalog {catalog_path} is in a different timestamp frame -> rebuilding")
+        shutil.rmtree(catalog_path, ignore_errors=True)
     Path(catalog_path).mkdir(parents=True, exist_ok=True)
     catalog = ParquetDataCatalog(str(catalog_path))
     _stamp_catalog_frame(catalog_path, server_tz)

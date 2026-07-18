@@ -313,10 +313,11 @@ def evaluate_policy(
     )
     years = max((d1 - d0) / 365.25, 1e-9)
     total = (float(realized[-1]) - account.start_balance) / account.start_balance
-    # Report the drawdown from the SAME path the breach gate judges: with intraday marks a day can
-    # dip below the floor and recover by the close, so a close-based figure would show a small
-    # drawdown next to breached=True -- understating the risk the operator actually ran.
-    peak = np.maximum.accumulate(min_equity)
+    # Drawdown = intraday TROUGH measured from the running CLOSE-path PEAK. Both legs matter: a
+    # close-based trough hides the dip the gate just failed on, but accumulating peaks over the
+    # low series would measure the next day's low from the previous LOW instead of the high the
+    # account actually reached -- understating the drawdown in the very path this reports.
+    peak = np.maximum.accumulate(np.maximum(equity, min_equity))
     return PolicyResult(
         label=resolved.label,
         ceiling_pct=resolved.ceiling_pct,

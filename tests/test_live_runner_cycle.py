@@ -135,6 +135,9 @@ def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
         mode=mode,
+        # A first launch without this HALTS by design; these tests exercise the trading path, so
+        # they state the loss day's opening balance the way an operator would.
+        day_start_balance=stub.balance,
     )
 
 
@@ -226,6 +229,7 @@ def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
         state_path=state,
+        day_start_balance=stub.balance,
     )
     r1.run_once()
     handled = r1._last_bar_time["XAUUSD"]
@@ -235,6 +239,7 @@ def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
         state_path=state,
+        day_start_balance=stub.balance,
     )
     assert r2._last_bar_time == {"XAUUSD": handled}  # restored -> the bar is already marked
 
@@ -466,29 +471,34 @@ def test_unpriceable_candidates_keep_the_arithmetic_volume() -> None:
     assert sized is not None and sized.volume == 20.0
 
 
-def test_first_launch_does_not_hand_out_a_fresh_daily_budget() -> None:
-    """Codex P1: restarting mid loss-day after a realized loss must NOT reset the daily reference
-    to the already-lowered balance -- losing 2% and restarting would then allow another 2.5%."""
+def test_first_launch_without_a_known_day_start_halts() -> None:
+    """Codex P1: with no saved state the loss day's opening balance is unknown, and no heuristic
+    is safe both ways -- an account that banked to 55k and restarts mid-day at 52k would be handed
+    a fresh budget from 52k while already 5.5% down. Doing nothing is the safe state."""
     stub = StubBridge()
-    stub.balance = stub.equity = 98_000.0  # already 2% down today, reference is still 100k
     runner = LiveRunner(
         cast(Mt5Bridge, stub),
         [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
         SignalParams(),
-        RiskController(RiskLimits(), 100_000.0),  # the account's own reference
-        mode=Mode.SIGNAL_ONLY,
+        RiskController(RiskLimits(), 100_000.0),
+        mode=Mode.EXECUTE,  # no day_start_balance given
     )
     runner.run_once()
-    # The day reference stays at the account's own reference, not the lowered balance ...
-    assert runner._risk.day_start_balance == 100_000.0
-    # ... while the HWM banks the current balance (that can only RAISE the trailing floor).
-    assert runner._risk.hwm_balance == 100_000.0
+    assert runner._halted
+    assert stub.placed == [] and stub.closed == []  # halted before touching anything
 
 
-def test_first_launch_banks_a_grown_balance_into_the_hwm() -> None:
-    # Started above the profile balance: the trailing floor must follow the real balance up.
+def test_an_explicit_day_start_is_used_and_the_hwm_banks_the_balance() -> None:
     stub = StubBridge()
-    stub.balance = 104_000.0
-    runner = _runner(stub)  # RiskController reference is the stub's original 100k
+    stub.balance = stub.equity = 104_000.0  # grown since the profile reference
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), 100_000.0),
+        day_start_balance=103_000.0,  # the loss day actually opened here
+    )
     runner.run_once()
-    assert runner._risk.hwm_balance == 104_000.0  # floor raised, not left at the stale 100k
+    assert not runner._halted
+    assert runner._risk.day_start_balance == 103_000.0  # the operator's number, not the balance
+    assert runner._risk.hwm_balance == 104_000.0  # HWM banks the balance -> raises the floor

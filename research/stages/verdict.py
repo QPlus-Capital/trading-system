@@ -92,6 +92,10 @@ def main(argv: list[str] | None = None) -> None:
         eq_trades, sized_pnl - result.trade_swap, daily_close, start_balance=account.start_balance
     )
     stats = {**edge_stats(sized_pnl), **risk_stats(equity, start_balance=account.start_balance)}
+    # The drawdown the GATE judged, not one recomputed from daily closes: with intraday marks a
+    # day can dip below the floor and recover by the close, so a close-based figure would be
+    # published beside a breach it does not show. One number, one path.
+    stats["max_drawdown"] = result.max_drawdown_pct / 100.0
 
     # #16: resample whole trading days, not single trades -- our correlated markets lose together
     # on a macro gap, and breaking those bundles apart understates the tail.

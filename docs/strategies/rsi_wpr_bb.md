@@ -28,7 +28,7 @@ band edge) while momentum is exhausted (Williams %R oversold/overbought) and RSI
   per-year return to vary with volatility, not to be constant.
 - The edge is **crowded**; net-of-cost margins are thin, so realistic costs are non-negotiable.
 - **Gap risk is the tail:** a reversal position is short volatility on a gap through its stop. This
-  is a real, unhedgeable tail that sizing (Stage 5) must respect — not a backtest artifact.
+  is a real, unhedgeable tail that the sizing/tail-cap step must respect — not a backtest artifact.
 
 **Direction of the bet.** Long on a buy signal, short on a sell signal (reversal), flat between.
 `long_only` is a defensive variant (skip shorts) for markets/regimes where shorting the index is
@@ -58,7 +58,8 @@ trials — the number the DSR deflates by (see `foundation/trial_budget.py`).
 - **Frozen:** the signal logic and its indicator periods (mirror the Pine source), the confirmation
   structure above, the cost model, the walk-forward scheme (purged, embargoed, non-overlapping).
 - **Free (chosen inside the walk-forward):** stop/target per window from the grid.
-- **Chosen at Stage 5:** the risk-aversion parameters (α, β) and the per-market deployed stop.
+- **Chosen in the portfolio/verdict stages and frozen into the live config:** the
+  risk-aversion parameters (α, β) and the per-market deployed stop.
   These do not change *which* entry signals fire — but they are still strategy parameters, not
   free choices: the stop determines every **exit**, hence every R and the entire equity path.
   Fitting them on a window that overlaps the reserved holdout makes that holdout in-sample for the
