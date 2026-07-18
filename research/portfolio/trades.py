@@ -21,7 +21,7 @@ from research.engine.config import extract_trade_pnls
 from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
 from research.engine.walkforward import calmar_score, split_windows, walk_forward_windows
-from research.engine.walkforward_runner import _data_span
+from research.engine.walkforward_runner import PREROLL, _data_span
 
 # ``pnl_base`` is the realized PnL in the account currency at the extraction's BASE risk
 # (risk_per_trade=1%), i.e. money -- not a percentage. It COMPOUNDS with the growing equity, so it
@@ -54,18 +54,26 @@ def assign_r(
 
 
 def timed_trades_from_report(
-    pos: pd.DataFrame, market: str, sl_pct: float
+    pos: pd.DataFrame, market: str, sl_pct: float, *, closed_from: pd.Timestamp | None = None
 ) -> list[dict[str, Any]]:
     """Extract closed trades ``(ts_opened, ts_closed, pnl, entry, exit, sl_pct)`` from a report.
 
     ``sl_pct`` is the stop-loss % this window traded at -- recorded per trade so the overnight
     swap cost can be priced exactly (it depends on the stop distance), including the walk-forward
     holdout where the SL is re-optimised per window.
+
+    ``closed_from`` keeps only trades that RESOLVED at or after that moment (#14). Paired with the
+    pre-roll, each trade is attributed to the window its outcome landed in: a position opened
+    before a boundary is carried and realised in the next window instead of vanishing, which is
+    what live does -- and what previously hid exactly the losses that gap through a stop after a
+    boundary.
     """
     out: list[dict[str, Any]] = []
     for _, row in pos.iterrows():
-        if pd.isna(row["ts_closed"]):  # still open at the window end -> skip
+        if pd.isna(row["ts_closed"]):  # still open at the run end -> the NEXT window resolves it
             continue
+        if closed_from is not None and pd.to_datetime(row["ts_closed"], utc=True) < closed_from:
+            continue  # resolved inside the pre-roll -> belongs to the previous window
         pnl = float(str(row["realized_pnl"]).split()[0].replace("_", ""))
         out.append(
             {
@@ -155,8 +163,13 @@ def extract_market_trades(
                 score = calmar_score(pnls, equity)
                 if score > best_score:
                     best_score, best = score, params
+        # #14: pre-roll the data so indicators enter the window warm and a position opened just
+        # before the boundary is carried; timed_trades_from_report then keeps only what RESOLVED
+        # inside the window, so trades are neither dropped at a seam nor counted twice.
         cfg = recipe.build_run_config(
-            best, start=window.test_start.isoformat(), end=window.test_end.isoformat()
+            best,
+            start=(window.test_start - PREROLL).isoformat(),
+            end=window.test_end.isoformat(),
         )
         node = BacktestNode(configs=[cfg])
         try:
@@ -164,7 +177,9 @@ def extract_market_trades(
             pos = node.get_engines()[0].trader.generate_positions_report()
         finally:
             node.dispose()  # type: ignore[no-untyped-call]
-        window_rows = timed_trades_from_report(pos, market, float(best["stop_loss_pct"]))
+        window_rows = timed_trades_from_report(
+            pos, market, float(best["stop_loss_pct"]), closed_from=window.test_start
+        )
         # Per-window R: this window's backtest started fresh at the recipe's start balance.
         rows.extend(assign_r(window_rows, recipe.start_balance, recipe.base_risk_frac))
     return pd.DataFrame(rows, columns=_COLUMNS)

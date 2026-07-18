@@ -65,3 +65,23 @@ def test_trades_are_parsed_when_present(monkeypatch: pytest.MonkeyPatch) -> None
     pnls, start = config.extract_trade_pnls(_run_config())
     assert pnls == [1784.69, -320.0]
     assert start == 200_000.0
+
+
+def test_preroll_trades_are_excluded_by_closed_from(monkeypatch: pytest.MonkeyPatch) -> None:
+    """#14: the run starts before the window so indicators warm up; trades that RESOLVED in that
+    pre-roll belong to the previous window and must not be counted twice."""
+    _FakeNode.report = pd.DataFrame(
+        {
+            "realized_pnl": ["100.00 USD", "200.00 USD", "50.00 USD"],
+            "ts_closed": [
+                pd.Timestamp("2024-01-10", tz="UTC"),  # inside the pre-roll -> excluded
+                pd.Timestamp("2024-02-05", tz="UTC"),  # inside the window -> kept
+                pd.NaT,  # still open -> the next window resolves it
+            ],
+        }
+    )
+    monkeypatch.setattr(config, "BacktestNode", _FakeNode)
+    pnls, _ = config.extract_trade_pnls(
+        _run_config(), closed_from=pd.Timestamp("2024-02-01", tz="UTC")
+    )
+    assert pnls == [200.0]

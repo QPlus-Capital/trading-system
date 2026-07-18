@@ -44,6 +44,12 @@ from research.engine.walkforward import (
 _REPO_ROOT = REPO_ROOT
 _TRAIN_MONTHS, _TEST_MONTHS, _STEP_MONTHS = 24, 6, 6
 
+# #14: read-only warm-up ahead of every window. The signal engine needs ~26 bars before it
+# reports "warmed up", but the Wilder-smoothed RSI/EMA keep converging well past that, so this is
+# sized generously: 45 days is roughly 190 H4 bars. Trades that resolve inside the pre-roll are
+# filtered out (closed_from), so it only ever informs indicators and carries open positions.
+PREROLL = pd.Timedelta(days=45)
+
 
 def _data_span(csv_path: str | Path) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Return (first, last) bar timestamp from an MT5 CSV (fast date-only read)."""
@@ -102,8 +108,11 @@ def run_walkforward(
         for params in combos:
             pnls, start_equity = extract_trade_pnls(
                 recipe.build_run_config(
-                    params, start=train_start.isoformat(), end=train_end.isoformat()
-                )
+                    params,
+                    start=(train_start - PREROLL).isoformat(),
+                    end=train_end.isoformat(),
+                ),
+                closed_from=train_start,
             )
             score = calmar_score(pnls, start_equity)
             if score > best_score:
@@ -116,8 +125,17 @@ def run_walkforward(
     def evaluate(
         params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
     ) -> tuple[list[float], float]:
+        # #14: read-only pre-roll so the indicators enter the window warm (live never restarts
+        # cold) and a position opened just before the boundary is carried into it. closed_from
+        # attributes each trade to the window it RESOLVED in, so nothing is dropped or counted
+        # twice at the seam.
         return extract_trade_pnls(
-            recipe.build_run_config(params, start=test_start.isoformat(), end=test_end.isoformat())
+            recipe.build_run_config(
+                params,
+                start=(test_start - PREROLL).isoformat(),
+                end=test_end.isoformat(),
+            ),
+            closed_from=test_start,
         )
 
     return run_walk_forward(windows, optimize, evaluate, combos if collect_matrix else None)
