@@ -297,9 +297,14 @@ def evaluate_policy(
     # The BASELINE is the prior day's realized BALANCE, not its equity: the prop firm resets the
     # daily budget from the closing balance, so measuring against an equity that carried a
     # floating loss overnight would lower the bar and make the simulated budget looser than TTP's.
+    # Both prop rules react to INTRADAY equity, so both read the worst mark. The trailing floor
+    # is no different from the daily one here: a dip below it that recovers by the close is still
+    # a breach, and testing it on close-based equity reported those as OK.
     breached = bool(
-        evaluate(equity, realized, account.start_balance, account.trailing_hard).breached
-        or daily_breach(min_equity, account.daily_hard, prior=realized)
+        evaluate(min_equity, realized, account.start_balance, account.trailing_hard).breached
+        or daily_breach(
+            min_equity, account.daily_hard, prior=realized, start_balance=account.start_balance
+        )
     )
     years = max((d1 - d0) / 365.25, 1e-9)
     total = (float(realized[-1]) - account.start_balance) / account.start_balance

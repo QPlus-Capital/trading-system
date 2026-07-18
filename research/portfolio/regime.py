@@ -21,7 +21,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from research.portfolio.curves import DAY_NS
+from research.portfolio.curves import to_day
 from research.portfolio.stats import edge_stats
 
 _VOL_LABELS = ("ruhig", "mittel", "stuermisch")
@@ -81,7 +81,9 @@ def label_trades(
 ) -> pd.DataFrame:
     """Tag each trade with the vol/trend regime of its market at its open day (ffill to the day)."""
     out = trades.copy()
-    out["day"] = (out["ts_opened"].to_numpy() // DAY_NS).astype(int)
+    # Loss-day axis: daily_closes is indexed that way, so a UTC day number would look up the
+    # neighbouring day's regime for any trade opened after the 16:15 CT reset.
+    out["day"] = [to_day(x) for x in out["ts_opened"].to_numpy()]
     out["vol_regime"] = pd.NA
     out["trend_regime"] = pd.NA
     for market, group in out.groupby("market"):

@@ -135,3 +135,27 @@ def test_the_day_axis_is_the_prop_loss_day_not_utc_midnight() -> None:
     assert to_day(after.value) - to_day(before.value) == (
         loss_day(after.to_pydatetime()) - loss_day(before.to_pydatetime())
     ).days
+
+
+def test_the_first_simulated_day_is_checked_for_a_breach() -> None:
+    """Codex P1: comparing consecutive entries never tested day 0 against anything, so a
+    simulation whose FIRST loss day dipped through the limit reported no breach at all."""
+    # Day 0 dips to 96k intraday (4% below the 100k opening balance) and closes at 98k.
+    worst = np.array([96_000.0, 98_000.0, 98_000.0])
+    prior = np.array([98_000.0, 98_000.0, 98_000.0])  # the day's CLOSING balances
+    assert daily_breach(worst, 0.03, prior=prior, start_balance=100_000.0)
+    # Measured against day 0's own close (98k) the dip is only 2% -- which is why the opening
+    # balance has to be supplied; otherwise the first day is judged against its own outcome.
+    assert not daily_breach(worst, 0.03, prior=prior)
+
+
+def test_the_trailing_floor_also_reads_the_intraday_mark() -> None:
+    """Codex P1: an intraday dip below the trailing floor that recovers by the close is still a
+    prop-rule breach; testing it on close-based equity reported it as OK."""
+    from research.portfolio.drawdown import evaluate
+
+    realized = np.array([100_000.0, 100_000.0])
+    close_equity = np.array([100_000.0, 99_000.0])  # gentle at the close
+    intraday_low = np.array([100_000.0, 93_000.0])  # but dipped below the 95k floor (5% of 100k)
+    assert not evaluate(close_equity, realized, 100_000.0, 0.05).breached
+    assert evaluate(intraday_low, realized, 100_000.0, 0.05).breached
