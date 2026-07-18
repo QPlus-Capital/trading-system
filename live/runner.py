@@ -311,6 +311,15 @@ class LiveRunner:
                 self._day,
             )
 
+    def _position_risk(self, pos: Position, info: SymbolInfo) -> float:
+        """Money at risk entry->stop, priced by the TERMINAL when it can (#6).
+
+        ``order_calc_profit`` applies the broker's own currency conversion and contract specifics;
+        our tick arithmetic is only the fallback (no stop, or the terminal cannot price it).
+        """
+        priced = self._bridge.loss_to_stop(pos)
+        return priced if priced is not None else position_risk(pos, info)
+
     def _total_open_risk(self) -> float:
         total = 0.0
         for spec in self._markets:
@@ -322,7 +331,7 @@ class LiveRunner:
                         spec.name,
                         pos.ticket,
                     )
-                total += position_risk(pos, info)
+                total += self._position_risk(pos, info)
         return total
 
     def _process_market(self, spec: MarketSpec, equity: float, now_epoch: float) -> None:
@@ -389,7 +398,7 @@ class LiveRunner:
 
         # M2: on a reversal the opposite position is about to be closed, so exclude its stop-risk
         # from the open total -- don't block the replacement trade on risk we're removing.
-        exclude = position_risk(pos, info) if pos is not None else 0.0
+        exclude = self._position_risk(pos, info) if pos is not None else 0.0
         check = self._risk.check_open(sized.risk_amount, equity, exclude_risk=exclude)
         if not check.allowed:
             log.warning("[%s] %s BLOCKED by risk: %s", spec.name, desired, check.reason)
