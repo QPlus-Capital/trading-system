@@ -93,3 +93,45 @@ def test_the_intraday_low_reveals_a_breach_the_close_hides() -> None:
     assert min_eq[1] < eq[1]
     assert daily_breach(min_eq, 0.03, prior=eq)  # the real dip breaches the 3% daily limit
     assert not daily_breach(eq, 0.03)  # end-of-day alone saw nothing
+
+
+def test_a_trade_that_dips_and_closes_the_same_day_still_counts_as_a_breach() -> None:
+    """Codex P1: closers were realized and removed from open_set BEFORE the intraday mark was
+    computed, so a trade that dipped through the daily limit and then closed was invisible to the
+    gate -- a false pass for exactly the closing-day and same-day trades."""
+    trades = pd.DataFrame(
+        {
+            "market": ["X"],
+            "od": [1], "cd": [1],  # opens AND closes on day 1
+            "pnl_base": [-500.0],  # ends the day only mildly down
+            "entry": [100.0], "exit": [99.5],
+            "is_long": [True],
+        }
+    )
+    closes = {"X": np.array([100.0, 99.5, 99.5, 99.5])}
+    lows = {"X": np.array([100.0, 94.0, 99.5, 99.5])}  # dipped to 94 before closing at 99.5
+    highs = {"X": np.array([100.0, 100.0, 100.0, 100.0])}
+
+    _r, eq, _s, min_eq = simulate(
+        trades, closes, 0, 3, 100_000.0, 0.06, flat(1.0), adverse=(lows, highs)
+    )
+    assert min_eq[1] < eq[1]  # the dip is visible even though the trade closed that day
+    assert daily_breach(min_eq, 0.03, prior=_r)  # and it breaches the 3% daily limit
+
+
+def test_the_day_axis_is_the_prop_loss_day_not_utc_midnight() -> None:
+    """Codex P1: the daily-limit maths bucketed by UTC calendar day while the account's day resets
+    at 16:15 America/Chicago, so an adverse evening move was measured against the wrong day's
+    baseline. Trades and the price series must share this one axis."""
+    from live.runner import loss_day
+    from research.portfolio.curves import to_calendar_day, to_day
+
+    # 21:14 UTC on 1 July 2026 is 16:14 CDT -- still the old loss day; 21:16 UTC is 16:16, the new.
+    before = pd.Timestamp("2026-07-01 21:14", tz="UTC")
+    after = pd.Timestamp("2026-07-01 21:16", tz="UTC")
+    assert to_day(after.value) == to_day(before.value) + 1  # rolls at the CT reset ...
+    assert to_calendar_day(after.value) == to_calendar_day(before.value)  # ... not at UTC midnight
+    # And it agrees with the live runner, so research and live cannot drift on the boundary.
+    assert to_day(after.value) - to_day(before.value) == (
+        loss_day(after.to_pydatetime()) - loss_day(before.to_pydatetime())
+    ).days

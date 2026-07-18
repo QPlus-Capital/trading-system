@@ -76,9 +76,27 @@ def per_trade_risk(
 
     Reconstructed from realized PnL, which is what the deal history gives us; floating equity at
     the moment of entry is not recoverable after the fact.
+
+    The balance is walked in CLOSE order (that is when PnL is booked) but each trade is charged
+    the balance as it stood at its OWN OPEN. With overlapping positions -- our normal case, ten
+    markets at once -- a later-opening trade can close first, and crediting its PnL to an earlier
+    trade's basis would attribute money that did not exist when that trade was sized, distorting
+    exactly the multi-market drift this monitor exists to detect.
     """
-    prior = start_balance + trades["net_pnl"].cumsum().shift(1, fill_value=0.0)
-    risk: np.ndarray = (risk_frac * prior).to_numpy(dtype=float)
+    booked = trades["net_pnl"].to_numpy(dtype=float)
+    close_ns = trades["close_time"].astype("int64").to_numpy()
+    open_ns = trades["open_time"].astype("int64").to_numpy()
+    order = np.argsort(close_ns, kind="stable")  # PnL lands in close order
+    running, balance_at = start_balance, np.empty(len(trades))
+    ledger: list[tuple[int, float]] = [(np.iinfo(np.int64).min, start_balance)]
+    for i in order:
+        running += booked[i]
+        ledger.append((int(close_ns[i]), running))
+    stamps = np.array([t for t, _ in ledger])
+    values = np.array([v for _, v in ledger])
+    for i in range(len(trades)):  # balance as of each trade's OWN open
+        balance_at[i] = values[np.searchsorted(stamps, open_ns[i], side="right") - 1]
+    risk: np.ndarray = risk_frac * balance_at
     return risk
 
 

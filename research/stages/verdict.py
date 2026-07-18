@@ -36,6 +36,7 @@ from research.portfolio.risk import (
 )
 from research.portfolio.stats import daily_equity, edge_stats, risk_stats
 from research.stages import _runbook as rb
+from research.stages.edge import PBO_MAX
 
 _STAT_ROWS = [
     ("trades", "Trades", "{:,.0f}"),
@@ -105,7 +106,17 @@ def main(argv: list[str] | None = None) -> None:
         bool(gates.get("eligible")) and bool(gates.get("dsr_ok")) and not sel_manifest.get("forced")
     )
     dsr_txt = "n/a" if gates.get("dsr") is None else f"{gates['dsr']:.2f}"
+    # PBO is a STUDY-level verdict: a high value says the search itself is overfit, which no
+    # single candidate's DSR can rescue. Selection now refuses such a study, and the verdict
+    # re-tests it rather than trusting that it did.
+    pbo = (
+        run.load_json("overfitting.json").get("pbo")
+        if run.file("overfitting.json").exists()
+        else None
+    )
+    pbo_txt = "n/a" if pbo is None else f"{pbo:.2f}"
     checks = [
+        (pbo is None or pbo <= PBO_MAX, f"PBO {pbo_txt} <= {PBO_MAX:.2f} (nicht ueberfittet)"),
         (gated_pick, f"Auswahl gegated (eligible + DSR {dsr_txt}, nicht erzwungen)"),
         (fixed_config is not None, "gegen die eingefrorene Live-Config geprueft (--fixed)"),
         (result.n_trades >= 30, f"genug Trades ({result.n_trades} >= 30)"),

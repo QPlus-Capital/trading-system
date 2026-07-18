@@ -70,14 +70,40 @@ def test_live_stats() -> None:
     assert abs(s["expectancy"] - 50.0) < 1e-9
 
 
+def _seq(opens: list[str], closes: list[str], pnl: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "open_time": pd.to_datetime(opens, utc=True),
+            "close_time": pd.to_datetime(closes, utc=True),
+            "net_pnl": pnl,
+        }
+    )
+
+
 def test_each_trade_is_normalised_off_the_equity_it_was_sized_against() -> None:
     """#20: sizing compounds, so an early 1R win is fewer euros than a later one. Dividing the
     whole history by today's risk would show the early trades as sub-1R -- drift that never
     happened."""
-    trades = pd.DataFrame({"net_pnl": [1_000.0, 1_000.0, 1_000.0]})
+    trades = _seq(
+        ["2026-01-01", "2026-01-03", "2026-01-05"],
+        ["2026-01-02", "2026-01-04", "2026-01-06"],
+        [1_000.0, 1_000.0, 1_000.0],
+    )
     risk = per_trade_risk(trades, start_balance=100_000.0, risk_frac=0.01)
-    # Trade 1 was sized against 100k, trade 2 against 101k, trade 3 against 102k.
+    # Sequential trades: sized against 100k, then 101k, then 102k.
     assert list(risk) == [1_000.0, 1_010.0, 1_020.0]
-    # Normalised individually the three wins are NOT all 1.0R -- and the first is not shrunk by
-    # what the account did afterwards.
-    assert (trades["net_pnl"].to_numpy() / risk)[0] == 1.0
+
+
+def test_an_overlapping_trade_is_not_credited_with_pnl_that_came_later() -> None:
+    """Codex P2: the balance is walked in CLOSE order, but each trade must be charged the balance
+    at its OWN OPEN. Trade A opens first and closes last; B opens after A and closes before it.
+    Crediting B's win to A would attribute money that did not exist when A was sized -- exactly
+    the multi-market overlap this monitor exists to diagnose."""
+    trades = _seq(
+        ["2026-01-01", "2026-01-02"],  # A opens first ...
+        ["2026-01-10", "2026-01-03"],  # ... but closes LAST; B closes early with a win
+        [500.0, 5_000.0],
+    )
+    risk = per_trade_risk(trades, start_balance=100_000.0, risk_frac=0.01)
+    assert risk[0] == 1_000.0  # A: sized against the untouched 100k
+    assert risk[1] == 1_000.0  # B: opened before anything had closed -> also 100k

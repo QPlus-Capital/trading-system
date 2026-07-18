@@ -58,7 +58,11 @@ def _load_live(days: int, account_name: str) -> dict[str, Any]:
         for p in bridge.positions():
             research = term_to_research.get(p.symbol, p.symbol)
             info = bridge.symbol_info(research) if research in bridge._resolved else None
-            risk = position_risk(p, info) if info else 0.0
+            # Price it the way the RUNNER does (#19): the tick_value arithmetic understates
+            # converted symbols -- DE40 by a measured 14.4% -- so showing the arithmetic here
+            # would report more headroom under the 2% cap than the risk controller is charging.
+            priced = bridge.loss_to_stop(p)
+            risk = priced if priced is not None else (position_risk(p, info) if info else 0.0)
             open_risk += risk
             positions.append(
                 {

@@ -294,9 +294,12 @@ def evaluate_policy(
     )
     # #15: the daily-limit gate reads the worst INTRADAY mark, not the end-of-day equity -- a day
     # that dips 3% and closes at -0.5% breaches live but was invisible to an EOD-only series.
+    # The BASELINE is the prior day's realized BALANCE, not its equity: the prop firm resets the
+    # daily budget from the closing balance, so measuring against an equity that carried a
+    # floating loss overnight would lower the bar and make the simulated budget looser than TTP's.
     breached = bool(
         evaluate(equity, realized, account.start_balance, account.trailing_hard).breached
-        or daily_breach(min_equity, account.daily_hard, prior=equity)
+        or daily_breach(min_equity, account.daily_hard, prior=realized)
     )
     years = max((d1 - d0) / 365.25, 1e-9)
     total = (float(realized[-1]) - account.start_balance) / account.start_balance

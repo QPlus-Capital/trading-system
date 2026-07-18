@@ -32,7 +32,7 @@ _RPD_TOLERANCE = 0.85  # structure gate: risk-adjusted return within 85% of the 
 # Statistical gate (Stage 2, methodology.md): the deflated Sharpe must clear this after correcting
 # for the trial budget, and the study-level PBO must stay below its ceiling.
 _DSR_MIN = 0.90
-_PBO_MAX = 0.20
+PBO_MAX = 0.20
 
 
 def _study_csv_from(source: Path) -> Path:
@@ -182,8 +182,8 @@ def main(argv: list[str] | None = None) -> None:
     else:
         print("  Statistik-Gate: DSR n/a - Studie neu laufen lassen fuer DSR/PBO.")
     if pbo is not None:
-        verdict = "ok" if pbo <= _PBO_MAX else "ZU HOCH"
-        print(f"  PBO (Overfitting-Wahrsch. der Auswahl): {pbo:.2f} <= {_PBO_MAX:.2f}? {verdict}")
+        verdict = "ok" if pbo <= PBO_MAX else "ZU HOCH"
+        print(f"  PBO (Overfitting-Wahrsch. der Auswahl): {pbo:.2f} <= {PBO_MAX:.2f}? {verdict}")
     else:
         print("  PBO: n/a - Studie neu laufen lassen.")
     print(f"  Auto-Auswahl (hoechste Rendite unter eligible): {auto or '- (keine eligible)'}")

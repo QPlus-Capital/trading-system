@@ -39,3 +39,23 @@ def test_an_iana_zone_converts_dst_aware() -> None:
 def test_the_legacy_fixed_offset_still_works() -> None:
     df = pd.DataFrame({"<DATE>": ["2024.07.01"], "<TIME>": ["03:00:00"]})
     assert parse_mt5_timestamps(df, offset_hours=3)[0] == pd.Timestamp("2024-07-01", tz="UTC")
+
+
+def test_every_loader_defaults_to_the_same_frame() -> None:
+    """Codex P1: the catalog seeder had its own server_tz=None default, which overrode the module
+    default. Bars were then imported in the server frame while _data_span and the daily curves
+    converted -- two frames in one pipeline, which drifts trades against day buckets around
+    server midnight. Mixed frames are worse than no conversion, so pin the defaults together.
+    """
+    import inspect
+
+    from core.data.mt5_csv import (
+        MT5_SERVER_TZ,
+        load_mt5_bid_ask_bars,
+        parse_mt5_timestamps,
+        write_mt5_catalog,
+    )
+
+    for fn in (parse_mt5_timestamps, load_mt5_bid_ask_bars, write_mt5_catalog):
+        default = inspect.signature(fn).parameters["server_tz"].default
+        assert default == MT5_SERVER_TZ, f"{fn.__name__} would import in a different frame"

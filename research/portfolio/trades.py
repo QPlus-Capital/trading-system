@@ -62,11 +62,15 @@ def timed_trades_from_report(
     swap cost can be priced exactly (it depends on the stop distance), including the walk-forward
     holdout where the SL is re-optimised per window.
 
-    ``closed_from`` keeps only trades that RESOLVED at or after that moment (#14). Paired with the
-    pre-roll, each trade is attributed to the window its outcome landed in: a position opened
-    before a boundary is carried and realised in the next window instead of vanishing, which is
-    what live does -- and what previously hid exactly the losses that gap through a stop after a
-    boundary.
+    ``closed_from`` keeps only trades that RESOLVED at or after that moment -- a safety net for the
+    read-only pre-roll (#14), which warms the indicators without placing orders.
+
+    NOTE what this does NOT do: positions are not carried across window boundaries. The pre-roll
+    was originally allowed to trade so a boundary-straddling position would be realised by the
+    next window, but a pre-roll trade also moves the account balance that later (reported) trades
+    are sized from -- reported returns would then depend on unreported PnL. Correctness of the
+    reported numbers wins over closing that gap here; the real fix is one continuous OOS path,
+    tracked in #23.
     """
     out: list[dict[str, Any]] = []
     for _, row in pos.iterrows():
@@ -170,6 +174,7 @@ def extract_market_trades(
             best,
             start=(window.test_start - PREROLL).isoformat(),
             end=window.test_end.isoformat(),
+            trade_from=window.test_start.isoformat(),
         )
         node = BacktestNode(configs=[cfg])
         try:
