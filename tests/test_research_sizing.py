@@ -5,6 +5,7 @@ import math
 import numpy as np
 import pandas as pd
 from research.portfolio.curves import base_curves
+from research.portfolio.drawdown import daily_breach
 from research.portfolio.sizing import flat, simulate, throttle
 
 _TRADES = pd.DataFrame(
@@ -29,7 +30,7 @@ def test_constant_throttle_reproduces_flat_scaling() -> None:
     start, m = 200_000.0, 0.5
     realized_base, unreal_base = base_curves(_TRADES, _PRICES, 0, 3)
     equity_base = realized_base + unreal_base
-    realized, equity, _sizes = simulate(_TRADES, _PRICES, 0, 3, start, 0.06, flat(m))
+    realized, equity, _sizes, _min = simulate(_TRADES, _PRICES, 0, 3, start, 0.06, flat(m))
     assert np.allclose(realized, start + m * realized_base)
     assert np.allclose(equity, start + m * equity_base)
 
@@ -49,8 +50,10 @@ def test_compound_grows_geometrically_vs_flat() -> None:
     )
     prices = {"A": np.array([100.0, 110.0, 100.0, 110.0])}
     start, m = 100_000.0, 1.0
-    flat_real, _e, _s = simulate(trades, prices, 0, 3, start, 0.06, flat(m), compound=False)
-    comp_real, _e2, sizes = simulate(trades, prices, 0, 3, start, 0.06, flat(m), compound=True)
+    flat_real, _e, _s, _mn = simulate(trades, prices, 0, 3, start, 0.06, flat(m), compound=False)
+    comp_real, _e2, sizes, _mn2 = simulate(
+        trades, prices, 0, 3, start, 0.06, flat(m), compound=True
+    )
     assert comp_real[-1] > flat_real[-1]  # the grown equity compounded the second trade
     assert sizes[1] > m  # the later trade was sized up (equity/start = 1.01)
 
@@ -60,3 +63,33 @@ def test_throttle_policy_shape() -> None:
     assert math.isclose(fn(0.0), 2.0)  # fresh buffer -> full base risk
     assert math.isclose(fn(0.5), 1.0)  # half budget used -> half risk
     assert math.isclose(fn(1.0), 0.3)  # at the wall -> floor (2.0 * 0.15)
+
+
+def test_the_intraday_low_reveals_a_breach_the_close_hides() -> None:
+    """#15: a day that dips through the daily limit and recovers by the close breaches live.
+
+    One long, held over a day whose LOW is far below its close. The end-of-day series sees a mild
+    day; the worst-mark series sees the real dip. The gate must read the latter.
+    """
+    trades = pd.DataFrame(
+        {
+            "market": ["X"],
+            "od": [0], "cd": [3],
+            "pnl_base": [-2_000.0],  # a mild 2% loser overall
+            "entry": [100.0], "exit": [98.0],
+            "is_long": [True],
+        }
+    )
+    # End of day the path is gentle: no single close-to-close drop is near the 3% limit.
+    closes = {"X": np.array([100.0, 99.5, 99.0, 98.0])}
+    # But day 1 dipped to 94 intraday (6% of equity) before recovering to 99.5 by the close.
+    lows = {"X": np.array([100.0, 94.0, 99.0, 98.0])}
+    highs = {"X": np.array([100.0, 100.0, 100.0, 100.0])}
+
+    _r, eq, _s, min_eq = simulate(
+        trades, closes, 0, 3, 100_000.0, 0.06, flat(1.0), adverse=(lows, highs)
+    )
+    # On day 1 the close-based mark is mild, the intraday mark is far worse.
+    assert min_eq[1] < eq[1]
+    assert daily_breach(min_eq, 0.03, prior=eq)  # the real dip breaches the 3% daily limit
+    assert not daily_breach(eq, 0.03)  # end-of-day alone saw nothing

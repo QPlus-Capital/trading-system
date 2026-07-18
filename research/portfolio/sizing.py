@@ -16,11 +16,25 @@ import pandas as pd
 
 
 def _events(trades: pd.DataFrame) -> tuple[dict[int, list[int]], dict[int, list[int]]]:
+    """Trade indices opening / closing on each day, ordered by their actual timestamp (#15).
+
+    Within a day the H4 order matters: a close at 08:00 frees risk budget that an open at 20:00
+    should see. Grouping by day alone left the order arbitrary. Sorting by timestamp keeps the
+    one invariant the sizing loop depends on -- a trade always opens before it closes -- while
+    respecting the real sequence.
+    """
     openers: dict[int, list[int]] = defaultdict(list)
     closers: dict[int, list[int]] = defaultdict(list)
-    for i, (o, c) in enumerate(zip(trades["od"].to_numpy(), trades["cd"].to_numpy(), strict=True)):
-        openers[int(o)].append(i)
-        closers[int(c)].append(i)
+    od, cd = trades["od"].to_numpy(), trades["cd"].to_numpy()
+
+    def order_by(col: str, fallback: np.ndarray) -> np.ndarray:
+        key = trades[col].to_numpy() if col in trades.columns else fallback
+        return np.argsort(key, kind="stable")
+
+    for i in order_by("ts_opened", od):
+        openers[int(od[i])].append(int(i))
+    for i in order_by("ts_closed", cd):
+        closers[int(cd[i])].append(int(i))
     return openers, closers
 
 
@@ -34,7 +48,8 @@ def simulate(
     risk_fn: Callable[[float], float],
     *,
     compound: bool = False,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    adverse: tuple[dict[str, np.ndarray], dict[str, np.ndarray]] | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Daily (realized_balance, equity) plus the risk multiple each trade was SIZED at.
 
     Each opening trade is sized ``risk_fn(used)`` where ``used`` in [0, 1] is the fraction
@@ -67,12 +82,31 @@ def simulate(
     def frac(i: int, day: int) -> float:
         return float((prices[mk[i]][day - d0] - entry[i]) / span[i])
 
+    is_long = (
+        trades["is_long"].to_numpy(dtype=bool)
+        if "is_long" in trades.columns
+        else exit_ > entry  # legacy streams: fall back to the price direction
+    )
+
+    def frac_adverse(i: int, day: int) -> float:
+        """Mark at the day's WORST price for this position's direction (#15).
+
+        A long suffers at the day's LOW, a short at its HIGH -- so the extreme is chosen per
+        trade, not per market: two positions on the same symbol can face opposite ways.
+        """
+        if adverse is None:
+            return frac(i, day)
+        lows, highs = adverse
+        px = lows[mk[i]][day - d0] if is_long[i] else highs[mk[i]][day - d0]
+        return float((px - entry[i]) / span[i])
+
     size = np.zeros(len(trades))
     open_set: set[int] = set()
     realized = 0.0  # excess over start
     peak_bal = start_balance  # realized-balance high-water mark
     realized_series = np.empty(d1 - d0 + 1)
     equity_series = np.empty(d1 - d0 + 1)
+    min_equity_series = np.empty(d1 - d0 + 1)  # worst intraday mark, for the daily-limit gate
 
     for k, day in enumerate(range(d0, d1 + 1)):
         # 1. size & open today's openers FIRST (before closers), so a trade that opens and
@@ -95,9 +129,15 @@ def simulate(
             open_set.discard(i)
         peak_bal = max(peak_bal, start_balance + realized)
         unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)  # 3. EOD mark
+        # 4. Worst intraday mark: every open position at its own adverse extreme. Assuming they
+        # all bottom at the same instant OVERSTATES the dip -- deliberately, because this feeds a
+        # hard-limit gate and the previous EOD-only estimate understated it (a day can dip 3% and
+        # close at -0.5%). A conservative bound is the correct side to err on for a safety check.
+        worst = sum(pnl[j] * size[j] * frac_adverse(j, day) for j in open_set)
         realized_series[k] = start_balance + realized
         equity_series[k] = start_balance + realized + unreal
-    return realized_series, equity_series, size
+        min_equity_series[k] = start_balance + realized + min(unreal, worst)
+    return realized_series, equity_series, size, min_equity_series
 
 
 def flat(multiple: float) -> Callable[[float], float]:

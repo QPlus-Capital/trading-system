@@ -27,7 +27,7 @@ import pandas as pd
 from research.engine.config import load_config_module
 from research.engine.montecarlo import monte_carlo_paths, summarize
 from research.portfolio import factsheet, html_report
-from research.portfolio.curves import load_daily_close, to_day
+from research.portfolio.curves import load_daily_close, load_daily_low_high, to_day
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
@@ -68,6 +68,8 @@ def main(argv: list[str] | None = None) -> None:
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
     universe = [m for m in spec["instruments"] if m in specs]
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
+    # #15: day extremes for the intraday daily-limit check
+    daily_hl = {m: load_daily_low_high(str(specs[m][1])) for m in universe}
 
     # Re-run the chosen sizing (cheap: a daily sim, not backtests) to recover each trade's PnL AT
     # the size it was given -- so the metrics are honest under a dynamic policy too. Reconstruct it
@@ -78,7 +80,7 @@ def main(argv: list[str] | None = None) -> None:
         policy: FlatRisk | ThrottleRisk = ThrottleRisk(floor_pct=float(spec["floor_pct"]))
     else:
         policy = FlatRisk(float(spec["ceiling_pct"]))
-    result = evaluate_policy(trades, daily_close, account, policy, cap)
+    result = evaluate_policy(trades, daily_close, account, policy, cap, daily_low_high=daily_hl)
     sized_pnl = result.trade_pnl
     equity = daily_equity(trades, sized_pnl, daily_close, start_balance=account.start_balance)
     stats = {**edge_stats(sized_pnl), **risk_stats(equity, start_balance=account.start_balance)}

@@ -29,7 +29,7 @@ import pandas as pd
 from core.broker import standard_broker, swap_r_per_trade
 
 from research.engine.config import load_config_module
-from research.portfolio.curves import load_daily_close
+from research.portfolio.curves import load_daily_close, load_daily_low_high
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
@@ -141,6 +141,8 @@ def main(argv: list[str] | None = None) -> None:
     trades.to_csv(run.file("portfolio_trades.csv"), index=False)
 
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
+    # #15: day extremes for the intraday daily-limit check
+    daily_hl = {m: load_daily_low_high(str(specs[m][1])) for m in universe}
 
     # The crisis sets only the CEILING: the largest risk whose stressed worst-day gap still fits
     # the hard daily limit. Every policy is capped by it; within it a policy may size freely.
@@ -189,8 +191,12 @@ def main(argv: list[str] | None = None) -> None:
 
     # Same base for both policies -> apples to apples: what does going dynamic actually buy?
     results = {
-        "flat": evaluate_policy(trades, daily_close, account, FlatRisk(base_pct), cap),
-        "throttle": evaluate_policy(trades, daily_close, account, ThrottleRisk(base_pct), cap),
+        "flat": evaluate_policy(
+            trades, daily_close, account, FlatRisk(base_pct), cap, daily_low_high=daily_hl
+        ),
+        "throttle": evaluate_policy(
+            trades, daily_close, account, ThrottleRisk(base_pct), cap, daily_low_high=daily_hl
+        ),
     }
     chosen_label = "throttle" if isinstance(policy, ThrottleRisk) else "flat"  # Kelly sizes flat
     chosen = results[chosen_label]
