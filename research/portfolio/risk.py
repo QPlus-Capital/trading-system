@@ -265,6 +265,8 @@ def evaluate_policy(
     runs bigger with a fresh buffer and brakes near the wall, while a flat policy is the constant
     special case. PnL is booked from ``r`` at the flat base risk, so nothing compounds.
     """
+    if trades.empty:  # #22: min()/max() over an empty frame would raise deep in the day loop
+        raise ValueError("evaluate_policy needs at least one trade")
     t = trades.copy()
     t["od"] = [to_day(x) for x in t["ts_opened"]]
     t["cd"] = [to_day(x) for x in t["ts_closed"]]
