@@ -337,6 +337,11 @@ class Mt5Bridge:
         value on converted or asymmetric symbols, so sizing off it alone can quietly exceed the
         intended risk. ``order_calc_profit`` applies the broker's own conversion. ``None`` when the
         terminal cannot price it -- the caller then keeps the arithmetic result.
+
+        Measured against the live TTP terminal (2026-07-18): the arithmetic matches the broker to
+        1.000 on eight of ten markets, but **DE40 is out by a factor of 1.144** (EUR-quoted index
+        on a USD account) and USDJPY by 1.005. Sized off the arithmetic alone, a DE40 stop-out
+        cost 0.206% instead of the intended 0.18%. This is not a theoretical correction.
         """
         m = self._require()
         order_type = m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL
