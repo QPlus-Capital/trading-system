@@ -17,6 +17,7 @@ a config module builds a :class:`SweepRecipe` and re-exports its attributes::
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from core.broker import BrokerProfile
 from core.data.mt5_csv import write_mt5_catalog
 from core.paths import REPO_ROOT
@@ -108,12 +109,19 @@ class SweepRecipe:
         *,
         start: str | None = None,
         end: str | None = None,
+        trade_from: str | None = None,
     ) -> BacktestRunConfig:
-        """Build a run config with ``params`` merged onto the base config."""
+        """Build a run config with ``params`` merged onto the base config.
+
+        ``trade_from`` marks where the READ-ONLY pre-roll ends: bars before it warm the indicators
+        but place no orders, so a pre-roll trade can never move the balance that later, reported
+        trades are sized from.
+        """
+        gate = {"trade_from_ns": pd.Timestamp(trade_from).value} if trade_from else {}
         strategy = ImportableStrategyConfig(
             strategy_path="core.strategies.rsi_wpr_bb:RsiWprBb",
             config_path="core.strategies.rsi_wpr_bb:RsiWprBbConfig",
-            config={**self._base_config, **params},
+            config={**self._base_config, **params, **gate},
         )
         data = BacktestDataConfig(
             catalog_path=str(self.CATALOG_PATH),

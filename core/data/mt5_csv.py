@@ -89,7 +89,7 @@ def load_mt5_bid_ask_bars(
     bar_spec: str = "4-HOUR",
     slippage_points: float = 0.0,
     server_tz_offset_hours: int = 0,
-    server_tz: str | None = None,
+    server_tz: str | None = MT5_SERVER_TZ,
 ) -> tuple[list[Bar], list[Bar]]:
     """Parse an MT5 bar-export CSV into (bid_bars, ask_bars).
 
@@ -161,8 +161,14 @@ def write_mt5_catalog(
     bar_spec: str = "4-HOUR",
     slippage_points: float = 0.0,
     server_tz_offset_hours: int = 0,
+    server_tz: str | None = MT5_SERVER_TZ,
 ) -> int:
     """Import an MT5 CSV and write the instrument + bid & ask bars into the catalog.
+
+    ``server_tz`` MUST match what the calendar-side loaders use (``_data_span``, the daily
+    close/low-high curves). Seeding the catalog in one frame while the window and day logic runs
+    in another is worse than not converting at all: trade timestamps and day buckets then drift
+    against each other around the server-midnight boundary.
 
     Returns the number of bars per side (bid and ask have the same count).
     """
@@ -175,6 +181,7 @@ def write_mt5_catalog(
         bar_spec=bar_spec,
         slippage_points=slippage_points,
         server_tz_offset_hours=server_tz_offset_hours,
+        server_tz=server_tz,
     )
     catalog.write_data([instrument])
     catalog.write_data(bid_bars)

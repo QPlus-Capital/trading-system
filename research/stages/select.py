@@ -19,6 +19,7 @@ import pandas as pd
 
 from research.stages import _runbook as rb
 from research.stages import universe
+from research.stages.edge import PBO_MAX
 
 
 def _best_train(df: pd.DataFrame, variation: str) -> int:
@@ -42,6 +43,12 @@ def main(argv: list[str] | None = None) -> None:
     # #2: the GATED ranking is the only admissible input for an automatic pick. Reading study.csv
     # alone re-derived the choice without the statistical gates the edge stage had applied.
     ranking = pd.read_csv(run.require("edge_ranking.csv", "edge"))
+    # Study-level overfitting probability, carried into the run by the edge stage.
+    pbo = (
+        run.load_json("overfitting.json").get("pbo")
+        if run.file("overfitting.json").exists()
+        else None
+    )
 
     if args.variation:
         variation = args.variation
@@ -49,6 +56,14 @@ def main(argv: list[str] | None = None) -> None:
         instruments = universe.select_universe(df, variation, train_months)
         how = f"erzwungen (--variation {variation})"
     else:
+        # Study-level gate first (#2 / Codex P1): PBO measures whether the SEARCH ITSELF is
+        # overfit. A high PBO invalidates every candidate at once, so no per-variation DSR can
+        # rescue it -- checking only eligible+dsr_ok let an explicitly overfit study through.
+        if pbo is not None and pbo > PBO_MAX:
+            raise SystemExit(
+                f"\n  ABBRUCH: PBO {pbo:.2f} > {PBO_MAX:.2f} - die Studie ist als ueberfittet"
+                "\n  ausgewiesen. Kein Kandidat daraus ist handelbar, unabhaengig von seinem DSR."
+            )
         gated = ranking[ranking["eligible"].astype(bool) & ranking["dsr_ok"].astype(bool)]
         if gated.empty:
             raise SystemExit(

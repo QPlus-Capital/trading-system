@@ -114,6 +114,7 @@ def run_walkforward(
                     params,
                     start=(train_start - PREROLL).isoformat(),
                     end=train_end.isoformat(),
+                    trade_from=train_start.isoformat(),
                 ),
                 closed_from=train_start,
             )
@@ -128,15 +129,15 @@ def run_walkforward(
     def evaluate(
         params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
     ) -> tuple[list[float], float]:
-        # #14: read-only pre-roll so the indicators enter the window warm (live never restarts
-        # cold) and a position opened just before the boundary is carried into it. closed_from
-        # attributes each trade to the window it RESOLVED in, so nothing is dropped or counted
-        # twice at the seam.
+        # #14: READ-ONLY pre-roll -- bars before test_start warm the indicators (live never
+        # restarts cold) but trade_from suppresses orders, so a pre-roll trade can never move the
+        # balance that the reported trades are sized from. closed_from stays as a safety net.
         return extract_trade_pnls(
             recipe.build_run_config(
                 params,
                 start=(test_start - PREROLL).isoformat(),
                 end=test_end.isoformat(),
+                trade_from=test_start.isoformat(),
             ),
             closed_from=test_start,
         )

@@ -124,19 +124,29 @@ def simulate(
             for i in openers[day]:
                 size[i] = r
                 open_set.add(i)
+        # Everything that was open at ANY point today, including trades that close later today.
+        # Snapshot it BEFORE realizing the closers: a position that dips through the daily limit
+        # and then closes (or recovers) still breached, and dropping it from the intraday mark was
+        # a false pass for exactly the closing-day and same-day trades.
+        active_today = set(open_set)
+        realized_before = realized  # the day's opening balance -- see the worst mark below
         for i in closers.get(day, ()):  # 2. realize closers (now correctly sized) + their swap
             realized += (pnl[i] + swap[i]) * size[i]
             open_set.discard(i)
         peak_bal = max(peak_bal, start_balance + realized)
         unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)  # 3. EOD mark
-        # 4. Worst intraday mark: every open position at its own adverse extreme. Assuming they
-        # all bottom at the same instant OVERSTATES the dip -- deliberately, because this feeds a
-        # hard-limit gate and the previous EOD-only estimate understated it (a day can dip 3% and
-        # close at -0.5%). A conservative bound is the correct side to err on for a safety check.
-        worst = sum(pnl[j] * size[j] * frac_adverse(j, day) for j in open_set)
+        # 4. Worst intraday mark: every position that traded today at its own adverse extreme, and
+        # NONE of today's closers booked yet -- at the worst moment they had not closed. Marking
+        # them adversely while also counting their realized PnL would double-count them.
+        # Assuming they all bottom at the same instant OVERSTATES the dip, deliberately: this
+        # feeds a hard-limit gate, and the previous EOD-only estimate understated it (a day can
+        # dip 3% and close at -0.5%). Conservative is the correct side to err on here.
+        worst = sum(pnl[j] * size[j] * frac_adverse(j, day) for j in active_today)
         realized_series[k] = start_balance + realized
         equity_series[k] = start_balance + realized + unreal
-        min_equity_series[k] = start_balance + realized + min(unreal, worst)
+        min_equity_series[k] = min(
+            equity_series[k], start_balance + realized_before + worst
+        )
     return realized_series, equity_series, size, min_equity_series
 
 
