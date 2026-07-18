@@ -77,6 +77,18 @@ def deflated_sharpe_ratio(
     return probabilistic_sharpe_ratio(returns, sr_benchmark=benchmark)
 
 
+def cscv_splits(n_time: int, preferred: int = 10) -> int:
+    """The largest usable (even) CSCV split count for ``n_time`` slices, 0 if too few.
+
+    The walk-forward gives one slice per test window -- typically 8-11, not the textbook's many.
+    Demanding a fixed 10 would simply crash the shorter studies, so take the largest even count
+    that fits. Below 4 the split count is too small to say anything and the caller should skip.
+    """
+    usable = min(preferred, n_time)
+    usable -= usable % 2
+    return usable if usable >= 4 else 0
+
+
 def pbo(performance_matrix: Sequence[Sequence[float]], n_splits: int = 10) -> float:
     """Probability of backtest overfitting via CSCV.
 

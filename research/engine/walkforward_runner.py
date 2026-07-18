@@ -62,6 +62,7 @@ def run_walkforward(
     holdout_months: int = 0,
     phase: str = "select",
     embargo_days: int = 0,
+    collect_matrix: bool = False,
 ) -> list[WalkForwardResult]:
     """Run the full walk-forward for a recipe (config module or SweepRecipe).
 
@@ -71,6 +72,11 @@ def run_walkforward(
     With ``holdout_months > 0`` the last ``holdout_months`` are reserved: ``phase="select"``
     runs only the pre-holdout windows (for study/selection), ``phase="holdout"`` runs only
     the reserved windows (the honest final evaluation of an already-chosen config).
+
+    ``collect_matrix`` additionally scores EVERY grid candidate on each test window, so the
+    overfitting statistics get a real per-candidate performance matrix instead of comparing a
+    handful of variations (#13). It costs roughly 20-25% more runtime -- the train-window grid
+    search already dominates -- so the study opts in and ad-hoc runs do not pay for it.
     """
     start, end = _data_span(recipe.CSV_PATH)
     windows = walk_forward_windows(
@@ -114,7 +120,7 @@ def run_walkforward(
             recipe.build_run_config(params, start=test_start.isoformat(), end=test_end.isoformat())
         )
 
-    return run_walk_forward(windows, optimize, evaluate)
+    return run_walk_forward(windows, optimize, evaluate, combos if collect_matrix else None)
 
 
 def main(argv: list[str] | None = None) -> None:
