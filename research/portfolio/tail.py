@@ -44,7 +44,13 @@ def representative_params(
 
 
 def traded_stop_loss_pct(trades: pd.DataFrame) -> float:
-    """The stop distance the walk-forward actually traded most often (recorded per trade)."""
+    """The stop distance the walk-forward actually traded most often (recorded per trade).
+
+    Raises on an empty stream (#22): there is no traded stop to report, and ``mode().iloc[0]``
+    would raise an opaque IndexError several frames deeper.
+    """
+    if trades.empty or "sl_pct" not in trades.columns:
+        raise ValueError("no trades: there is no traded stop-loss to derive a tail cap from")
     return float(trades["sl_pct"].mode().iloc[0])
 
 

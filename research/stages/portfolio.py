@@ -129,8 +129,20 @@ def main(argv: list[str] | None = None) -> None:
         f"\n  Extrahiere Holdout-Trades ({mode_txt}): {sel['variation']} @ "
         f"{sel['train_months']}m ueber {len(universe)} Maerkte ..."
     )
+    # #22: an empty universe or an empty stream is a RESULT (nothing survived selection), not a
+    # crash. Fail closed with the reason instead of letting concat/mode/min raise deep inside.
+    if not universe:
+        raise SystemExit(
+            "\n  ABBRUCH: kein Markt hat die Auswahl ueberlebt.\n"
+            "  Das ist ein Ergebnis, kein Fehler: es gibt nichts zu handeln."
+        )
     frames = [extract_fn(m, overrides, int(sel["train_months"])) for m in universe]
     trades = pd.concat(frames, ignore_index=True)
+    if trades.empty:
+        raise SystemExit(
+            f"\n  ABBRUCH: {len(universe)} Maerkte ausgewaehlt, aber im Holdout kein einziger"
+            "\n  Trade. Ohne Trades gibt es keine belastbare Aussage - nichts zu handeln."
+        )
     # Carry the real TTP swap as a SEPARATE column (not netted into r): a realized cost booked at
     # close, so downstream returns/drawdown net it while the mark-to-market stays on gross price R.
     broker = standard_broker()

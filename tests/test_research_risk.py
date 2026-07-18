@@ -16,6 +16,7 @@ from research.portfolio.risk import (
     rck_fraction,
     tail_cap,
 )
+from research.portfolio.tail import traded_stop_loss_pct
 from research.portfolio.trades import assign_r
 
 
@@ -202,3 +203,14 @@ def test_kelly_sizes_off_the_net_distribution() -> None:
     costly = edge.copy()
     costly["swap_r"] = [-0.4, -0.4, -0.4]  # carry eats most of the edge
     assert KellyRisk(beta=0.1).fraction(costly, acc) < gross_f
+
+
+def test_empty_inputs_fail_closed_with_a_reason() -> None:
+    """#22: nothing surviving selection is an auditable result, not an IndexError from deep
+    inside a day loop or a mode() on an empty frame."""
+    acc = AccountProfile()
+    empty = pd.DataFrame(columns=["market", "ts_opened", "ts_closed", "r", "entry", "exit"])
+    with pytest.raises(ValueError, match="at least one trade"):
+        evaluate_policy(empty, {}, acc, FlatRisk(1.0), cap_frac=0.02)
+    with pytest.raises(ValueError, match="no trades"):
+        traded_stop_loss_pct(empty)
