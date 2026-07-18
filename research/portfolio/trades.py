@@ -21,13 +21,15 @@ from research.engine.config import extract_trade_pnls
 from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
 from research.engine.walkforward import calmar_score, split_windows, walk_forward_windows
-from research.engine.walkforward_runner import _data_span
+from research.engine.walkforward_runner import PREROLL, _data_span
 
 # ``pnl_base`` is the realized PnL in the account currency at the extraction's BASE risk
 # (risk_per_trade=1%), i.e. money -- not a percentage. It COMPOUNDS with the growing equity, so it
 # must never be scaled linearly to another risk. ``r`` is the scale-invariant twin: the PnL divided
 # by the risk that trade actually took. Re-book ``r * risk_amount`` to size at any flat risk.
-_COLUMNS = ["market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "r"]
+_COLUMNS = [
+    "market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "is_long", "r"
+]
 
 
 def assign_r(
@@ -52,18 +54,30 @@ def assign_r(
 
 
 def timed_trades_from_report(
-    pos: pd.DataFrame, market: str, sl_pct: float
+    pos: pd.DataFrame, market: str, sl_pct: float, *, closed_from: pd.Timestamp | None = None
 ) -> list[dict[str, Any]]:
     """Extract closed trades ``(ts_opened, ts_closed, pnl, entry, exit, sl_pct)`` from a report.
 
     ``sl_pct`` is the stop-loss % this window traded at -- recorded per trade so the overnight
     swap cost can be priced exactly (it depends on the stop distance), including the walk-forward
     holdout where the SL is re-optimised per window.
+
+    ``closed_from`` keeps only trades that RESOLVED at or after that moment -- a safety net for the
+    read-only pre-roll (#14), which warms the indicators without placing orders.
+
+    NOTE what this does NOT do: positions are not carried across window boundaries. The pre-roll
+    was originally allowed to trade so a boundary-straddling position would be realised by the
+    next window, but a pre-roll trade also moves the account balance that later (reported) trades
+    are sized from -- reported returns would then depend on unreported PnL. Correctness of the
+    reported numbers wins over closing that gap here; the real fix is one continuous OOS path,
+    tracked in #23.
     """
     out: list[dict[str, Any]] = []
     for _, row in pos.iterrows():
-        if pd.isna(row["ts_closed"]):  # still open at the window end -> skip
+        if pd.isna(row["ts_closed"]):  # still open at the run end -> the NEXT window resolves it
             continue
+        if closed_from is not None and pd.to_datetime(row["ts_closed"], utc=True) < closed_from:
+            continue  # resolved inside the pre-roll -> belongs to the previous window
         pnl = float(str(row["realized_pnl"]).split()[0].replace("_", ""))
         out.append(
             {
@@ -74,6 +88,11 @@ def timed_trades_from_report(
                 "entry": float(row["avg_px_open"]),
                 "exit": float(row["avg_px_close"]),
                 "sl_pct": float(sl_pct),
+                # Direction straight from the report (#10). NOTE: our "entry" is the entry PRICE
+                # while the report's "entry" is the entry SIDE -- read "side" and read it here,
+                # before the name is reused. Swap is direction-dependent, and inferring direction
+                # from the outcome misclassifies any trade whose costs flip its sign.
+                "is_long": str(row["side"]).upper() == "LONG",
             }
         )
     return out
@@ -138,18 +157,29 @@ def extract_market_trades(
         else:
             best, best_score = combos[0], float("-inf")
             for params in combos:
+                # Warm this pass the same way as the walk-forward runner's: a cold train window
+                # here would pick different params than Stage 1 did, so the portfolio numbers
+                # would no longer describe the methodology that was selected.
                 pnls, equity = extract_trade_pnls(
                     recipe.build_run_config(
                         params,
-                        start=window.train_start.isoformat(),
+                        start=(window.train_start - PREROLL).isoformat(),
                         end=window.train_end.isoformat(),
-                    )
+                        trade_from=window.train_start.isoformat(),
+                    ),
+                    closed_from=window.train_start,
                 )
                 score = calmar_score(pnls, equity)
                 if score > best_score:
                     best_score, best = score, params
+        # #14: READ-ONLY pre-roll -- the bars warm the indicators, trade_from stops them placing
+        # orders. Positions are therefore NOT carried across the boundary (see
+        # timed_trades_from_report); that seam gap is deliberate and tracked in #23.
         cfg = recipe.build_run_config(
-            best, start=window.test_start.isoformat(), end=window.test_end.isoformat()
+            best,
+            start=(window.test_start - PREROLL).isoformat(),
+            end=window.test_end.isoformat(),
+            trade_from=window.test_start.isoformat(),
         )
         node = BacktestNode(configs=[cfg])
         try:
@@ -157,7 +187,9 @@ def extract_market_trades(
             pos = node.get_engines()[0].trader.generate_positions_report()
         finally:
             node.dispose()  # type: ignore[no-untyped-call]
-        window_rows = timed_trades_from_report(pos, market, float(best["stop_loss_pct"]))
+        window_rows = timed_trades_from_report(
+            pos, market, float(best["stop_loss_pct"]), closed_from=window.test_start
+        )
         # Per-window R: this window's backtest started fresh at the recipe's start balance.
         rows.extend(assign_r(window_rows, recipe.start_balance, recipe.base_risk_frac))
     return pd.DataFrame(rows, columns=_COLUMNS)

@@ -27,7 +27,7 @@ import pandas as pd
 from research.engine.config import load_config_module
 from research.engine.montecarlo import monte_carlo_paths, summarize
 from research.portfolio import factsheet, html_report
-from research.portfolio.curves import load_daily_close
+from research.portfolio.curves import load_daily_close, load_daily_low_high, to_day
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
@@ -36,6 +36,7 @@ from research.portfolio.risk import (
 )
 from research.portfolio.stats import daily_equity, edge_stats, risk_stats
 from research.stages import _runbook as rb
+from research.stages.edge import PBO_MAX
 
 _STAT_ROWS = [
     ("trades", "Trades", "{:,.0f}"),
@@ -54,7 +55,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 4 (VERDICT): accept/reject + full report.")
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument(
-        "--config", type=Path, default=Path("research/config/robustness.py"), help="study config"
+        "--config", type=Path, default=None,
+        help="study config (default: the one Stage 1 recorded in the run)"
     )
     args = parser.parse_args(argv)
 
@@ -63,11 +65,13 @@ def main(argv: list[str] | None = None) -> None:
     run.require("portfolio.json", "portfolio")
     spec = run.load_json("portfolio.json")
     trades = pd.read_csv(run.require("portfolio_trades.csv", "portfolio"))
-    cfg = load_config_module(args.config)
+    cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
     universe = [m for m in spec["instruments"] if m in specs]
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
+    # #15: day extremes for the intraday daily-limit check
+    daily_hl = {m: load_daily_low_high(str(specs[m][1])) for m in universe}
 
     # Re-run the chosen sizing (cheap: a daily sim, not backtests) to recover each trade's PnL AT
     # the size it was given -- so the metrics are honest under a dynamic policy too. Reconstruct it
@@ -78,14 +82,61 @@ def main(argv: list[str] | None = None) -> None:
         policy: FlatRisk | ThrottleRisk = ThrottleRisk(floor_pct=float(spec["floor_pct"]))
     else:
         policy = FlatRisk(float(spec["ceiling_pct"]))
-    result = evaluate_policy(trades, daily_close, account, policy, cap)
-    sized_pnl = result.trade_pnl
-    equity = daily_equity(trades, sized_pnl, daily_close, start_balance=account.start_balance)
+    result = evaluate_policy(trades, daily_close, account, policy, cap, daily_low_high=daily_hl)
+    sized_pnl = result.trade_pnl  # NET -- what the edge stats and Monte-Carlo should see
+    # ...but the mark-to-market curve must book swap at CLOSE, not smear it across the holding
+    # period, so hand daily_equity the gross leg and the swap separately.
+    eq_trades = trades.copy()
+    eq_trades["swap_base"] = result.trade_swap
+    equity = daily_equity(
+        eq_trades, sized_pnl - result.trade_swap, daily_close, start_balance=account.start_balance
+    )
     stats = {**edge_stats(sized_pnl), **risk_stats(equity, start_balance=account.start_balance)}
+    # The drawdown the GATE judged, not one recomputed from daily closes: with intraday marks a
+    # day can dip below the floor and recover by the close, so a close-based figure would be
+    # published beside a breach it does not show. One number, one path.
+    stats["max_drawdown"] = result.max_drawdown_pct / 100.0
 
-    paths = monte_carlo_paths(sized_pnl.tolist(), n_sims=1000, start_equity=account.start_balance)
+    # #16: resample whole trading days, not single trades -- our correlated markets lose together
+    # on a macro gap, and breaking those bundles apart understates the tail.
+    mc_days = [to_day(x) for x in trades["ts_closed"]]
+    paths = monte_carlo_paths(
+        sized_pnl.tolist(), n_sims=1000, start_equity=account.start_balance, days=mc_days
+    )
     prob_profit = float(summarize(paths, account.start_balance)["prob_profit"])
+    # #11: a deployable verdict must describe the stops we actually TRADE. Without --fixed the
+    # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
+    # live account does not have -- such a run is exploratory, never a go-live decision.
+    fixed_config = spec.get("fixed_config")
+    # #2: the verdict must TEST the selection gates, not assume selection applied them. A forced
+    # (--variation) pick bypassed them by definition and can never be a deployable PASS.
+    sel_manifest = run.load_json("selection.json") if run.file("selection.json").exists() else {}
+    gates = sel_manifest.get("gates", {})
+    gated_pick = (
+        bool(gates.get("eligible")) and bool(gates.get("dsr_ok")) and not sel_manifest.get("forced")
+    )
+    dsr_txt = "n/a" if gates.get("dsr") is None else f"{gates['dsr']:.2f}"
+    # PBO is a STUDY-level verdict: a high value says the search itself is overfit, which no
+    # single candidate's DSR can rescue. Selection now refuses such a study, and the verdict
+    # re-tests it rather than trusting that it did.
+    pbo = (
+        run.load_json("overfitting.json").get("pbo")
+        if run.file("overfitting.json").exists()
+        else None
+    )
+    pbo_txt = "n/a" if pbo is None else f"{pbo:.2f}"
+    # A contaminated holdout is IN-SAMPLE for the deployed config, so its numbers cannot support a
+    # deployable verdict. Printing that warning next to "PASS - handelbar" contradicted itself.
+    contaminated = bool(getattr(cfg, "HOLDOUT_CONTAMINATED", False))
+    # Missing DSR/PBO artifacts are not a pass either: those gates exist to reject overfit
+    # searches, and "we never measured it" is not evidence that it is fine. An older study without
+    # them has to be re-run rather than waved through.
     checks = [
+        (pbo is not None and pbo <= PBO_MAX, f"PBO {pbo_txt} <= {PBO_MAX:.2f} (gemessen)"),
+        (gates.get("dsr") is not None, f"DSR gemessen ({dsr_txt})"),
+        (not contaminated, "Holdout ist echtes Out-of-Sample (nicht kontaminiert)"),
+        (gated_pick, f"Auswahl gegated (eligible + DSR {dsr_txt}, nicht erzwungen)"),
+        (fixed_config is not None, "gegen die eingefrorene Live-Config geprueft (--fixed)"),
         (result.n_trades >= 30, f"genug Trades ({result.n_trades} >= 30)"),
         (not result.breached, "haelt die harten Konto-Limits (3%/Tag, 6% trailing)"),
         (result.ann_return_pct > 0, f"Rendite positiv ({result.ann_return_pct:+.1f}%/Jahr)"),
@@ -97,6 +148,22 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\n  URTEIL: {'PASS - handelbar' if passed else 'FAIL - nicht handelbar'}")
     for ok, msg in checks:
         print(f"    {'PASS' if ok else 'FAIL'}: {msg}")
+    if fixed_config is None:
+        print(
+            "\n  EXPLORATIV: ohne --fixed wurden die Stops pro Fenster neu optimiert. Diese Zahlen"
+            "\n  beschreiben NICHT die Live-Config und taugen nicht als Go-Live-Entscheidung."
+        )
+    # #12: never let a contaminated holdout be read as clean out-of-sample evidence.
+    if contaminated:
+        freeze = getattr(cfg, "DEPLOY_FREEZE_DATE", "?")
+        print(
+            "\n  HOLDOUT KONTAMINIERT: Deploy-Entscheidungen (Stops, Universum, Risiko) wurden"
+            "\n  getroffen, nachdem der Holdout eingesehen wurde -- er ist fuer diese Config"
+            "\n  IN-SAMPLE. Die Zahlen oben sind eine optimistische Schaetzung, KEIN Out-of-Sample."
+            f"\n  Sauberer OOS-Nachweis ist der Live-Track-Record ab {freeze}."
+        )
+        for trial in getattr(cfg, "MANUAL_TRIALS", ()):
+            print(f"    - manuelle Entscheidung (zaehlt als Trial): {trial}")
 
     risk_txt = (
         f"{result.ceiling_pct:.3f}%/Trade"

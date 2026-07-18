@@ -4,15 +4,15 @@ These exercise the real orchestration path (day roll, safety cut-off, bar filter
 replay, sizing, risk gate) without a terminal -- the wiring that must work on Monday.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 
 import pytest
 from core.strategies.rsi_wpr_bb_signals import SignalParams
-from live.mt5_bridge import AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
+from live.mt5_bridge import MAGIC, AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
 from live.risk_control import RiskController, RiskLimits
-from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, size_order
+from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, loss_day, size_order
 
 _T0 = 1_750_000_000  # arbitrary aligned epoch used as the first bar's open time
 
@@ -41,6 +41,10 @@ class StubBridge:
         # When set, a placed order fills HERE instead of at the requested price (slippage).
         self.fill_price: float | None = None
         self.modify_error: Exception | None = None
+        # What the terminal prices entry->stop as; None = it cannot price it (arithmetic fallback).
+        self.terminal_risk: float | None = None
+        # Broker-priced loss per lot for a candidate order; None = unpriceable (#19).
+        self.order_loss_per_lot: float | None = None
         # Server time: just after the LAST bar's open -> that bar is still forming.
         self.now = datetime.fromtimestamp(self.bars[-1].time + 60, tz=UTC)
 
@@ -66,8 +70,23 @@ class StubBridge:
     def positions(self, name: str | None = None) -> list[Position]:
         return list(self.open_positions)
 
+    def owned_positions(self, name: str | None = None) -> list[Position]:
+        return [p for p in self.positions(name) if p.magic == MAGIC]
+
     def latest_bars(self, name: str, n: int) -> list[Bar]:
         return self.bars[-n:]
+
+    def loss_to_stop(self, position: Position) -> float | None:
+        # Default: the terminal cannot price it -> the runner falls back to the arithmetic.
+        return self.terminal_risk
+
+    def loss_for_order(
+        self, name: str, side: str, entry: float, sl: float, volume: float
+    ) -> float | None:
+        # None = the terminal cannot price the candidate -> keep the arithmetic volume.
+        if self.order_loss_per_lot is None:
+            return None
+        return volume * self.order_loss_per_lot
 
     def place_order(self, name: str, side: str, volume: float, **kw: object) -> int:
         self.placed.append((name, side, volume))
@@ -86,6 +105,7 @@ class StubBridge:
                 sl=sl,
                 tp=tp,
                 profit=0.0,
+                magic=MAGIC,  # positions the runner opens carry our magic
             )
         )
         return 99
@@ -115,6 +135,9 @@ def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
         mode=mode,
+        # A first launch without this HALTS by design; these tests exercise the trading path, so
+        # they state the loss day's opening balance the way an operator would.
+        day_start_balance=stub.balance,
     )
 
 
@@ -132,17 +155,67 @@ def test_run_once_full_cycle_no_signal_no_orders() -> None:
 def test_run_once_halts_below_trailing_floor() -> None:
     stub = StubBridge()
     stub.equity = 94_000.0  # below the 95k trailing floor (100k - 5%)
-    stub.open_positions = [Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0)]
+    stub.open_positions = [Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
     runner = _runner(stub)
     runner.run_once()
     assert runner._halted  # safety halt engaged
     assert stub.closed == []  # SIGNAL_ONLY never touches the terminal
     stub2 = StubBridge()
     stub2.equity = 94_000.0
-    stub2.open_positions = [Position(8, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0)]
+    stub2.open_positions = [Position(8, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
     runner2 = _runner(stub2, mode=Mode.EXECUTE)
     runner2.run_once()
     assert runner2._halted and stub2.closed == [8]  # EXECUTE flattens for real
+
+
+def test_loss_day_rolls_at_16_15_chicago_dst_aware() -> None:
+    from live.runner import loss_day
+
+    # Summer (CDT = UTC-5): 16:15 CT = 21:15 UTC. 16:14 vs 16:16 CT are different loss days.
+    before = datetime(2026, 7, 1, 21, 14, tzinfo=UTC)  # 16:14 CDT
+    after = datetime(2026, 7, 1, 21, 16, tzinfo=UTC)  # 16:16 CDT
+    assert loss_day(after) == loss_day(before) + timedelta(days=1)
+    # Winter (CST = UTC-6): the boundary is at 22:15 UTC, not 21:15 -> DST-aware.
+    assert loss_day(datetime(2026, 1, 15, 22, 14, tzinfo=UTC)) != loss_day(
+        datetime(2026, 1, 15, 22, 16, tzinfo=UTC)
+    )
+    # 21:15 UTC in January is only 15:15 CST -> still the same (pre-reset) day.
+    assert loss_day(datetime(2026, 1, 15, 21, 14, tzinfo=UTC)) == loss_day(
+        datetime(2026, 1, 15, 21, 16, tzinfo=UTC)
+    )
+
+
+def test_per_cycle_guard_halts_on_account_mismatch_without_flattening() -> None:
+    # If the terminal reconnects to another account mid-run, halt and DON'T touch its positions.
+    stub = StubBridge()  # stub.account().login == 1, currency == "EUR"
+    stub.open_positions = [Position(3, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, 5.0, MAGIC)]
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        mode=Mode.EXECUTE,
+        expected_login=999,  # != the connected login (1) -> mismatch
+        expected_currency="EUR",
+    )
+    runner.run_once()
+    assert runner._halted
+    assert stub.closed == []  # wrong account -> even our-magic positions are left untouched
+
+
+def test_owned_filter_ignores_manual_and_foreign_positions() -> None:
+    # A manual / foreign-EA position (magic != ours) on our symbol must never be acted on.
+    foreign = Position(555, "XAUUSD", "BUY", 1.0, 2000.0, 1980.0, 2060.0, 0.0, magic=999)
+    stub = StubBridge()
+    stub.equity = 94_000.0  # below the trailing floor -> safety halt this cycle
+    stub.open_positions = [foreign]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    runner.run_once()
+    assert runner._halted  # halt engaged
+    assert stub.closed == []  # the foreign position is NOT flattened
+    # Ownership limits what we act on; account risk still sees all exposure.
+    assert stub.owned_positions("XAUUSD") == []
+    assert stub.positions("XAUUSD") == [foreign]
 
 
 def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
@@ -156,6 +229,7 @@ def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
         state_path=state,
+        day_start_balance=stub.balance,
     )
     r1.run_once()
     handled = r1._last_bar_time["XAUUSD"]
@@ -165,8 +239,54 @@ def test_restart_does_not_reprocess_the_handled_bar(tmp_path: Path) -> None:
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
         state_path=state,
+        day_start_balance=stub.balance,
     )
     assert r2._last_bar_time == {"XAUUSD": handled}  # restored -> the bar is already marked
+
+
+def test_open_risk_prefers_the_terminals_price_and_falls_back_to_arithmetic() -> None:
+    # #6: entry->stop risk is priced by the terminal (order_calc_profit) so the broker's own
+    # currency conversion applies; our tick arithmetic is only the fallback.
+    pos = Position(1, "XAUUSD", "BUY", 1.0, 2000.0, 1980.0, 2060.0, 0.0, MAGIC)
+    stub = StubBridge()
+    stub.open_positions = [pos]
+    runner = _runner(stub)
+    # Arithmetic: volume * (distance / tick_size) * tick_value = 1 * (20 / 0.01) * 0.01 = 20.
+    assert runner._total_open_risk() == 20.0  # terminal_risk is None -> fallback
+    stub.terminal_risk = 33.0  # the broker prices the same stop differently (conversion)
+    assert runner._total_open_risk() == 33.0  # the terminal's number wins
+
+
+def test_rejected_order_leaves_the_bar_unmarked_and_retries_next_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # #7: a signal bar is marked handled only AFTER the order is confirmed. If the terminal
+    # rejects the order, the bar stays unmarked so the next cycle retries it -- live must not
+    # sit flat while the backtest is positioned.
+    stub = StubBridge()
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    # Drive the order path directly (the indicator would need hand-crafted bars); we test the
+    # order/idempotency wiring, not the signal maths.
+    monkeypatch.setattr(runner, "_replay_signal", lambda closed: (True, False))
+    reject = {"n": 1}  # reject exactly the first order, then let it through
+    real_place = stub.place_order
+
+    def flaky(name: str, side: str, volume: float, **kw: object) -> int:
+        if reject["n"]:
+            reject["n"] -= 1
+            raise RuntimeError("broker rejected order")
+        return real_place(name, side, volume, **kw)
+
+    monkeypatch.setattr(stub, "place_order", flaky)
+
+    runner.run_once()  # order rejected this cycle
+    assert stub.open_positions == []  # nothing opened
+    assert "XAUUSD" not in runner._last_bar_time  # bar NOT recorded -> eligible for retry
+
+    runner.run_once()  # same bar retried; the order goes through now
+    assert stub.placed == [("XAUUSD", "BUY", stub.placed[0][2])]  # placed once, on the retry
+    assert stub.open_positions and stub.open_positions[0].side == "BUY"  # position now live
+    assert runner._last_bar_time["XAUUSD"] == stub.bars[-2].time  # only NOW marked handled
 
 
 # -- re-anchoring the exits onto the real fill price (live == backtest) ---------------------------
@@ -286,13 +406,125 @@ def test_a_failed_modify_leaves_the_protective_stop_in_place() -> None:
 def test_run_once_rolls_the_trading_day() -> None:
     stub = StubBridge()
     runner = _runner(stub)
-    runner.run_once()
+    wall = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)  # real UTC drives the loss day (#18)
+    runner.run_once(wall_now=wall)
     first_day = runner._day
     assert first_day is not None
-    # Next cycle a (server) day later, after the balance grew intraday.
+    # Next cycle a day later in REAL time, after the balance grew intraday.
     stub.balance = 101_000.0
-    stub.now = datetime.fromtimestamp(stub.now.timestamp() + 86_400, tz=UTC)
-    runner.run_once()
+    runner.run_once(wall_now=wall + timedelta(days=1))
     assert runner._day != first_day
     assert runner._risk.day_start_balance == 101_000.0  # daily reference rolled
     assert runner._risk.hwm_balance == 101_000.0  # prior day's balance banked into the HWM
+
+
+def test_the_loss_day_follows_real_utc_not_the_brokers_clock() -> None:
+    """#18: MT5 stamps ticks with the SERVER's wall clock, so server_time() is 2-3h ahead of UTC
+    on an EET server. Deriving the 16:15-CT boundary from it would move the reset by that offset.
+    """
+    stub = StubBridge()
+    runner = _runner(stub)
+    # Server clock claims a moment already past the reset; real UTC is still before it.
+    stub.now = datetime(2026, 7, 1, 23, 0, tzinfo=UTC)  # server frame, deliberately misleading
+    before = datetime(2026, 7, 1, 21, 14, tzinfo=UTC)  # 16:14 CDT -- still the old loss day
+    runner.run_once(wall_now=before)
+    assert runner._day == loss_day(before)  # the broker's clock did not move the boundary
+
+
+def test_broker_pricing_shrinks_a_volume_that_would_over_risk() -> None:
+    """#19: trade_tick_value is one generic number per symbol. When the broker really loses more
+    per lot than that implies, sizing off the arithmetic alone exceeds the intended risk -- the
+    terminal's own pricing must pull the volume back down."""
+    stub = StubBridge()
+    info = stub.symbol_info("XAUUSD")
+    # Arithmetic: loss_per_lot = (20 / 0.01) * 0.01 = 20 -> 400 / 20 = 20 lots.
+    plain = size_order("BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0)
+    assert plain is not None and plain.volume == 20.0
+
+    # The broker actually loses twice that per lot (conversion / asymmetric tick value).
+    priced = size_order(
+        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        loss_fn=lambda _s, _e, _sl, vol: vol * 40.0,
+    )
+    assert priced is not None
+    assert priced.volume == 10.0  # halved, so the real stop-out still costs 400
+    assert priced.risk_amount == 400.0  # and the recorded risk is the BROKER's number
+
+
+def test_sizing_refuses_when_even_the_minimum_lot_over_risks() -> None:
+    # Never silently accept more than the intended risk.
+    stub = StubBridge()
+    info = stub.symbol_info("XAUUSD")
+    assert size_order(
+        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        loss_fn=lambda _s, _e, _sl, vol: vol * 1_000_000.0,
+    ) is None
+
+
+def test_unpriceable_candidates_keep_the_arithmetic_volume() -> None:
+    stub = StubBridge()
+    info = stub.symbol_info("XAUUSD")
+    sized = size_order(
+        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        loss_fn=lambda _s, _e, _sl, _v: None,
+    )
+    assert sized is not None and sized.volume == 20.0
+
+
+def test_first_launch_without_a_known_day_start_halts() -> None:
+    """Codex P1: with no saved state the loss day's opening balance is unknown, and no heuristic
+    is safe both ways -- an account that banked to 55k and restarts mid-day at 52k would be handed
+    a fresh budget from 52k while already 5.5% down. Doing nothing is the safe state."""
+    stub = StubBridge()
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), 100_000.0),
+        mode=Mode.EXECUTE,  # no day_start_balance given
+    )
+    runner.run_once()
+    assert runner._halted
+    assert stub.placed == [] and stub.closed == []  # halted before touching anything
+
+
+def test_an_explicit_day_start_is_used_and_the_hwm_banks_the_balance() -> None:
+    stub = StubBridge()
+    stub.balance = stub.equity = 104_000.0  # grown since the profile reference
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), 100_000.0),
+        day_start_balance=103_000.0,  # the loss day actually opened here
+    )
+    runner.run_once()
+    assert not runner._halted
+    assert runner._risk.day_start_balance == 103_000.0  # the operator's number, not the balance
+    assert runner._risk.hwm_balance == 104_000.0  # HWM banks the balance -> raises the floor
+
+
+def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk() -> None:
+    """Codex round-5 P1: open risk only visited configured markets, so a manual position on any
+    OTHER symbol contributed its PnL to equity while its stop-risk never entered the total --
+    check_open could admit new trades past the 2% cap. Unpriceable exposure must fail closed."""
+    stub = StubBridge()
+    stub.open_positions = [
+        Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)  # not configured
+    ]
+    runner = _runner(stub)  # terminal_risk None -> the terminal cannot price it either
+    runner.run_once()
+    assert runner._risk.open_risk == float("inf")  # fail closed
+    assert not runner._risk.check_open(1.0, stub.equity).allowed  # nothing new gets in
+
+
+def test_a_priceable_foreign_position_is_charged_into_open_risk() -> None:
+    # Same situation, but the terminal CAN price it -> its stop-risk joins the total normally.
+    stub = StubBridge()
+    stub.open_positions = [
+        Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)
+    ]
+    stub.terminal_risk = 500.0
+    runner = _runner(stub)
+    runner.run_once()
+    assert runner._risk.open_risk == 500.0

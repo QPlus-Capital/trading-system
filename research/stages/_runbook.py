@@ -28,6 +28,9 @@ _REPO_ROOT = REPO_ROOT
 RESEARCH_ROOT = _REPO_ROOT / "reports" / "research"
 TOTAL_STAGES = 4
 
+# Only used for runs that predate the manifest (#3); every new run records its own config.
+DEFAULT_STUDY_CONFIG = Path("research/config/robustness.py")
+
 
 @dataclass(frozen=True)
 class RunDir:
@@ -67,6 +70,23 @@ class RunDir:
 
     def load_json(self, name: str) -> dict[str, Any]:
         return dict(json.loads(self.file(name).read_text(encoding="utf-8")))
+
+    def study_config(self, override: Path | None = None) -> Path:
+        """The study config this run was started with (#3).
+
+        ``override`` wins when given explicitly on the command line; otherwise the path Stage 1
+        recorded in the run manifest is used, and only a run predating the manifest falls back to
+        the repo default. Without this a run started from one config could be finished with
+        another's instruments, account profile and variation definitions -- silently.
+        """
+        if override is not None:
+            return override
+        manifest = self.file("run_manifest.json")
+        if manifest.exists():
+            recorded = self.load_json("run_manifest.json").get("config")
+            if recorded:
+                return Path(str(recorded))
+        return DEFAULT_STUDY_CONFIG
 
 
 def banner(step: int, title: str, run: RunDir) -> None:

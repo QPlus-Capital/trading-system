@@ -29,6 +29,7 @@ import numpy as np
 import pandas as pd
 from nautilus_trader.backtest.config import ImportableFillModelConfig
 
+from core.data.mt5_csv import MT5_SERVER_TZ
 from core.paths import REPO_ROOT
 
 _INT_YEAR = 360.0  # standard bank year for interest-mode swaps
@@ -78,9 +79,14 @@ def night_units(open_ns: int, close_ns: int, rollover_py: int) -> float:
 
     Weekends carry no separate charge -- the triple on the rollover weekday pre-charges them
     (the standard MetaTrader model).
+
+    Counted on the BROKER SERVER's calendar, not UTC: MT5 rolls swaps at server midnight. The
+    trade timestamps are real UTC (see ``core.data.mt5_csv``), so a position held 20:30->22:00 UTC
+    in summer crosses the EET rollover while staying on one UTC date -- counting UTC dates would
+    charge zero nights instead of one.
     """
-    o = pd.Timestamp(open_ns).date()
-    c = pd.Timestamp(close_ns).date()
+    o = pd.Timestamp(open_ns, tz="UTC").tz_convert(MT5_SERVER_TZ).date()
+    c = pd.Timestamp(close_ns, tz="UTC").tz_convert(MT5_SERVER_TZ).date()
     units = 0.0
     d = o
     while d < c:  # a rollover happens at the end of each held day before the close day
@@ -102,14 +108,22 @@ def swap_r_per_trade(trades: pd.DataFrame, spec: SwapSpec) -> np.ndarray:
     risk amount and nets directly onto the R-multiple stream (``r += swap_r``). Negative = a cost,
     positive = a credit (index shorts).
 
-    Requires columns ``entry``, ``exit``, ``ts_opened``, ``ts_closed``, ``sl_pct`` and a win-sign
-    column (``r`` if present, else ``pnl_base``) -- direction is inferred as in the swap phase.
+    Requires columns ``entry``, ``exit``, ``ts_opened``, ``ts_closed``, ``sl_pct`` and the trade
+    direction. Direction comes from an explicit ``is_long`` column; only legacy streams written
+    before that column existed fall back to inferring it from the outcome, which misclassifies any
+    trade whose costs flip the sign of ``r`` (the price moved our way, the net result did not) and
+    then books the swap with the WRONG sign -- index shorts earn a credit that longs pay (#10).
     """
-    win_col = "r" if "r" in trades.columns else "pnl_base"
-    won = trades[win_col].to_numpy(dtype=float) > 0
+    if "is_long" in trades.columns:
+        long_flags = trades["is_long"].to_numpy(dtype=bool)
+    else:
+        win_col = "r" if "r" in trades.columns else "pnl_base"
+        won = trades[win_col].to_numpy(dtype=float) > 0
+        exits = trades["exit"].to_numpy(dtype=float) > trades["entry"].to_numpy(dtype=float)
+        long_flags = won == exits
     out = np.zeros(len(trades))
     for i, t in enumerate(trades.itertuples(index=False)):
-        is_long = bool(won[i]) == (t.exit > t.entry)
+        is_long = bool(long_flags[i])
         loss_per_lot = (t.entry * t.sl_pct / 100.0 / spec.tick_size) * spec.tick_value
         if loss_per_lot <= 0:
             continue

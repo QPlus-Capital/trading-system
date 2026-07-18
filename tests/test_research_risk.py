@@ -16,6 +16,7 @@ from research.portfolio.risk import (
     rck_fraction,
     tail_cap,
 )
+from research.portfolio.tail import traded_stop_loss_pct
 from research.portfolio.trades import assign_r
 
 
@@ -171,3 +172,45 @@ def test_kelly_risk_reads_the_account_wall() -> None:
     trades = pd.DataFrame({"r": _reversal_r(4)})
     phi = KellyRisk(beta=0.05).fraction(trades, acc)
     assert 0.0 < phi <= 0.05
+
+
+def test_the_reported_return_and_the_trade_stream_are_both_net_of_swap() -> None:
+    """#10: one canonical net return. The headline return already netted swap via simulate();
+    trade_pnl (which feeds Monte-Carlo and the edge stats) must net it the same way, or the
+    return is net while every risk statistic is gross."""
+    acc = AccountProfile()
+    trades, prices = _winners()
+    gross = evaluate_policy(trades, prices, acc, FlatRisk(1.0), cap_frac=0.02)
+
+    withswap = trades.copy()
+    withswap["swap_r"] = [-0.1, -0.1, -0.1]  # carry costs 0.1R per trade
+    net = evaluate_policy(withswap, prices, acc, FlatRisk(1.0), cap_frac=0.02)
+
+    # The reported return drops by 3 x 0.1R (= 0.3% of the start balance) ...
+    assert math.isclose(net.total_return_pct, gross.total_return_pct - 0.3, abs_tol=0.05)
+    # ... and the per-trade stream drops by exactly the same amount, not by zero.
+    assert math.isclose(float(net.trade_pnl.sum()), float(gross.trade_pnl.sum()) - 600.0, abs_tol=1)
+
+
+def test_kelly_sizes_off_the_net_distribution() -> None:
+    """#10: a carry cost that eats the edge must shrink the Kelly bet, not be invisible to it."""
+    acc = AccountProfile()
+    trades, _ = _winners()
+    edge = trades.copy()
+    edge["r"] = [1.0, -0.5, 1.0]  # a real distribution, not all winners
+    gross_f = KellyRisk(beta=0.1).fraction(edge, acc)
+
+    costly = edge.copy()
+    costly["swap_r"] = [-0.4, -0.4, -0.4]  # carry eats most of the edge
+    assert KellyRisk(beta=0.1).fraction(costly, acc) < gross_f
+
+
+def test_empty_inputs_fail_closed_with_a_reason() -> None:
+    """#22: nothing surviving selection is an auditable result, not an IndexError from deep
+    inside a day loop or a mode() on an empty frame."""
+    acc = AccountProfile()
+    empty = pd.DataFrame(columns=["market", "ts_opened", "ts_closed", "r", "entry", "exit"])
+    with pytest.raises(ValueError, match="at least one trade"):
+        evaluate_policy(empty, {}, acc, FlatRisk(1.0), cap_frac=0.02)
+    with pytest.raises(ValueError, match="no trades"):
+        traded_stop_loss_pct(empty)

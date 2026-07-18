@@ -19,6 +19,7 @@ import pandas as pd
 
 from research.stages import _runbook as rb
 from research.stages import universe
+from research.stages.edge import PBO_MAX
 
 
 def _best_train(df: pd.DataFrame, variation: str) -> int:
@@ -39,6 +40,15 @@ def main(argv: list[str] | None = None) -> None:
     run = rb.RunDir.open(args.run)
     rb.banner(2, "SELECT - Struktur & Universum", run)
     df = pd.read_csv(run.require("study.csv", "edge"))
+    # #2: the GATED ranking is the only admissible input for an automatic pick. Reading study.csv
+    # alone re-derived the choice without the statistical gates the edge stage had applied.
+    ranking = pd.read_csv(run.require("edge_ranking.csv", "edge"))
+    # Study-level overfitting probability, carried into the run by the edge stage.
+    pbo = (
+        run.load_json("overfitting.json").get("pbo")
+        if run.file("overfitting.json").exists()
+        else None
+    )
 
     if args.variation:
         variation = args.variation
@@ -46,9 +56,44 @@ def main(argv: list[str] | None = None) -> None:
         instruments = universe.select_universe(df, variation, train_months)
         how = f"erzwungen (--variation {variation})"
     else:
-        sel = universe.select(df)
-        variation, train_months, instruments = sel.variation, sel.train_months, sel.instruments
-        how = "Auto (Rendite-first, Risiko-Gate)"
+        # Study-level gate first (#2 / Codex P1): PBO measures whether the SEARCH ITSELF is
+        # overfit. A high PBO invalidates every candidate at once, so no per-variation DSR can
+        # rescue it -- checking only eligible+dsr_ok let an explicitly overfit study through.
+        if pbo is not None and pbo > PBO_MAX:
+            raise SystemExit(
+                f"\n  ABBRUCH: PBO {pbo:.2f} > {PBO_MAX:.2f} - die Studie ist als ueberfittet"
+                "\n  ausgewiesen. Kein Kandidat daraus ist handelbar, unabhaengig von seinem DSR."
+            )
+        gated = ranking[ranking["eligible"].astype(bool) & ranking["dsr_ok"].astype(bool)]
+        if gated.empty:
+            raise SystemExit(
+                "\n  ABBRUCH: keine Variation besteht die Gates (eligible + DSR).\n"
+                "  Es gibt nichts Handelbares - das ist ein Ergebnis, kein Fehler.\n"
+                "  Mit --variation laesst sich eine Wahl erzwingen; der Lauf gilt dann als\n"
+                "  explorativ und faellt im Verdict durch."
+            )
+        top = gated.sort_values("mean_ret", ascending=False).iloc[0]
+        variation, train_months = str(top["variation"]), int(top["train_months"])
+        instruments = universe.select_universe(df, variation, train_months)
+        how = "Auto (Rendite-first, Risiko- + DSR-Gate)"
+
+    # Manifest (#2): carry the gate evidence for the pick forward so the verdict can require it
+    # rather than trusting that selection was gated at all. The ranking now holds one row per
+    # (variation, train_months), so the manifest must cite the row actually picked.
+    row = ranking[
+        (ranking["variation"] == variation) & (ranking["train_months"] == train_months)
+    ]
+    gates = (
+        {
+            "eligible": bool(row.iloc[0]["eligible"]),
+            "dsr_ok": bool(row.iloc[0]["dsr_ok"]),
+            "dsr": None if pd.isna(row.iloc[0]["dsr"]) else float(row.iloc[0]["dsr"]),
+            "frac_positive": float(row.iloc[0]["frac_positive"]),
+            "mean_rpd": float(row.iloc[0]["mean_rpd"]),
+        }
+        if not row.empty
+        else {"eligible": False, "dsr_ok": False, "dsr": None}
+    )
 
     run.save_json(
         "selection.json",
@@ -57,6 +102,8 @@ def main(argv: list[str] | None = None) -> None:
             "train_months": train_months,
             "instruments": instruments,
             "how": how,
+            "forced": bool(args.variation),
+            "gates": gates,
         },
     )
 
@@ -67,7 +114,9 @@ def main(argv: list[str] | None = None) -> None:
     if not instruments:
         print("    (keine - die Schwellen hat kein Markt geschafft)")
 
-    nxt = rb.cmd("portfolio", "--run", str(run.path))
+    # --fixed by default (#11): the deployable verdict must trade the frozen live stops. Drop the
+    # flag only to explore, and the verdict will mark that run exploratory.
+    nxt = rb.cmd("portfolio", "--run", str(run.path), "--fixed", "live/config/rsi_wpr_bb.py")
     rb.next_step(nxt, "Portfolio bauen & Risiko wählen (--risk flat:0.15 oder throttle:0.15,floor)")
 
 

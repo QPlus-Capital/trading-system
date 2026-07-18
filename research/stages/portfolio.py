@@ -29,7 +29,7 @@ import pandas as pd
 from core.broker import standard_broker, swap_r_per_trade
 
 from research.engine.config import load_config_module
-from research.portfolio.curves import load_daily_close
+from research.portfolio.curves import load_daily_close, load_daily_low_high
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
@@ -75,7 +75,8 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 3 (PORTFOLIO): combine + size.")
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument(
-        "--config", type=Path, default=Path("research/config/robustness.py"), help="study config"
+        "--config", type=Path, default=None,
+        help="study config (default: the one Stage 1 recorded in the run)"
     )
     parser.add_argument("--risk", default="flat:0.15", help="policy: flat:PCT or throttle:FLOORPCT")
     parser.add_argument(
@@ -97,7 +98,7 @@ def main(argv: list[str] | None = None) -> None:
     run.require("selection.json", "select")
     sel = run.load_json("selection.json")
     policy = parse_risk(args.risk)
-    cfg = load_config_module(args.config)
+    cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
     # The account/prop-firm rules come from config; the code never assumes a balance or a limit.
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
@@ -129,8 +130,20 @@ def main(argv: list[str] | None = None) -> None:
         f"\n  Extrahiere Holdout-Trades ({mode_txt}): {sel['variation']} @ "
         f"{sel['train_months']}m ueber {len(universe)} Maerkte ..."
     )
+    # #22: an empty universe or an empty stream is a RESULT (nothing survived selection), not a
+    # crash. Fail closed with the reason instead of letting concat/mode/min raise deep inside.
+    if not universe:
+        raise SystemExit(
+            "\n  ABBRUCH: kein Markt hat die Auswahl ueberlebt.\n"
+            "  Das ist ein Ergebnis, kein Fehler: es gibt nichts zu handeln."
+        )
     frames = [extract_fn(m, overrides, int(sel["train_months"])) for m in universe]
     trades = pd.concat(frames, ignore_index=True)
+    if trades.empty:
+        raise SystemExit(
+            f"\n  ABBRUCH: {len(universe)} Maerkte ausgewaehlt, aber im Holdout kein einziger"
+            "\n  Trade. Ohne Trades gibt es keine belastbare Aussage - nichts zu handeln."
+        )
     # Carry the real TTP swap as a SEPARATE column (not netted into r): a realized cost booked at
     # close, so downstream returns/drawdown net it while the mark-to-market stays on gross price R.
     broker = standard_broker()
@@ -141,6 +154,8 @@ def main(argv: list[str] | None = None) -> None:
     trades.to_csv(run.file("portfolio_trades.csv"), index=False)
 
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
+    # #15: day extremes for the intraday daily-limit check
+    daily_hl = {m: load_daily_low_high(str(specs[m][1])) for m in universe}
 
     # The crisis sets only the CEILING: the largest risk whose stressed worst-day gap still fits
     # the hard daily limit. Every policy is capped by it; within it a policy may size freely.
@@ -189,8 +204,12 @@ def main(argv: list[str] | None = None) -> None:
 
     # Same base for both policies -> apples to apples: what does going dynamic actually buy?
     results = {
-        "flat": evaluate_policy(trades, daily_close, account, FlatRisk(base_pct), cap),
-        "throttle": evaluate_policy(trades, daily_close, account, ThrottleRisk(base_pct), cap),
+        "flat": evaluate_policy(
+            trades, daily_close, account, FlatRisk(base_pct), cap, daily_low_high=daily_hl
+        ),
+        "throttle": evaluate_policy(
+            trades, daily_close, account, ThrottleRisk(base_pct), cap, daily_low_high=daily_hl
+        ),
     }
     chosen_label = "throttle" if isinstance(policy, ThrottleRisk) else "flat"  # Kelly sizes flat
     chosen = results[chosen_label]
@@ -212,6 +231,10 @@ def main(argv: list[str] | None = None) -> None:
             "variation": sel["variation"],
             "train_months": sel["train_months"],
             "instruments": universe,
+            # Provenance (#11): which per-market stops these numbers were produced with. Without a
+            # frozen config the stops were re-optimised per window, so the result is EXPLORATORY --
+            # the verdict refuses to call such a run deployable.
+            "fixed_config": str(args.fixed) if args.fixed else None,
             "risk_policy": args.risk,
             "stress_mult": args.stress_mult,
             "tail_source": args.tail,

@@ -23,6 +23,19 @@ from pathlib import Path
 log = logging.getLogger("live")
 
 
+def redact_token(text: str, token: str) -> str:
+    """Replace ``token`` (and its bare id half) with ``***`` anywhere in ``text``.
+
+    Telegram bot tokens look like ``12345:AA...``; error strings sometimes carry only the numeric
+    id, so both halves are scrubbed.
+    """
+    if not token:
+        return text
+    out = text.replace(token, "***")
+    bot_id = token.split(":", 1)[0]
+    return out.replace(bot_id, "***") if bot_id else out
+
+
 class Notifier:
     """Fan-out for signal / alert pings across the configured channels (all best-effort)."""
 
@@ -84,5 +97,9 @@ class Notifier:
                 f"https://api.telegram.org/bot{token}/sendMessage", data=data
             )
             urllib.request.urlopen(req, timeout=10)  # noqa: S310
-        except Exception:  # noqa: BLE001 -- best-effort remote ping
-            log.exception("telegram notification failed")
+        except Exception as exc:  # noqa: BLE001 -- best-effort remote ping
+            # #21: the Bot API puts the token in the URL path and offers no header alternative, so
+            # the defence is keeping it out of anything persistent. urllib errors carry the full
+            # URL, and log.exception would write that traceback straight into live.log -- so log a
+            # redacted one-liner instead of the exception.
+            log.warning("telegram notification failed: %s", redact_token(str(exc), token))

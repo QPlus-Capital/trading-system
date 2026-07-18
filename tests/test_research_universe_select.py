@@ -1,7 +1,13 @@
 """Tests for universe selection + global structure (return-first, risk-gated)."""
 
 import pandas as pd
-from research.stages.universe import select, select_structure, select_universe
+import pytest
+from research.stages.universe import (
+    NoEligibleConfig,
+    select,
+    select_structure,
+    select_universe,
+)
 
 
 def _df() -> pd.DataFrame:
@@ -53,3 +59,17 @@ def test_select_end_to_end() -> None:
     assert sel.variation == "high_ret"
     assert sel.train_months == 24
     assert sel.instruments == ["X", "Y", "Z"]
+
+
+def test_selection_fails_closed_when_nothing_clears_the_gates() -> None:
+    """#2: no eligible config must RAISE, not silently return the highest raw return.
+
+    The old fallback widened the pool to everything exactly when the risk gates had rejected
+    every candidate -- so 'nothing is good enough' came back as 'trade the most reckless one'.
+    """
+    df = _df()
+    # Make every structure fail the robustness gate: one losing market each.
+    df.loc[df.instrument == "Z", "mean_oos_pct"] = -2.0
+    df.loc[df.instrument == "Y", "mean_oos_pct"] = -1.0
+    with pytest.raises(NoEligibleConfig):
+        select_structure(df)

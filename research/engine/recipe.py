@@ -17,8 +17,9 @@ a config module builds a :class:`SweepRecipe` and re-exports its attributes::
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 from core.broker import BrokerProfile
-from core.data.mt5_csv import write_mt5_catalog
+from core.data.mt5_csv import require_current_frame, write_mt5_catalog
 from core.paths import REPO_ROOT
 from nautilus_trader.config import (
     BacktestDataConfig,
@@ -85,6 +86,7 @@ class SweepRecipe:
             default_leverage=leverage,
             fill_model=broker.fill_model_config() if broker is not None else None,
         )
+        self._frame_checked = False  # build_run_config verifies the catalog frame once
         self._base_config: dict[str, Any] = {
             "instrument_id": str(instrument.id),
             "bar_type": str(self._bid),
@@ -108,12 +110,25 @@ class SweepRecipe:
         *,
         start: str | None = None,
         end: str | None = None,
+        trade_from: str | None = None,
     ) -> BacktestRunConfig:
-        """Build a run config with ``params`` merged onto the base config."""
+        """Build a run config with ``params`` merged onto the base config.
+
+        ``trade_from`` marks where the READ-ONLY pre-roll ends: bars before it warm the indicators
+        but place no orders, so a pre-roll trade can never move the balance that later, reported
+        trades are sized from.
+        """
+        # Fail closed on a stale-frame catalog (checked once per recipe): every engine run goes
+        # through this builder, including the stage-3 read paths that never seed and therefore
+        # never pass the write funnel's own check.
+        if not self._frame_checked:
+            require_current_frame(self.CATALOG_PATH)
+            self._frame_checked = True
+        gate = {"trade_from_ns": pd.Timestamp(trade_from).value} if trade_from else {}
         strategy = ImportableStrategyConfig(
             strategy_path="core.strategies.rsi_wpr_bb:RsiWprBb",
             config_path="core.strategies.rsi_wpr_bb:RsiWprBbConfig",
-            config={**self._base_config, **params},
+            config={**self._base_config, **params, **gate},
         )
         data = BacktestDataConfig(
             catalog_path=str(self.CATALOG_PATH),

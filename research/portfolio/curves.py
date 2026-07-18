@@ -17,16 +17,58 @@ These are pure functions (NumPy/pandas); pass the resulting curves to
 :mod:`research.portfolio.drawdown`.
 """
 
+from datetime import date, time, timedelta
+from zoneinfo import ZoneInfo
+
 import numpy as np
 import pandas as pd
+from core.data.mt5_csv import parse_mt5_timestamps
 
 DAY_NS = 86_400_000_000_000
 _EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
+_EPOCH_DATE = date(1970, 1, 1)
+# The prop firm's loss day resets at 16:15 America/Chicago (DST-aware) -- the same constants the
+# live runner uses. Kept here so research and live cannot drift apart on the day boundary.
+_CHICAGO = ZoneInfo("America/Chicago")
+_DAILY_RESET = time(16, 15)
+# H4 feed: a bar is stamped with its open, so its close is 4h later.
+_BAR_HOURS = 4.0
 
 
 def to_day(ts_ns: int) -> int:
-    """Calendar-day number (days since epoch) from a nanosecond UTC timestamp."""
+    """Prop-firm LOSS-day number (days since epoch) from a nanosecond UTC timestamp.
+
+    Not the UTC calendar day: the account's day resets at 16:15 America/Chicago, mirroring
+    ``live.runner.loss_day`` exactly. Bucketing the daily-limit check by UTC midnight instead
+    measured an adverse evening move against the wrong day's baseline, so a configuration that
+    would breach TTP's 3% rule could pass the simulated gate.
+
+    Everything on this day axis -- trade open/close days AND the daily price series -- must use
+    this one function, or trades and prices index different days.
+    """
+    local = pd.Timestamp(int(ts_ns), unit="ns", tz="UTC").tz_convert(_CHICAGO)
+    day = local.date() + (timedelta(days=1) if local.time() >= _DAILY_RESET else timedelta(0))
+    return int((day - _EPOCH_DATE).days)
+
+
+def to_calendar_day(ts_ns: int) -> int:
+    """Plain UTC calendar-day number -- for display axes, never for the daily-limit maths."""
     return int(ts_ns) // DAY_NS
+
+
+def _loss_day_numbers(ts: pd.Series, bar_hours: float = 0.0) -> np.ndarray:
+    """Vectorised :func:`to_day` for a tz-aware series -- the price series must share the axis.
+
+    ``bar_hours`` shifts each stamp to the bar's CLOSE. MT5 stamps a bar with its OPEN, and the
+    H4 bar opening 21:00 UTC in summer begins ~15 minutes BEFORE the 16:15 CT reset but closes
+    after it: bucketed by its open, that post-reset close would be filed under the previous loss
+    day. A price bar belongs to the day its close falls in.
+    """
+    local = (ts + pd.Timedelta(hours=bar_hours)).dt.tz_convert(_CHICAGO)
+    rolls = local.dt.time >= _DAILY_RESET
+    days = local.dt.normalize().dt.tz_localize(None) + pd.to_timedelta(rolls.astype(int), unit="D")
+    nums: np.ndarray = ((days - pd.Timestamp("1970-01-01")) // pd.Timedelta(days=1)).to_numpy()
+    return nums
 
 
 def load_daily_close(csv_path: str) -> pd.Series:
@@ -36,9 +78,33 @@ def load_daily_close(csv_path: str) -> pd.Series:
     ``ts.astype(int64) // DAY_NS``, which is wrong when pandas parses to microseconds.
     """
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<CLOSE>"])
-    ts = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S", utc=True)
-    day = ((ts - _EPOCH) // pd.Timedelta(days=1)).to_numpy()
+    ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC
+    day = _loss_day_numbers(ts, _BAR_HOURS)  # by bar CLOSE, on the trades' loss-day axis
     return pd.Series(df["<CLOSE>"].to_numpy(dtype=float), index=day).groupby(level=0).last()
+
+
+def load_daily_low_high(csv_path: str) -> tuple[pd.Series, pd.Series]:
+    """Per-day (low, high) from an MT5 H4 CSV, indexed by day number.
+
+    The daily extremes are the closest thing to an intraday path the H4 data gives us, and they
+    are what the prop firm's *intraday* equity rule actually reacts to (#15): a day can dip 3%
+    and close at -0.5%, which an end-of-day series cannot see.
+    """
+    df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>"])
+    ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC
+    day_close = _loss_day_numbers(ts, _BAR_HOURS)
+    day_open = _loss_day_numbers(ts, 0.0)
+    # A bar that STRADDLES the 16:15 CT reset (opens before it, closes after -- the summer 21:00
+    # UTC bar does) charges its extremes to BOTH adjacent loss days: bucketing only by the close
+    # would hide a pre-reset dip from the day it happened in. Over-charging that one bar per day
+    # is the conservative side for a hard-limit gate.
+    straddle = day_open != day_close
+    day = np.concatenate([day_close, day_open[straddle]])
+    lo = df["<LOW>"].to_numpy(dtype=float)
+    hi = df["<HIGH>"].to_numpy(dtype=float)
+    low = pd.Series(np.concatenate([lo, lo[straddle]]), index=day).groupby(level=0).min()
+    high = pd.Series(np.concatenate([hi, hi[straddle]]), index=day).groupby(level=0).max()
+    return low, high
 
 
 def align_prices(daily_close: pd.Series, d0: int, d1: int) -> np.ndarray:

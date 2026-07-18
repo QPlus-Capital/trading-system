@@ -68,6 +68,14 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     take_profit_pct: float = 0.0
     risk_per_trade_pct: float = 0.0
 
+    # Read-only warm-up boundary (ns since epoch; 0 = trade from the first bar). Bars before it
+    # still feed the indicators -- they MUST, or the engine desyncs -- but place no orders. The
+    # walk-forward runs each window from a pre-roll so indicators enter warm; without this the
+    # pre-roll would trade, and a trade that opened AND closed inside it would move the account
+    # balance that later (reported) trades are sized from, while being filtered out of the
+    # results. Reported returns would then depend on unreported PnL.
+    trade_from_ns: int = 0
+
     # Component switches (for structural ablation studies). Each confirmation filter
     # can be turned off; long_only ignores short signals (flatten instead).
     use_bb_confirm: bool = True  # require "was below lower band" on buys
@@ -136,6 +144,8 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         buy_signal, sell_signal = self._signals.update(
             bar.open.as_double(), bar.high.as_double(), bar.low.as_double(), c
         )
+        if bar.ts_event < self.config.trade_from_ns:
+            return  # read-only warm-up: indicators updated above, but place no orders
         if buy_signal and not sell_signal:
             self._go_long(c)
         elif sell_signal and not buy_signal:

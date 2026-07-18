@@ -60,3 +60,36 @@ def test_check_open_exclude_risk_allows_reversal() -> None:
     c.open_risk = 3_800  # near the 4000 cap; e.g. a large opposite position we will close
     assert not c.check_open(400, 200_000).allowed  # 3800 + 400 > 4000 -> blocked
     assert c.check_open(400, 200_000, exclude_risk=3_800).allowed  # excluded -> 0 + 400, fine
+
+
+def test_the_gate_budget_admits_a_full_book_but_blocks_beyond_it() -> None:
+    # #5: the pre-trade budget is gate_daily_stop (2.7%), sized so a FULL book of 10 markets
+    # @ 0.18% fits its stressed tail exactly: day-start 50k -> budget 1350; 10 x 90 = 900
+    # nominal, 1.5 * 900 = 1350. An 11th entry (1.5 * 990 = 1485) breaches it.
+    c = RiskController(RiskLimits(), 50_000)
+    c.open_risk = 810  # 9 markets already open @ 90
+    assert c.check_open(90, 50_000).allowed  # 10th: 1.5*900 = 1350 <= 1350
+    c.open_risk = 900  # the full book of 10
+    d = c.check_open(90, 50_000)  # an 11th: 1.5*990 = 1485 > 1350
+    assert not d.allowed and "daily" in d.reason
+
+
+def test_the_halt_stays_stricter_than_the_gate_budget() -> None:
+    # The gate pre-authorises a 2.7% tail, but the HALT must still fire at 2.5% so flattening
+    # starts early and keeps the full execution buffer below TTP's hard 3%.
+    c = RiskController(RiskLimits(), 50_000)
+    assert c.daily_floor() == 48_750  # halt at -2.5%
+    assert c.gate_daily_floor() == 48_650  # gate budget reaches -2.7%
+    assert c.prop_daily_floor() == 48_500  # TTP's hard -3% stays the outer bound
+    assert c.must_flatten(48_700).allowed  # between the two -> already halting
+
+
+def test_floating_profit_does_not_enlarge_the_loss_budget() -> None:
+    # #5: day starts at 50k, floating profit lifts equity to 55k. Sizing is off 55k but the loss
+    # budget stays anchored to the 50k day-start -- a gap can wipe the floating profit first. So an
+    # entry whose stressed tail (1650) exceeds the day-start daily budget (1250) is BLOCKED even
+    # though it would fit a naive 55k-based budget (6250).
+    c = RiskController(RiskLimits(), 50_000)
+    c.open_risk = 1_000
+    d = c.check_open(100, 55_000)  # 1.5*(1000+100)=1650 > 1250 (day-start), < 6250 (equity)
+    assert not d.allowed and "daily" in d.reason

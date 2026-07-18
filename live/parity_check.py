@@ -34,7 +34,14 @@ _EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
 
 
 def load_csv_bars(csv_path: str | Path) -> list[Bar]:
-    """Load H4 OHLC bars from a study MT5 CSV (open time in epoch seconds, parsed as UTC)."""
+    """Load H4 OHLC bars from a study MT5 CSV, keeping the RAW server frame.
+
+    Deliberately NOT converted to real UTC (#18), unlike everywhere else. This compares one feed
+    against another: the terminal's live bars are stamped with the server's wall clock too, so
+    both sides must stay in that frame or every bar would appear misaligned by the server offset.
+    Calendar math (day buckets, loss days, swap nights) is what needs the conversion -- and that
+    happens elsewhere.
+    """
     df = pd.read_csv(
         csv_path,
         sep="\t",
