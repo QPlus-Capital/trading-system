@@ -27,7 +27,7 @@ import pandas as pd
 from research.engine.config import load_config_module
 from research.engine.montecarlo import monte_carlo_paths, summarize
 from research.portfolio import factsheet, html_report
-from research.portfolio.curves import load_daily_close
+from research.portfolio.curves import load_daily_close, to_day
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
@@ -83,7 +83,12 @@ def main(argv: list[str] | None = None) -> None:
     equity = daily_equity(trades, sized_pnl, daily_close, start_balance=account.start_balance)
     stats = {**edge_stats(sized_pnl), **risk_stats(equity, start_balance=account.start_balance)}
 
-    paths = monte_carlo_paths(sized_pnl.tolist(), n_sims=1000, start_equity=account.start_balance)
+    # #16: resample whole trading days, not single trades -- our correlated markets lose together
+    # on a macro gap, and breaking those bundles apart understates the tail.
+    mc_days = [to_day(x) for x in trades["ts_closed"]]
+    paths = monte_carlo_paths(
+        sized_pnl.tolist(), n_sims=1000, start_equity=account.start_balance, days=mc_days
+    )
     prob_profit = float(summarize(paths, account.start_balance)["prob_profit"])
     # #11: a deployable verdict must describe the stops we actually TRADE. Without --fixed the
     # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
