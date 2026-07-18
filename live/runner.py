@@ -339,13 +339,27 @@ class LiveRunner:
         # the true HWM / day-start rather than resetting to the current balance (K1).
         today = loss_day(wall)  # #18: real UTC, not the server frame
         if self._day is None:
-            # First launch (no restored state): anchor BOTH references to the CURRENT balance, not
-            # the profile's original one. Banking the HWM matters as much as the daily reference:
-            # starting a 50k profile at a 52k balance would otherwise leave the trailing floor at
-            # 47.5k instead of 49.5k -- looser than the prop firm's own 6% floor, and it would stay
-            # that way until the next loss-day roll.
+            # First launch (no restored state). The two references pull in OPPOSITE directions,
+            # so they are anchored differently and both conservatively:
+            #
+            # - HWM: banking the current balance can only RAISE the trailing floor. Without it a
+            #   50k profile started at a 52k balance would keep a 47.5k floor instead of 49.5k --
+            #   looser than the prop firm's own.
+            # - Daily: we do NOT know this loss day's opening balance. Taking the current balance
+            #   would hand a full fresh 2.5% budget to a runner restarted mid-day after a 2% loss,
+            #   allowing 4.5% in one day. Assume instead that the day opened no LOWER than the
+            #   account's reference, so the remaining budget can only be under-stated.
             self._risk.on_eod(account.balance)
-            self._risk.on_new_day(account.balance)
+            day_ref = max(account.balance, self._risk.start_balance)
+            self._risk.on_new_day(day_ref)
+            if day_ref != account.balance:
+                log.warning(
+                    "first launch mid-day: daily reference pinned to %.2f (balance %.2f) so a "
+                    "restart cannot reset the loss budget. Pass --start-balance if the loss day "
+                    "actually opened elsewhere.",
+                    day_ref,
+                    account.balance,
+                )
             self._day = today
             self._persist()
         elif today != self._day:

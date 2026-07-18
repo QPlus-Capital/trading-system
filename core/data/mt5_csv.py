@@ -93,10 +93,10 @@ def parse_mt5_timestamps(
     the correct way to convert, because the server's own offset changes with DST -- which a fixed
     ``offset_hours`` cannot express. ``offset_hours`` is kept only for the legacy fixed-shift path.
 
-    Both default to "no conversion", which reproduces the historical behaviour EXACTLY: every
-    number produced so far assumed these stamps were UTC, so flipping the default would silently
-    re-date the whole research history. Set it deliberately, and re-run, once the server zone has
-    been confirmed against the terminal.
+    The default IS the verified conversion (``MT5_SERVER_TZ``); the loaders and the catalog writer
+    all share it, so importing and calendar logic cannot end up in different frames. Pass
+    ``server_tz=None`` only to reproduce a pre-fix result for comparison -- that reads the stamps
+    as UTC, which is what every number produced before this change assumed.
     """
     naive = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S")
     if server_tz:

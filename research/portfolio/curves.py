@@ -31,6 +31,8 @@ _EPOCH_DATE = date(1970, 1, 1)
 # live runner uses. Kept here so research and live cannot drift apart on the day boundary.
 _CHICAGO = ZoneInfo("America/Chicago")
 _DAILY_RESET = time(16, 15)
+# H4 feed: a bar is stamped with its open, so its close is 4h later.
+_BAR_HOURS = 4.0
 
 
 def to_day(ts_ns: int) -> int:
@@ -54,9 +56,15 @@ def to_calendar_day(ts_ns: int) -> int:
     return int(ts_ns) // DAY_NS
 
 
-def _loss_day_numbers(ts: pd.Series) -> np.ndarray:
-    """Vectorised :func:`to_day` for a tz-aware series -- the price series must share the axis."""
-    local = ts.dt.tz_convert(_CHICAGO)
+def _loss_day_numbers(ts: pd.Series, bar_hours: float = 0.0) -> np.ndarray:
+    """Vectorised :func:`to_day` for a tz-aware series -- the price series must share the axis.
+
+    ``bar_hours`` shifts each stamp to the bar's CLOSE. MT5 stamps a bar with its OPEN, and the
+    H4 bar opening 21:00 UTC in summer begins ~15 minutes BEFORE the 16:15 CT reset but closes
+    after it: bucketed by its open, that post-reset close would be filed under the previous loss
+    day. A price bar belongs to the day its close falls in.
+    """
+    local = (ts + pd.Timedelta(hours=bar_hours)).dt.tz_convert(_CHICAGO)
     rolls = local.dt.time >= _DAILY_RESET
     days = local.dt.normalize().dt.tz_localize(None) + pd.to_timedelta(rolls.astype(int), unit="D")
     nums: np.ndarray = ((days - pd.Timestamp("1970-01-01")) // pd.Timedelta(days=1)).to_numpy()
@@ -71,7 +79,7 @@ def load_daily_close(csv_path: str) -> pd.Series:
     """
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<CLOSE>"])
     ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC
-    day = _loss_day_numbers(ts)  # same axis as the trades (16:15 CT reset), not UTC midnight
+    day = _loss_day_numbers(ts, _BAR_HOURS)  # by bar CLOSE, on the trades' loss-day axis
     return pd.Series(df["<CLOSE>"].to_numpy(dtype=float), index=day).groupby(level=0).last()
 
 
@@ -84,7 +92,7 @@ def load_daily_low_high(csv_path: str) -> tuple[pd.Series, pd.Series]:
     """
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>"])
     ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC
-    day = _loss_day_numbers(ts)  # same axis as the trades (16:15 CT reset), not UTC midnight
+    day = _loss_day_numbers(ts, _BAR_HOURS)  # by bar CLOSE, on the trades' loss-day axis
     low = pd.Series(df["<LOW>"].to_numpy(dtype=float), index=day).groupby(level=0).min()
     high = pd.Series(df["<HIGH>"].to_numpy(dtype=float), index=day).groupby(level=0).max()
     return low, high

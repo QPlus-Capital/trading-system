@@ -464,3 +464,31 @@ def test_unpriceable_candidates_keep_the_arithmetic_volume() -> None:
         loss_fn=lambda _s, _e, _sl, _v: None,
     )
     assert sized is not None and sized.volume == 20.0
+
+
+def test_first_launch_does_not_hand_out_a_fresh_daily_budget() -> None:
+    """Codex P1: restarting mid loss-day after a realized loss must NOT reset the daily reference
+    to the already-lowered balance -- losing 2% and restarting would then allow another 2.5%."""
+    stub = StubBridge()
+    stub.balance = stub.equity = 98_000.0  # already 2% down today, reference is still 100k
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), 100_000.0),  # the account's own reference
+        mode=Mode.SIGNAL_ONLY,
+    )
+    runner.run_once()
+    # The day reference stays at the account's own reference, not the lowered balance ...
+    assert runner._risk.day_start_balance == 100_000.0
+    # ... while the HWM banks the current balance (that can only RAISE the trailing floor).
+    assert runner._risk.hwm_balance == 100_000.0
+
+
+def test_first_launch_banks_a_grown_balance_into_the_hwm() -> None:
+    # Started above the profile balance: the trailing floor must follow the real balance up.
+    stub = StubBridge()
+    stub.balance = 104_000.0
+    runner = _runner(stub)  # RiskController reference is the stub's original 100k
+    runner.run_once()
+    assert runner._risk.hwm_balance == 104_000.0  # floor raised, not left at the stale 100k
