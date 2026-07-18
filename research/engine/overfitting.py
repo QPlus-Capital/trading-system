@@ -130,18 +130,25 @@ class TrialBudget:
     variations: int
     train_lengths: int
     param_combos: int
+    manual: int = 0  # hand-made choices (universe, stop re-fit, risk policy) -- see MANUAL_TRIALS
 
     @property
     def total(self) -> int:
-        """Effective trial count = the product of the independent search dimensions."""
-        return self.variations * self.train_lengths * self.param_combos
+        """Effective trial count: the searched grid PLUS the decisions made by hand.
+
+        The grid dimensions multiply (every combination was really evaluated); manual choices
+        add, because each was one additional look at the data by a human rather than another
+        axis of the sweep. Leaving them out understates the search and deflates too little (#13).
+        """
+        return self.variations * self.train_lengths * self.param_combos + self.manual
 
     def summary(self) -> str:
         """One-line human breakdown for the report."""
+        manual_txt = f" + {self.manual} manual" if self.manual else ""
         return (
             f"{self.total} effective trials = "
             f"{self.variations} variations x {self.train_lengths} train-lengths "
-            f"x {self.param_combos} param-combos"
+            f"x {self.param_combos} param-combos{manual_txt}"
         )
 
 
@@ -151,4 +158,7 @@ def study_trial_budget(cfg: Any) -> TrialBudget:
     train_cfg = getattr(cfg, "TRAIN_MONTHS", 24)
     train_lengths = len(train_cfg) if isinstance(train_cfg, list | tuple) else 1
     param_combos = len(expand_grid(getattr(cfg, "PARAM_GRID", {})))
-    return TrialBudget(max(variations, 1), max(train_lengths, 1), max(param_combos, 1))
+    manual = len(getattr(cfg, "MANUAL_TRIALS", ()))
+    return TrialBudget(
+        max(variations, 1), max(train_lengths, 1), max(param_combos, 1), manual
+    )

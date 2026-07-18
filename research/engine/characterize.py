@@ -201,12 +201,22 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
 
     # Pool each variation's per-window return series across all instruments.
     win_by_var: dict[str, list[float]] = defaultdict(list)
+    # ...and, separately, per CANDIDATE -- a (variation, train_months) pair, which is the unit
+    # selection actually chooses among (#13).
+    win_by_cand: dict[tuple[str, int], list[float]] = defaultdict(list)
     for r in good:
         win_by_var[r["variation"]].extend(r["window_oos"])
+        win_by_cand[(r["variation"], int(r["train_months"]))].extend(r["window_oos"])
 
     variation_sharpe = {v: sharpe_ratio(s) for v, s in win_by_var.items()}
+    # #13: the deflation benchmark needs the Sharpe dispersion ACROSS THE TRIALS being selected
+    # among. Measuring it across pooled per-variation streams averaged the train-length dimension
+    # away, so the variance came from a handful of numbers while n_trials counted the whole grid.
+    # Too little dispersion -> too low an expected-max-Sharpe -> DSR too high: the optimistic
+    # direction. Candidate-level Sharpes are the honest population.
+    candidate_sharpe = {c: sharpe_ratio(s) for c, s in win_by_cand.items()}
     sharpe_variance = (
-        float(np.var(list(variation_sharpe.values()), ddof=1)) if len(variation_sharpe) > 1 else 0.0
+        float(np.var(list(candidate_sharpe.values()), ddof=1)) if len(candidate_sharpe) > 1 else 0.0
     )
     # Study-level overfitting gate: PBO across variations (Stage 2 criterion, methodology.md).
     pbo_value = variation_pbo(good)
@@ -238,8 +248,23 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         )
     )
     agg["oos_sharpe"] = agg.index.map(variation_sharpe)
+    # #13: deflate the SELECTED candidate's own sample, not a stream pooled over train lengths the
+    # deployment will never use. Each variation is represented by the training length that would
+    # actually be picked (its best mean OOS return) -- that is the strategy being judged.
+    best_tm = (
+        df.dropna(subset=["mean_oos_pct"])
+        .groupby(["variation", "train_months"])["mean_oos_pct"]
+        .mean()
+        .groupby("variation")
+        .idxmax()
+    )
+    agg["train_months"] = agg.index.map(lambda v: int(best_tm[v][1]) if v in best_tm else 0)
     agg["dsr"] = agg.index.map(
-        lambda v: deflated_sharpe_ratio(win_by_var[v], n_trials, sharpe_variance)
+        lambda v: deflated_sharpe_ratio(
+            win_by_cand.get((v, int(best_tm[v][1])), win_by_var[v]), n_trials, sharpe_variance
+        )
+        if v in best_tm
+        else float("nan")
     )
     # Risk lens: rank by risk-adjusted return-per-drawdown, NOT raw return.
     agg = agg.sort_values("return_per_dd", ascending=False)

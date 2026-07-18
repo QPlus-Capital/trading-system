@@ -12,6 +12,12 @@ def test_total_is_the_product_of_dimensions() -> None:
     assert TrialBudget(12, 3, 16).total == 576
 
 
+def test_manual_decisions_add_to_the_searched_grid() -> None:
+    # #13: the grid dimensions multiply (every combination was evaluated), but a hand-made choice
+    # is one extra look at the data, not another axis -- so manual trials ADD.
+    assert TrialBudget(12, 3, 16, manual=5).total == 581
+
+
 def test_study_budget_from_the_real_robustness_config() -> None:
     cfg = load_config_module(_REPO_ROOT / "research" / "config" / "robustness.py")
     budget = study_trial_budget(cfg)
@@ -21,7 +27,11 @@ def test_study_budget_from_the_real_robustness_config() -> None:
     assert budget.variations == 12
     assert budget.train_lengths == 3
     assert budget.param_combos == 24
-    assert budget.total == 864
+    # Plus the MANUAL_TRIALS the config inventories (#12): the universe pick, the stop re-fit, the
+    # risk policy and so on were each a human choosing after seeing results. Counting only the
+    # automated grid understated the search the DSR has to deflate for.
+    assert budget.manual == len(cfg.MANUAL_TRIALS)
+    assert budget.total == 864 + budget.manual
 
 
 def test_scalar_train_months_counts_as_one_length() -> None:
