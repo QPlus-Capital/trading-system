@@ -67,10 +67,13 @@ def extract_trade_pnls(
     returns an empty positions report with no ``realized_pnl`` column, so guard for it: no trades is
     an empty PnL list (a flat, zero-return window), never a crashed task.
 
-    ``closed_from`` keeps only positions that CLOSED at or after that moment (#14). It pairs with a
-    pre-roll: the run starts before the window so the indicators are warm and a position opened
-    just before the boundary is carried, and this filter then attributes each trade to exactly the
-    window it resolved in -- no gaps, no double counting.
+    ``closed_from`` keeps only positions that CLOSED at or after that moment (#14) -- a safety net
+    for the READ-ONLY pre-roll, which warms the indicators without placing orders.
+
+    It does NOT make the stream continuous OOS: because the pre-roll cannot open a position, one
+    opened just before a boundary is not carried into the next window. That seam gap is deliberate
+    (a trading pre-roll would move the balance the reported trades are sized from) and tracked
+    separately in #23.
     """
     node = BacktestNode(configs=[run_config])
     try:

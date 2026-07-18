@@ -89,8 +89,9 @@ def main(argv: list[str] | None = None) -> None:
         "--start-balance",
         type=float,
         default=None,
-        help="pin the account's INITIAL balance (the trailing/daily reference). Only used on the "
-        "first run; afterwards the saved risk state wins. Default: the balance at first launch.",
+        help="the OPENING balance of the current prop loss day (resets 16:15 CT). REQUIRED on a "
+        "first run with no saved risk state -- the runner halts rather than guess it, because "
+        "guessing can hand out a second daily loss budget. Afterwards the saved state wins.",
     )
     args = parser.parse_args(argv)
 
@@ -134,6 +135,9 @@ def main(argv: list[str] | None = None) -> None:
             notifier=notifier,
             expected_login=profile.expected_login,
             expected_currency=profile.expected_currency,
+            # Only what the operator passed explicitly: the profile's balance is the ACCOUNT
+            # reference, not this loss day's opening balance, so it must not stand in for one.
+            day_start_balance=args.start_balance,
         )
         if args.once:
             try:  # N3: a single cycle must not crash with a bare traceback on a transient error

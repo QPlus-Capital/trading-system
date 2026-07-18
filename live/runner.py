@@ -233,6 +233,7 @@ class LiveRunner:
         notifier: Notifier | None = None,
         expected_login: int | None = None,
         expected_currency: str | None = None,
+        day_start_balance: float | None = None,
     ) -> None:
         self._bridge = bridge
         self._markets = markets
@@ -245,6 +246,9 @@ class LiveRunner:
         # account, HALT immediately and do NOT touch positions (they belong to the wrong account).
         self._expected_login = expected_login
         self._expected_currency = expected_currency
+        # The loss day's OPENING balance, supplied by the operator for a first launch with no
+        # saved state. Without it that path halts rather than guess (see run_once).
+        self._day_start_override = day_start_balance
         self._notify = notifier or Notifier()  # default: log-only (no beep / telegram)
         self._last_bar_time: dict[str, int] = {}  # our name -> epoch of last acted bar
         self._day: date | None = None
@@ -350,16 +354,26 @@ class LiveRunner:
             #   allowing 4.5% in one day. Assume instead that the day opened no LOWER than the
             #   account's reference, so the remaining budget can only be under-stated.
             self._risk.on_eod(account.balance)
-            day_ref = max(account.balance, self._risk.start_balance)
-            self._risk.on_new_day(day_ref)
-            if day_ref != account.balance:
-                log.warning(
-                    "first launch mid-day: daily reference pinned to %.2f (balance %.2f) so a "
-                    "restart cannot reset the loss budget. Pass --start-balance if the loss day "
-                    "actually opened elsewhere.",
-                    day_ref,
+            if self._day_start_override is None:
+                # FAIL CLOSED. Without saved state we do not know this loss day's opening balance,
+                # and no heuristic is safe in both directions: max(balance, reference) is only
+                # conservative while the account sits BELOW its reference. An account that banked
+                # to 55k and is restarted mid-day at 52k would be handed a fresh 2.5% budget from
+                # 52k although it is already 5.5% down on the day -- at or past the prop limit.
+                # Doing nothing is the safe state; the operator supplies the real day-start.
+                self._halted = True
+                self._halt_reason = "first launch without a known day-start balance"
+                log.critical(
+                    "SAFETY HALT: no saved risk state, so this loss day's opening balance is "
+                    "unknown (current balance %.2f). Restart with --start-balance <opening "
+                    "balance of the current loss day> -- guessing it could hand out a second "
+                    "daily loss budget.",
                     account.balance,
                 )
+                self._notify.alert("SAFETY HALT: first launch needs an explicit --start-balance")
+                return
+            self._risk.on_new_day(self._day_start_override)
+            log.info("first launch: day-start balance set to %.2f", self._day_start_override)
             self._day = today
             self._persist()
         elif today != self._day:

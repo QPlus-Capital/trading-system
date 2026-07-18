@@ -33,7 +33,6 @@ Usage (append a number to limit windows for a quick test)::
 """
 
 
-import shutil
 import sys
 import time
 from collections import defaultdict
@@ -431,10 +430,8 @@ def main(argv: list[str] | None = None) -> None:
     # is skipped per instrument, so stale bars would otherwise be mixed with window/day logic
     # parsed in the current frame and shift everything by the server offset (#18).
     if catalog_frame_is_stale(catalog):
-        # DELETE it, do not just re-seed into it: writing new bars beside the old ones leaves both
-        # frames readable by the backtest -- precisely the mixed state this is meant to prevent.
-        print("catalog was written in a different timestamp frame -> rebuilding it from scratch")
-        shutil.rmtree(catalog, ignore_errors=True)
+        # write_mt5_catalog does the actual wipe (it is the single funnel for bar imports); this
+        # only has to stop trusting the instrument list we read from the stale catalog.
         have = set()
     for factory, csv, leverage in cfg.INSTRUMENTS:
         recipe = SweepRecipe(factory(), csv, leverage=leverage)
