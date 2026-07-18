@@ -78,8 +78,11 @@ def main(argv: list[str] | None = None) -> None:
         how = "Auto (Rendite-first, Risiko- + DSR-Gate)"
 
     # Manifest (#2): carry the gate evidence for the pick forward so the verdict can require it
-    # rather than trusting that selection was gated at all.
-    row = ranking[ranking["variation"] == variation]
+    # rather than trusting that selection was gated at all. The ranking now holds one row per
+    # (variation, train_months), so the manifest must cite the row actually picked.
+    row = ranking[
+        (ranking["variation"] == variation) & (ranking["train_months"] == train_months)
+    ]
     gates = (
         {
             "eligible": bool(row.iloc[0]["eligible"]),
