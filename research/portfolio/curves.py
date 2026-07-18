@@ -19,6 +19,7 @@ These are pure functions (NumPy/pandas); pass the resulting curves to
 
 import numpy as np
 import pandas as pd
+from core.data.mt5_csv import parse_mt5_timestamps
 
 DAY_NS = 86_400_000_000_000
 _EPOCH = pd.Timestamp("1970-01-01", tz="UTC")
@@ -36,7 +37,7 @@ def load_daily_close(csv_path: str) -> pd.Series:
     ``ts.astype(int64) // DAY_NS``, which is wrong when pandas parses to microseconds.
     """
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<CLOSE>"])
-    ts = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S", utc=True)
+    ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC, so days bucket correctly
     day = ((ts - _EPOCH) // pd.Timedelta(days=1)).to_numpy()
     return pd.Series(df["<CLOSE>"].to_numpy(dtype=float), index=day).groupby(level=0).last()
 
@@ -49,7 +50,7 @@ def load_daily_low_high(csv_path: str) -> tuple[pd.Series, pd.Series]:
     and close at -0.5%, which an end-of-day series cannot see.
     """
     df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>"])
-    ts = pd.to_datetime(df["<DATE>"] + " " + df["<TIME>"], format="%Y.%m.%d %H:%M:%S", utc=True)
+    ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC, so days bucket correctly
     day = ((ts - _EPOCH) // pd.Timedelta(days=1)).to_numpy()
     low = pd.Series(df["<LOW>"].to_numpy(dtype=float), index=day).groupby(level=0).min()
     high = pd.Series(df["<HIGH>"].to_numpy(dtype=float), index=day).groupby(level=0).max()
