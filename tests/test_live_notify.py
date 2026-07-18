@@ -1,6 +1,7 @@
 """Tests for the live Notifier (file channel; beep/telegram are off by default)."""
 
 import logging
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,7 @@ def test_a_failed_telegram_send_never_writes_the_token_to_the_log(
         # Mirrors urllib: the exception text carries the full request URL.
         raise OSError(f"HTTP 401 for https://api.telegram.org/bot{token}/sendMessage")
 
-    monkeypatch.setattr(notify.urllib.request, "urlopen", boom)
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
     n = notify.Notifier(Path("nul"), beep=False)
     with caplog.at_level(logging.WARNING):
         n.signal("hello")
