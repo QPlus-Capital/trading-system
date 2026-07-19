@@ -18,6 +18,8 @@ Prices are parsed as strings into ``Decimal`` and rounded via ``make_price`` -- 
 float is used for prices.
 """
 
+import hashlib
+import json
 import shutil
 from decimal import Decimal
 from pathlib import Path
@@ -57,11 +59,64 @@ MT5_SERVER_TZ = "Europe/Athens"
 
 
 _FRAME_MARKER = ".timestamp_frame"
+#: Which CSV content each instrument's bars were imported from. Seeding is skipped whenever an
+#: instrument is already present, so without this an edited CSV leaves the OLD Parquet bars in
+#: place while everything downstream believes it is working from the new file.
+SOURCE_MARKER = ".source_digests"
 
 
 def _stamp_catalog_frame(catalog_path: str | Path, server_tz: str | None) -> None:
     """Record which timestamp frame a catalog was written in."""
     (Path(catalog_path) / _FRAME_MARKER).write_text(server_tz or "UTC", encoding="utf-8")
+
+
+def csv_digest(csv_path: str | Path) -> str:
+    """Content hash of a source CSV, or ``"absent"``."""
+    p = Path(csv_path)
+    if not p.is_file():
+        return "absent"
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return "sha256:" + h.hexdigest()
+
+
+def read_catalog_sources(catalog_path: str | Path) -> dict[str, str]:
+    """``{instrument_id: csv digest}`` recorded when the catalog was seeded."""
+    f = Path(catalog_path) / SOURCE_MARKER
+    if not f.is_file():
+        return {}
+    try:
+        return {str(k): str(v) for k, v in json.loads(f.read_text(encoding="utf-8")).items()}
+    except (json.JSONDecodeError, AttributeError):
+        return {}
+
+
+def _stamp_catalog_source(catalog_path: str | Path, instrument_id: str, csv_path: str | Path) -> None:
+    """Record which CSV content one instrument's bars were imported from."""
+    recorded = read_catalog_sources(catalog_path)
+    recorded[instrument_id] = csv_digest(csv_path)
+    (Path(catalog_path) / SOURCE_MARKER).write_text(
+        json.dumps(recorded, indent=2, sort_keys=True), encoding="utf-8"
+    )
+
+
+def catalog_source_drift(
+    catalog_path: str | Path, sources: dict[str, str | Path]
+) -> list[str]:
+    """Instrument ids whose CSV no longer matches the content their bars were imported from."""
+    recorded = read_catalog_sources(catalog_path)
+    drifted = []
+    for instrument_id, csv_path in sources.items():
+        was = recorded.get(instrument_id)
+        if was is None:  # seeded before the marker existed -- unprovable, treat as drifted
+            if instrument_id in seeded_ids(catalog_path):
+                drifted.append(instrument_id)
+            continue
+        if csv_digest(csv_path) != was:
+            drifted.append(instrument_id)
+    return drifted
 
 
 def catalog_frame_is_stale(catalog_path: str | Path, server_tz: str | None = MT5_SERVER_TZ) -> bool:
@@ -79,7 +134,9 @@ def catalog_frame_is_stale(catalog_path: str | Path, server_tz: str | None = MT5
     return marker.read_text(encoding="utf-8").strip() != (server_tz or "UTC")
 
 
-def seeded_instruments(catalog_path: str | Path) -> set[str]:
+def seeded_instruments(
+    catalog_path: str | Path, sources: dict[str, str | Path] | None = None
+) -> set[str]:
     """Instrument ids present in the catalog -- AFTER discarding a stale-frame catalog.
 
     This is the gate every seeding decision must pass. Checking staleness only inside the write
@@ -93,9 +150,40 @@ def seeded_instruments(catalog_path: str | Path) -> set[str]:
         print(f"catalog {path} is in a different timestamp frame -> discarding it")
         shutil.rmtree(path, ignore_errors=True)
         return set()
+    if sources and (drifted := catalog_source_drift(path, sources)):
+        # Same reasoning AND the same remedy as the frame check: discard the catalog, do not
+        # patch it. ``write_mt5_catalog`` appends into whatever is already there, so re-importing
+        # an instrument whose CSV now covers a different time range would leave the old
+        # partitions beside the new ones and corrupt every backtest that reads them.
+        print(f"catalog source changed for {', '.join(sorted(drifted))} -> discarding the catalog")
+        shutil.rmtree(path, ignore_errors=True)
+        return set()
+    return seeded_ids(path)
+
+
+def seeded_ids(catalog_path: str | Path) -> set[str]:
+    """Instrument ids physically present in the catalog, with no staleness judgement."""
+    path = Path(catalog_path)
     if not path.exists():
         return set()
     return {str(i.id) for i in ParquetDataCatalog(str(path)).instruments()}
+
+
+def require_current_sources(catalog_path: str | Path, sources: dict[str, str | Path]) -> None:
+    """Fail closed if the catalog's bars came from different CSV content than is on disk now.
+
+    The companion of :func:`require_current_frame` for READ paths that never seed: they cannot
+    re-import the data themselves without silently redoing the study, so they refuse with
+    instructions rather than backtesting the previous file's bars under the new file's name.
+    """
+    drifted = catalog_source_drift(catalog_path, sources)
+    if drifted:
+        raise RuntimeError(
+            f"catalog {catalog_path} holds bars for {', '.join(sorted(drifted))} that were "
+            "imported from different CSV content than the files now on disk. Re-seed those "
+            "instruments (re-run the study) before backtesting -- the bars and the data the "
+            "results claim to come from are not the same."
+        )
 
 
 def require_current_frame(catalog_path: str | Path) -> None:
@@ -252,4 +340,5 @@ def write_mt5_catalog(
     catalog.write_data([instrument])
     catalog.write_data(bid_bars)
     catalog.write_data(ask_bars)
+    _stamp_catalog_source(catalog_path, str(instrument.id), csv_path)
     return len(bid_bars)

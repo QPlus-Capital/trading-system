@@ -216,6 +216,8 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | File | Purpose |
 |---|---|
 | `research/stages/_runbook.py` | Run directory + terminal UX (banner, next command) |
+| `research/stages/lineage.py` | Content-addressed lineage: stage manifests, atomic publication, the read gate |
+| `research/stages/open_report.py` | Opens a run's report only while its lineage still verifies |
 | `research/stages/edge.py` | Stage 1 — is the edge real, where, is it robust? |
 | `research/stages/select.py` | Stage 2 — which structure and which markets? |
 | `research/stages/universe.py` | Stage-2 selection logic (structure + market universe) |

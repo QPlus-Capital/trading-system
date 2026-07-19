@@ -19,6 +19,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -36,6 +37,7 @@ from research.portfolio.risk import (
 )
 from research.portfolio.stats import daily_equity, edge_stats, risk_stats
 from research.stages import _runbook as rb
+from research.stages import lineage
 from research.stages.edge import PBO_MAX
 
 _STAT_ROWS = [
@@ -58,14 +60,40 @@ def main(argv: list[str] | None = None) -> None:
         "--config", type=Path, default=None,
         help="study config (default: the one Stage 1 recorded in the run)"
     )
+    parser.add_argument(
+        "--allow-legacy-unverified", action="store_true",
+        help="read a run that predates artifact hashing. Such a run can be inspected but can "
+        "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
+    )
     args = parser.parse_args(argv)
 
-    run = rb.RunDir.open(args.run)
+    run = rb.RunDir.open(args.run, allow_legacy=bool(args.allow_legacy_unverified))
     rb.banner(4, "VERDICT - Urteil & Report", run)
-    run.require("portfolio.json", "portfolio")
-    spec = run.load_json("portfolio.json")
+    # #31: verify the WHOLE upstream chain before computing anything. A lineage failure is a
+    # property of the run, not of the work this stage is about to do, so it must surface in the
+    # first second rather than after a fact sheet has been built on artifacts that do not belong
+    # together.
+    run.require("run_manifest.json", "edge")  # the config anchor
+    sel_path = run.require("selection.json", "select")
+    has_pbo = run.file("overfitting.json").exists()
+    of_path = run.require("overfitting.json", "edge") if has_pbo else None
+    spec = json.loads(run.require("portfolio.json", "portfolio").read_text(encoding="utf-8"))
     trades = pd.read_csv(run.require("portfolio_trades.csv", "portfolio"))
+    # A run predating this artifact must stay inspectable: legacy mode exists to READ old runs,
+    # and demanding a file they never had would lock out the very workflow it is for. It stays
+    # mandatory for a real run, where its absence means the stage did not finish.
+    fh_path = (
+        run.file("full_history_trades.csv")
+        if run.allow_legacy
+        else run.require("full_history_trades.csv", "portfolio")
+    )
+    full_trades = pd.read_csv(fh_path) if fh_path.is_file() else None
     cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
+    # Snapshot the external inputs BEFORE the market data is loaded and the verdict computed, so
+    # the manifest records the content these numbers came from. Evaluating this at publication
+    # time would let a file edited mid-stage be recorded as the input to results produced from
+    # its predecessor, and the writer's drift check would see a perfectly stable snapshot.
+    inputs = lineage.external_inputs(run.study_config(args.config), cfg)
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
     universe = [m for m in spec["instruments"] if m in specs]
@@ -110,7 +138,7 @@ def main(argv: list[str] | None = None) -> None:
     fixed_config = spec.get("fixed_config")
     # #2: the verdict must TEST the selection gates, not assume selection applied them. A forced
     # (--variation) pick bypassed them by definition and can never be a deployable PASS.
-    sel_manifest = run.load_json("selection.json") if run.file("selection.json").exists() else {}
+    sel_manifest = json.loads(sel_path.read_text(encoding="utf-8"))
     gates = sel_manifest.get("gates", {})
     gated_pick = (
         bool(gates.get("eligible")) and bool(gates.get("dsr_ok")) and not sel_manifest.get("forced")
@@ -120,9 +148,7 @@ def main(argv: list[str] | None = None) -> None:
     # single candidate's DSR can rescue. Selection now refuses such a study, and the verdict
     # re-tests it rather than trusting that it did.
     pbo = (
-        run.load_json("overfitting.json").get("pbo")
-        if run.file("overfitting.json").exists()
-        else None
+        json.loads(of_path.read_text(encoding="utf-8")).get("pbo") if of_path is not None else None
     )
     pbo_txt = "n/a" if pbo is None else f"{pbo:.2f}"
     # A contaminated holdout is IN-SAMPLE for the deployed config, so its numbers cannot support a
@@ -131,7 +157,16 @@ def main(argv: list[str] | None = None) -> None:
     # Missing DSR/PBO artifacts are not a pass either: those gates exist to reject overfit
     # searches, and "we never measured it" is not evidence that it is fine. An older study without
     # them has to be re-run rather than waved through.
+    # #31: a PASS is a live-money decision, so it may only rest on numbers whose whole chain of
+    # production is content-verified. A legacy run stays readable and can never clear this.
+    try:
+        run.assert_deployable(ignore="verdict")
+        lineage_ok, lineage_txt = True, "Herkunft aller Stufen inhaltlich verifiziert"
+    except SystemExit as exc:
+        lineage_ok = False
+        lineage_txt = f"Herkunft NICHT verifiziert ({str(exc).splitlines()[0]})"
     checks = [
+        (lineage_ok, lineage_txt),
         (pbo is not None and pbo <= PBO_MAX, f"PBO {pbo_txt} <= {PBO_MAX:.2f} (gemessen)"),
         (gates.get("dsr") is not None, f"DSR gemessen ({dsr_txt})"),
         (not contaminated, "Holdout ist echtes Out-of-Sample (nicht kontaminiert)"),
@@ -179,30 +214,35 @@ def main(argv: list[str] | None = None) -> None:
     )
     print(f"    Maerkte ({len(universe)})       : {', '.join(universe)}")
 
-    run.save_json(
-        "verdict.json",
-        {
-            "passed": passed,
-            "reasons": [f"{'PASS' if ok else 'FAIL'}: {m}" for ok, m in checks],
-            "mc_prob_profit": prob_profit,
-            "stats": {k: stats[k] for k, _, _ in _STAT_ROWS},
-        },
-    )
-
-    # Fact sheet: full history vs holdout, flat vs compound -- the consistent end-of-run report.
-    # Sized at the chosen ceiling; the full-history stream was cached by the portfolio stage.
-    fh_path = run.file("full_history_trades.csv")
-    if fh_path.exists():
-        full_trades = pd.read_csv(fh_path)
-        fs_account = replace(account, base_risk_frac=float(spec["ceiling_pct"]) / 100.0)
-        fs = factsheet.compute_factsheet(full_trades, trades, daily_close, fs_account)
-        print(factsheet.render_terminal(fs))
-        html = html_report.render(
-            fs, str(spec["variation"]), run.path.name, run.file("report.html")
+    # #31: the verdict and the report describe the same evaluation and are published together --
+    # a report.html left beside a verdict.json from a different run is exactly the mix-up the
+    # staged write prevents.
+    with run.stage(
+        "verdict",
+        argv={"run": str(run.path), "config": str(args.config or "")},
+        inputs=inputs,
+        semantics={"passed": passed, "variation": spec["variation"], "deployable": lineage_ok},
+    ) as st:
+        st.save_json(
+            "verdict.json",
+            {
+                "passed": passed,
+                "reasons": [f"{'PASS' if ok else 'FAIL'}: {m}" for ok, m in checks],
+                "mc_prob_profit": prob_profit,
+                "stats": {k: stats[k] for k, _, _ in _STAT_ROWS},
+            },
         )
-        print(f"\n  Faktsheet-Report (im Browser oeffnen): {html}")
+        # Fact sheet: full history vs holdout, flat vs compound -- the consistent end-of-run
+        # report. Sized at the chosen ceiling; the stream was cached by the portfolio stage.
+        if full_trades is not None:
+            fs_account = replace(account, base_risk_frac=float(spec["ceiling_pct"]) / 100.0)
+            fs = factsheet.compute_factsheet(full_trades, trades, daily_close, fs_account)
+            print(factsheet.render_terminal(fs))
+            html_report.render(fs, str(spec["variation"]), run.path.name, st.file("report.html"))
+    if full_trades is None:
+        print("\n  (full_history_trades.csv fehlt - Legacy-Lauf, kein Faktsheet)")
     else:
-        print("\n  (full_history_trades.csv fehlt - Portfolio-Stufe neu laufen fuer den Faktsheet)")
+        print(f"\n  Faktsheet-Report (im Browser oeffnen): {run.file('report.html')}")
     rb.finished()
 
 

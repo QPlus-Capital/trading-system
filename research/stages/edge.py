@@ -24,7 +24,7 @@ import pandas as pd
 
 from research.engine.config import load_config_module
 from research.stages import _runbook as rb
-from research.stages import universe
+from research.stages import lineage, universe
 
 # Defaults only -- a study config may override via SELECT_MIN_FRAC_POSITIVE / SELECT_RPD_TOLERANCE.
 _MIN_FRAC_POSITIVE = 0.9  # structure gate: OOS-positive on a robust majority of instruments
@@ -146,36 +146,87 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--run", type=Path, default=None, help="write into this framework run dir (default: fresh)"
     )
+    parser.add_argument(
+        "--allow-legacy-unverified", action="store_true",
+        help="read a run that predates artifact hashing. Such a run can be inspected but can "
+        "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
+    )
     args = parser.parse_args(argv)
 
-    run = rb.RunDir.open(args.run) if args.run else rb.RunDir.create()
+    legacy = bool(args.allow_legacy_unverified)
+    run = (
+        rb.RunDir.open(args.run, allow_legacy=legacy)
+        if args.run
+        else rb.RunDir.create(allow_legacy=legacy)
+    )
     rb.banner(1, "EDGE - Kante & Robustheit", run)
-    # #3: anchor the study config IN the run. Later stages default to it instead of falling back
-    # to research/config/robustness.py -- a run started from config B must not be finished with
-    # config A's instruments, account profile and variation definitions.
-    run.save_json("run_manifest.json", {"config": str(args.config)})
+    # Gates live in the study config (per strategy), not in this code -- nothing strategy-specific.
+    cfg = load_config_module(args.config)
 
-    study_csv = _study_csv_from(args.source) if args.source else _run_study(args.config)
-    shutil.copyfile(study_csv, run.file("study.csv"))  # anchor the study in this run
-    df = pd.read_csv(run.file("study.csv"))
+    # Hash the inputs BEFORE the sweep, not after: a config or CSV edited during the hours the
+    # study runs would otherwise be recorded as if it had produced these results. The catalog is
+    # excluded here because running the sweep SEEDS it -- it is captured once seeding is done.
+    inputs = lineage.external_inputs(args.config, cfg, catalog=False)
+    producer_git: dict[str, str] | None = None  # set only when ingesting another run's study
+    if args.source:
+        study_csv = _study_csv_from(args.source)
+        # An ingested study was computed at some earlier time, possibly from other content. Only
+        # the study's OWN record says what that was; hashes taken here describe the files now.
+        # Its recorded catalog entries are kept as-is -- replacing them with the catalog as it
+        # stands today would certify bars that study never read.
+        recorded = lineage.read_provenance(study_csv.parent)
+        provenance = lineage.PROVENANCE_RECORDED if recorded else lineage.PROVENANCE_INGESTED
+        # The study's results belong to the code that COMPUTED them, not to the checkout doing
+        # the ingest. Recording the producer's state lets the cross-stage git check refuse a
+        # study combined with downstream stages run under materially different engine code.
+        if recorded:
+            inputs, producer_git = recorded
+        else:
+            inputs, producer_git = {**inputs, **lineage.catalog_inputs()}, None
+    else:
+        study_csv = _run_study(args.config)
+        provenance = lineage.PROVENANCE_COMPUTED
+        # The sweep is what SEEDS the catalog, so there was nothing stable to hash up front. It
+        # records the catalog the moment seeding finished -- before its own backtests ran -- so
+        # a concurrent seeder during those hours cannot be mistaken for what this study read.
+        at_seed = study_csv.parent / "_catalog_at_seed.json"
+        inputs = {
+            **inputs,
+            **(
+                json.loads(at_seed.read_text(encoding="utf-8"))
+                if at_seed.is_file()
+                else lineage.catalog_inputs()
+            ),
+        }
+        lineage.write_provenance(study_csv.parent, inputs)  # so a later --from can be trusted
+    df = pd.read_csv(study_csv)
 
     # The study alone holds the per-window return series, so it (not this stage) computes the DSR +
     # PBO; carry those artifacts into the run and surface them. Older studies may lack them.
     source_dir = study_csv.parent
-    for artifact in ("ranking.csv", "overfitting.json"):
-        if (source_dir / artifact).exists():
-            shutil.copyfile(source_dir / artifact, run.file(artifact))
     dsr_by_variation, pbo = load_overfitting(source_dir)
 
-    # Gates live in the study config (per strategy), not in this code -- nothing strategy-specific.
-    cfg = load_config_module(args.config)
     min_pos = float(getattr(cfg, "SELECT_MIN_FRAC_POSITIVE", _MIN_FRAC_POSITIVE))
     rpd_tol = float(getattr(cfg, "SELECT_RPD_TOLERANCE", _RPD_TOLERANCE))
 
     top = ranking(
         df, min_frac_positive=min_pos, rpd_tolerance=rpd_tol, dsr_by_variation=dsr_by_variation
     )
-    top.to_csv(run.file("edge_ranking.csv"), index=False)
+    # #31: everything this stage produces is published together, with the content hashes of the
+    # config and raw data it was computed from. A later edit to any of them invalidates the run.
+    with run.stage(
+        "edge",
+        argv={"config": str(args.config), "source": str(args.source or ""), "run": str(run.path)},
+        inputs=inputs,
+        semantics={"study_provenance": provenance},
+        git=producer_git,  # the code that computed the study, when it was not this process
+    ) as st:
+        st.save_json("run_manifest.json", {"config": str(args.config)})
+        shutil.copyfile(study_csv, st.file("study.csv"))
+        for artifact in ("ranking.csv", "overfitting.json"):
+            if (source_dir / artifact).exists():
+                shutil.copyfile(source_dir / artifact, st.file(artifact))
+        top.to_csv(st.file("edge_ranking.csv"), index=False)
     auto = _print_table(top)
     print(f"\n  Struktur-Gate: %pos>={min_pos:.0%} und Rend/DD>={rpd_tol:.0%} vom Besten.")
     if dsr_by_variation:

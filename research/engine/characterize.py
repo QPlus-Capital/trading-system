@@ -33,6 +33,7 @@ Usage (append a number to limit windows for a quick test)::
 """
 
 
+import json
 import sys
 import time
 from collections import defaultdict
@@ -422,13 +423,26 @@ def main(argv: list[str] | None = None) -> None:
     catalog = _REPO_ROOT / "catalog"
     # The presence check discards a stale-frame catalog outright, so the per-instrument seeding
     # below re-imports everything through the write funnel (which stamps the new frame).
-    have = seeded_instruments(catalog)
+    # ...and an instrument whose CSV changed since it was seeded is discarded from the set too,
+    # so the loop below re-imports it instead of backtesting the previous file's bars.
+    sources: dict[str, str | Path] = {
+        str(factory().id): _REPO_ROOT / str(csv) for factory, csv, _lev in cfg.INSTRUMENTS
+    }
+    have = seeded_instruments(catalog, sources)
     for factory, csv, leverage in cfg.INSTRUMENTS:
         recipe = SweepRecipe(factory(), csv, leverage=leverage)
         if str(recipe.INSTRUMENT.id) not in have:
             print(f"seeding {recipe.INSTRUMENT.id} ...")
             recipe.seed_catalog()
             have.add(str(recipe.INSTRUMENT.id))
+
+    # The catalog is complete and the backtests are about to read it. Record its state HERE, not
+    # after the sweep: another seeder touching the shared catalog during these hours would make a
+    # post-sweep snapshot describe bars this study's tasks never saw.
+    from research.stages import lineage
+    (out_dir / "_catalog_at_seed.json").write_text(
+        json.dumps(lineage.catalog_inputs(sorted(sources)), indent=2), encoding="utf-8"
+    )
 
     tasks = [
         (

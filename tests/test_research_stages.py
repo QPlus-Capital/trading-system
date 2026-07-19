@@ -44,7 +44,9 @@ def test_live_fixed_stops_reads_per_market_sltp() -> None:
 
 
 def test_rundir_roundtrip_and_missing_artifact(tmp_path: Path) -> None:
-    run = rb.RunDir.open(tmp_path)
+    # #31: a hand-placed file has no lineage, so reading it is only allowed in legacy mode --
+    # existence stopped being evidence that an artifact belongs to this run.
+    run = rb.RunDir.open(tmp_path, allow_legacy=True)
     run.save_json("selection.json", {"variation": "x", "instruments": ["EURUSD"]})
     assert run.load_json("selection.json")["variation"] == "x"
     assert run.require("selection.json", "select").name == "selection.json"
