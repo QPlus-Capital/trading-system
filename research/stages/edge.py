@@ -163,20 +163,26 @@ def main(argv: list[str] | None = None) -> None:
     # Gates live in the study config (per strategy), not in this code -- nothing strategy-specific.
     cfg = load_config_module(args.config)
 
-    # #31 / Codex: hash the inputs BEFORE the sweep, not after. A config or CSV edited during the
-    # hours the study runs would otherwise be recorded as if it had produced these results.
-    inputs = lineage.external_inputs(args.config, cfg)
+    # Hash the inputs BEFORE the sweep, not after: a config or CSV edited during the hours the
+    # study runs would otherwise be recorded as if it had produced these results. The catalog is
+    # excluded here because running the sweep SEEDS it -- it is captured once seeding is done.
+    inputs = lineage.external_inputs(args.config, cfg, catalog=False)
     if args.source:
         study_csv = _study_csv_from(args.source)
         # An ingested study was computed at some earlier time, possibly from other content. Only
         # the study's OWN record says what that was; hashes taken here describe the files now.
+        # Its recorded catalog entries are kept as-is -- replacing them with the catalog as it
+        # stands today would certify bars that study never read.
         recorded = lineage.read_provenance(study_csv.parent)
         provenance = "recorded-by-study" if recorded else lineage.PROVENANCE_INGESTED
-        inputs = recorded if recorded else inputs
+        inputs = recorded if recorded else {**inputs, **lineage.catalog_inputs()}
     else:
         study_csv = _run_study(args.config)
-        lineage.write_provenance(study_csv.parent, inputs)  # so a later --from can be trusted
         provenance = "computed-here"
+        # Captured only now: running the sweep is what SEEDS the catalog, so there was nothing
+        # stable to hash beforehand. Seeding is finished, so it holds still from here on.
+        inputs = {**inputs, **lineage.catalog_inputs()}
+        lineage.write_provenance(study_csv.parent, inputs)  # so a later --from can be trusted
     df = pd.read_csv(study_csv)
 
     # The study alone holds the per-window return series, so it (not this stage) computes the DSR +

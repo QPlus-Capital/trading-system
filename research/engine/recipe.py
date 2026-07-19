@@ -19,7 +19,7 @@ from typing import Any
 
 import pandas as pd
 from core.broker import BrokerProfile
-from core.data.mt5_csv import require_current_frame, write_mt5_catalog
+from core.data.mt5_csv import require_current_frame, require_current_sources, write_mt5_catalog
 from core.paths import REPO_ROOT
 from nautilus_trader.config import (
     BacktestDataConfig,
@@ -123,6 +123,9 @@ class SweepRecipe:
         # never pass the write funnel's own check.
         if not self._frame_checked:
             require_current_frame(self.CATALOG_PATH)
+            # Same funnel, same reasoning, applied to content: these bars must have been imported
+            # from the CSV that is on disk now, or the results describe data nobody can point to.
+            require_current_sources(self.CATALOG_PATH, {str(self.INSTRUMENT.id): self.CSV_PATH})
             self._frame_checked = True
         gate = {"trade_from_ns": pd.Timestamp(trade_from).value} if trade_from else {}
         strategy = ImportableStrategyConfig(
