@@ -119,20 +119,40 @@ def drifted_inputs(inputs: dict[str, Any]) -> list[str]:
     return out
 
 
+#: The study files a provenance record binds itself to. ``ranking.csv`` / ``overfitting.json``
+#: are optional (older studies lack them) and are recorded as ``absent`` when missing.
+STUDY_ARTIFACTS: tuple[str, ...] = ("study.csv", "ranking.csv", "overfitting.json")
+
+
 def write_provenance(study_dir: Path, inputs: dict[str, Any]) -> Path:
-    """Record, inside a study directory, what that study was computed from.
+    """Record, inside a study directory, what that study was computed from AND produced.
 
     Without this a study ingested via ``--from`` can only be hashed at INGESTION time, which
     describes the files as they are then rather than the ones that produced it -- so a stale
     study would carry a manifest certifying unrelated current inputs.
+
+    The artifact hashes matter just as much as the inputs: a sidecar that names only the config
+    still validates after the results beside it have been swapped, which would let arbitrary
+    numbers inherit a genuine provenance record.
     """
+    artifacts = hash_paths({name: study_dir / name for name in STUDY_ARTIFACTS})
     f = study_dir / _PROVENANCE_FILE
-    f.write_text(json.dumps({"schema": SCHEMA_VERSION, "inputs": inputs}, indent=2), "utf-8")
+    payload = {"schema": SCHEMA_VERSION, "inputs": inputs, "artifacts": artifacts}
+    f.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return f
 
 
+class ProvenanceMismatch(LineageError):
+    """A study carries a provenance record that no longer describes the files beside it."""
+
+
 def read_provenance(study_dir: Path) -> dict[str, Any] | None:
-    """The inputs a study recorded for itself, or ``None`` if it never did."""
+    """The inputs a study recorded for itself, or ``None`` if it never did.
+
+    Raises :class:`ProvenanceMismatch` when the record exists but the study files it names have
+    changed -- refusing loudly, because silently falling back to "unprovenanced" would turn a
+    detected swap into a mere downgrade.
+    """
     f = study_dir / _PROVENANCE_FILE
     if not f.is_file():
         return None
@@ -143,7 +163,23 @@ def read_provenance(study_dir: Path) -> dict[str, Any] | None:
     if int(d.get("schema", 0)) != SCHEMA_VERSION:
         return None
     inputs = d.get("inputs")
-    return dict(inputs) if isinstance(inputs, dict) else None
+    if not isinstance(inputs, dict):
+        return None
+
+    recorded = d.get("artifacts") or {}
+    drifted = []
+    for name, entry in recorded.items():
+        f_art = study_dir / name
+        actual = sha256_file(f_art) if f_art.is_file() else "absent"
+        if actual != entry.get("sha256"):
+            drifted.append(f"{name}\n      recorded {entry.get('sha256')}\n      actual   {actual}")
+    if drifted:
+        detail = "\n    - ".join(drifted)
+        raise ProvenanceMismatch(
+            f"study in {study_dir} changed since it recorded its provenance:\n    - {detail}\n"
+            "  -> these results are not the ones the recorded config and data produced."
+        )
+    return dict(inputs)
 
 
 def rehash_recorded(entry: dict[str, str]) -> str:
@@ -170,7 +206,10 @@ def git_state() -> dict[str, str]:
             return ""
 
     commit = _run("rev-parse", "HEAD").strip() or "unknown"
-    dirt = _run("status", "--porcelain") + _run("diff")
+    # The STAGED diff too: `git diff` shows only the worktree, and `git status --porcelain` carries
+    # status letters and paths, not content. Restaging different content under the same paths would
+    # otherwise leave the digest untouched while the code that runs has changed.
+    dirt = _run("status", "--porcelain") + _run("diff") + _run("diff", "--cached")
     return {"commit": commit, "dirty": sha256_bytes(dirt.encode()) if dirt.strip() else "clean"}
 
 
@@ -316,10 +355,15 @@ class StageWriter:
         seeds: dict[str, Any] | None = None,
         inputs: dict[str, Any] | None = None,
         semantics: dict[str, Any] | None = None,
+        git: dict[str, str] | None = None,
     ) -> None:
         self.run_path = run_path
         self.stage = stage
         self.run_id = run_id
+        # The state when the stage's WORK began, not when it finished. A stage that imported one
+        # revision and published after the checkout moved would otherwise claim the new revision
+        # produced its results -- and every later stage, running under that revision, would agree.
+        self._git = git if git is not None else git_state()
         self._argv = argv or {}
         self._seeds = seeds or {}
         self._inputs = inputs or {}
@@ -379,6 +423,34 @@ class StageWriter:
                 "  -> nothing was published; re-run the stage against the current inputs."
             )
 
+        # 0b. Same question for the code: did the checkout move while this stage ran?
+        if (now := git_state()) != self._git:
+            shutil.rmtree(self._staging, ignore_errors=True)
+            was = self._git
+            raise LineageError(
+                f"the code changed while stage '{self.stage}' was running:\n"
+                f"    - at start: commit {was['commit'][:12]} dirty={was['dirty'][:19]}\n"
+                f"    - now:      commit {now['commit'][:12]} dirty={now['dirty'][:19]}\n"
+                "  -> nothing was published; these results were computed by different code."
+            )
+
+        # 0c. And the upstream artifacts this stage READ: an earlier stage re-run mid-flight would
+        #     otherwise let the verdict compute PASS and then publish it on top of a moved chain.
+        moved = []
+        for artifact, recorded in self._upstream.items():
+            f = self.run_path / artifact
+            actual = sha256_file(f) if f.is_file() else "absent"
+            if actual != recorded:
+                moved.append(f"{artifact}\n      read     {recorded}\n      now      {actual}")
+        if moved:
+            shutil.rmtree(self._staging, ignore_errors=True)
+            detail = "\n    - ".join(moved)
+            raise LineageError(
+                f"upstream artifacts changed while stage '{self.stage}' was running:\n"
+                f"    - {detail}\n"
+                "  -> nothing was published; the stage before this one was re-run underneath it."
+            )
+
         # 1. move every produced file into the run directory
         outputs: dict[str, str] = {}
         for name in self._names:
@@ -409,7 +481,7 @@ class StageWriter:
             stage=self.stage,
             run_id=self.run_id,
             completed_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
-            git=git_state(),
+            git=self._git,
             argv=self._argv,
             seeds=self._seeds,
             inputs=self._inputs,
@@ -512,9 +584,11 @@ def verify_artifact(
 
     found = producing_stage(run_path, artifact)
     if found is None:
-        if allow_legacy or not any(read_manifest(run_path, s) for s in STAGE_ORDER):
-            # No lineage anywhere: a pre-#31 run. Permitted only in legacy mode, and never
-            # deployable -- see assert_deployable.
+        # Legacy acceptance is for a WHOLLY pre-lineage run, never a blanket pass for an unclaimed
+        # file. In a run that has manifests, an unclaimed artifact is a stray or a leftover -- and
+        # accepting it would let unverified evidence ride along inside an otherwise valid run.
+        has_lineage = any(read_manifest(run_path, s) for s in STAGE_ORDER)
+        if not has_lineage:
             if allow_legacy:
                 return sha256_file(f)
             raise LineageError(
@@ -593,6 +667,25 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
             "  -> the hashes describe the files at ingestion time, not the ones that produced\n"
             "     the study. Re-run the study, or ingest one that recorded its own inputs."
         )
+
+    # --config is a supported override, so nothing stopped Stage 3 from being finished with a
+    # different study config than Stage 1 selected under. Each manifest then verifies perfectly on
+    # its own, and the shared run id is unchanged -- only comparing the stages catches it.
+    shared: dict[str, tuple[str, dict[str, str]]] = {}
+    for stage, m in stages:
+        for label, entry in _walk_inputs(m.inputs):
+            if label.startswith("fixed_live_config"):
+                continue  # legitimately present in Stage 3/4 only
+            if label in shared and shared[label][1]["sha256"] != entry["sha256"]:
+                other, prior = shared[label]
+                raise LineageError(
+                    f"stages of this run used different '{label}':\n"
+                    f"    - {other}: {prior['sha256']} ({prior['path']})\n"
+                    f"    - {stage}: {entry['sha256']} ({entry['path']})\n"
+                    "  -> selection and extraction describe different configurations; such a\n"
+                    "     run cannot produce a deployable verdict."
+                )
+            shared.setdefault(label, (stage, entry))
 
     # external_inputs() covers configs and data -- never the research code itself. Two stages run
     # from different revisions of the engine can otherwise be combined into a deployable verdict.
