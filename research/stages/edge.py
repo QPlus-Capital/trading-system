@@ -167,6 +167,7 @@ def main(argv: list[str] | None = None) -> None:
     # study runs would otherwise be recorded as if it had produced these results. The catalog is
     # excluded here because running the sweep SEEDS it -- it is captured once seeding is done.
     inputs = lineage.external_inputs(args.config, cfg, catalog=False)
+    producer_git: dict[str, str] | None = None  # set only when ingesting another run's study
     if args.source:
         study_csv = _study_csv_from(args.source)
         # An ingested study was computed at some earlier time, possibly from other content. Only
@@ -175,7 +176,13 @@ def main(argv: list[str] | None = None) -> None:
         # stands today would certify bars that study never read.
         recorded = lineage.read_provenance(study_csv.parent)
         provenance = lineage.PROVENANCE_RECORDED if recorded else lineage.PROVENANCE_INGESTED
-        inputs = recorded if recorded else {**inputs, **lineage.catalog_inputs()}
+        # The study's results belong to the code that COMPUTED them, not to the checkout doing
+        # the ingest. Recording the producer's state lets the cross-stage git check refuse a
+        # study combined with downstream stages run under materially different engine code.
+        if recorded:
+            inputs, producer_git = recorded
+        else:
+            inputs, producer_git = {**inputs, **lineage.catalog_inputs()}, None
     else:
         study_csv = _run_study(args.config)
         provenance = lineage.PROVENANCE_COMPUTED
@@ -212,6 +219,7 @@ def main(argv: list[str] | None = None) -> None:
         argv={"config": str(args.config), "source": str(args.source or ""), "run": str(run.path)},
         inputs=inputs,
         semantics={"study_provenance": provenance},
+        git=producer_git,  # the code that computed the study, when it was not this process
     ) as st:
         st.save_json("run_manifest.json", {"config": str(args.config)})
         shutil.copyfile(study_csv, st.file("study.csv"))
