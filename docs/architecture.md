@@ -242,7 +242,8 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | File | Purpose |
 |---|---|
 | `monitoring/dashboard.py` | Streamlit dashboard (account-aware, default ttp) |
-| `monitoring/deals.py` | MT5 deals → round-trip trades + realized equity + stats |
+| `monitoring/deals.py` | MT5 deals → round-trip trades + cashflows + realized equity + stats |
+| `monitoring/risk_view.py` | What the dashboard may claim: open-risk determinacy + the window's risk basis |
 | `monitoring/reference.py` | Backtest reference + Monte-Carlo expectation band |
 | `monitoring/study_explorer.py` | Study explorer: slice + aggregate study results |
 
