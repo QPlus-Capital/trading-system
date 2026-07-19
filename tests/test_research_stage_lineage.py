@@ -328,8 +328,10 @@ def test_code_changing_between_stages_blocks_deployment(
     lineage.write_provenance(_src, lineage.external_inputs(_cfg, _load(_cfg)))
     _run_edge(study)
     select.main(["--run", str(run_dir)])
+    # Stage 3 runs entirely under a different revision -- self-consistent, so it publishes fine.
     monkeypatch.setattr(lineage, "git_state", lambda: {"commit": "deadbeef", "dirty": "clean"})
     _fake_portfolio_stage(run_dir)
+    monkeypatch.undo()  # back to the real checkout, which is what a verdict would run under
 
     run = rb.RunDir.open(run_dir)
     with pytest.raises(SystemExit) as err:
@@ -421,6 +423,111 @@ def test_legacy_verdict_does_not_demand_full_history(tmp_path: Path) -> None:
     assert "full_history_trades.csv" not in str(err.value)
 
 
+# --------------------------------------------------------- Codex round 2 on PR #38
+def test_provenance_does_not_survive_a_swapped_study_artifact(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """A sidecar naming only external inputs does not bind the study FILES it sits beside."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+
+    df = pd.read_csv(src / "study.csv")
+    df.loc[0, "mean_oos_pct"] = 999.0  # results swapped in after the provenance was written
+    df.to_csv(src / "study.csv", index=False)
+
+    with pytest.raises(SystemExit) as err:
+        _run_edge(study)
+    assert "provenance" in str(err.value).lower()
+
+
+def test_stages_using_different_configs_are_not_deployable(
+    study: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """--config is a supported override, so nothing stopped stage 3 from using another config."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+
+    other = _write_config(tmp_path / "cfg_other.py", marker="a different study config")
+    _fake_portfolio_stage(run_dir, config=other)
+
+    with pytest.raises(SystemExit) as err:
+        rb.RunDir.open(run_dir).assert_deployable()
+    assert "study_config" in str(err.value)
+
+
+def test_the_git_digest_covers_staged_changes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`git diff` omits the index: restaging different content kept the digest identical."""
+    calls: list[tuple[str, ...]] = []
+
+    class _R:
+        returncode = 0
+        stdout = ""
+
+    def _fake_run(args, **_kw):  # type: ignore[no-untyped-def]
+        calls.append(tuple(args))
+        return _R()
+
+    monkeypatch.setattr("research.stages.lineage.subprocess.run", _fake_run)
+    lineage.git_state()
+    assert any("--cached" in c for c in calls), "the staged diff must feed the lineage digest"
+
+
+def test_the_lineage_module_is_in_the_architecture_map() -> None:
+    """AGENTS.md's Definition of Done: every added file appears in the module map."""
+    doc = (Path(__file__).resolve().parents[1] / "docs" / "architecture.md").read_text("utf-8")
+    assert "research/stages/lineage.py" in doc
+
+
+def test_code_changing_during_a_stage_aborts_publication(
+    study: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stage can import revision A and finish after the checkout moved to B."""
+    _cfg, _src, run_dir = study
+    _run_edge(study)
+    run = rb.RunDir.open(run_dir)  # git state is captured when the stage's work begins
+    monkeypatch.setattr(lineage, "git_state", lambda: {"commit": "beefdead", "dirty": "clean"})
+
+    with pytest.raises(SystemExit) as err, run.stage("select") as st:
+        st.save_json("selection.json", {"variation": "v_alpha"})
+    assert "code" in str(err.value).lower()
+    assert lineage.read_manifest(run_dir, "select") is None
+
+
+def test_legacy_acceptance_is_refused_when_the_run_has_manifests(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """Legacy mode is for wholly pre-lineage runs, not a blanket pass for unclaimed files."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+
+    # An artifact no completed stage claims, dropped into a run that DOES have lineage.
+    (run_dir / "stray_evidence.json").write_text('{"pbo": 0.01}', encoding="utf-8")
+    run = rb.RunDir.open(run_dir, allow_legacy=True)
+    with pytest.raises(SystemExit) as err:
+        run.require("stray_evidence.json", "edge")
+    assert "not produced by any completed stage" in str(err.value)
+
+
+def test_upstream_changing_before_publication_aborts_the_stage(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """Verdict can compute PASS, then publish it after selection moved underneath it."""
+    _cfg, _src, run_dir = study
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+
+    run = rb.RunDir.open(run_dir)
+    run.require("selection.json", "select")  # read it, recording its hash
+    with pytest.raises(SystemExit) as err, run.stage("portfolio") as st:
+        select.main(["--run", str(run_dir), "--variation", "v_beta"])  # upstream moves mid-stage
+        st.save_json("portfolio.json", {"variation": "v_alpha"})
+    assert "selection.json" in str(err.value)
+    assert lineage.read_manifest(run_dir, "portfolio") is None
+
+
 # ------------------------------------------------------------------ helpers
 def _load(cfg: Path):  # type: ignore[no-untyped-def]
     from research.engine.config import load_config_module
@@ -428,7 +535,7 @@ def _load(cfg: Path):  # type: ignore[no-untyped-def]
     return load_config_module(cfg)
 
 
-def _fake_portfolio_stage(run_dir: Path) -> None:
+def _fake_portfolio_stage(run_dir: Path, config: Path | None = None) -> None:
     """Publish a Stage 3 result through the REAL writer, without running hours of backtests.
 
     Only the lineage is under test here; the numbers are irrelevant, so this stands in for the
@@ -437,7 +544,9 @@ def _fake_portfolio_stage(run_dir: Path) -> None:
     run = rb.RunDir.open(run_dir)
     run.require("selection.json", "select")
     sel = json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))
-    with run.stage("portfolio", argv={"risk": "flat:0.15"}) as st:
+    cfg_path = config if config is not None else run.study_config()
+    inputs = lineage.external_inputs(cfg_path, _load(cfg_path))
+    with run.stage("portfolio", argv={"risk": "flat:0.15"}, inputs=inputs) as st:
         frame = pd.DataFrame({"market": ["EURUSD"], "r": [1.0], "swap_r": [0.0]})
         frame.to_csv(st.file("portfolio_trades.csv"), index=False)
         frame.to_csv(st.file("full_history_trades.csv"), index=False)

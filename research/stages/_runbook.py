@@ -46,6 +46,11 @@ class RunDir:
     path: Path
     allow_legacy: bool = False  # tolerate runs that predate lineage; never deployable
     _verified: lineage.VerifiedInputs = field(default_factory=lineage.VerifiedInputs)
+    # Captured when the stage process starts -- i.e. when its work begins, not when it publishes.
+    # A stage that ran for hours must be judged by the code it actually imported.
+    # Resolved late (not `default_factory=lineage.git_state`) so it is the same callable the
+    # writer consults at publication time -- otherwise the two could disagree by construction.
+    _git: dict[str, str] = field(default_factory=lambda: lineage.git_state())
 
     @classmethod
     def create(cls, *, allow_legacy: bool = False) -> RunDir:
@@ -99,6 +104,7 @@ class RunDir:
             seeds=seeds,
             inputs=inputs,
             semantics=semantics,
+            git=self._git,
         )
         for artifact, digest in self._verified.digests.items():
             writer.record_upstream(artifact, digest)
