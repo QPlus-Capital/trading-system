@@ -24,7 +24,7 @@ import pandas as pd
 
 from research.engine.config import load_config_module
 from research.stages import _runbook as rb
-from research.stages import universe
+from research.stages import lineage, universe
 
 # Defaults only -- a study config may override via SELECT_MIN_FRAC_POSITIVE / SELECT_RPD_TOLERANCE.
 _MIN_FRAC_POSITIVE = 0.9  # structure gate: OOS-positive on a robust majority of instruments
@@ -146,25 +146,26 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--run", type=Path, default=None, help="write into this framework run dir (default: fresh)"
     )
+    parser.add_argument(
+        "--allow-legacy-unverified", action="store_true",
+        help="read a run that predates artifact hashing. Such a run can be inspected but can "
+        "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
+    )
     args = parser.parse_args(argv)
 
-    run = rb.RunDir.open(args.run) if args.run else rb.RunDir.create()
+    legacy = bool(args.allow_legacy_unverified)
+    run = (
+        rb.RunDir.open(args.run, allow_legacy=legacy)
+        if args.run
+        else rb.RunDir.create(allow_legacy=legacy)
+    )
     rb.banner(1, "EDGE - Kante & Robustheit", run)
-    # #3: anchor the study config IN the run. Later stages default to it instead of falling back
-    # to research/config/robustness.py -- a run started from config B must not be finished with
-    # config A's instruments, account profile and variation definitions.
-    run.save_json("run_manifest.json", {"config": str(args.config)})
-
     study_csv = _study_csv_from(args.source) if args.source else _run_study(args.config)
-    shutil.copyfile(study_csv, run.file("study.csv"))  # anchor the study in this run
-    df = pd.read_csv(run.file("study.csv"))
+    df = pd.read_csv(study_csv)
 
     # The study alone holds the per-window return series, so it (not this stage) computes the DSR +
     # PBO; carry those artifacts into the run and surface them. Older studies may lack them.
     source_dir = study_csv.parent
-    for artifact in ("ranking.csv", "overfitting.json"):
-        if (source_dir / artifact).exists():
-            shutil.copyfile(source_dir / artifact, run.file(artifact))
     dsr_by_variation, pbo = load_overfitting(source_dir)
 
     # Gates live in the study config (per strategy), not in this code -- nothing strategy-specific.
@@ -175,7 +176,19 @@ def main(argv: list[str] | None = None) -> None:
     top = ranking(
         df, min_frac_positive=min_pos, rpd_tolerance=rpd_tol, dsr_by_variation=dsr_by_variation
     )
-    top.to_csv(run.file("edge_ranking.csv"), index=False)
+    # #31: everything this stage produces is published together, with the content hashes of the
+    # config and raw data it was computed from. A later edit to any of them invalidates the run.
+    with run.stage(
+        "edge",
+        argv={"config": str(args.config), "source": str(args.source or ""), "run": str(run.path)},
+        inputs=lineage.external_inputs(args.config, cfg),
+    ) as st:
+        st.save_json("run_manifest.json", {"config": str(args.config)})
+        shutil.copyfile(study_csv, st.file("study.csv"))
+        for artifact in ("ranking.csv", "overfitting.json"):
+            if (source_dir / artifact).exists():
+                shutil.copyfile(source_dir / artifact, st.file(artifact))
+        top.to_csv(st.file("edge_ranking.csv"), index=False)
     auto = _print_table(top)
     print(f"\n  Struktur-Gate: %pos>={min_pos:.0%} und Rend/DD>={rpd_tol:.0%} vom Besten.")
     if dsr_by_variation:
