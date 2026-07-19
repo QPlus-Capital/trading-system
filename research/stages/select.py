@@ -50,7 +50,9 @@ def main(argv: list[str] | None = None) -> None:
     run.require("run_manifest.json", "edge")
     # Snapshotted before the selection is computed, like every other stage. This one is fast, but
     # "fast enough that nobody could edit a file mid-run" is a race, not an invariant.
-    inputs = lineage.external_inputs(run.study_config())
+    # Without the catalog: this stage reads only anchored artifacts, never bars. Recording the
+    # catalog unscoped would make an unrelated study's reseed mark this selection stale.
+    inputs = lineage.external_inputs(run.study_config(), catalog=False)
     df = pd.read_csv(run.require("study.csv", "edge"))
     # #2: the GATED ranking is the only admissible input for an automatic pick. Reading study.csv
     # alone re-derived the choice without the statistical gates the edge stage had applied.

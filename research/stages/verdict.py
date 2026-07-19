@@ -160,7 +160,7 @@ def main(argv: list[str] | None = None) -> None:
     # #31: a PASS is a live-money decision, so it may only rest on numbers whose whole chain of
     # production is content-verified. A legacy run stays readable and can never clear this.
     try:
-        run.assert_deployable()
+        run.assert_deployable(ignore="verdict")
         lineage_ok, lineage_txt = True, "Herkunft aller Stufen inhaltlich verifiziert"
     except SystemExit as exc:
         lineage_ok = False

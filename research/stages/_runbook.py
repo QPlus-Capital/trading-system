@@ -94,8 +94,13 @@ class RunDir:
         seeds: dict[str, Any] | None = None,
         inputs: dict[str, Any] | None = None,
         semantics: dict[str, Any] | None = None,
+        git: dict[str, str] | None = None,
     ) -> lineage.StageWriter:
-        """Open a stage for writing: staged outputs, atomic publish, manifest written last."""
+        """Open a stage for writing: staged outputs, atomic publish, manifest written last.
+
+        ``git`` overrides the captured state for a stage whose results were computed by another
+        process -- an ingested study belongs to the code that produced it, not to this checkout.
+        """
         writer = lineage.StageWriter(
             self.path,
             name,
@@ -104,7 +109,8 @@ class RunDir:
             seeds=seeds,
             inputs=inputs,
             semantics=semantics,
-            git=self._git,
+            git=git if git is not None else self._git,
+            check_git=git is None,  # a foreign revision cannot drift against this process
         )
         for artifact, digest in self._verified.digests.items():
             writer.record_upstream(artifact, digest)
@@ -118,9 +124,13 @@ class RunDir:
                 return m.run_id
         return lineage.new_run_id()
 
-    def assert_deployable(self) -> None:
-        """Refuse to call this run deployable unless every prior stage's lineage verifies."""
-        lineage.assert_deployable(self.path, allow_legacy=self.allow_legacy)
+    def assert_deployable(self, *, ignore: str | None = None) -> None:
+        """Refuse to call this run deployable unless every prior stage's lineage verifies.
+
+        ``ignore`` excludes the stage being recomputed right now: a verdict must be judged on its
+        prerequisites, not on the output it is in the middle of replacing.
+        """
+        lineage.assert_deployable(self.path, allow_legacy=self.allow_legacy, ignore=ignore)
 
     def save_json(self, name: str, obj: dict[str, Any]) -> Path:
         f = self.file(name)

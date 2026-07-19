@@ -50,7 +50,9 @@ from core.broker import TTP_MARKETS, swap_snapshot_path
 from core.data.mt5_csv import read_catalog_sources
 from core.paths import REPO_ROOT
 
-SCHEMA_VERSION = 1
+#: Bumped whenever a manifest or provenance record gains a field the checks rely on. Adding one
+#: without bumping would let an older record pass every check by carrying nothing to check.
+SCHEMA_VERSION = 2
 
 # A study ingested with ``--from`` carries this unless it recorded its own provenance: the
 # hashes taken at ingestion describe the files as they are NOW, not the ones that produced it.
@@ -178,7 +180,15 @@ def write_provenance(study_dir: Path, inputs: dict[str, Any]) -> Path:
     """
     artifacts = hash_paths({name: study_dir / name for name in STUDY_ARTIFACTS})
     f = study_dir / _PROVENANCE_FILE
-    payload = {"schema": SCHEMA_VERSION, "inputs": inputs, "artifacts": artifacts}
+    payload = {
+        "schema": SCHEMA_VERSION,
+        "inputs": inputs,
+        "artifacts": artifacts,
+        # The code that PRODUCED the study. Without it an ingesting run attributes the study to
+        # whatever is checked out at ingestion, so a study computed under one engine revision
+        # could be combined with downstream stages run under another and still look consistent.
+        "git": git_state(),
+    }
     f.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return f
 
@@ -187,8 +197,8 @@ class ProvenanceMismatch(LineageError):
     """A study carries a provenance record that no longer describes the files beside it."""
 
 
-def read_provenance(study_dir: Path) -> dict[str, Any] | None:
-    """The inputs a study recorded for itself, or ``None`` if it never did.
+def read_provenance(study_dir: Path) -> tuple[dict[str, Any], dict[str, str]] | None:
+    """``(inputs, producer git state)`` a study recorded for itself, or ``None`` if it never did.
 
     Raises :class:`ProvenanceMismatch` when the record exists but the study files it names have
     changed -- refusing loudly, because silently falling back to "unprovenanced" would turn a
@@ -232,7 +242,15 @@ def read_provenance(study_dir: Path) -> dict[str, Any] | None:
             f"study in {study_dir} changed since it recorded its provenance:\n    - {detail}\n"
             "  -> these results are not the ones the recorded config and data produced."
         )
-    return dict(inputs)
+
+    producer = d.get("git")
+    if not isinstance(producer, dict) or producer.get("commit", UNKNOWN_GIT) == UNKNOWN_GIT:
+        raise ProvenanceMismatch(
+            f"study in {study_dir} records no usable git state for the code that produced it.\n"
+            "  -> ingesting it would attribute the study to whatever is checked out now;\n"
+            "     re-run the study."
+        )
+    return dict(inputs), {str(k): str(v) for k, v in producer.items()}
 
 
 def rehash_recorded(entry: dict[str, str]) -> str:
@@ -416,10 +434,14 @@ class StageWriter:
         inputs: dict[str, Any] | None = None,
         semantics: dict[str, Any] | None = None,
         git: dict[str, str] | None = None,
+        check_git: bool = True,
     ) -> None:
         self.run_path = run_path
         self.stage = stage
         self.run_id = run_id
+        # False when ``git`` describes another process's checkout (an ingested study): comparing
+        # it against this one at publication would always disagree, and meaninglessly.
+        self._check_git = check_git
         # The state when the stage's WORK began, not when it finished. A stage that imported one
         # revision and published after the checkout moved would otherwise claim the new revision
         # produced its results -- and every later stage, running under that revision, would agree.
@@ -433,7 +455,11 @@ class StageWriter:
         # share a staging area and each __enter__ would wipe the other's work, letting one process
         # publish files the other produced under its own inputs and semantics.
         self._staging = run_path / f"{_STAGING_PREFIX}{stage}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
-        self._lock = run_path / f"{_STAGING_PREFIX}{stage}.lock"
+        # ONE lock for the whole run, not one per stage: the upstream recheck and the publication
+        # that follows it must exclude other STAGES too. Per-stage locks let select replace
+        # selection.json between portfolio's recheck and its publish, so portfolio would commit a
+        # manifest citing a hash that no longer exists -- hours of work, immediately invalid.
+        self._lock = run_path / f"{_STAGING_PREFIX}publication.lock"
         self._names: list[str] = []
 
     # -- inputs the stage consumed --
@@ -481,7 +507,7 @@ class StageWriter:
             fd = os.open(self._lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError:
             raise LineageError(
-                f"another '{self.stage}' publication is in progress for {self.run_path}\n"
+                f"another stage is publishing into {self.run_path}\n"
                 f"  (lock: {self._lock}). Wait for it, or remove the lock if no such process\n"
                 "  is running -- two stages publishing into one run corrupt its lineage."
             ) from None
@@ -493,6 +519,14 @@ class StageWriter:
             self._lock.unlink(missing_ok=True)
 
     def _commit(self) -> None:
+        # The checks and the publication they authorise happen under ONE run-wide lock. Verifying
+        # first and locking afterwards leaves a window in which another stage invalidates exactly
+        # what was just verified, so the manifest would cite a hash that no longer exists.
+        with self._publication_lock():
+            self._verify_still_valid()
+            self._publish()
+
+    def _verify_still_valid(self) -> None:
         # 0. The inputs were hashed BEFORE the work started. If any of them changed while the
         #    stage ran -- Stage 3 takes hours -- the results describe the old content while the
         #    manifest would record the new hashes, and nothing downstream could ever tell.
@@ -506,7 +540,7 @@ class StageWriter:
             )
 
         # 0b. Same question for the code: did the checkout move while this stage ran?
-        if (now := git_state()) != self._git:
+        if self._check_git and (now := git_state()) != self._git:
             shutil.rmtree(self._staging, ignore_errors=True)
             was = self._git
             raise LineageError(
@@ -533,53 +567,50 @@ class StageWriter:
                 "  -> nothing was published; the stage before this one was re-run underneath it."
             )
 
-        # Everything from here changes the run directory, so it happens under the lock: two
-        # writers interleaving move + invalidate + manifest would leave a manifest describing
-        # files the other process had already replaced.
-        with self._publication_lock():
-            # 1. move every produced file into the run directory
-            outputs: dict[str, str] = {}
-            for name in self._names:
-                src = self._staging / name
-                if not src.is_file():
-                    continue  # the stage declared it but never wrote it
-                dst = self.run_path / name
-                dst.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(src, dst)
-                outputs[name] = sha256_file(dst)
-            shutil.rmtree(self._staging, ignore_errors=True)
+    def _publish(self) -> None:
+        """Move the staged outputs in and write the completion marker. Caller holds the lock."""
+        # 1. move every produced file into the run directory
+        outputs: dict[str, str] = {}
+        for name in self._names:
+            src = self._staging / name
+            if not src.is_file():
+                continue  # the stage declared it but never wrote it
+            dst = self.run_path / name
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(src, dst)
+            outputs[name] = sha256_file(dst)
+        shutil.rmtree(self._staging, ignore_errors=True)
 
-            # 1b. drop artifacts the PREVIOUS run of this stage produced but this one did not.
-            #     Left in place they deadlock the next stage: it sees the file, calls require(),
-            #     and is refused because no completed stage claims it.
-            previous = read_manifest(self.run_path, self.stage)
-            if previous is not None:
-                for name in previous.outputs:
-                    if name not in outputs:
-                        (self.run_path / name).unlink(missing_ok=True)
+        # 2. drop artifacts the PREVIOUS run of this stage produced but this one did not. Left in
+        #    place they deadlock the next stage: it sees the file, calls require(), and is refused
+        #    because no completed stage claims it.
+        previous = read_manifest(self.run_path, self.stage)
+        if previous is not None:
+            for name in previous.outputs:
+                if name not in outputs:
+                    (self.run_path / name).unlink(missing_ok=True)
 
-            # 2. anything computed FROM this stage is now stale -- retire those stages, markers
-            #    and outputs alike, before publishing ours, so no window exists in which both
-            #    look valid.
-            invalidate_downstream(self.run_path, self.stage)
+        # 3. anything computed FROM this stage is now stale -- retire those stages, markers and
+        #    outputs alike, before publishing ours, so no window exists in which both look valid.
+        invalidate_downstream(self.run_path, self.stage)
 
-            # 3. the manifest is the completion marker: written last, atomically.
-            m = StageManifest(
-                stage=self.stage,
-                run_id=self.run_id,
-                completed_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
-                git=self._git,
-                argv=self._argv,
-                seeds=self._seeds,
-                inputs=self._inputs,
-                semantics=self._semantics,
-                upstream=self._upstream,
-                outputs=outputs,
-            )
-            final = manifest_path(self.run_path, self.stage)
-            tmp = final.with_suffix(".json.tmp")
-            tmp.write_text(m.to_json(), encoding="utf-8")
-            os.replace(tmp, final)
+        # 4. the manifest is the completion marker: written last, atomically.
+        m = StageManifest(
+            stage=self.stage,
+            run_id=self.run_id,
+            completed_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
+            git=self._git,
+            argv=self._argv,
+            seeds=self._seeds,
+            inputs=self._inputs,
+            semantics=self._semantics,
+            upstream=self._upstream,
+            outputs=outputs,
+        )
+        final = manifest_path(self.run_path, self.stage)
+        tmp = final.with_suffix(".json.tmp")
+        tmp.write_text(m.to_json(), encoding="utf-8")
+        os.replace(tmp, final)
 
 
 def invalidate_downstream(run_path: Path, stage: str) -> list[str]:
@@ -667,14 +698,20 @@ def verify_chain(run_path: Path) -> list[str]:
     return problems
 
 
-def verify_run(run_path: Path) -> None:
+def verify_run(run_path: Path, *, ignore: str | None = None) -> None:
     """Re-verify every completed stage in ``run_path``: its outputs, its inputs, and the chain.
 
     Independent of any particular caller. Checking only the stage that produced one artifact is
     not enough for anyone acting on a RESULT: the verdict's own inputs can be untouched while the
     config Stage 1 selected under was edited in place, which changes what the result means.
+
+    ``ignore`` skips one stage -- the stage currently being recomputed. Re-running Stage 4 to
+    repair a damaged report must be judged on its prerequisites, not on the very output it is
+    about to replace, or the repair would publish a FAIL and only succeed on a second run.
     """
     for stage, m in completed_stages(run_path):
+        if stage == ignore:
+            continue
         if drift := m.verify_outputs(run_path):
             detail = "\n    - ".join(drift)
             raise LineageError(f"stage '{stage}' artifacts changed since it ran:\n    - {detail}")
@@ -757,7 +794,7 @@ def verify_artifact(
     return manifest.outputs[artifact]
 
 
-def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
+def assert_deployable(run_path: Path, *, allow_legacy: bool, ignore: str | None = None) -> None:
     """Refuse a deployable verdict for a run whose lineage cannot be verified.
 
     Legacy mode exists to READ an old run, not to bless it: a result whose inputs cannot be
@@ -770,7 +807,10 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
             "  -> a run without content-verified inputs cannot produce a deployable verdict."
         )
 
-    stages = completed_stages(run_path)
+    # ``ignore`` drops the stage being recomputed from EVERY check below, not just the artifact
+    # verification: judging a verdict by the state of the verdict it is replacing is what made
+    # repairing a damaged report take two runs.
+    stages = [(s, m) for s, m in completed_stages(run_path) if s != ignore]
 
     # Schema first: it is the most fundamental diagnosis, and every check below reads fields whose
     # meaning it defines. A manifest from an older schema may carry recognizable outputs while
@@ -784,7 +824,7 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
             "  -> re-run the pipeline; such a run may be inspected but never deployed."
         )
 
-    verify_run(run_path)
+    verify_run(run_path, ignore=ignore)
 
     # Every record a manifest can carry must actually be present. A missing one verifies
     # vacuously -- there is nothing to compare against -- so "never recorded" would read as

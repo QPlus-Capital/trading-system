@@ -549,10 +549,11 @@ def test_two_writers_for_one_stage_cannot_interleave(tmp_path: Path) -> None:
 def test_a_publication_lock_refuses_a_concurrent_writer(tmp_path: Path) -> None:
     run = rb.RunDir.open(tmp_path)
     writer = run.stage("edge")
-    (tmp_path / ".staging_edge.lock").write_text("999", encoding="utf-8")
+    # One lock for the WHOLE run, so it also excludes a different stage mid-publication.
+    (tmp_path / ".staging_publication.lock").write_text("999", encoding="utf-8")
     with pytest.raises(SystemExit) as err, writer as st:
         st.save_json("run_manifest.json", {"config": "a"})
-    assert "in progress" in str(err.value)
+    assert "another stage is publishing" in str(err.value)
 
 
 def test_untracked_file_contents_feed_the_git_digest(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -815,6 +816,76 @@ def test_the_report_command_refuses_a_run_whose_inputs_moved(
     with pytest.raises(SystemExit) as err:
         open_report.main(["--run", str(run_dir), "--no-open"])
     assert "NICHT GUELTIG" in str(err.value)
+
+
+# --------------------------------------------------------- Codex round 5 on PR #38
+def test_a_study_computed_under_other_code_is_not_deployable(
+    study: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An ingested study belongs to the code that COMPUTED it, not to the ingesting checkout."""
+    cfg, src, run_dir = study
+    monkeypatch.setattr(
+        lineage, "git_state", lambda: {"commit": "aaaaaaaa", "dirty": "clean"}
+    )
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    monkeypatch.undo()  # ingest, and run everything downstream, under the real checkout
+
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    edge_m = lineage.read_manifest(run_dir, "edge")
+    assert edge_m is not None and edge_m.git["commit"] == "aaaaaaaa", "producer git not carried"
+    with pytest.raises(SystemExit) as err:
+        rb.RunDir.open(run_dir).assert_deployable()
+    assert "different code" in str(err.value).lower()
+
+
+def test_a_provenance_record_without_producer_git_is_refused(
+    study: tuple[Path, Path, Path],
+) -> None:
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    prov = json.loads((src / "_provenance.json").read_text(encoding="utf-8"))
+    del prov["git"]
+    (src / "_provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as err:
+        _run_edge(study)
+    assert "no usable git state" in str(err.value)
+
+
+def test_rerunning_the_verdict_judges_its_prerequisites_not_itself(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """Repairing a damaged report must not publish a FAIL just because the old one is damaged."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+    run = rb.RunDir.open(run_dir)
+    run.require("portfolio.json", "portfolio")
+    with run.stage("verdict") as st:
+        st.save_json("verdict.json", {"passed": True})
+
+    (run_dir / "verdict.json").write_text('{"passed": "damaged"}', encoding="utf-8")
+
+    rb.RunDir.open(run_dir).assert_deployable(ignore="verdict")  # prerequisites are fine
+    with pytest.raises(SystemExit):
+        rb.RunDir.open(run_dir).assert_deployable()  # ...and the damage is still visible
+
+
+def test_selects_inputs_do_not_carry_the_catalog(study: tuple[Path, Path, Path]) -> None:
+    """Select reads anchored artifacts only, so unrelated reseeding must not stale it."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+
+    m = lineage.read_manifest(run_dir, "select")
+    assert m is not None
+    assert "catalog_sources" not in m.inputs
 
 
 # ------------------------------------------------------------------ helpers
