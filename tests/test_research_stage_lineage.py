@@ -13,6 +13,7 @@ after an hour of backtests is not a gate anyone will keep.
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -237,7 +238,196 @@ def test_a_legacy_run_needs_the_flag_and_is_never_deployable(tmp_path: Path) -> 
         legacy.assert_deployable()  # ...but never blessed
 
 
+# --------------------------------------------------------- Codex round 1 on PR #38
+def test_a_stage_bundle_copied_from_another_run_is_rejected(
+    study: tuple[Path, Path, Path], tmp_path: Path
+) -> None:
+    """Each artifact intact, each manifest self-consistent -- but from two different runs.
+
+    Verifying a stage against ITSELF cannot catch this: the copied bundle's outputs match its own
+    manifest perfectly. Only the run id and the recorded upstream hashes tie the stages together.
+    """
+    _cfg, _src, run_a = study
+    _run_edge(study)
+    select.main(["--run", str(run_a)])
+
+    cfg_b = _write_config(tmp_path / "cfg_b.py", marker="run-b")
+    src_b = _write_study(tmp_path / "study_b")
+    run_b = tmp_path / "run_b"
+    run_b.mkdir()
+    edge.main([str(cfg_b), "--from", str(src_b), "--run", str(run_b)])
+    select.main(["--run", str(run_b)])
+
+    # Lift B's whole select bundle -- manifest AND output -- into A.
+    for name in ("selection.json", "_stage_select.json"):
+        shutil.copyfile(run_b / name, run_a / name)
+
+    run = rb.RunDir.open(run_a)
+    with pytest.raises(SystemExit) as err:
+        run.require("selection.json", "select")
+    assert "run" in str(err.value).lower()
+
+
+def test_an_upstream_artifact_swapped_after_the_stage_read_it_is_rejected(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """Stage 3 recorded the selection hash it READ; that record must be enforced, not just kept."""
+    _cfg, _src, run_dir = study
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    # Re-publish select with different content, then restore stage 3's marker as if nothing moved.
+    marker = (run_dir / "_stage_portfolio.json").read_text(encoding="utf-8")
+    select.main(["--run", str(run_dir), "--variation", "v_beta"])
+    (run_dir / "_stage_portfolio.json").write_text(marker, encoding="utf-8")
+
+    run = rb.RunDir.open(run_dir)
+    with pytest.raises(SystemExit) as err:
+        run.require("portfolio.json", "portfolio")
+    assert "selection.json" in str(err.value)
+
+
+def test_an_ingested_study_without_provenance_is_never_deployable(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """`--from` hashes the files as they are NOW, not the ones that produced study.csv."""
+    _cfg, _src, run_dir = study
+    _run_edge(study)  # ingests a hand-written study: nothing ties it to this config
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    run = rb.RunDir.open(run_dir)
+    with pytest.raises(SystemExit) as err:
+        run.assert_deployable()
+    assert "provenance" in str(err.value).lower() or "herkunft" in str(err.value).lower()
+
+
+def test_a_study_carrying_provenance_is_deployable_and_tracks_its_own_inputs(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """A study that records what IT was computed from can be ingested and still verified."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    rb.RunDir.open(run_dir).assert_deployable()  # must not raise
+
+    _write_config(cfg, marker="edited-after-the-study")  # the source's own inputs are now stale
+    with pytest.raises(SystemExit):
+        rb.RunDir.open(run_dir).require("study.csv", "edge")
+
+
+def test_code_changing_between_stages_blocks_deployment(
+    study: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """external_inputs covers configs and data, never the research code itself -- git state does."""
+    _cfg, _src, run_dir = study
+    lineage.write_provenance(_src, lineage.external_inputs(_cfg, _load(_cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    monkeypatch.setattr(lineage, "git_state", lambda: {"commit": "deadbeef", "dirty": "clean"})
+    _fake_portfolio_stage(run_dir)
+
+    run = rb.RunDir.open(run_dir)
+    with pytest.raises(SystemExit) as err:
+        run.assert_deployable()
+    assert "different code" in str(err.value).lower()
+
+
+def test_an_older_schema_manifest_is_not_deployable(study: tuple[Path, Path, Path]) -> None:
+    """Presence of a manifest is not evidence its inputs were ever recorded verifiably."""
+    _cfg, _src, run_dir = study
+    lineage.write_provenance(_src, lineage.external_inputs(_cfg, _load(_cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    m = json.loads((run_dir / "_stage_select.json").read_text(encoding="utf-8"))
+    m["schema"] = lineage.SCHEMA_VERSION - 1
+    m["inputs"] = {"study_config": "sha256:whatever"}  # old shape: hash without a path
+    (run_dir / "_stage_select.json").write_text(json.dumps(m, indent=2), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as err:
+        rb.RunDir.open(run_dir).assert_deployable()
+    assert "schema" in str(err.value).lower()
+
+
+def test_the_canonical_swap_snapshot_is_recorded_even_when_absent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """standard_broker() falls back to swap-less results, so 'absent' is a real computed state.
+
+    Globbing the snapshot directory records only what is THERE. A run computed without the
+    snapshot then carries no entry for it at all, so pulling it afterwards -- which changes the
+    realized-cost model -- leaves the swap-free portfolio looking perfectly valid.
+    """
+    missing = tmp_path / "ttp_markets_swaps.json"
+    monkeypatch.setattr(lineage, "swap_snapshot_path", lambda _name: missing)
+
+    recorded = lineage.external_inputs(Path("research/config/robustness.py"))
+    key = "swap_snapshot:ttp_markets_swaps"
+    assert key in recorded, "the snapshot standard_broker() looks for must always be recorded"
+    assert recorded[key]["sha256"] == "absent"
+
+
+def test_rerunning_a_stage_drops_outputs_it_no_longer_produces(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """An optional artifact left behind by a previous run used to deadlock the next stage."""
+    cfg, src, run_dir = study
+    _run_edge(study)
+    assert (run_dir / "overfitting.json").is_file()
+
+    (src / "overfitting.json").unlink()  # a source that no longer carries the optional artifact
+    _run_edge(study)
+
+    assert not (run_dir / "overfitting.json").exists()
+    select.main(["--run", str(run_dir)])  # must not deadlock
+
+
+def test_inputs_changing_during_a_stage_abort_publication(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """Stage 3 runs for hours; a config edited mid-run must not be recorded as its input."""
+    cfg, _src, run_dir = study
+    _run_edge(study)
+    run = rb.RunDir.open(run_dir)
+    snapshot = lineage.external_inputs(cfg, _load(cfg))
+
+    with pytest.raises(SystemExit) as err, run.stage("select", inputs=snapshot) as st:
+        _write_config(cfg, marker="edited-while-the-stage-was-running")
+        st.save_json("selection.json", {"variation": "v_alpha"})
+    assert "changed while" in str(err.value).lower() or "während" in str(err.value).lower()
+    assert lineage.read_manifest(run_dir, "select") is None  # nothing published
+
+
+def test_legacy_verdict_does_not_demand_full_history(tmp_path: Path) -> None:
+    """Legacy mode exists to READ old runs; a run predating an artifact must stay inspectable.
+
+    The run below still cannot finish -- it has no market data -- so this asserts the one thing
+    that matters: whatever stops it, it is not the missing full-history stream.
+    """
+    (tmp_path / "run_manifest.json").write_text('{"config": "x.py"}', encoding="utf-8")
+    (tmp_path / "selection.json").write_text('{"variation": "v", "gates": {}}', encoding="utf-8")
+    (tmp_path / "portfolio.json").write_text('{"instruments": []}', encoding="utf-8")
+    (tmp_path / "portfolio_trades.csv").write_text("market,r\nEURUSD,1.0\n", encoding="utf-8")
+
+    # It dies later, on the missing config -- which is the point: it got PAST the artifact gate.
+    with pytest.raises(Exception) as err:  # noqa: B017 - the type is not what is under test
+        verdict.main(["--run", str(tmp_path), "--allow-legacy-unverified"])
+    assert "full_history_trades.csv" not in str(err.value)
+
+
 # ------------------------------------------------------------------ helpers
+def _load(cfg: Path):  # type: ignore[no-untyped-def]
+    from research.engine.config import load_config_module
+
+    return load_config_module(cfg)
+
+
 def _fake_portfolio_stage(run_dir: Path) -> None:
     """Publish a Stage 3 result through the REAL writer, without running hours of backtests.
 

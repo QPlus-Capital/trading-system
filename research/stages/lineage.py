@@ -35,9 +35,15 @@ from pathlib import Path
 from types import TracebackType
 from typing import Any
 
+from core.broker import TTP_MARKETS, swap_snapshot_path
 from core.paths import REPO_ROOT
 
 SCHEMA_VERSION = 1
+
+# A study ingested with ``--from`` carries this unless it recorded its own provenance: the
+# hashes taken at ingestion describe the files as they are NOW, not the ones that produced it.
+PROVENANCE_INGESTED = "ingested-unverified"
+_PROVENANCE_FILE = "_provenance.json"
 
 # The pipeline order. A stage completing invalidates every stage after it: its outputs are the
 # inputs those stages were computed from, so their results no longer describe anything real.
@@ -98,6 +104,46 @@ def hash_paths(paths: dict[str, str | Path]) -> dict[str, dict[str, str]]:
             "sha256": sha256_file(path) if path.is_file() else "absent",
         }
     return out
+
+
+def drifted_inputs(inputs: dict[str, Any]) -> list[str]:
+    """Recorded inputs whose content on disk differs from the recorded hash, right now."""
+    out = []
+    for label, entry in _walk_inputs(inputs):
+        actual = rehash_recorded(entry)
+        if actual != entry["sha256"]:
+            out.append(
+                f"{label} ({entry['path']})"
+                f"\n      recorded {entry['sha256']}\n      actual   {actual}"
+            )
+    return out
+
+
+def write_provenance(study_dir: Path, inputs: dict[str, Any]) -> Path:
+    """Record, inside a study directory, what that study was computed from.
+
+    Without this a study ingested via ``--from`` can only be hashed at INGESTION time, which
+    describes the files as they are then rather than the ones that produced it -- so a stale
+    study would carry a manifest certifying unrelated current inputs.
+    """
+    f = study_dir / _PROVENANCE_FILE
+    f.write_text(json.dumps({"schema": SCHEMA_VERSION, "inputs": inputs}, indent=2), "utf-8")
+    return f
+
+
+def read_provenance(study_dir: Path) -> dict[str, Any] | None:
+    """The inputs a study recorded for itself, or ``None`` if it never did."""
+    f = study_dir / _PROVENANCE_FILE
+    if not f.is_file():
+        return None
+    try:
+        d = json.loads(f.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if int(d.get("schema", 0)) != SCHEMA_VERSION:
+        return None
+    inputs = d.get("inputs")
+    return dict(inputs) if isinstance(inputs, dict) else None
 
 
 def rehash_recorded(entry: dict[str, str]) -> str:
@@ -202,15 +248,7 @@ class StageManifest:
         reading that ``study.csv`` would then combine it with the NEW config's instruments and
         account profile, and every hash would still agree.
         """
-        drifted = []
-        for label, entry in _walk_inputs(self.inputs):
-            actual = rehash_recorded(entry)
-            if actual != entry["sha256"]:
-                drifted.append(
-                    f"{label} ({entry['path']})"
-                    f"\n      recorded {entry['sha256']}\n      actual   {actual}"
-                )
-        return drifted
+        return drifted_inputs(self.inputs)
 
 
 def _walk_inputs(
@@ -329,6 +367,18 @@ class StageWriter:
         self._commit()
 
     def _commit(self) -> None:
+        # 0. The inputs were hashed BEFORE the work started. If any of them changed while the
+        #    stage ran -- Stage 3 takes hours -- the results describe the old content while the
+        #    manifest would record the new hashes, and nothing downstream could ever tell.
+        drifted = drifted_inputs(self._inputs)
+        if drifted:
+            shutil.rmtree(self._staging, ignore_errors=True)
+            detail = "\n    - ".join(drifted)
+            raise LineageError(
+                f"inputs changed while stage '{self.stage}' was running:\n    - {detail}\n"
+                "  -> nothing was published; re-run the stage against the current inputs."
+            )
+
         # 1. move every produced file into the run directory
         outputs: dict[str, str] = {}
         for name in self._names:
@@ -340,6 +390,15 @@ class StageWriter:
             os.replace(src, dst)
             outputs[name] = sha256_file(dst)
         shutil.rmtree(self._staging, ignore_errors=True)
+
+        # 1b. drop artifacts the PREVIOUS run of this stage produced but this one did not. Left in
+        #     place they deadlock the next stage: it sees the file, calls require(), and is refused
+        #     because no completed stage claims it -- with no way forward but manual deletion.
+        previous = read_manifest(self.run_path, self.stage)
+        if previous is not None:
+            for name in previous.outputs:
+                if name not in outputs:
+                    (self.run_path / name).unlink(missing_ok=True)
 
         # 2. anything computed FROM this stage is now stale -- remove those completion markers
         #    before publishing ours, so no window exists in which both look valid.
@@ -388,6 +447,49 @@ class VerifiedInputs:
 
     def add(self, artifact: str, digest: str) -> None:
         self.digests[artifact] = digest
+
+
+def completed_stages(run_path: Path) -> list[tuple[str, StageManifest]]:
+    """Every stage in this run that left a completion marker, in pipeline order."""
+    found = []
+    for stage in STAGE_ORDER:
+        m = read_manifest(run_path, stage)
+        if m is not None:
+            found.append((stage, m))
+    return found
+
+
+def verify_chain(run_path: Path) -> list[str]:
+    """Ways the completed stages in this directory fail to describe ONE coherent run.
+
+    Verifying a stage against its own manifest cannot catch a whole bundle -- manifest plus
+    outputs -- copied or restored from a different run: internally it is perfectly consistent.
+    What ties the stages together is the shared run id, and the upstream hashes each stage
+    recorded when it READ the stage before it.
+    """
+    problems: list[str] = []
+    stages = completed_stages(run_path)
+    if not stages:
+        return problems
+
+    run_ids = {m.run_id for _, m in stages}
+    if len(run_ids) > 1:
+        listed = ", ".join(f"{s}={m.run_id}" for s, m in stages)
+        problems.append(
+            f"stages come from different runs (run ids: {listed}).\n"
+            "      -> artifacts from separate runs were combined in one directory."
+        )
+
+    for stage, m in stages:
+        for artifact, recorded in m.upstream.items():
+            f = run_path / artifact
+            actual = sha256_file(f) if f.is_file() else "absent"
+            if actual != recorded:
+                problems.append(
+                    f"stage '{stage}' read '{artifact}' at a different version than the one\n"
+                    f"      present now:\n      recorded {recorded}\n      actual   {actual}"
+                )
+    return problems
 
 
 def verify_artifact(
@@ -445,6 +547,14 @@ def verify_artifact(
             f"  -> re-run '{stage}' (and everything after it); '{artifact}' was computed from\n"
             "     different content than what these paths hold now."
         )
+    # Finally: do the completed stages in this directory describe ONE run at all?
+    incoherent = verify_chain(run_path)
+    if incoherent:
+        detail = "\n    - ".join(incoherent)
+        raise LineageError(
+            f"the stages in {run_path} do not form one coherent run:\n    - {detail}\n"
+            "  -> re-run the pipeline in a clean run directory."
+        )
     return manifest.outputs[artifact]
 
 
@@ -459,6 +569,46 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
         raise LineageError(
             f"run {run_path} has no verified lineage for: {', '.join(missing)}.\n"
             "  -> a run without content-verified inputs cannot produce a deployable verdict."
+        )
+
+    stages = completed_stages(run_path)
+
+    # A manifest from an older schema may carry recognizable outputs while omitting the
+    # path+hash input records entirely. verify_inputs() then finds nothing to check and reports
+    # no drift -- "we never recorded it" would pass as "nothing changed".
+    stale = [s for s, m in stages if m.schema != SCHEMA_VERSION]
+    if stale:
+        raise LineageError(
+            f"run {run_path} has manifests written by an unsupported schema: {', '.join(stale)}\n"
+            f"  (expected schema {SCHEMA_VERSION}).\n"
+            "  -> re-run the pipeline; such a run may be inspected but never deployed."
+        )
+
+    # A study ingested with --from that never recorded its own provenance cannot be tied to the
+    # config and data it was actually computed from, whatever the hashes taken at ingestion say.
+    ingested = [s for s, m in stages if m.semantics.get("study_provenance") == PROVENANCE_INGESTED]
+    if ingested:
+        raise LineageError(
+            f"run {run_path} ingested a study without provenance ({', '.join(ingested)}).\n"
+            "  -> the hashes describe the files at ingestion time, not the ones that produced\n"
+            "     the study. Re-run the study, or ingest one that recorded its own inputs."
+        )
+
+    # external_inputs() covers configs and data -- never the research code itself. Two stages run
+    # from different revisions of the engine can otherwise be combined into a deployable verdict.
+    current = git_state()
+    recorded = {s: m.git for s, m in stages}
+    disagreeing = {s: g for s, g in recorded.items() if g != current}
+    if disagreeing:
+        listed = "\n    - ".join(
+            f"{s}: commit {g.get('commit', '?')[:12]} dirty={g.get('dirty', '?')[:19]}"
+            for s, g in disagreeing.items()
+        )
+        raise LineageError(
+            "the stages of this run were computed by different code than is checked out now:\n"
+            f"    - {listed}\n"
+            f"    - now: commit {current['commit'][:12]} dirty={current['dirty'][:19]}\n"
+            "  -> a verdict may only deploy results its own code produced; re-run the stages."
         )
 
 
@@ -488,8 +638,14 @@ def external_inputs(
     }
     if fixed_config is not None:
         paths["fixed_live_config"] = fixed_config
+    # The snapshot standard_broker() looks for is recorded ALWAYS, present or not. It falls back
+    # to swap-less results when absent, so absence is a real computation state -- globbing alone
+    # would record nothing, and pulling the snapshot later would be invisible to lineage while
+    # silently changing the realized-cost model.
+    canonical = swap_snapshot_path(TTP_MARKETS.name)
+    paths[f"swap_snapshot:{canonical.stem}"] = canonical
     for snap in sorted((REPO_ROOT / "core" / "config" / "broker").glob("*.json")):
-        paths[f"swap_snapshot:{snap.stem}"] = snap
+        paths.setdefault(f"swap_snapshot:{snap.stem}", snap)
 
     out: dict[str, Any] = hash_paths(paths)
     if cfg is not None:  # the raw H4 data the whole study is computed from
