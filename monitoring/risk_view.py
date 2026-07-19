@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import pandas as pd
 
+from monitoring.deals import balance_at, to_ns
+
 
 @dataclass(frozen=True)
 class OpenRisk:
@@ -57,7 +59,8 @@ def window_history(
     all_risk: np.ndarray,
     *,
     window_start: pd.Timestamp,
-    account_start: float,
+    current_balance: float,
+    cash_flows: pd.DataFrame | None = None,
 ) -> HistoryWindow:
     """Restrict a full history to the display window WITHOUT changing any trade's risk basis.
 
@@ -67,17 +70,23 @@ def window_history(
     had grown or drawn down before it -- distorting expectancy and cumulative R for the whole view,
     and worst exactly where the window is shortest.
 
-    The returned ``start_balance`` is what the account actually held entering the window, so the
-    equity curve drawn beside these trades starts where they did.
+    The returned ``start_balance`` is the balance the account actually held entering the window --
+    read off the same backwards walk as the risk bases, so it accounts for cash flows before the
+    window as well as trades. Deriving it from hidden trade PnL alone would offset the equity
+    curve by every earlier payout.
     """
+    entering = float(
+        balance_at(
+            to_ns(pd.Series([window_start])), current_balance, all_trades, cash_flows
+        )[0]
+    )
     if all_trades.empty:
-        return HistoryWindow(all_trades, all_risk, account_start, 0)
+        return HistoryWindow(all_trades, all_risk, entering, 0)
 
     shown = (all_trades["close_time"] >= window_start).to_numpy()
-    hidden_pnl = float(all_trades.loc[~shown, "net_pnl"].sum())
     return HistoryWindow(
         trades=all_trades[shown].reset_index(drop=True),
         risk=all_risk[shown],
-        start_balance=account_start + hidden_pnl,
+        start_balance=entering,
         hidden=int((~shown).sum()),
     )

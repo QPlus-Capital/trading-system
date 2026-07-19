@@ -2,14 +2,32 @@
 
 Both rules exist because the monitor sits next to a live account: a number that looks precise but
 rests on the wrong basis is worse than no number, because it invites action.
+
+The balance behind every R is reconstructed BACKWARDS from the broker's current balance. That is
+the one figure stated exactly; every forward reconstruction needs an origin, and each way of
+obtaining one double-counts something (see :func:`monitoring.deals.balance_at`).
 """
 
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from monitoring.deals import balance_operations, derive_account_start, per_trade_risk
+from monitoring.deals import balance_operations, equity_curve, per_trade_risk, to_ns
 from monitoring.risk_view import summarize_open_risk, window_history
+
+
+def _trades(opens: list[str], closes: list[str], pnl: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "open_time": pd.to_datetime(opens, utc=True),
+            "close_time": pd.to_datetime(closes, utc=True),
+            "net_pnl": pnl,
+        }
+    )
+
+
+def _ops(times: list[str], amounts: list[float]) -> pd.DataFrame:
+    return pd.DataFrame({"time": pd.to_datetime(times, utc=True), "amount": amounts})
 
 
 # --------------------------------------------------------------------- #30: open risk
@@ -36,103 +54,127 @@ def test_every_unpriceable_market_is_named() -> None:
 
 
 # --------------------------------------------------------------------- #29: the risk basis
-def _trades(opens: list[str], closes: list[str], pnl: list[float]) -> pd.DataFrame:
-    return pd.DataFrame(
-        {
-            "open_time": pd.to_datetime(opens, utc=True),
-            "close_time": pd.to_datetime(closes, utc=True),
-            "net_pnl": pnl,
-        }
+_FOUR_WINS = _trades(
+    ["2026-01-01", "2026-01-03", "2026-01-05", "2026-01-07"],
+    ["2026-01-02", "2026-01-04", "2026-01-06", "2026-01-08"],
+    [1_000.0, 1_000.0, 1_000.0, 1_000.0],
+)
+
+
+def test_each_trade_is_charged_the_balance_at_its_own_open() -> None:
+    """Four +1000 trades from 100k at 1%: the bases grow 1000, 1010, 1020, 1030."""
+    risk = per_trade_risk(_FOUR_WINS, 104_000.0, 0.01)
+    assert list(risk) == [1_000.0, 1_010.0, 1_020.0, 1_030.0]
+
+
+def test_an_overlapping_trade_is_not_credited_with_pnl_that_came_later() -> None:
+    """A opens first and closes last; B opens after A and closes before it.
+
+    Crediting B's win to A would attribute money that did not exist when A was sized -- exactly
+    the multi-market overlap this monitor exists to diagnose.
+    """
+    trades = _trades(
+        ["2026-01-01", "2026-01-02"], ["2026-01-10", "2026-01-03"], [500.0, 5_000.0]
     )
+    risk = per_trade_risk(trades, 105_500.0, 0.01)
+    assert list(risk) == [1_000.0, 1_000.0]  # both sized against the untouched 100k
 
 
 def test_the_window_keeps_each_trades_original_risk_basis() -> None:
-    """The defect: walking only the window charges the first shown trade the opening balance.
-
-    Four sequential trades, each +1000 on a 100k account at 1% risk, so the bases are 1000, 1010,
-    1020, 1030. Showing only the last two must keep 1020 and 1030 -- not restart at 1000.
-    """
-    all_trades = _trades(
-        ["2026-01-01", "2026-01-03", "2026-01-05", "2026-01-07"],
-        ["2026-01-02", "2026-01-04", "2026-01-06", "2026-01-08"],
-        [1_000.0, 1_000.0, 1_000.0, 1_000.0],
-    )
-    all_risk = per_trade_risk(all_trades, start_balance=100_000.0, risk_frac=0.01)
-
+    """The defect: walking only the window charges the first shown trade the opening balance."""
+    all_risk = per_trade_risk(_FOUR_WINS, 104_000.0, 0.01)
     view = window_history(
-        all_trades,
+        _FOUR_WINS,
         all_risk,
         window_start=pd.Timestamp("2026-01-05", tz="UTC"),
-        account_start=100_000.0,
+        current_balance=104_000.0,
     )
     assert len(view.trades) == 2
     assert view.hidden == 2
-    assert list(view.risk) == [1_020.0, 1_030.0]
+    assert list(view.risk) == [1_020.0, 1_030.0]  # not restarted at 1000
 
 
-def test_the_window_start_balance_includes_what_happened_before_it() -> None:
-    """The equity curve drawn beside the window must start where the account actually was."""
-    all_trades = _trades(
-        ["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [2_500.0, 1_000.0]
-    )
-    all_risk = per_trade_risk(all_trades, start_balance=100_000.0, risk_frac=0.01)
-
+def test_the_window_start_balance_is_what_the_account_actually_held() -> None:
+    all_risk = per_trade_risk(_FOUR_WINS, 104_000.0, 0.01)
     view = window_history(
-        all_trades,
+        _FOUR_WINS,
         all_risk,
-        window_start=pd.Timestamp("2026-01-04", tz="UTC"),
-        account_start=100_000.0,
+        window_start=pd.Timestamp("2026-01-05", tz="UTC"),
+        current_balance=104_000.0,
     )
-    assert view.start_balance == 102_500.0
+    assert view.start_balance == 102_000.0
 
 
 def test_a_full_window_hides_nothing_and_changes_nothing() -> None:
-    all_trades = _trades(["2026-01-01"], ["2026-01-02"], [500.0])
-    all_risk = per_trade_risk(all_trades, start_balance=100_000.0, risk_frac=0.01)
-
+    trades = _trades(["2026-01-01"], ["2026-01-02"], [500.0])
+    all_risk = per_trade_risk(trades, 100_500.0, 0.01)
     view = window_history(
-        all_trades,
+        trades,
         all_risk,
         window_start=pd.Timestamp("2025-01-01", tz="UTC"),
-        account_start=100_000.0,
+        current_balance=100_500.0,
     )
     assert view.hidden == 0
     assert view.start_balance == 100_000.0
     assert list(view.risk) == list(all_risk)
 
 
-# --------------------------------------------------------------------- the balance ledger
-def _ops(times: list[str], amounts: list[float]) -> pd.DataFrame:
-    return pd.DataFrame(
-        {"time": pd.to_datetime(times, utc=True), "amount": amounts}
+def test_an_empty_history_is_handled() -> None:
+    empty = pd.DataFrame(columns=["open_time", "close_time", "net_pnl"])
+    view = window_history(
+        empty,
+        np.array([]),
+        window_start=pd.Timestamp("2026-01-01", tz="UTC"),
+        current_balance=50_000.0,
     )
+    assert view.trades.empty
+    assert view.start_balance == 50_000.0
+    assert view.hidden == 0
 
 
+# --------------------------------------------------------------------- the balance ledger
 def test_a_payout_moves_the_basis_of_every_later_trade() -> None:
-    """Prop accounts pay out. A cashflow moves the balance with no trade attached to it.
+    """Prop accounts pay out, and a cashflow moves the balance with no trade attached to it.
 
-    Two trades of +1000 each on 100k at 1%: bases 1000 and 1010. Withdraw 50k between them and
-    the second trade was sized against 51k, not 101k -- a basis wrong by a factor of two.
+    Two +1000 trades on 100k at 1%. Withdraw 50k between them and the second was sized against
+    51k, not 101k -- a basis wrong by a factor of two.
     """
-    trades = _trades(["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0])
+    trades = _trades(
+        ["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0]
+    )
     flows = _ops(["2026-01-03"], [-50_000.0])
-
-    risk = per_trade_risk(trades, 100_000.0, 0.01, cash_flows=flows)
+    risk = per_trade_risk(trades, 52_000.0, 0.01, cash_flows=flows)
     assert list(risk) == [1_000.0, 510.0]
 
 
 def test_a_deposit_is_carried_too() -> None:
     trades = _trades(["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [0.0, 0.0])
     flows = _ops(["2026-01-03"], [+25_000.0])
-
-    risk = per_trade_risk(trades, 100_000.0, 0.01, cash_flows=flows)
+    risk = per_trade_risk(trades, 125_000.0, 0.01, cash_flows=flows)
     assert list(risk) == [1_000.0, 1_250.0]
 
 
+def test_the_opening_deposit_is_not_double_counted() -> None:
+    """The full ledger contains the funding deposit that OPENED the account.
+
+    A forward walk from a saved 50k start balance would replay that deposit onto an already-funded
+    figure and size every trade against 100k. Walking backwards from the current balance never
+    touches it: the funding sits before every trade, so it is never subtracted.
+    """
+    trades = _trades(["2026-02-01"], ["2026-02-02"], [1_000.0])
+    funding = _ops(["2026-01-01"], [+50_000.0])  # the account being opened
+    risk = per_trade_risk(trades, 51_000.0, 0.01, cash_flows=funding)
+    assert list(risk) == [500.0]  # sized against the funded 50k, not 100k
+
+
 def test_no_cashflows_behaves_exactly_as_before() -> None:
-    trades = _trades(["2026-01-01", "2026-01-03"], ["2026-01-02", "2026-01-04"], [1_000.0, 1_000.0])
-    assert list(per_trade_risk(trades, 100_000.0, 0.01)) == list(
-        per_trade_risk(trades, 100_000.0, 0.01, cash_flows=pd.DataFrame(columns=["time", "amount"]))
+    trades = _trades(
+        ["2026-01-01", "2026-01-03"], ["2026-01-02", "2026-01-04"], [1_000.0, 1_000.0]
+    )
+    assert list(per_trade_risk(trades, 102_000.0, 0.01)) == list(
+        per_trade_risk(
+            trades, 102_000.0, 0.01, cash_flows=pd.DataFrame(columns=["time", "amount"])
+        )
     )
 
 
@@ -148,28 +190,29 @@ def test_balance_operations_are_lifted_out_of_the_raw_deals() -> None:
     assert float(ops.iloc[0]["amount"]) == -5_000.0
 
 
-def test_the_account_origin_is_reconstructed_when_no_state_is_saved() -> None:
-    """Using today's balance as the origin counts the account's lifetime result twice."""
-    trades = _trades(["2026-01-01"], ["2026-01-02"], [8_000.0])
-    flows = _ops(["2026-01-03"], [-3_000.0])
-    # Today's balance is 105k = 100k opening + 8k earned - 3k withdrawn.
-    assert derive_account_start(105_000.0, trades, flows) == 100_000.0
+# --------------------------------------------------------------------- timestamp units
+def test_timestamps_become_nanoseconds_whatever_resolution_the_column_has() -> None:
+    """Pandas may hold a datetime column in microseconds; ``Timestamp.value`` is always ns.
+
+    Comparing one against the other is off by a factor of a thousand and raises nothing -- the
+    window boundary simply lands after every event, so every balance silently becomes today's.
+    """
+    micro = pd.Series(pd.to_datetime(["2026-01-05"], utc=True)).astype("datetime64[us, UTC]")
+    assert to_ns(micro)[0] == pd.Timestamp("2026-01-05", tz="UTC").value
 
 
-def test_the_derived_origin_of_an_untouched_account_is_its_balance() -> None:
-    empty = pd.DataFrame(columns=["open_time", "close_time", "net_pnl"])
-    no_flows = pd.DataFrame(columns=["time", "amount"])
-    assert derive_account_start(50_000.0, empty, no_flows) == 50_000.0
-
-
-def test_an_empty_history_is_handled() -> None:
-    empty = pd.DataFrame(columns=["open_time", "close_time", "net_pnl"])
-    view = window_history(
-        empty,
-        np.array([]),
-        window_start=pd.Timestamp("2026-01-01", tz="UTC"),
-        account_start=50_000.0,
+# --------------------------------------------------------------------- the equity path
+def test_the_equity_path_steps_at_a_payout() -> None:
+    """The curve and the risk ledger describe one account; they may not disagree about it."""
+    trades = _trades(
+        ["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0]
     )
-    assert view.trades.empty
-    assert view.start_balance == 50_000.0
-    assert view.hidden == 0
+    flows = _ops(["2026-01-03"], [-50_000.0])
+    eq = equity_curve(trades, 100_000.0, cash_flows=flows)
+    assert list(eq["equity"]) == [101_000.0, 51_000.0, 52_000.0]
+
+
+def test_the_equity_path_without_cashflows_is_the_plain_pnl_path() -> None:
+    trades = _trades(["2026-01-01", "2026-01-03"], ["2026-01-02", "2026-01-04"], [500.0, 250.0])
+    eq = equity_curve(trades, 100_000.0)
+    assert list(eq["equity"]) == [100_500.0, 100_750.0]

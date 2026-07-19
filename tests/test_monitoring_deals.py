@@ -89,7 +89,7 @@ def test_each_trade_is_normalised_off_the_equity_it_was_sized_against() -> None:
         ["2026-01-02", "2026-01-04", "2026-01-06"],
         [1_000.0, 1_000.0, 1_000.0],
     )
-    risk = per_trade_risk(trades, start_balance=100_000.0, risk_frac=0.01)
+    risk = per_trade_risk(trades, current_balance=103_000.0, risk_frac=0.01)
     # Sequential trades: sized against 100k, then 101k, then 102k.
     assert list(risk) == [1_000.0, 1_010.0, 1_020.0]
 
@@ -104,6 +104,6 @@ def test_an_overlapping_trade_is_not_credited_with_pnl_that_came_later() -> None
         ["2026-01-10", "2026-01-03"],  # ... but closes LAST; B closes early with a win
         [500.0, 5_000.0],
     )
-    risk = per_trade_risk(trades, start_balance=100_000.0, risk_frac=0.01)
+    risk = per_trade_risk(trades, current_balance=105_500.0, risk_frac=0.01)
     assert risk[0] == 1_000.0  # A: sized against the untouched 100k
     assert risk[1] == 1_000.0  # B: opened before anything had closed -> also 100k
