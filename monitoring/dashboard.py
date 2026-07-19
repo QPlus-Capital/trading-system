@@ -27,9 +27,12 @@ from live.runner import position_risk, risk_per_trade_from_live_config
 
 from monitoring.deals import deals_to_trades, equity_curve, live_stats, per_trade_risk
 from monitoring.reference import load_reference, mc_band
+from monitoring.risk_view import summarize_open_risk, window_history
 from monitoring.study_explorer import METRICS, latest_study_csv, load_study, variant_ranking
 
 _REPO = REPO_ROOT
+# Far enough back to cover any account this monitor is pointed at; MT5 simply returns what exists.
+_ACCOUNT_INCEPTION = datetime(2000, 1, 1, tzinfo=UTC)
 # #20: read the risk fraction from the live config rather than restating it here -- a hardcoded
 # copy silently goes stale the moment the deployed value changes, and every R on this page is
 # measured against it.
@@ -40,7 +43,7 @@ _GOOD, _WARN, _CRIT = "#0ca30c", "#fab219", "#d03b3b"
 
 
 @st.cache_data(ttl=60)
-def _load_live(days: int, account_name: str) -> dict[str, Any]:
+def _load_live(account_name: str) -> dict[str, Any]:
     """Pull live deals / account / positions / open-risk from the terminal (cached 60s).
 
     Builds the bridge with THIS account's symbol overrides (e.g. TTP names Nasdaq ``USTEC``,
@@ -50,11 +53,15 @@ def _load_live(days: int, account_name: str) -> dict[str, Any]:
     bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **profile.symbol_overrides})
     bridge.connect(path=profile.terminal_path)
     try:
-        since = datetime.now(tz=UTC) - timedelta(days=days)
-        deals = bridge.history_deals(since)
+        # #29: the FULL history, always. Each trade's risk basis is the balance as it stood at
+        # that trade's open, walked forward from the account's start -- so a walk that begins at
+        # the display window would charge every shown trade a basis the account never had.
+        # The window is applied to the DISPLAY only, further down.
+        deals = bridge.history_deals(_ACCOUNT_INCEPTION)
         acct = bridge.account()
         term_to_research = {v: k for k, v in bridge._resolved.items()}
-        open_risk, positions = 0.0, []
+        pricing: list[tuple[str, float | None]] = []
+        positions = []
         for p in bridge.positions():
             research = term_to_research.get(p.symbol, p.symbol)
             info = bridge.symbol_info(research) if research in bridge._resolved else None
@@ -62,8 +69,10 @@ def _load_live(days: int, account_name: str) -> dict[str, Any]:
             # converted symbols -- DE40 by a measured 14.4% -- so showing the arithmetic here
             # would report more headroom under the 2% cap than the risk controller is charging.
             priced = bridge.loss_to_stop(p)
-            risk = priced if priced is not None else (position_risk(p, info) if info else 0.0)
-            open_risk += risk
+            # #30: None means the runner treats this position as infinite risk and blocks new
+            # entries; it must not be softened into an estimate or a zero on the way to the UI.
+            risk = priced if priced is not None else (position_risk(p, info) if info else None)
+            pricing.append((research, risk))
             positions.append(
                 {
                     "symbol": research,
@@ -80,7 +89,7 @@ def _load_live(days: int, account_name: str) -> dict[str, Any]:
             "balance": acct.balance,
             "equity": acct.equity,
             "currency": acct.currency,
-            "open_risk": open_risk,
+            "open_risk": summarize_open_risk(pricing),
             "positions": positions,
             "term_to_research": term_to_research,
         }
@@ -120,7 +129,7 @@ def _live_view() -> None:
     profile = ACCOUNTS[account_name]
     # -- load --
     try:
-        live = _load_live(days, account_name)
+        live = _load_live(account_name)
     except Exception as exc:  # noqa: BLE001 -- surface connection issues in the UI
         st.error(f"Could not read from the MT5 terminal: {exc}\n\nIs it open and logged in?")
         return
@@ -135,14 +144,31 @@ def _live_view() -> None:
         return
     ref = load_reference(max(runs, key=lambda d: d.stat().st_mtime) / "full_history_trades.csv")
 
-    trades = deals_to_trades(live["deals"])
-    trades["market"] = trades["symbol"].map(live["term_to_research"]).fillna(trades["symbol"])
+    all_trades = deals_to_trades(live["deals"])
+    all_trades["market"] = (
+        all_trades["symbol"].map(live["term_to_research"]).fillna(all_trades["symbol"])
+    )
     state = _risk_state(profile.name)
-    start_balance = float(state.get("start_balance", live["balance"]))
+    account_start = float(state.get("start_balance", live["balance"]))
     # #20: normalise EACH trade off the equity it was actually sized against, not off today's.
     # Sizing compounds, so one risk figure from current equity shrinks the early trades' R as the
     # account grows -- which would read as performance drift that never happened.
-    trade_risk = per_trade_risk(trades, start_balance, _LIVE_RISK_PCT)
+    # #29: walked over the FULL history, then windowed. Walking only the window would start every
+    # displayed trade from the account's opening balance regardless of what it had grown to.
+    all_risk = per_trade_risk(all_trades, account_start, _LIVE_RISK_PCT)
+
+    view = window_history(
+        all_trades,
+        all_risk,
+        window_start=pd.Timestamp(datetime.now(tz=UTC) - timedelta(days=days)),
+        account_start=account_start,
+    )
+    trades, trade_risk, start_balance = view.trades, view.risk, view.start_balance
+    if view.hidden:
+        st.caption(
+            f"Risikobasis je Trade aus der vollen Historie gerechnet "
+            f"({view.hidden} aeltere Trades ausserhalb des Fensters)."
+        )
 
     # -- account / risk header --
     c1, c2, c3, c4 = st.columns(4)
@@ -150,11 +176,28 @@ def _live_view() -> None:
     c2.metric("Balance", f"{live['balance']:,.0f} {live['currency']}")
     c3.metric("Floating", f"{live['equity'] - live['balance']:+,.0f} {live['currency']}")
     cap = 0.020 * live["equity"]
-    c4.metric(
-        "Open risk",
-        f"{live['open_risk']:,.0f} / {cap:,.0f}",
-        help="Total open stop-risk vs the 2.0% cap",
-    )
+    risk = live["open_risk"]
+    if risk.determinate:
+        c4.metric(
+            "Open risk",
+            f"{risk.total:,.0f} / {cap:,.0f}",
+            help="Total open stop-risk vs the 2.0% cap",
+        )
+    else:
+        # Match the runner exactly: it treats unpriceable exposure as infinite and opens nothing.
+        # A number here would invite acting on headroom the account does not have.
+        c4.metric(
+            "Open risk",
+            "unbestimmt",
+            help="At least one open position cannot be priced — the runner counts this as "
+            "unlimited risk and blocks new entries.",
+        )
+        st.error(
+            "Offenes Risiko nicht bestimmbar: "
+            f"{', '.join(risk.unpriceable)} laesst sich nicht bepreisen. "
+            "Der Runner wertet das als unbegrenztes Risiko und eroeffnet nichts Neues — "
+            "diese Seite zeigt deshalb keinen freien Spielraum an."
+        )
 
     if trades.empty:
         st.info(
@@ -252,7 +295,9 @@ def _live_view() -> None:
         st.caption("No open positions.")
     if state:
         hwm, day_start = float(state["hwm_balance"]), float(state["day_start_balance"])
-        trailing = min(start_balance, hwm - 0.05 * start_balance)
+        # The prop-firm floor is anchored to the ACCOUNT's start balance, never to whatever the
+        # display window happens to begin at -- shortening the window must not move a hard limit.
+        trailing = min(account_start, hwm - 0.05 * account_start)
         daily = day_start - 0.025 * day_start
         f1, f2 = st.columns(2)
         f1.metric(
