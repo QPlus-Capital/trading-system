@@ -28,7 +28,6 @@ from live.runner import position_risk, risk_per_trade_from_live_config
 from monitoring.deals import (
     balance_operations,
     deals_to_trades,
-    derive_account_start,
     equity_curve,
     live_stats,
     per_trade_risk,
@@ -157,28 +156,35 @@ def _live_view() -> None:
     )
     state = _risk_state(profile.name)
     cash_flows = balance_operations(live["deals"])
-    if "start_balance" in state:
-        account_start = float(state["start_balance"])
-    else:
-        # Today's balance already contains the account's whole lifetime result, so using it as the
-        # origin and then walking that result onto it again would count it twice.
-        account_start = derive_account_start(float(live["balance"]), all_trades, cash_flows)
-        st.caption(
-            "No saved risk state for this account — the opening balance was reconstructed from "
-            "the deal ledger. If the broker truncates deal history, historical R is approximate."
-        )
-    # #20: normalise EACH trade off the equity it was actually sized against, not off today's.
-    # Sizing compounds, so one risk figure from current equity shrinks the early trades' R as the
+    current_balance = float(live["balance"])
+    # #20: normalise EACH trade off the balance it was actually sized against, not off today's.
+    # Sizing compounds, so one risk figure from current balance shrinks the early trades' R as the
     # account grows -- which would read as performance drift that never happened.
-    # #29: walked over the FULL history, then windowed. Walking only the window would start every
-    # displayed trade from the account's opening balance regardless of what it had grown to.
-    all_risk = per_trade_risk(all_trades, account_start, _LIVE_RISK_PCT, cash_flows=cash_flows)
+    # #29: computed over the FULL history, then windowed; the window is a display choice and must
+    # not move any trade's basis. Walked BACKWARDS from the current balance, so no opening figure
+    # has to be guessed and a truncated history prefix cannot corrupt what we can see.
+    all_risk = per_trade_risk(all_trades, current_balance, _LIVE_RISK_PCT, cash_flows=cash_flows)
+
+    # A saved start balance does not make the deal ledger complete. If replaying everything the
+    # broker returned does not land on the balance it reports, history is missing and every basis
+    # before the gap is approximate -- say so rather than presenting exact-looking numbers.
+    if "start_balance" in state:
+        booked = float(all_trades["net_pnl"].sum()) if not all_trades.empty else 0.0
+        moved = float(cash_flows["amount"].sum()) if not cash_flows.empty else 0.0
+        implied = current_balance - booked - moved
+        if abs(implied - float(state["start_balance"])) > 1.0:
+            st.caption(
+                f"Deal history looks incomplete: replaying it implies an opening balance of "
+                f"{implied:,.0f}, but the saved risk state records "
+                f"{float(state['start_balance']):,.0f}. Historical R before the gap is approximate."
+            )
 
     view = window_history(
         all_trades,
         all_risk,
         window_start=pd.Timestamp(datetime.now(tz=UTC) - timedelta(days=days)),
-        account_start=account_start,
+        current_balance=current_balance,
+        cash_flows=cash_flows,
     )
     trades, trade_risk, start_balance = view.trades, view.risk, view.start_balance
     if view.hidden:
@@ -241,7 +247,12 @@ def _live_view() -> None:
 
         # -- equity curve --
         st.subheader("Realized equity (live)")
-        eq = equity_curve(trades, start_balance)
+        window_flows = (
+            cash_flows[cash_flows["time"] >= trades["close_time"].min()]
+            if not cash_flows.empty
+            else cash_flows
+        )
+        eq = equity_curve(trades, start_balance, cash_flows=window_flows)
         st.altair_chart(
             alt.Chart(eq)
             .mark_line(color=_BLUE, strokeWidth=2)
@@ -312,9 +323,11 @@ def _live_view() -> None:
         st.caption("No open positions.")
     if state:
         hwm, day_start = float(state["hwm_balance"]), float(state["day_start_balance"])
-        # The prop-firm floor is anchored to the ACCOUNT's start balance, never to whatever the
-        # display window happens to begin at -- shortening the window must not move a hard limit.
-        trailing = min(account_start, hwm - 0.05 * account_start)
+        # The prop-firm floor is anchored to the ACCOUNT's start balance as the runner recorded
+        # it -- never to today's balance or to whatever the display window begins at. Shortening
+        # the window must not move a hard limit.
+        anchor = float(state["start_balance"])
+        trailing = min(anchor, hwm - 0.05 * anchor)
         daily = day_start - 0.025 * day_start
         f1, f2 = st.columns(2)
         f1.metric(
