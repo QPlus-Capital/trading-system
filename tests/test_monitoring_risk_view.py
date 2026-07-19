@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from monitoring.deals import per_trade_risk
+from monitoring.deals import balance_operations, derive_account_start, per_trade_risk
 from monitoring.risk_view import summarize_open_risk, window_history
 
 
@@ -99,6 +99,67 @@ def test_a_full_window_hides_nothing_and_changes_nothing() -> None:
     assert view.hidden == 0
     assert view.start_balance == 100_000.0
     assert list(view.risk) == list(all_risk)
+
+
+# --------------------------------------------------------------------- the balance ledger
+def _ops(times: list[str], amounts: list[float]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {"time": pd.to_datetime(times, utc=True), "amount": amounts}
+    )
+
+
+def test_a_payout_moves_the_basis_of_every_later_trade() -> None:
+    """Prop accounts pay out. A cashflow moves the balance with no trade attached to it.
+
+    Two trades of +1000 each on 100k at 1%: bases 1000 and 1010. Withdraw 50k between them and
+    the second trade was sized against 51k, not 101k -- a basis wrong by a factor of two.
+    """
+    trades = _trades(["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0])
+    flows = _ops(["2026-01-03"], [-50_000.0])
+
+    risk = per_trade_risk(trades, 100_000.0, 0.01, cash_flows=flows)
+    assert list(risk) == [1_000.0, 510.0]
+
+
+def test_a_deposit_is_carried_too() -> None:
+    trades = _trades(["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [0.0, 0.0])
+    flows = _ops(["2026-01-03"], [+25_000.0])
+
+    risk = per_trade_risk(trades, 100_000.0, 0.01, cash_flows=flows)
+    assert list(risk) == [1_000.0, 1_250.0]
+
+
+def test_no_cashflows_behaves_exactly_as_before() -> None:
+    trades = _trades(["2026-01-01", "2026-01-03"], ["2026-01-02", "2026-01-04"], [1_000.0, 1_000.0])
+    assert list(per_trade_risk(trades, 100_000.0, 0.01)) == list(
+        per_trade_risk(trades, 100_000.0, 0.01, cash_flows=pd.DataFrame(columns=["time", "amount"]))
+    )
+
+
+def test_balance_operations_are_lifted_out_of_the_raw_deals() -> None:
+    deals = [
+        {"position_id": 1, "symbol": "EURUSD", "type": 0, "entry": 0, "time": 100,
+         "volume": 0.1, "profit": 0.0, "swap": 0.0, "commission": 0.0},
+        {"position_id": 0, "symbol": "", "type": 2, "entry": 0, "time": 200,
+         "volume": 0.0, "profit": -5_000.0, "swap": 0.0, "commission": 0.0},
+    ]
+    ops = balance_operations(deals)
+    assert len(ops) == 1
+    assert float(ops.iloc[0]["amount"]) == -5_000.0
+
+
+def test_the_account_origin_is_reconstructed_when_no_state_is_saved() -> None:
+    """Using today's balance as the origin counts the account's lifetime result twice."""
+    trades = _trades(["2026-01-01"], ["2026-01-02"], [8_000.0])
+    flows = _ops(["2026-01-03"], [-3_000.0])
+    # Today's balance is 105k = 100k opening + 8k earned - 3k withdrawn.
+    assert derive_account_start(105_000.0, trades, flows) == 100_000.0
+
+
+def test_the_derived_origin_of_an_untouched_account_is_its_balance() -> None:
+    empty = pd.DataFrame(columns=["open_time", "close_time", "net_pnl"])
+    no_flows = pd.DataFrame(columns=["time", "amount"])
+    assert derive_account_start(50_000.0, empty, no_flows) == 50_000.0
 
 
 def test_an_empty_history_is_handled() -> None:

@@ -25,7 +25,14 @@ from live.accounts import ACCOUNTS
 from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 from live.runner import position_risk, risk_per_trade_from_live_config
 
-from monitoring.deals import deals_to_trades, equity_curve, live_stats, per_trade_risk
+from monitoring.deals import (
+    balance_operations,
+    deals_to_trades,
+    derive_account_start,
+    equity_curve,
+    live_stats,
+    per_trade_risk,
+)
 from monitoring.reference import load_reference, mc_band
 from monitoring.risk_view import summarize_open_risk, window_history
 from monitoring.study_explorer import METRICS, latest_study_csv, load_study, variant_ranking
@@ -149,13 +156,23 @@ def _live_view() -> None:
         all_trades["symbol"].map(live["term_to_research"]).fillna(all_trades["symbol"])
     )
     state = _risk_state(profile.name)
-    account_start = float(state.get("start_balance", live["balance"]))
+    cash_flows = balance_operations(live["deals"])
+    if "start_balance" in state:
+        account_start = float(state["start_balance"])
+    else:
+        # Today's balance already contains the account's whole lifetime result, so using it as the
+        # origin and then walking that result onto it again would count it twice.
+        account_start = derive_account_start(float(live["balance"]), all_trades, cash_flows)
+        st.caption(
+            "No saved risk state for this account — the opening balance was reconstructed from "
+            "the deal ledger. If the broker truncates deal history, historical R is approximate."
+        )
     # #20: normalise EACH trade off the equity it was actually sized against, not off today's.
     # Sizing compounds, so one risk figure from current equity shrinks the early trades' R as the
     # account grows -- which would read as performance drift that never happened.
     # #29: walked over the FULL history, then windowed. Walking only the window would start every
     # displayed trade from the account's opening balance regardless of what it had grown to.
-    all_risk = per_trade_risk(all_trades, account_start, _LIVE_RISK_PCT)
+    all_risk = per_trade_risk(all_trades, account_start, _LIVE_RISK_PCT, cash_flows=cash_flows)
 
     view = window_history(
         all_trades,
@@ -166,8 +183,8 @@ def _live_view() -> None:
     trades, trade_risk, start_balance = view.trades, view.risk, view.start_balance
     if view.hidden:
         st.caption(
-            f"Risikobasis je Trade aus der vollen Historie gerechnet "
-            f"({view.hidden} aeltere Trades ausserhalb des Fensters)."
+            f"Per-trade risk basis computed over the full history "
+            f"({view.hidden} older trades outside this window)."
         )
 
     # -- account / risk header --
@@ -188,15 +205,15 @@ def _live_view() -> None:
         # A number here would invite acting on headroom the account does not have.
         c4.metric(
             "Open risk",
-            "unbestimmt",
+            "indeterminate",
             help="At least one open position cannot be priced — the runner counts this as "
             "unlimited risk and blocks new entries.",
         )
         st.error(
-            "Offenes Risiko nicht bestimmbar: "
-            f"{', '.join(risk.unpriceable)} laesst sich nicht bepreisen. "
-            "Der Runner wertet das als unbegrenztes Risiko und eroeffnet nichts Neues — "
-            "diese Seite zeigt deshalb keinen freien Spielraum an."
+            "Open risk cannot be established: "
+            f"{', '.join(risk.unpriceable)} cannot be priced. "
+            "The runner treats this as unlimited risk and will not open anything new, so this "
+            "page shows no available headroom."
         )
 
     if trades.empty:
