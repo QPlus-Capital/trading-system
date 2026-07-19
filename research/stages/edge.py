@@ -160,7 +160,23 @@ def main(argv: list[str] | None = None) -> None:
         else rb.RunDir.create(allow_legacy=legacy)
     )
     rb.banner(1, "EDGE - Kante & Robustheit", run)
-    study_csv = _study_csv_from(args.source) if args.source else _run_study(args.config)
+    # Gates live in the study config (per strategy), not in this code -- nothing strategy-specific.
+    cfg = load_config_module(args.config)
+
+    # #31 / Codex: hash the inputs BEFORE the sweep, not after. A config or CSV edited during the
+    # hours the study runs would otherwise be recorded as if it had produced these results.
+    inputs = lineage.external_inputs(args.config, cfg)
+    if args.source:
+        study_csv = _study_csv_from(args.source)
+        # An ingested study was computed at some earlier time, possibly from other content. Only
+        # the study's OWN record says what that was; hashes taken here describe the files now.
+        recorded = lineage.read_provenance(study_csv.parent)
+        provenance = "recorded-by-study" if recorded else lineage.PROVENANCE_INGESTED
+        inputs = recorded if recorded else inputs
+    else:
+        study_csv = _run_study(args.config)
+        lineage.write_provenance(study_csv.parent, inputs)  # so a later --from can be trusted
+        provenance = "computed-here"
     df = pd.read_csv(study_csv)
 
     # The study alone holds the per-window return series, so it (not this stage) computes the DSR +
@@ -168,8 +184,6 @@ def main(argv: list[str] | None = None) -> None:
     source_dir = study_csv.parent
     dsr_by_variation, pbo = load_overfitting(source_dir)
 
-    # Gates live in the study config (per strategy), not in this code -- nothing strategy-specific.
-    cfg = load_config_module(args.config)
     min_pos = float(getattr(cfg, "SELECT_MIN_FRAC_POSITIVE", _MIN_FRAC_POSITIVE))
     rpd_tol = float(getattr(cfg, "SELECT_RPD_TOLERANCE", _RPD_TOLERANCE))
 
@@ -181,7 +195,8 @@ def main(argv: list[str] | None = None) -> None:
     with run.stage(
         "edge",
         argv={"config": str(args.config), "source": str(args.source or ""), "run": str(run.path)},
-        inputs=lineage.external_inputs(args.config, cfg),
+        inputs=inputs,
+        semantics={"study_provenance": provenance},
     ) as st:
         st.save_json("run_manifest.json", {"config": str(args.config)})
         shutil.copyfile(study_csv, st.file("study.csv"))

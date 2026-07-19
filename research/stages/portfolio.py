@@ -106,6 +106,10 @@ def main(argv: list[str] | None = None) -> None:
     sel = json.loads(run.require("selection.json", "select").read_text(encoding="utf-8"))
     policy = parse_risk(args.risk)
     cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
+    # #31 / Codex: snapshot the inputs BEFORE the extraction, which runs for hours. Hashing them
+    # afterwards would record whatever the files became, attributing these results to content
+    # that never produced them. StageWriter re-checks this snapshot before it publishes.
+    inputs = lineage.external_inputs(run.study_config(args.config), cfg, fixed_config=args.fixed)
     # The account/prop-firm rules come from config; the code never assumes a balance or a limit.
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
@@ -239,9 +243,7 @@ def main(argv: list[str] | None = None) -> None:
             "tail": args.tail,
             "fixed": str(args.fixed) if args.fixed else "",
         },
-        inputs=lineage.external_inputs(
-            run.study_config(args.config), cfg, fixed_config=args.fixed
-        ),
+        inputs=inputs,
         semantics={
             "variation": sel["variation"],
             "train_months": sel["train_months"],

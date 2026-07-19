@@ -79,7 +79,15 @@ def main(argv: list[str] | None = None) -> None:
     of_path = run.require("overfitting.json", "edge") if has_pbo else None
     spec = json.loads(run.require("portfolio.json", "portfolio").read_text(encoding="utf-8"))
     trades = pd.read_csv(run.require("portfolio_trades.csv", "portfolio"))
-    full_trades = pd.read_csv(run.require("full_history_trades.csv", "portfolio"))
+    # A run predating this artifact must stay inspectable: legacy mode exists to READ old runs,
+    # and demanding a file they never had would lock out the very workflow it is for. It stays
+    # mandatory for a real run, where its absence means the stage did not finish.
+    fh_path = (
+        run.file("full_history_trades.csv")
+        if run.allow_legacy
+        else run.require("full_history_trades.csv", "portfolio")
+    )
+    full_trades = pd.read_csv(fh_path) if fh_path.is_file() else None
     cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
@@ -221,11 +229,15 @@ def main(argv: list[str] | None = None) -> None:
         )
         # Fact sheet: full history vs holdout, flat vs compound -- the consistent end-of-run
         # report. Sized at the chosen ceiling; the stream was cached by the portfolio stage.
-        fs_account = replace(account, base_risk_frac=float(spec["ceiling_pct"]) / 100.0)
-        fs = factsheet.compute_factsheet(full_trades, trades, daily_close, fs_account)
-        print(factsheet.render_terminal(fs))
-        html_report.render(fs, str(spec["variation"]), run.path.name, st.file("report.html"))
-    print(f"\n  Faktsheet-Report (im Browser oeffnen): {run.file('report.html')}")
+        if full_trades is not None:
+            fs_account = replace(account, base_risk_frac=float(spec["ceiling_pct"]) / 100.0)
+            fs = factsheet.compute_factsheet(full_trades, trades, daily_close, fs_account)
+            print(factsheet.render_terminal(fs))
+            html_report.render(fs, str(spec["variation"]), run.path.name, st.file("report.html"))
+    if full_trades is None:
+        print("\n  (full_history_trades.csv fehlt - Legacy-Lauf, kein Faktsheet)")
+    else:
+        print(f"\n  Faktsheet-Report (im Browser oeffnen): {run.file('report.html')}")
     rb.finished()
 
 
