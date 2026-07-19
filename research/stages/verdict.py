@@ -221,7 +221,7 @@ def main(argv: list[str] | None = None) -> None:
         "verdict",
         argv={"run": str(run.path), "config": str(args.config or "")},
         inputs=inputs,
-        semantics={"passed": passed, "variation": spec["variation"]},
+        semantics={"passed": passed, "variation": spec["variation"], "deployable": lineage_ok},
     ) as st:
         st.save_json(
             "verdict.json",

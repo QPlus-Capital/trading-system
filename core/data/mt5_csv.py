@@ -150,15 +150,15 @@ def seeded_instruments(
         print(f"catalog {path} is in a different timestamp frame -> discarding it")
         shutil.rmtree(path, ignore_errors=True)
         return set()
-    present = seeded_ids(path)
-    if sources:
-        # Same reasoning as the frame check, applied to CONTENT: the presence check is the gate
-        # every seeding decision passes, so an instrument whose CSV changed must disappear from
-        # it. Otherwise the caller skips the re-import and the backtests read the old bars.
-        for instrument_id in catalog_source_drift(path, sources):
-            print(f"catalog source for {instrument_id} changed -> re-seeding it")
-            present.discard(instrument_id)
-    return present
+    if sources and (drifted := catalog_source_drift(path, sources)):
+        # Same reasoning AND the same remedy as the frame check: discard the catalog, do not
+        # patch it. ``write_mt5_catalog`` appends into whatever is already there, so re-importing
+        # an instrument whose CSV now covers a different time range would leave the old
+        # partitions beside the new ones and corrupt every backtest that reads them.
+        print(f"catalog source changed for {', '.join(sorted(drifted))} -> discarding the catalog")
+        shutil.rmtree(path, ignore_errors=True)
+        return set()
+    return seeded_ids(path)
 
 
 def seeded_ids(catalog_path: str | Path) -> set[str]:

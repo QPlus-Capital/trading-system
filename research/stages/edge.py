@@ -174,14 +174,23 @@ def main(argv: list[str] | None = None) -> None:
         # Its recorded catalog entries are kept as-is -- replacing them with the catalog as it
         # stands today would certify bars that study never read.
         recorded = lineage.read_provenance(study_csv.parent)
-        provenance = "recorded-by-study" if recorded else lineage.PROVENANCE_INGESTED
+        provenance = lineage.PROVENANCE_RECORDED if recorded else lineage.PROVENANCE_INGESTED
         inputs = recorded if recorded else {**inputs, **lineage.catalog_inputs()}
     else:
         study_csv = _run_study(args.config)
-        provenance = "computed-here"
-        # Captured only now: running the sweep is what SEEDS the catalog, so there was nothing
-        # stable to hash beforehand. Seeding is finished, so it holds still from here on.
-        inputs = {**inputs, **lineage.catalog_inputs()}
+        provenance = lineage.PROVENANCE_COMPUTED
+        # The sweep is what SEEDS the catalog, so there was nothing stable to hash up front. It
+        # records the catalog the moment seeding finished -- before its own backtests ran -- so
+        # a concurrent seeder during those hours cannot be mistaken for what this study read.
+        at_seed = study_csv.parent / "_catalog_at_seed.json"
+        inputs = {
+            **inputs,
+            **(
+                json.loads(at_seed.read_text(encoding="utf-8"))
+                if at_seed.is_file()
+                else lineage.catalog_inputs()
+            ),
+        }
         lineage.write_provenance(study_csv.parent, inputs)  # so a later --from can be trusted
     df = pd.read_csv(study_csv)
 

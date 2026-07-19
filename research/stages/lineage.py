@@ -39,7 +39,7 @@ import os
 import shutil
 import subprocess
 import uuid
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -47,7 +47,7 @@ from types import TracebackType
 from typing import Any
 
 from core.broker import TTP_MARKETS, swap_snapshot_path
-from core.data.mt5_csv import SOURCE_MARKER
+from core.data.mt5_csv import read_catalog_sources
 from core.paths import REPO_ROOT
 
 SCHEMA_VERSION = 1
@@ -55,7 +55,24 @@ SCHEMA_VERSION = 1
 # A study ingested with ``--from`` carries this unless it recorded its own provenance: the
 # hashes taken at ingestion describe the files as they are NOW, not the ones that produced it.
 PROVENANCE_INGESTED = "ingested-unverified"
+#: Written by a stage that computed its own study; the only other accepted value is a study's
+#: own recorded provenance. A manifest carrying neither cannot be deployed.
+PROVENANCE_COMPUTED = "computed-here"
+PROVENANCE_RECORDED = "recorded-by-study"
 _PROVENANCE_FILE = "_provenance.json"
+
+#: What ``git_state()`` reports when git cannot be consulted at all. Identical placeholders in
+#: every manifest would otherwise satisfy the code-lineage comparison, so deployment rejects it.
+UNKNOWN_GIT = "unknown"
+
+#: The artifacts a stage must have published for it to count as complete. A manifest alone is not
+#: evidence: an empty output map verifies vacuously, and StageWriter silently skips a declared
+#: output that was never written.
+REQUIRED_OUTPUTS: dict[str, tuple[str, ...]] = {
+    "edge": ("run_manifest.json", "study.csv", "edge_ranking.csv"),
+    "select": ("selection.json",),
+    "portfolio": ("portfolio.json", "portfolio_trades.csv", "full_history_trades.csv"),
+}
 
 # The pipeline order. A stage completing invalidates every stage after it: its outputs are the
 # inputs those stages were computed from, so their results no longer describe anything real.
@@ -128,6 +145,18 @@ def drifted_inputs(inputs: dict[str, Any]) -> list[str]:
                 f"{label} ({entry['path']})"
                 f"\n      recorded {entry['sha256']}\n      actual   {actual}"
             )
+    # ``catalog_sources`` is per-instrument digests lifted out of one shared marker file, not a
+    # path+hash pair, so the walk above cannot see it -- and silently skipping it would be the
+    # same "nothing recorded reads as nothing changed" hole these checks exist to close.
+    recorded_catalog = inputs.get("catalog_sources")
+    if isinstance(recorded_catalog, dict):
+        current = read_catalog_sources(REPO_ROOT / "catalog")
+        for name, was in sorted(recorded_catalog.items()):
+            now = current.get(name, "absent")
+            if now != was:
+                out.append(
+                    f"catalog bars for {name}\n      recorded {was}\n      actual   {now}"
+                )
     return out
 
 
@@ -178,7 +207,19 @@ def read_provenance(study_dir: Path) -> dict[str, Any] | None:
     if not isinstance(inputs, dict):
         return None
 
-    recorded = d.get("artifacts") or {}
+    # An absent or partial artifact record is not a weaker guarantee, it is NO guarantee: the
+    # loop below would find nothing to compare and report no drift. Every study artifact must
+    # carry a well-formed entry (``absent`` included) or the record does not count as one.
+    recorded = d.get("artifacts")
+    if not isinstance(recorded, dict) or any(
+        not isinstance(recorded.get(n), dict) or "sha256" not in recorded.get(n, {})
+        for n in STUDY_ARTIFACTS
+    ):
+        raise ProvenanceMismatch(
+            f"study in {study_dir} carries a provenance record without hashes for every\n"
+            f"  study artifact ({', '.join(STUDY_ARTIFACTS)}).\n"
+            "  -> it cannot bind those results to anything; re-run the study."
+        )
     drifted = []
     for name, entry in recorded.items():
         f_art = study_dir / name
@@ -217,7 +258,7 @@ def git_state() -> dict[str, str]:
         except (OSError, subprocess.SubprocessError):  # git absent / not a repo
             return ""
 
-    commit = _run("rev-parse", "HEAD").strip() or "unknown"
+    commit = _run("rev-parse", "HEAD").strip() or UNKNOWN_GIT
     # Three sources, because each alone has a blind spot: `git diff` sees only the worktree,
     # `git diff --cached` only the index, and `git status --porcelain` carries status letters and
     # paths but never content. An untracked module -- which runs exactly like a tracked one --
@@ -626,6 +667,25 @@ def verify_chain(run_path: Path) -> list[str]:
     return problems
 
 
+def verify_run(run_path: Path) -> None:
+    """Re-verify every completed stage in ``run_path``: its outputs, its inputs, and the chain.
+
+    Independent of any particular caller. Checking only the stage that produced one artifact is
+    not enough for anyone acting on a RESULT: the verdict's own inputs can be untouched while the
+    config Stage 1 selected under was edited in place, which changes what the result means.
+    """
+    for stage, m in completed_stages(run_path):
+        if drift := m.verify_outputs(run_path):
+            detail = "\n    - ".join(drift)
+            raise LineageError(f"stage '{stage}' artifacts changed since it ran:\n    - {detail}")
+        if changed := m.verify_inputs():
+            detail = "\n    - ".join(changed)
+            raise LineageError(f"inputs of stage '{stage}' changed since it ran:\n    - {detail}")
+    if incoherent := verify_chain(run_path):
+        detail = "\n    - ".join(incoherent)
+        raise LineageError(f"the stages do not form one coherent run:\n    - {detail}")
+
+
 def verify_artifact(
     run_path: Path, artifact: str, produced_by: str, *, allow_legacy: bool
 ) -> str:
@@ -646,11 +706,14 @@ def verify_artifact(
 
     found = producing_stage(run_path, artifact)
     if found is None:
-        # Legacy acceptance is for a WHOLLY pre-lineage run, never a blanket pass for an unclaimed
-        # file. In a run that has manifests, an unclaimed artifact is a stray or a leftover -- and
-        # accepting it would let unverified evidence ride along inside an otherwise valid run.
-        has_lineage = any(read_manifest(run_path, s) for s in STAGE_ORDER)
-        if not has_lineage:
+        # Legacy acceptance is for a pre-lineage run, never a blanket pass for an unclaimed file
+        # inside a run built with lineage. The distinction is which stage produced the manifests:
+        # inspecting a legacy run necessarily creates markers for the stages one re-runs, and
+        # those must not lock the operator out of the legacy artifacts still ahead of them. A run
+        # whose FIRST stage carries lineage, by contrast, was built with it throughout, so an
+        # unclaimed file there is a stray.
+        built_with_lineage = read_manifest(run_path, STAGE_ORDER[0]) is not None
+        if not built_with_lineage:
             if allow_legacy:
                 return sha256_file(f)
             raise LineageError(
@@ -721,23 +784,11 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
             "  -> re-run the pipeline; such a run may be inspected but never deployed."
         )
 
-    # Verify independently rather than relying on the caller having called require() first. This
-    # function is the advertised deployment gate; a gate that is only sound when reached through
-    # one particular door is not a gate.
-    for stage, m in stages:
-        if drift := m.verify_outputs(run_path):
-            detail = "\n    - ".join(drift)
-            raise LineageError(f"stage '{stage}' artifacts changed since it ran:\n    - {detail}")
-        if changed := m.verify_inputs():
-            detail = "\n    - ".join(changed)
-            raise LineageError(f"inputs of stage '{stage}' changed since it ran:\n    - {detail}")
-    if incoherent := verify_chain(run_path):
-        detail = "\n    - ".join(incoherent)
-        raise LineageError(f"the stages do not form one coherent run:\n    - {detail}")
+    verify_run(run_path)
 
-    # An empty or malformed input record is not evidence of anything. Without this a manifest
-    # carrying the current schema but no inputs would sail through verify_inputs(), which has
-    # nothing to compare, and "never recorded" would once again read as "nothing changed".
+    # Every record a manifest can carry must actually be present. A missing one verifies
+    # vacuously -- there is nothing to compare against -- so "never recorded" would read as
+    # "nothing changed". These are all the places that can happen.
     for stage, m in stages:
         labels = {label for label, _ in _walk_inputs(m.inputs)}
         if "study_config" not in labels:
@@ -745,16 +796,29 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
                 f"stage '{stage}' recorded no verifiable study config among its inputs.\n"
                 "  -> its results cannot be tied to any configuration; re-run the pipeline."
             )
+        missing_outputs = [o for o in REQUIRED_OUTPUTS.get(stage, ()) if o not in m.outputs]
+        if missing_outputs:
+            raise LineageError(
+                f"stage '{stage}' did not publish: {', '.join(missing_outputs)}.\n"
+                "  -> a completion marker is not evidence the stage produced anything;\n"
+                "     re-run it."
+            )
+        if stage != STAGE_ORDER[0] and not m.upstream:
+            raise LineageError(
+                f"stage '{stage}' recorded no upstream artifacts.\n"
+                "  -> it cannot be tied to the stage before it; re-run the pipeline."
+            )
 
-    # A study ingested with --from that never recorded its own provenance cannot be tied to the
-    # config and data it was actually computed from, whatever the hashes taken at ingestion say.
-    ingested = [s for s, m in stages if m.semantics.get("study_provenance") == PROVENANCE_INGESTED]
-    if ingested:
-        raise LineageError(
-            f"run {run_path} ingested a study without provenance ({', '.join(ingested)}).\n"
-            "  -> the hashes describe the files at ingestion time, not the ones that produced\n"
-            "     the study. Re-run the study, or ingest one that recorded its own inputs."
-        )
+    edge_manifest = dict(stages).get(STAGE_ORDER[0])
+    if edge_manifest is not None:
+        provenance = edge_manifest.semantics.get("study_provenance")
+        if provenance not in (PROVENANCE_COMPUTED, PROVENANCE_RECORDED):
+            raise LineageError(
+                f"the study behind this run has no usable provenance ({provenance!r}).\n"
+                "  -> the hashes describe the files at ingestion time, not the ones that\n"
+                "     produced the study. Re-run the study, or ingest one that recorded its own."
+            )
+
 
     # --config is a supported override, so nothing stopped Stage 3 from being finished with a
     # different study config than Stage 1 selected under. Each manifest then verifies perfectly on
@@ -778,6 +842,17 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
     # external_inputs() covers configs and data -- never the research code itself. Two stages run
     # from different revisions of the engine can otherwise be combined into a deployable verdict.
     current = git_state()
+    # An environment where git cannot be consulted reports the same placeholder for every stage
+    # and for the check itself, so the comparison below would agree with itself and certify a
+    # code revision nobody can name.
+    unknown = [s for s, m in stages if m.git.get("commit", UNKNOWN_GIT) == UNKNOWN_GIT]
+    if unknown or current["commit"] == UNKNOWN_GIT:
+        raise LineageError(
+            "the code revision behind this run cannot be established "
+            f"(unreadable for: {', '.join(unknown) or 'the current checkout'}).\n"
+            "  -> a deployable verdict must name the code that produced it; run the pipeline\n"
+            "     inside the git checkout."
+        )
     recorded = {s: m.git for s, m in stages}
     disagreeing = {s: g for s, g in recorded.items() if g != current}
     if disagreeing:
@@ -800,22 +875,22 @@ def new_run_id() -> str:
 # --------------------------------------------------------------------------------------------
 # the external inputs every stage depends on
 # --------------------------------------------------------------------------------------------
-def _catalog_paths() -> dict[str, str | Path]:
-    """The catalog's own markers: which timestamp frame, and which CSV content, seeded its bars."""
-    return {
-        "catalog_sources": REPO_ROOT / "catalog" / SOURCE_MARKER,
-        "catalog_frame": REPO_ROOT / "catalog" / ".timestamp_frame",
-    }
-
-
-def catalog_inputs() -> dict[str, Any]:
-    """Hashes of the catalog markers alone.
+def catalog_inputs(instruments: Iterable[str] | None = None) -> dict[str, Any]:
+    """Hashes of the catalog markers, scoped to the instruments a stage actually uses.
 
     A stage that SEEDS the catalog cannot snapshot it beforehand -- seeding is what produces it.
-    Such a stage takes this after the seeding finishes and merges it into the inputs it captured
-    up front, so the record still describes the bars its backtests actually read.
+    Such a stage takes this once seeding is done and merges it into the inputs it captured up
+    front, so the record still describes the bars its backtests read.
+
+    Scoping matters as much as timing: the source marker is one shared file covering every
+    instrument in the catalog, so hashing it whole would make seeding an unrelated instrument
+    for another study invalidate finished research that never touched it.
     """
-    return hash_paths(_catalog_paths())
+    out: dict[str, Any] = hash_paths({"catalog_frame": REPO_ROOT / "catalog" / ".timestamp_frame"})
+    recorded = read_catalog_sources(REPO_ROOT / "catalog")
+    wanted = sorted(recorded) if instruments is None else sorted(instruments)
+    out["catalog_sources"] = {name: recorded.get(name, "absent") for name in wanted}
+    return out
 
 
 def external_inputs(
@@ -849,14 +924,18 @@ def external_inputs(
     paths[f"swap_snapshot:{canonical.stem}"] = canonical
     for snap in sorted((REPO_ROOT / "core" / "config" / "broker").glob("*.json")):
         paths.setdefault(f"swap_snapshot:{snap.stem}", snap)
-    if catalog:
-        paths.update(_catalog_paths())
 
     out: dict[str, Any] = hash_paths(paths)
+    ids: list[str] = []
     if cfg is not None:  # the raw H4 data the whole study is computed from
         raw: dict[str, str | Path] = {}
         for entry in getattr(cfg, "INSTRUMENTS", []):
             factory, csv_path = entry[0], entry[1]
-            raw[str(factory().raw_symbol)] = REPO_ROOT / str(csv_path)
+            instrument = factory()
+            raw[str(instrument.raw_symbol)] = REPO_ROOT / str(csv_path)
+            ids.append(str(getattr(instrument, "id", instrument.raw_symbol)))
         out["raw_data"] = hash_paths(raw)
+    if catalog:
+        # Scoped to this config's instruments: the bars these backtests read, and nothing else.
+        out.update(catalog_inputs(ids or None))
     return out
