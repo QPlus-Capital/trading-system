@@ -56,47 +56,124 @@ def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
     return out.sort_values("close_time").reset_index(drop=True) if not out.empty else out
 
 
-def equity_curve(trades: pd.DataFrame, start_balance: float) -> pd.DataFrame:
-    """Realized equity over time: ``start_balance`` plus the cumulative net PnL at each close."""
-    if trades.empty:
+def to_ns(times: pd.Series) -> np.ndarray:
+    """Epoch nanoseconds for a datetime column, whatever resolution pandas chose for it.
+
+    ``astype("int64")`` returns the column's own unit -- microseconds for a ``datetime64[us]``
+    column -- while ``Timestamp.value`` is always nanoseconds. Mixing the two compares numbers a
+    thousandfold apart, and the comparison quietly succeeds.
+    """
+    ns: np.ndarray = times.to_numpy(dtype="datetime64[ns]").astype("int64")
+    return ns
+
+
+def deal_ledger(deals: list[dict[str, Any]]) -> pd.DataFrame:
+    """``time``/``amount`` for EVERY deal: the complete record of balance movements.
+
+    Built from raw deals rather than from reconstructed trades, because the balance moves on
+    events a trade view cannot represent. An entry commission on a position that is still open is
+    already in the broker's balance, but the position has no OUT deal so it is not a trade, and it
+    has a symbol so it is not a cashflow -- it would fall through both and leave the reconstructed
+    history quietly off by that commission for as long as the position stays open.
+    """
+    df = pd.DataFrame(deals)
+    if df.empty or "time" not in df:
+        return pd.DataFrame(columns=["time", "amount"])
+    amount = df.get("profit", 0.0) + df.get("swap", 0.0) + df.get("commission", 0.0)
+    out = pd.DataFrame(
+        {
+            "time": pd.to_datetime(df["time"].astype(int), unit="s", utc=True),
+            "amount": amount.astype(float),
+        }
+    )
+    return out.sort_values("time").reset_index(drop=True)
+
+
+def money_events(ledger: pd.DataFrame | None) -> tuple[np.ndarray, np.ndarray]:
+    """``(timestamps_ns, amounts)`` from a ledger, in time order."""
+    if ledger is None or ledger.empty:
+        return np.array([], dtype="int64"), np.array([], dtype=float)
+    stamps = to_ns(ledger["time"])
+    amounts = ledger["amount"].to_numpy(dtype=float)
+    order = np.argsort(stamps, kind="stable")
+    return stamps[order], amounts[order]
+
+
+def balance_at(
+    when_ns: np.ndarray, current_balance: float, ledger: pd.DataFrame | None
+) -> np.ndarray:
+    """The account balance at each instant in ``when_ns``, walked BACK from today's balance.
+
+    Backwards, not forwards from an opening figure, because the current balance is the one number
+    the broker states exactly. A forward walk needs an origin, and every way of obtaining one is
+    a trap: today's balance already contains the history about to be replayed onto it; a saved
+    start balance already contains the opening deposit that the cashflow ledger would replay
+    again; and a broker that truncates deal history corrupts everything after the cutoff.
+
+    Walking back subtracts only what happened AFTER the instant in question, so a truncated
+    prefix cannot affect any balance inside the range we can see.
+
+    ``ledger`` must be the COMPLETE record (:func:`deal_ledger`), not a trade view: the current
+    balance already reflects every booked movement, so anything missing from the ledger is
+    inherited into every reconstructed balance before it.
+    """
+    stamps, amounts = money_events(ledger)
+    if len(stamps) == 0:
+        return np.full(len(when_ns), current_balance, dtype=float)
+    # Total booked strictly after each instant: cumulative sum from the right.
+    tail = np.concatenate([np.cumsum(amounts[::-1])[::-1], [0.0]])
+    idx = np.searchsorted(stamps, when_ns, side="right")
+    return current_balance - tail[idx]
+
+
+def equity_curve(start_balance: float, ledger: pd.DataFrame | None) -> pd.DataFrame:
+    """The realized balance path: ``start_balance`` moved by every booked event in time order.
+
+    Driven by the same ledger as the risk bases. A curve that omits cashflows never steps at a
+    payout while the ledger beside it uses the balance that did step -- two pictures of one
+    account, disagreeing, in the panel an operator reads first.
+    """
+    stamps, amounts = money_events(ledger)
+    if len(stamps) == 0:
         return pd.DataFrame(columns=["close_time", "equity"])
-    eq = start_balance + trades["net_pnl"].cumsum()
-    return pd.DataFrame({"close_time": trades["close_time"], "equity": eq})
+    return pd.DataFrame(
+        {
+            "close_time": pd.to_datetime(stamps, utc=True),
+            "equity": start_balance + np.cumsum(amounts),
+        }
+    )
 
 
 def per_trade_risk(
-    trades: pd.DataFrame, start_balance: float, risk_frac: float
+    trades: pd.DataFrame,
+    current_balance: float,
+    risk_frac: float,
+    ledger: pd.DataFrame | None = None,
 ) -> np.ndarray:
-    """Each trade's risked amount, off the equity as it stood BEFORE that trade (#20).
+    """Each trade's risked amount, off the balance as it stood at that trade's OWN OPEN (#20).
 
     Live sizing compounds: risk is a fraction of equity at entry, so a 1R win early in a smaller
     account is a smaller number of euros than a 1R win today. Dividing the whole history by
-    ``risk_frac * today's equity`` therefore shrinks the early trades -- an account that grew
+    ``risk_frac * today's balance`` therefore shrinks the early trades -- an account that grew
     $50k -> $60k would show its early 1R wins as 0.83R, distorting expectancy and any drift check.
 
-    Reconstructed from realized PnL, which is what the deal history gives us; floating equity at
-    the moment of entry is not recoverable after the fact.
+    Reconstructed from realized money only, which is what the deal history gives us; floating
+    equity at the moment of entry is not recoverable after the fact.
 
-    The balance is walked in CLOSE order (that is when PnL is booked) but each trade is charged
-    the balance as it stood at its OWN OPEN. With overlapping positions -- our normal case, ten
-    markets at once -- a later-opening trade can close first, and crediting its PnL to an earlier
-    trade's basis would attribute money that did not exist when that trade was sized, distorting
-    exactly the multi-market drift this monitor exists to detect.
+    Charged at each trade's OWN OPEN rather than in close order. With overlapping positions -- our
+    normal case, ten markets at once -- a later-opening trade can close first, and crediting its
+    PnL to an earlier trade's basis would attribute money that did not exist when that trade was
+    sized, distorting exactly the multi-market drift this monitor exists to detect.
+
+    ``ledger`` (:func:`deal_ledger`) must carry every booked movement -- trade legs, cashflows,
+    and the entry commission of a position that has not closed yet. On a prop account a payout
+    moves the balance without any trade, and an open position's commission moves it without any
+    completed trade; either omission makes every basis around it wrong.
     """
-    booked = trades["net_pnl"].to_numpy(dtype=float)
-    close_ns = trades["close_time"].astype("int64").to_numpy()
-    open_ns = trades["open_time"].astype("int64").to_numpy()
-    order = np.argsort(close_ns, kind="stable")  # PnL lands in close order
-    running, balance_at = start_balance, np.empty(len(trades))
-    ledger: list[tuple[int, float]] = [(np.iinfo(np.int64).min, start_balance)]
-    for i in order:
-        running += booked[i]
-        ledger.append((int(close_ns[i]), running))
-    stamps = np.array([t for t, _ in ledger])
-    values = np.array([v for _, v in ledger])
-    for i in range(len(trades)):  # balance as of each trade's OWN open
-        balance_at[i] = values[np.searchsorted(stamps, open_ns[i], side="right") - 1]
-    risk: np.ndarray = risk_frac * balance_at
+    if trades.empty:
+        return np.array([], dtype=float)
+    open_ns = to_ns(trades["open_time"])
+    risk: np.ndarray = risk_frac * balance_at(open_ns, current_balance, ledger)
     return risk
 
 
