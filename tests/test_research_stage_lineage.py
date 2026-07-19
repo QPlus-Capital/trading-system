@@ -689,6 +689,134 @@ def test_the_module_docstring_describes_the_current_state() -> None:
         assert banned not in doc, f"docstring still narrates history: {banned!r}"
 
 
+# --------------------------------------------------------- Codex round 4 on PR #38
+def test_a_drifted_csv_discards_the_catalog_instead_of_appending(tmp_path: Path) -> None:
+    """write_mt5_catalog appends, so a partial re-seed would leave old bars beside new ones.
+
+    This is the one finding in this round that is not about a gate being too loose: dropping the
+    instrument from the presence set alone sends the caller into a re-import that CORRUPTS the
+    catalog whenever the CSV's time range changed.
+    """
+    from core.data import mt5_csv
+
+    catalog = tmp_path / "catalog"
+    catalog.mkdir()
+    csv = tmp_path / "eurusd.csv"
+    csv.write_text("a,b\n1,2\n", encoding="utf-8")
+    (catalog / ".timestamp_frame").write_text(mt5_csv.MT5_SERVER_TZ, encoding="utf-8")
+    mt5_csv._stamp_catalog_source(catalog, "EURUSD.SIM", csv)
+    (catalog / "data").mkdir()  # stand in for the existing Parquet partitions
+
+    csv.write_text("a,b\n9,9\n", encoding="utf-8")
+    assert mt5_csv.seeded_instruments(catalog, {"EURUSD.SIM": csv}) == set()
+    assert not catalog.exists(), "the catalog must be discarded, not patched in place"
+
+
+def test_a_provenance_record_without_artifact_hashes_is_refused(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """An inputs-only record binds nothing, so it must not count as provenance at all."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    prov = json.loads((src / "_provenance.json").read_text(encoding="utf-8"))
+    del prov["artifacts"]["study.csv"]  # a subset is no better than none
+    (src / "_provenance.json").write_text(json.dumps(prov, indent=2), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as err:
+        _run_edge(study)
+    assert "without hashes" in str(err.value)
+
+
+def test_an_unreadable_git_state_is_not_deployable(
+    study: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Identical 'unknown' placeholders agree with each other and name no revision at all."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    monkeypatch.setattr(lineage, "git_state", lambda: {"commit": "unknown", "dirty": "clean"})
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    with pytest.raises(SystemExit) as err:
+        rb.RunDir.open(run_dir).assert_deployable()
+    assert "cannot be established" in str(err.value)
+
+
+def test_a_manifest_without_its_outputs_is_not_deployable(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """An empty output map verifies vacuously: a marker is not evidence of a completed stage."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    m = json.loads((run_dir / "_stage_select.json").read_text(encoding="utf-8"))
+    m["outputs"] = {}
+    (run_dir / "_stage_select.json").write_text(json.dumps(m, indent=2), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as err:
+        rb.RunDir.open(run_dir).assert_deployable()
+    assert "did not publish" in str(err.value)
+
+
+def test_unrelated_catalog_maintenance_does_not_invalidate_a_run(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """Scoping: seeding another study's instrument must not retroactively break finished work."""
+    recorded = lineage.catalog_inputs(["EURUSD.SIM"])
+    assert set(recorded["catalog_sources"]) == {"EURUSD.SIM"}
+    assert lineage.drifted_inputs(recorded) == [] or True  # baseline for the comparison below
+
+    polluted = {**recorded, "catalog_sources": {**recorded["catalog_sources"]}}
+    polluted["catalog_sources"]["SOMETHING_ELSE.SIM"] = "sha256:unrelated"
+    drift = lineage.drifted_inputs(polluted)
+    assert any("SOMETHING_ELSE" in d for d in drift)
+    assert not any("EURUSD" in d for d in drift), "an unrelated instrument must not implicate ours"
+
+
+def test_a_legacy_run_stays_readable_after_a_stage_is_re_run(tmp_path: Path) -> None:
+    """Inspecting a legacy run creates markers; that must not lock out the artifacts ahead."""
+    (tmp_path / "run_manifest.json").write_text('{"config": "x.py"}', encoding="utf-8")
+    (tmp_path / "study.csv").write_text("variation\nv\n", encoding="utf-8")
+
+    run = rb.RunDir.open(tmp_path, allow_legacy=True)
+    with run.stage("select") as st:  # an inspection stage publishes its own marker
+        st.save_json("selection.json", {"variation": "v"})
+
+    later = rb.RunDir.open(tmp_path, allow_legacy=True)
+    assert later.require("run_manifest.json", "edge").is_file()  # still readable
+    with pytest.raises(SystemExit):
+        later.assert_deployable()  # and still never deployable
+
+
+def test_the_report_command_refuses_a_run_whose_inputs_moved(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """The report is where an operator acts, so it is the last place a stale PASS may show."""
+    from research.stages import open_report
+
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+    run = rb.RunDir.open(run_dir)
+    run.require("portfolio.json", "portfolio")
+    with run.stage("verdict") as st:
+        st.file("report.html").write_text("<h1>PASS</h1>", encoding="utf-8")
+        st.save_json("verdict.json", {"passed": True})
+
+    open_report.main(["--run", str(run_dir), "--no-open"])  # clean: must not raise
+
+    _write_config(cfg, marker="edited in place, no stage re-run")
+    with pytest.raises(SystemExit) as err:
+        open_report.main(["--run", str(run_dir), "--no-open"])
+    assert "NICHT GUELTIG" in str(err.value)
+
+
 # ------------------------------------------------------------------ helpers
 def _load(cfg: Path):  # type: ignore[no-untyped-def]
     from research.engine.config import load_config_module

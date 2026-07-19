@@ -33,6 +33,7 @@ Usage (append a number to limit windows for a quick test)::
 """
 
 
+import json
 import sys
 import time
 from collections import defaultdict
@@ -434,6 +435,14 @@ def main(argv: list[str] | None = None) -> None:
             print(f"seeding {recipe.INSTRUMENT.id} ...")
             recipe.seed_catalog()
             have.add(str(recipe.INSTRUMENT.id))
+
+    # The catalog is complete and the backtests are about to read it. Record its state HERE, not
+    # after the sweep: another seeder touching the shared catalog during these hours would make a
+    # post-sweep snapshot describe bars this study's tasks never saw.
+    from research.stages import lineage
+    (out_dir / "_catalog_at_seed.json").write_text(
+        json.dumps(lineage.catalog_inputs(sorted(sources)), indent=2), encoding="utf-8"
+    )
 
     tasks = [
         (
