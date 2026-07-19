@@ -60,7 +60,7 @@ def window_history(
     *,
     window_start: pd.Timestamp,
     current_balance: float,
-    cash_flows: pd.DataFrame | None = None,
+    ledger: pd.DataFrame | None = None,
 ) -> HistoryWindow:
     """Restrict a full history to the display window WITHOUT changing any trade's risk basis.
 
@@ -76,9 +76,7 @@ def window_history(
     curve by every earlier payout.
     """
     entering = float(
-        balance_at(
-            to_ns(pd.Series([window_start])), current_balance, all_trades, cash_flows
-        )[0]
+        balance_at(to_ns(pd.Series([window_start])), current_balance, ledger)[0]
     )
     if all_trades.empty:
         return HistoryWindow(all_trades, all_risk, entering, 0)
