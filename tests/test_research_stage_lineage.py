@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from core.data.mt5_csv import SOURCE_MARKER
+from core.paths import REPO_ROOT
 from research.stages import _runbook as rb
 from research.stages import edge, lineage, portfolio, select, verdict
 
@@ -277,9 +279,12 @@ def test_an_upstream_artifact_swapped_after_the_stage_read_it_is_rejected(
     select.main(["--run", str(run_dir)])
     _fake_portfolio_stage(run_dir)
 
-    # Re-publish select with different content, then restore stage 3's marker as if nothing moved.
+    # Re-publish select with different content, then put stage 3 back exactly as it was -- marker
+    # AND quarantined outputs -- so the directory looks untouched to anything but the hashes.
     marker = (run_dir / "_stage_portfolio.json").read_text(encoding="utf-8")
     select.main(["--run", str(run_dir), "--variation", "v_beta"])
+    for name in ("portfolio.json", "portfolio_trades.csv", "full_history_trades.csv"):
+        shutil.copyfile(run_dir / "_invalidated" / "portfolio" / name, run_dir / name)
     (run_dir / "_stage_portfolio.json").write_text(marker, encoding="utf-8")
 
     run = rb.RunDir.open(run_dir)
@@ -526,6 +531,162 @@ def test_upstream_changing_before_publication_aborts_the_stage(
         st.save_json("portfolio.json", {"variation": "v_alpha"})
     assert "selection.json" in str(err.value)
     assert lineage.read_manifest(run_dir, "portfolio") is None
+
+
+# --------------------------------------------------------- Codex round 3 on PR #38
+def test_two_writers_for_one_stage_cannot_interleave(tmp_path: Path) -> None:
+    """The hours-long portfolio stage is plausibly launched twice against one run directory."""
+    run = rb.RunDir.open(tmp_path)
+    with run.stage("edge") as first:
+        first.save_json("run_manifest.json", {"config": "a"})
+        second = rb.RunDir.open(tmp_path).stage("edge")
+        # Separate staging areas: entering the second must not wipe the first one's work.
+        with second:
+            second.save_json("run_manifest.json", {"config": "b"})
+        assert (first.file("run_manifest.json")).is_file()
+
+
+def test_a_publication_lock_refuses_a_concurrent_writer(tmp_path: Path) -> None:
+    run = rb.RunDir.open(tmp_path)
+    writer = run.stage("edge")
+    (tmp_path / ".staging_edge.lock").write_text("999", encoding="utf-8")
+    with pytest.raises(SystemExit) as err, writer as st:
+        st.save_json("run_manifest.json", {"config": "a"})
+    assert "in progress" in str(err.value)
+
+
+def test_untracked_file_contents_feed_the_git_digest(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An untracked module runs like a tracked one; only its PATH shows up in git status."""
+    calls: list[tuple[str, ...]] = []
+
+    class _R:
+        returncode = 0
+        stdout = ""
+
+    def _fake_run(args, **_kw):  # type: ignore[no-untyped-def]
+        calls.append(tuple(args))
+        return _R()
+
+    monkeypatch.setattr("research.stages.lineage.subprocess.run", _fake_run)
+    lineage.git_state()
+    assert any("--others" in c for c in calls), "untracked files must be enumerated"
+
+
+def test_deployability_verifies_independently_of_the_caller(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """The advertised gate must not depend on the verdict happening to call require() first."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+    rb.RunDir.open(run_dir).assert_deployable()  # clean: must not raise
+
+    df = pd.read_csv(run_dir / "study.csv")
+    df.loc[0, "mean_oos_pct"] = 999.0
+    df.to_csv(run_dir / "study.csv", index=False)
+
+    with pytest.raises(SystemExit) as err:
+        rb.RunDir.open(run_dir).assert_deployable()  # called directly, nothing required first
+    assert "study.csv" in str(err.value)
+
+
+def test_a_manifest_without_a_study_config_input_is_not_deployable(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """An empty input record has nothing to verify, so verify_inputs() reports no drift."""
+    cfg, src, run_dir = study
+    lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+
+    m = json.loads((run_dir / "_stage_select.json").read_text(encoding="utf-8"))
+    m["inputs"] = {}
+    (run_dir / "_stage_select.json").write_text(json.dumps(m, indent=2), encoding="utf-8")
+
+    with pytest.raises(SystemExit) as err:
+        rb.RunDir.open(run_dir).assert_deployable()
+    assert "study config" in str(err.value)
+
+
+def test_invalidated_downstream_outputs_are_quarantined(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """A stale report.html saying PASS must not stay where `just report` will open it."""
+    _cfg, _src, run_dir = study
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+    _fake_portfolio_stage(run_dir)
+    _fake_verdict_stage(run_dir)
+    assert (run_dir / "verdict.json").is_file()
+
+    select.main(["--run", str(run_dir), "--variation", "v_beta"])
+
+    assert not (run_dir / "verdict.json").exists()
+    assert (run_dir / "_invalidated" / "verdict" / "verdict.json").is_file()
+    assert not (run_dir / "portfolio.json").exists()
+
+
+def test_the_catalog_gate_reseeds_an_instrument_whose_csv_changed(tmp_path: Path) -> None:
+    """Seeding is skipped when the instrument is present, so the CSV gate must sit THERE."""
+    from core.data import mt5_csv
+
+    catalog = tmp_path / "catalog"
+    catalog.mkdir()
+    csv = tmp_path / "eurusd.csv"
+    csv.write_text("a,b\n1,2\n", encoding="utf-8")
+    (catalog / ".timestamp_frame").write_text(mt5_csv.MT5_SERVER_TZ, encoding="utf-8")
+    mt5_csv._stamp_catalog_source(catalog, "EURUSD.SIM", csv)
+
+    assert mt5_csv.catalog_source_drift(catalog, {"EURUSD.SIM": csv}) == []
+    csv.write_text("a,b\n1,3\n", encoding="utf-8")  # the file changes; the Parquet bars do not
+    assert mt5_csv.catalog_source_drift(catalog, {"EURUSD.SIM": csv}) == ["EURUSD.SIM"]
+    with pytest.raises(RuntimeError, match="different CSV content"):
+        mt5_csv.require_current_sources(catalog, {"EURUSD.SIM": csv})
+
+
+def test_a_stage_that_seeds_the_catalog_can_still_publish(
+    study: tuple[Path, Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Seeding PRODUCES the catalog, so it cannot be part of the pre-work snapshot.
+
+    Hashing it up front makes the stage's own seeding look like input drift, and Stage 1 refuses
+    to publish after the full sweep -- the most expensive possible place to discover it. Every
+    other test ingests via --from and never seeds, so only this one covers that path.
+    """
+    cfg, src, run_dir = study
+    seeded: dict[str, bool] = {}
+
+    def _fake_study(_config: Path) -> Path:
+        # Stand in for the sweep: seed the catalog, exactly as the real one does.
+        marker = REPO_ROOT / "catalog" / SOURCE_MARKER
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text('{"SEEDED.SIM": "sha256:deadbeef"}', encoding="utf-8")
+        seeded["yes"] = True
+        return src / "study.csv"
+
+    original = REPO_ROOT / "catalog" / SOURCE_MARKER
+    backup = original.read_text(encoding="utf-8") if original.is_file() else None
+    monkeypatch.setattr(edge, "_run_study", _fake_study)
+    try:
+        edge.main([str(cfg), "--run", str(run_dir)])  # no --from: takes the seeding path
+    finally:
+        if backup is not None:
+            original.write_text(backup, encoding="utf-8")
+        elif original.is_file():
+            original.unlink()
+
+    assert seeded, "the test must exercise the seeding path"
+    assert lineage.read_manifest(run_dir, "edge") is not None, "stage 1 refused to publish"
+
+
+def test_the_module_docstring_describes_the_current_state() -> None:
+    """AGENTS.md forbids historical narrative in docstrings."""
+    doc = lineage.__doc__ or ""
+    for banned in ("Until now", "previous attempt", "once reported", "used to"):
+        assert banned not in doc, f"docstring still narrates history: {banned!r}"
 
 
 # ------------------------------------------------------------------ helpers

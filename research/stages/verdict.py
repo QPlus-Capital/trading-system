@@ -89,6 +89,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     full_trades = pd.read_csv(fh_path) if fh_path.is_file() else None
     cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
+    # Snapshot the external inputs BEFORE the market data is loaded and the verdict computed, so
+    # the manifest records the content these numbers came from. Evaluating this at publication
+    # time would let a file edited mid-stage be recorded as the input to results produced from
+    # its predecessor, and the writer's drift check would see a perfectly stable snapshot.
+    inputs = lineage.external_inputs(run.study_config(args.config), cfg)
     account: AccountProfile = getattr(cfg, "ACCOUNT", AccountProfile())
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
     universe = [m for m in spec["instruments"] if m in specs]
@@ -215,7 +220,7 @@ def main(argv: list[str] | None = None) -> None:
     with run.stage(
         "verdict",
         argv={"run": str(run.path), "config": str(args.config or "")},
-        inputs=lineage.external_inputs(run.study_config(args.config), cfg),
+        inputs=inputs,
         semantics={"passed": passed, "variation": spec["variation"]},
     ) as st:
         st.save_json(

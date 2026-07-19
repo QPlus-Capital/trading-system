@@ -48,6 +48,9 @@ def main(argv: list[str] | None = None) -> None:
     # The config anchor is an edge output like any other: if it were swapped, this stage would
     # resolve a different study config than the one the study was computed from.
     run.require("run_manifest.json", "edge")
+    # Snapshotted before the selection is computed, like every other stage. This one is fast, but
+    # "fast enough that nobody could edit a file mid-run" is a race, not an invariant.
+    inputs = lineage.external_inputs(run.study_config())
     df = pd.read_csv(run.require("study.csv", "edge"))
     # #2: the GATED ranking is the only admissible input for an automatic pick. Reading study.csv
     # alone re-derived the choice without the statistical gates the edge stage had applied.
@@ -109,7 +112,7 @@ def main(argv: list[str] | None = None) -> None:
     with run.stage(
         "select",
         argv={"run": str(run.path), "variation": str(args.variation or "")},
-        inputs=lineage.external_inputs(run.study_config()),
+        inputs=inputs,
         semantics={
             "variation": variation,
             "train_months": train_months,

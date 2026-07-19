@@ -159,7 +159,7 @@ def main(argv: list[str] | None = None) -> None:
     needed = str(module.INSTRUMENT.id)
     # The presence check IS the staleness gate: a stale catalog is discarded here, so the seeding
     # below cannot be skipped just because the old-frame instrument happened to be present.
-    have = seeded_instruments(catalog_dir)
+    have = seeded_instruments(catalog_dir, {needed: Path(module.CSV_PATH)})
     if needed not in have:
         print(f"Instrument {needed} not in catalog -> seeding ...")
         module.seed_catalog()

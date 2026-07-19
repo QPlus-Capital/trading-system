@@ -422,7 +422,12 @@ def main(argv: list[str] | None = None) -> None:
     catalog = _REPO_ROOT / "catalog"
     # The presence check discards a stale-frame catalog outright, so the per-instrument seeding
     # below re-imports everything through the write funnel (which stamps the new frame).
-    have = seeded_instruments(catalog)
+    # ...and an instrument whose CSV changed since it was seeded is discarded from the set too,
+    # so the loop below re-imports it instead of backtesting the previous file's bars.
+    sources: dict[str, str | Path] = {
+        str(factory().id): _REPO_ROOT / str(csv) for factory, csv, _lev in cfg.INSTRUMENTS
+    }
+    have = seeded_instruments(catalog, sources)
     for factory, csv, leverage in cfg.INSTRUMENTS:
         recipe = SweepRecipe(factory(), csv, leverage=leverage)
         if str(recipe.INSTRUMENT.id) not in have:

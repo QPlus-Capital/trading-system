@@ -1,34 +1,45 @@
 """Content-addressed lineage for the staged research pipeline (#31).
 
-A research run is four stages writing into one directory. Until now a stage only checked that its
-input FILE EXISTED, so artifacts from different configurations or executions could be combined
-without anyone noticing -- a run once reported one variation's gate evidence beside another
-variation's numbers, because stage 2 had been re-run after stage 3 read it.
+A research run is four stages writing into one directory. File existence proves nothing about
+where a file came from, so each stage records what it was computed FROM, by content, and every
+read is checked against that record.
 
-This module makes each stage record what it was computed FROM, by content:
+Each stage manifest holds:
 
-* every external input (study config, live config, instrument definitions, raw CSVs, broker/swap
-  snapshot) is hashed by content, never trusted by path -- editing a config in place must
-  invalidate everything downstream;
-* every upstream artifact it read is recorded with the hash it had at read time;
-* every output it wrote is recorded with its hash.
+* every external input -- study config, live config, instrument definitions, raw CSVs, broker
+  swap snapshot, the catalog's own record of which CSV content it was seeded from -- hashed by
+  content and stored with its path, so it stays re-checkable;
+* the git state (commit plus a digest of worktree, index and untracked file contents) captured
+  when the stage's work begins, since external inputs never cover the research code itself;
+* every upstream artifact it read, with the hash it had at read time;
+* every output it wrote, with its hash.
 
-Reading is the gate. :meth:`StageManifest.verify` re-hashes the files on disk and refuses when
-anything moved, which is the path that actually matters: the previous attempt at this put its
-check on the WRITE side, where the failing case never went.
+**Reading is the gate.** :func:`verify_artifact` re-hashes what is on disk and refuses unless the
+producing stage's outputs, its external inputs, and the whole chain still agree. Checking only on
+the write side would leave the failing case -- reading an artifact somebody else replaced --
+entirely uncovered.
 
-Completion is a manifest file, written last and atomically. A stage that dies half-way leaves no
-manifest, so its outputs are invisible to everything downstream rather than half-visible.
+**Publication is atomic and exclusive.** Outputs are staged per invocation, moved under a lock,
+and the manifest -- the completion marker -- is written last. A stage that dies half-way leaves no
+manifest, so its outputs are invisible downstream rather than half-visible. Inputs, git state and
+upstream hashes are re-checked immediately before publishing, so a stage that ran for hours
+cannot record content that appeared after its results were computed.
+
+**Deployability is separate and stricter** (:func:`assert_deployable`): it re-verifies everything
+independently of the caller, and additionally requires the current manifest schema, a study
+provenance that is not merely ingested, one study config across all stages, and one git state.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
 import shutil
 import subprocess
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -36,6 +47,7 @@ from types import TracebackType
 from typing import Any
 
 from core.broker import TTP_MARKETS, swap_snapshot_path
+from core.data.mt5_csv import SOURCE_MARKER
 from core.paths import REPO_ROOT
 
 SCHEMA_VERSION = 1
@@ -206,11 +218,18 @@ def git_state() -> dict[str, str]:
             return ""
 
     commit = _run("rev-parse", "HEAD").strip() or "unknown"
-    # The STAGED diff too: `git diff` shows only the worktree, and `git status --porcelain` carries
-    # status letters and paths, not content. Restaging different content under the same paths would
-    # otherwise leave the digest untouched while the code that runs has changed.
+    # Three sources, because each alone has a blind spot: `git diff` sees only the worktree,
+    # `git diff --cached` only the index, and `git status --porcelain` carries status letters and
+    # paths but never content. An untracked module -- which runs exactly like a tracked one --
+    # appears only in the third, so its CONTENT is hashed explicitly here.
     dirt = _run("status", "--porcelain") + _run("diff") + _run("diff", "--cached")
-    return {"commit": commit, "dirty": sha256_bytes(dirt.encode()) if dirt.strip() else "clean"}
+    untracked = _run("ls-files", "--others", "--exclude-standard").split("\n")
+    parts = [dirt]
+    for rel in sorted(p.strip() for p in untracked if p.strip()):
+        f = REPO_ROOT / rel
+        parts.append(f"{rel}:{sha256_file(f) if f.is_file() else 'absent'}")
+    blob = "\n".join(parts)
+    return {"commit": commit, "dirty": sha256_bytes(blob.encode()) if blob.strip() else "clean"}
 
 
 # --------------------------------------------------------------------------------------------
@@ -369,7 +388,11 @@ class StageWriter:
         self._inputs = inputs or {}
         self._semantics = semantics or {}
         self._upstream: dict[str, str] = {}
-        self._staging = run_path / f"{_STAGING_PREFIX}{stage}"
+        # Per INVOCATION, not per stage: two portfolio runs against one directory would otherwise
+        # share a staging area and each __enter__ would wipe the other's work, letting one process
+        # publish files the other produced under its own inputs and semantics.
+        self._staging = run_path / f"{_STAGING_PREFIX}{stage}_{os.getpid()}_{uuid.uuid4().hex[:8]}"
+        self._lock = run_path / f"{_STAGING_PREFIX}{stage}.lock"
         self._names: list[str] = []
 
     # -- inputs the stage consumed --
@@ -409,6 +432,24 @@ class StageWriter:
             shutil.rmtree(self._staging, ignore_errors=True)
             return
         self._commit()
+
+    @contextlib.contextmanager
+    def _publication_lock(self) -> Iterator[None]:
+        """Serialise publication so two writers cannot interleave move + manifest."""
+        try:
+            fd = os.open(self._lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            raise LineageError(
+                f"another '{self.stage}' publication is in progress for {self.run_path}\n"
+                f"  (lock: {self._lock}). Wait for it, or remove the lock if no such process\n"
+                "  is running -- two stages publishing into one run corrupt its lineage."
+            ) from None
+        try:
+            os.write(fd, str(os.getpid()).encode())
+            os.close(fd)
+            yield
+        finally:
+            self._lock.unlink(missing_ok=True)
 
     def _commit(self) -> None:
         # 0. The inputs were hashed BEFORE the work started. If any of them changed while the
@@ -451,60 +492,81 @@ class StageWriter:
                 "  -> nothing was published; the stage before this one was re-run underneath it."
             )
 
-        # 1. move every produced file into the run directory
-        outputs: dict[str, str] = {}
-        for name in self._names:
-            src = self._staging / name
-            if not src.is_file():
-                continue  # the stage declared it but never wrote it
-            dst = self.run_path / name
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(src, dst)
-            outputs[name] = sha256_file(dst)
-        shutil.rmtree(self._staging, ignore_errors=True)
+        # Everything from here changes the run directory, so it happens under the lock: two
+        # writers interleaving move + invalidate + manifest would leave a manifest describing
+        # files the other process had already replaced.
+        with self._publication_lock():
+            # 1. move every produced file into the run directory
+            outputs: dict[str, str] = {}
+            for name in self._names:
+                src = self._staging / name
+                if not src.is_file():
+                    continue  # the stage declared it but never wrote it
+                dst = self.run_path / name
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(src, dst)
+                outputs[name] = sha256_file(dst)
+            shutil.rmtree(self._staging, ignore_errors=True)
 
-        # 1b. drop artifacts the PREVIOUS run of this stage produced but this one did not. Left in
-        #     place they deadlock the next stage: it sees the file, calls require(), and is refused
-        #     because no completed stage claims it -- with no way forward but manual deletion.
-        previous = read_manifest(self.run_path, self.stage)
-        if previous is not None:
-            for name in previous.outputs:
-                if name not in outputs:
-                    (self.run_path / name).unlink(missing_ok=True)
+            # 1b. drop artifacts the PREVIOUS run of this stage produced but this one did not.
+            #     Left in place they deadlock the next stage: it sees the file, calls require(),
+            #     and is refused because no completed stage claims it.
+            previous = read_manifest(self.run_path, self.stage)
+            if previous is not None:
+                for name in previous.outputs:
+                    if name not in outputs:
+                        (self.run_path / name).unlink(missing_ok=True)
 
-        # 2. anything computed FROM this stage is now stale -- remove those completion markers
-        #    before publishing ours, so no window exists in which both look valid.
-        invalidate_downstream(self.run_path, self.stage)
+            # 2. anything computed FROM this stage is now stale -- retire those stages, markers
+            #    and outputs alike, before publishing ours, so no window exists in which both
+            #    look valid.
+            invalidate_downstream(self.run_path, self.stage)
 
-        # 3. the manifest is the completion marker: written last, atomically.
-        m = StageManifest(
-            stage=self.stage,
-            run_id=self.run_id,
-            completed_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
-            git=self._git,
-            argv=self._argv,
-            seeds=self._seeds,
-            inputs=self._inputs,
-            semantics=self._semantics,
-            upstream=self._upstream,
-            outputs=outputs,
-        )
-        final = manifest_path(self.run_path, self.stage)
-        tmp = final.with_suffix(".json.tmp")
-        tmp.write_text(m.to_json(), encoding="utf-8")
-        os.replace(tmp, final)
+            # 3. the manifest is the completion marker: written last, atomically.
+            m = StageManifest(
+                stage=self.stage,
+                run_id=self.run_id,
+                completed_at=datetime.now(tz=UTC).isoformat(timespec="seconds"),
+                git=self._git,
+                argv=self._argv,
+                seeds=self._seeds,
+                inputs=self._inputs,
+                semantics=self._semantics,
+                upstream=self._upstream,
+                outputs=outputs,
+            )
+            final = manifest_path(self.run_path, self.stage)
+            tmp = final.with_suffix(".json.tmp")
+            tmp.write_text(m.to_json(), encoding="utf-8")
+            os.replace(tmp, final)
 
 
 def invalidate_downstream(run_path: Path, stage: str) -> list[str]:
-    """Drop the completion markers of every stage that runs after ``stage``. Returns their names."""
+    """Retire every stage that runs after ``stage``: its marker AND its outputs.
+
+    Removing only the marker leaves a readable ``report.html`` and a ``verdict.json`` saying
+    PASS beside a selection that no longer exists. Nothing downstream would accept them again,
+    but an operator opening the newest report has no way to see that -- so the artifacts go with
+    the marker, into ``_invalidated/<stage>/`` where they can still be inspected but are plainly
+    not the run's current answer.
+    """
     if stage not in STAGE_ORDER:
         return []
     dropped = []
     for later in STAGE_ORDER[STAGE_ORDER.index(stage) + 1 :]:
         f = manifest_path(run_path, later)
-        if f.is_file():
-            f.unlink()
-            dropped.append(later)
+        if not f.is_file():
+            continue
+        m = read_manifest(run_path, later)
+        quarantine = run_path / "_invalidated" / later
+        if m is not None:
+            quarantine.mkdir(parents=True, exist_ok=True)
+            for name in m.outputs:
+                src = run_path / name
+                if src.is_file():
+                    os.replace(src, quarantine / Path(name).name)
+        f.unlink()
+        dropped.append(later)
     return dropped
 
 
@@ -647,9 +709,10 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
 
     stages = completed_stages(run_path)
 
-    # A manifest from an older schema may carry recognizable outputs while omitting the
-    # path+hash input records entirely. verify_inputs() then finds nothing to check and reports
-    # no drift -- "we never recorded it" would pass as "nothing changed".
+    # Schema first: it is the most fundamental diagnosis, and every check below reads fields whose
+    # meaning it defines. A manifest from an older schema may carry recognizable outputs while
+    # omitting the path+hash input records entirely, so verify_inputs() would find nothing to
+    # check and "never recorded" would read as "nothing changed".
     stale = [s for s, m in stages if m.schema != SCHEMA_VERSION]
     if stale:
         raise LineageError(
@@ -657,6 +720,31 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool) -> None:
             f"  (expected schema {SCHEMA_VERSION}).\n"
             "  -> re-run the pipeline; such a run may be inspected but never deployed."
         )
+
+    # Verify independently rather than relying on the caller having called require() first. This
+    # function is the advertised deployment gate; a gate that is only sound when reached through
+    # one particular door is not a gate.
+    for stage, m in stages:
+        if drift := m.verify_outputs(run_path):
+            detail = "\n    - ".join(drift)
+            raise LineageError(f"stage '{stage}' artifacts changed since it ran:\n    - {detail}")
+        if changed := m.verify_inputs():
+            detail = "\n    - ".join(changed)
+            raise LineageError(f"inputs of stage '{stage}' changed since it ran:\n    - {detail}")
+    if incoherent := verify_chain(run_path):
+        detail = "\n    - ".join(incoherent)
+        raise LineageError(f"the stages do not form one coherent run:\n    - {detail}")
+
+    # An empty or malformed input record is not evidence of anything. Without this a manifest
+    # carrying the current schema but no inputs would sail through verify_inputs(), which has
+    # nothing to compare, and "never recorded" would once again read as "nothing changed".
+    for stage, m in stages:
+        labels = {label for label, _ in _walk_inputs(m.inputs)}
+        if "study_config" not in labels:
+            raise LineageError(
+                f"stage '{stage}' recorded no verifiable study config among its inputs.\n"
+                "  -> its results cannot be tied to any configuration; re-run the pipeline."
+            )
 
     # A study ingested with --from that never recorded its own provenance cannot be tied to the
     # config and data it was actually computed from, whatever the hashes taken at ingestion say.
@@ -712,8 +800,30 @@ def new_run_id() -> str:
 # --------------------------------------------------------------------------------------------
 # the external inputs every stage depends on
 # --------------------------------------------------------------------------------------------
+def _catalog_paths() -> dict[str, str | Path]:
+    """The catalog's own markers: which timestamp frame, and which CSV content, seeded its bars."""
+    return {
+        "catalog_sources": REPO_ROOT / "catalog" / SOURCE_MARKER,
+        "catalog_frame": REPO_ROOT / "catalog" / ".timestamp_frame",
+    }
+
+
+def catalog_inputs() -> dict[str, Any]:
+    """Hashes of the catalog markers alone.
+
+    A stage that SEEDS the catalog cannot snapshot it beforehand -- seeding is what produces it.
+    Such a stage takes this after the seeding finishes and merges it into the inputs it captured
+    up front, so the record still describes the bars its backtests actually read.
+    """
+    return hash_paths(_catalog_paths())
+
+
 def external_inputs(
-    study_config: Path, cfg: Any = None, fixed_config: Path | None = None
+    study_config: Path,
+    cfg: Any = None,
+    fixed_config: Path | None = None,
+    *,
+    catalog: bool = True,
 ) -> dict[str, Any]:
     """Content hashes of everything outside the run directory that a stage's result depends on.
 
@@ -739,6 +849,8 @@ def external_inputs(
     paths[f"swap_snapshot:{canonical.stem}"] = canonical
     for snap in sorted((REPO_ROOT / "core" / "config" / "broker").glob("*.json")):
         paths.setdefault(f"swap_snapshot:{snap.stem}", snap)
+    if catalog:
+        paths.update(_catalog_paths())
 
     out: dict[str, Any] = hash_paths(paths)
     if cfg is not None:  # the raw H4 data the whole study is computed from
