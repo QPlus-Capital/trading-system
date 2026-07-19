@@ -23,6 +23,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -43,6 +44,7 @@ from research.portfolio.stress import worst_day_r
 from research.portfolio.tail import full_history_tail_cap, traded_stop_loss_pct
 from research.portfolio.trades import make_extract_fn
 from research.stages import _runbook as rb
+from research.stages import lineage
 
 
 def parse_risk(spec: str) -> RiskPolicy:
@@ -91,12 +93,17 @@ def main(argv: list[str] | None = None) -> None:
         help="trade the FIXED per-market SL/TP from this live config every window (no per-window "
         "stop re-optimisation) -- validates the config we deploy, whose gentle tail is tradeable",
     )
+    parser.add_argument(
+        "--allow-legacy-unverified", action="store_true",
+        help="read a run that predates artifact hashing. Such a run can be inspected but can "
+        "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
+    )
     args = parser.parse_args(argv)
 
-    run = rb.RunDir.open(args.run)
+    run = rb.RunDir.open(args.run, allow_legacy=bool(args.allow_legacy_unverified))
     rb.banner(3, "PORTFOLIO - Groesse & Risiko", run)
-    run.require("selection.json", "select")
-    sel = run.load_json("selection.json")
+    run.require("run_manifest.json", "edge")  # the config anchor, verified like any other input
+    sel = json.loads(run.require("selection.json", "select").read_text(encoding="utf-8"))
     policy = parse_risk(args.risk)
     cfg = load_config_module(run.study_config(args.config))  # #3: the run's own config
     # The account/prop-firm rules come from config; the code never assumes a balance or a limit.
@@ -151,7 +158,6 @@ def main(argv: list[str] | None = None) -> None:
     for market, grp in trades.groupby("market"):
         if (spec := broker.swap_spec(str(market))) is not None:
             trades.loc[grp.index, "swap_r"] = swap_r_per_trade(grp, spec)
-    trades.to_csv(run.file("portfolio_trades.csv"), index=False)
 
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
     # #15: day extremes for the intraday daily-limit check
@@ -180,10 +186,6 @@ def main(argv: list[str] | None = None) -> None:
         source = "nur Holdout - eine schlimmere Krise wuerde die Decke senken"
     print(f"\n  Tail-Decke: schlechtester Tag {worst_day:.2f}R x {args.stress_mult} Stress "
           f"-> {cap * 100:.3f}% pro Trade  [{source}]")
-
-    # Persist the full-history stream (already computed for the tail) so the verdict fact sheet can
-    # report full-history vs holdout side by side without re-running the backtests.
-    rck_stream.to_csv(run.file("full_history_trades.csv"), index=False)
 
     # Risk-constrained Kelly derives the growth-optimal flat fraction from the trade distribution
     # under the "P(ever hit the 6% trailing wall) <= beta" bound; the single-day gap tail still caps
@@ -225,33 +227,60 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  {label:10s} {risk_txt:>18s} {res.ann_return_pct:>+12.1f}% "
               f"{res.ann_return_eur:>11,.0f} {res.max_drawdown_pct:>6.2f}% {limit:>6s}{mark}")
 
-    run.save_json(
-        "portfolio.json",
-        {
+    # #31: the two trade streams and the spec describe ONE evaluation and are published together.
+    # Written piecemeal they could be mixed: a spec from this run beside trades from the previous
+    # one is exactly the failure that produced the no_wpr_rsi / no_rsi mismatch.
+    with run.stage(
+        "portfolio",
+        argv={
+            "run": str(run.path),
+            "risk": args.risk,
+            "stress_mult": args.stress_mult,
+            "tail": args.tail,
+            "fixed": str(args.fixed) if args.fixed else "",
+        },
+        inputs=lineage.external_inputs(
+            run.study_config(args.config), cfg, fixed_config=args.fixed
+        ),
+        semantics={
             "variation": sel["variation"],
             "train_months": sel["train_months"],
-            "instruments": universe,
-            # Provenance (#11): which per-market stops these numbers were produced with. Without a
-            # frozen config the stops were re-optimised per window, so the result is EXPLORATORY --
-            # the verdict refuses to call such a run deployable.
-            "fixed_config": str(args.fixed) if args.fixed else None,
+            "universe": universe,
             "risk_policy": args.risk,
-            "stress_mult": args.stress_mult,
-            "tail_source": args.tail,
-            "tail_cap_pct": round(cap * 100, 4),
-            "worst_day_r": round(worst_day, 2),
-            "ceiling_pct": chosen.ceiling_pct,
-            "floor_pct": chosen.floor_pct,
-            "n_trades": chosen.n_trades,
-            "years": chosen.years,
-            "ann_return_pct": chosen.ann_return_pct,
-            "ann_return_eur": chosen.ann_return_eur,
-            "total_return_pct": chosen.total_return_pct,
-            "max_drawdown_pct": chosen.max_drawdown_pct,
-            "breached": chosen.breached,
-            **kelly_info,
+            "fixed_config": str(args.fixed) if args.fixed else None,
         },
-    )
+    ) as st:
+        trades.to_csv(st.file("portfolio_trades.csv"), index=False)
+        # The full-history stream (already computed for the tail) so the verdict fact sheet can
+        # report full-history vs holdout side by side without re-running the backtests.
+        rck_stream.to_csv(st.file("full_history_trades.csv"), index=False)
+        st.save_json(
+            "portfolio.json",
+            {
+                "variation": sel["variation"],
+                "train_months": sel["train_months"],
+                "instruments": universe,
+                # Provenance (#11): which per-market stops these numbers were produced with.
+                # Without a frozen config the stops were re-optimised per window, so the result is
+                # EXPLORATORY -- the verdict refuses to call such a run deployable.
+                "fixed_config": str(args.fixed) if args.fixed else None,
+                "risk_policy": args.risk,
+                "stress_mult": args.stress_mult,
+                "tail_source": args.tail,
+                "tail_cap_pct": round(cap * 100, 4),
+                "worst_day_r": round(worst_day, 2),
+                "ceiling_pct": chosen.ceiling_pct,
+                "floor_pct": chosen.floor_pct,
+                "n_trades": chosen.n_trades,
+                "years": chosen.years,
+                "ann_return_pct": chosen.ann_return_pct,
+                "ann_return_eur": chosen.ann_return_eur,
+                "total_return_pct": chosen.total_return_pct,
+                "max_drawdown_pct": chosen.max_drawdown_pct,
+                "breached": chosen.breached,
+                **kelly_info,
+            },
+        )
 
     nxt = rb.cmd("verdict", "--run", str(run.path))
     rb.next_step(nxt, "Urteil & vollstaendiger Report (Equity-Kurve, Sharpe, Diagramme)")
