@@ -56,29 +56,6 @@ def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
     return out.sort_values("close_time").reset_index(drop=True) if not out.empty else out
 
 
-def balance_operations(deals: list[dict[str, Any]]) -> pd.DataFrame:
-    """Non-trade cashflows: deposits, withdrawals, credits, prop-firm payouts.
-
-    MT5 books these as deals with no symbol, which :func:`deals_to_trades` drops -- correctly,
-    they are not trades. But they DO move the balance that later trades are sized against, so any
-    reconstruction of that balance has to carry them or every post-payout risk basis is wrong.
-    """
-    df = pd.DataFrame(deals)
-    if df.empty or "symbol" not in df:
-        return pd.DataFrame(columns=["time", "amount"])
-    ops = df[~df["symbol"].astype(bool)]
-    if ops.empty:
-        return pd.DataFrame(columns=["time", "amount"])
-    amount = ops["profit"] + ops.get("swap", 0.0) + ops.get("commission", 0.0)
-    out = pd.DataFrame(
-        {
-            "time": pd.to_datetime(ops["time"].astype(int), unit="s", utc=True),
-            "amount": amount.astype(float),
-        }
-    )
-    return out.sort_values("time").reset_index(drop=True)
-
-
 def to_ns(times: pd.Series) -> np.ndarray:
     """Epoch nanoseconds for a datetime column, whatever resolution pandas chose for it.
 
@@ -90,32 +67,40 @@ def to_ns(times: pd.Series) -> np.ndarray:
     return ns
 
 
-def money_events(
-    trades: pd.DataFrame, cash_flows: pd.DataFrame | None = None
-) -> tuple[np.ndarray, np.ndarray]:
-    """``(timestamps_ns, amounts)`` of everything that moved the balance, in time order.
+def deal_ledger(deals: list[dict[str, Any]]) -> pd.DataFrame:
+    """``time``/``amount`` for EVERY deal: the complete record of balance movements.
 
-    Trade PnL lands at CLOSE; a deposit, withdrawal or payout lands at its own time.
+    Built from raw deals rather than from reconstructed trades, because the balance moves on
+    events a trade view cannot represent. An entry commission on a position that is still open is
+    already in the broker's balance, but the position has no OUT deal so it is not a trade, and it
+    has a symbol so it is not a cashflow -- it would fall through both and leave the reconstructed
+    history quietly off by that commission for as long as the position stays open.
     """
-    if trades.empty and (cash_flows is None or cash_flows.empty):
+    df = pd.DataFrame(deals)
+    if df.empty or "time" not in df:
+        return pd.DataFrame(columns=["time", "amount"])
+    amount = df.get("profit", 0.0) + df.get("swap", 0.0) + df.get("commission", 0.0)
+    out = pd.DataFrame(
+        {
+            "time": pd.to_datetime(df["time"].astype(int), unit="s", utc=True),
+            "amount": amount.astype(float),
+        }
+    )
+    return out.sort_values("time").reset_index(drop=True)
+
+
+def money_events(ledger: pd.DataFrame | None) -> tuple[np.ndarray, np.ndarray]:
+    """``(timestamps_ns, amounts)`` from a ledger, in time order."""
+    if ledger is None or ledger.empty:
         return np.array([], dtype="int64"), np.array([], dtype=float)
-    stamps: list[int] = []
-    amounts: list[float] = []
-    if not trades.empty:
-        stamps += [int(t) for t in to_ns(trades["close_time"])]
-        amounts += [float(a) for a in trades["net_pnl"]]
-    if cash_flows is not None and not cash_flows.empty:
-        stamps += [int(t) for t in to_ns(cash_flows["time"])]
-        amounts += [float(a) for a in cash_flows["amount"]]
-    order = np.argsort(np.array(stamps, dtype="int64"), kind="stable")
-    return np.array(stamps, dtype="int64")[order], np.array(amounts, dtype=float)[order]
+    stamps = to_ns(ledger["time"])
+    amounts = ledger["amount"].to_numpy(dtype=float)
+    order = np.argsort(stamps, kind="stable")
+    return stamps[order], amounts[order]
 
 
 def balance_at(
-    when_ns: np.ndarray,
-    current_balance: float,
-    trades: pd.DataFrame,
-    cash_flows: pd.DataFrame | None = None,
+    when_ns: np.ndarray, current_balance: float, ledger: pd.DataFrame | None
 ) -> np.ndarray:
     """The account balance at each instant in ``when_ns``, walked BACK from today's balance.
 
@@ -127,8 +112,12 @@ def balance_at(
 
     Walking back subtracts only what happened AFTER the instant in question, so a truncated
     prefix cannot affect any balance inside the range we can see.
+
+    ``ledger`` must be the COMPLETE record (:func:`deal_ledger`), not a trade view: the current
+    balance already reflects every booked movement, so anything missing from the ledger is
+    inherited into every reconstructed balance before it.
     """
-    stamps, amounts = money_events(trades, cash_flows)
+    stamps, amounts = money_events(ledger)
     if len(stamps) == 0:
         return np.full(len(when_ns), current_balance, dtype=float)
     # Total booked strictly after each instant: cumulative sum from the right.
@@ -137,16 +126,14 @@ def balance_at(
     return current_balance - tail[idx]
 
 
-def equity_curve(
-    trades: pd.DataFrame, start_balance: float, cash_flows: pd.DataFrame | None = None
-) -> pd.DataFrame:
+def equity_curve(start_balance: float, ledger: pd.DataFrame | None) -> pd.DataFrame:
     """The realized balance path: ``start_balance`` moved by every booked event in time order.
 
-    Cash flows are part of the path, not an omission from it. Leaving them out draws a curve that
-    never steps at a payout while the risk ledger beside it uses the balance that did step --
-    two pictures of one account that disagree, in the panel an operator reads first.
+    Driven by the same ledger as the risk bases. A curve that omits cashflows never steps at a
+    payout while the ledger beside it uses the balance that did step -- two pictures of one
+    account, disagreeing, in the panel an operator reads first.
     """
-    stamps, amounts = money_events(trades, cash_flows)
+    stamps, amounts = money_events(ledger)
     if len(stamps) == 0:
         return pd.DataFrame(columns=["close_time", "equity"])
     return pd.DataFrame(
@@ -161,7 +148,7 @@ def per_trade_risk(
     trades: pd.DataFrame,
     current_balance: float,
     risk_frac: float,
-    cash_flows: pd.DataFrame | None = None,
+    ledger: pd.DataFrame | None = None,
 ) -> np.ndarray:
     """Each trade's risked amount, off the balance as it stood at that trade's OWN OPEN (#20).
 
@@ -178,14 +165,15 @@ def per_trade_risk(
     PnL to an earlier trade's basis would attribute money that did not exist when that trade was
     sized, distorting exactly the multi-market drift this monitor exists to detect.
 
-    ``cash_flows`` (:func:`balance_operations`) belongs in the same ledger: on a prop account a
-    payout or top-up moves the balance without any trade, and leaving it out makes every basis
-    after it wrong.
+    ``ledger`` (:func:`deal_ledger`) must carry every booked movement -- trade legs, cashflows,
+    and the entry commission of a position that has not closed yet. On a prop account a payout
+    moves the balance without any trade, and an open position's commission moves it without any
+    completed trade; either omission makes every basis around it wrong.
     """
     if trades.empty:
         return np.array([], dtype=float)
     open_ns = to_ns(trades["open_time"])
-    risk: np.ndarray = risk_frac * balance_at(open_ns, current_balance, trades, cash_flows)
+    risk: np.ndarray = risk_frac * balance_at(open_ns, current_balance, ledger)
     return risk
 
 

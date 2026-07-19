@@ -26,7 +26,7 @@ from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 from live.runner import position_risk, risk_per_trade_from_live_config
 
 from monitoring.deals import (
-    balance_operations,
+    deal_ledger,
     deals_to_trades,
     equity_curve,
     live_stats,
@@ -60,9 +60,8 @@ def _load_live(account_name: str) -> dict[str, Any]:
     bridge.connect(path=profile.terminal_path)
     try:
         # #29: the FULL history, always. Each trade's risk basis is the balance as it stood at
-        # that trade's open, walked forward from the account's start -- so a walk that begins at
-        # the display window would charge every shown trade a basis the account never had.
-        # The window is applied to the DISPLAY only, further down.
+        # that trade's open, reconstructed backwards from the current balance -- so the ledger
+        # has to reach back past the display window, whose only job is what gets drawn.
         deals = bridge.history_deals(_ACCOUNT_INCEPTION)
         acct = bridge.account()
         term_to_research = {v: k for k, v in bridge._resolved.items()}
@@ -155,36 +154,42 @@ def _live_view() -> None:
         all_trades["symbol"].map(live["term_to_research"]).fillna(all_trades["symbol"])
     )
     state = _risk_state(profile.name)
-    cash_flows = balance_operations(live["deals"])
+    # Every booked movement, not just completed trades: an open position's entry commission is
+    # already in the broker's balance and would otherwise be inherited into every earlier basis.
+    ledger = deal_ledger(live["deals"])
     current_balance = float(live["balance"])
     # #20: normalise EACH trade off the balance it was actually sized against, not off today's.
     # Sizing compounds, so one risk figure from current balance shrinks the early trades' R as the
     # account grows -- which would read as performance drift that never happened.
     # #29: computed over the FULL history, then windowed; the window is a display choice and must
-    # not move any trade's basis. Walked BACKWARDS from the current balance, so no opening figure
-    # has to be guessed and a truncated history prefix cannot corrupt what we can see.
-    all_risk = per_trade_risk(all_trades, current_balance, _LIVE_RISK_PCT, cash_flows=cash_flows)
+    # not move any trade's basis. Reconstructed BACKWARDS from the current balance (balance_at),
+    # so no opening figure has to be guessed and a truncated prefix cannot corrupt what we see.
+    all_risk = per_trade_risk(all_trades, current_balance, _LIVE_RISK_PCT, ledger=ledger)
 
     # A saved start balance does not make the deal ledger complete. If replaying everything the
     # broker returned does not land on the balance it reports, history is missing and every basis
     # before the gap is approximate -- say so rather than presenting exact-looking numbers.
     if "start_balance" in state:
-        booked = float(all_trades["net_pnl"].sum()) if not all_trades.empty else 0.0
-        moved = float(cash_flows["amount"].sum()) if not cash_flows.empty else 0.0
-        implied = current_balance - booked - moved
-        if abs(implied - float(state["start_balance"])) > 1.0:
+        anchor = float(state["start_balance"])
+        moved = float(ledger["amount"].sum()) if not ledger.empty else 0.0
+        before = current_balance - moved  # the balance the ledger implies before its first entry
+        # Exactly two outcomes are legitimate. A ledger that reaches back past the account being
+        # funded implies a pre-funding balance of zero; one that starts after funding implies the
+        # funded balance itself. Anything else means booked events are missing from between.
+        if min(abs(before), abs(before - anchor)) > 1.0:
             st.caption(
-                f"Deal history looks incomplete: replaying it implies an opening balance of "
-                f"{implied:,.0f}, but the saved risk state records "
-                f"{float(state['start_balance']):,.0f}. Historical R before the gap is approximate."
+                f"Deal history looks incomplete: replaying it implies {before:,.0f} before its "
+                f"first entry, which is neither zero nor the recorded start balance of "
+                f"{anchor:,.0f}. Historical R is approximate."
             )
 
+    window_start = pd.Timestamp(datetime.now(tz=UTC) - timedelta(days=days))
     view = window_history(
         all_trades,
         all_risk,
-        window_start=pd.Timestamp(datetime.now(tz=UTC) - timedelta(days=days)),
+        window_start=window_start,
         current_balance=current_balance,
-        cash_flows=cash_flows,
+        ledger=ledger,
     )
     trades, trade_risk, start_balance = view.trades, view.risk, view.start_balance
     if view.hidden:
@@ -247,12 +252,10 @@ def _live_view() -> None:
 
         # -- equity curve --
         st.subheader("Realized equity (live)")
-        window_flows = (
-            cash_flows[cash_flows["time"] >= trades["close_time"].min()]
-            if not cash_flows.empty
-            else cash_flows
-        )
-        eq = equity_curve(trades, start_balance, cash_flows=window_flows)
+        # Cut the ledger at the WINDOW boundary, not at the first displayed close: a payout in
+        # between belongs to the window's balance path, and start_balance is measured there.
+        window_ledger = ledger[ledger["time"] >= window_start] if not ledger.empty else ledger
+        eq = equity_curve(start_balance, window_ledger)
         st.altair_chart(
             alt.Chart(eq)
             .mark_line(color=_BLUE, strokeWidth=2)
