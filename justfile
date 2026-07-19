@@ -9,9 +9,9 @@ default:
 backtest:
     uv run python -m research.stages.edge research/config/robustness.py
 
-# Open the newest report.html in the browser
+# Open the newest report.html in the browser -- refuses if its lineage no longer verifies
 report:
-    uv run python -c "import pathlib,webbrowser; d=sorted(pathlib.Path('reports/research').glob('run_*')); print('no runs yet') if not d else webbrowser.open((d[-1]/'report.html').resolve().as_uri())"
+    uv run python -m research.stages.open_report
 
 # Live TTP account — signal-only (safe, no orders)
 live-ttp:
