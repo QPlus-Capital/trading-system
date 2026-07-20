@@ -181,3 +181,49 @@ def _run_static() -> dict[str, float]:
         }
     finally:
         engine.dispose()
+
+
+def test_stopping_the_strategy_need_not_flatten() -> None:
+    """The engine stopping is not a trading decision, so it must not become an exit.
+
+    The stitched walk-forward closed whatever was open at each window end, which put an
+    artificial exit on every straddling position -- the truncation this change removes. A
+    continuous run would reproduce it at the FINAL boundary unless the liquidation is off.
+    """
+    flat = _run_with_flatten(True)
+    kept = _run_with_flatten(False)
+    assert flat["closes"] == 1, "the default still squares the book"
+    assert kept["closes"] == 0, "the position must be left open, so it has no outcome to record"
+
+
+def _run_with_flatten(flatten: bool) -> dict[str, float]:
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            trader_id=TraderId("T-003"), logging=LoggingConfig(bypass_logging=True)
+        )
+    )
+    engine.add_venue(
+        venue=Venue("TTP"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+        fill_model=FillModel(),
+    )
+    engine.add_instrument(_INSTR)
+    engine.add_data([_bar(100.0, i * _H) for i in range(1, 11)])
+    config = RsiWprBbConfig(
+        instrument_id=_INSTR.id,
+        bar_type=_BAR_TYPE,
+        trade_size=Decimal(1),
+        segments=(_OLD,),
+        flatten_on_stop=flatten,
+    )
+    engine.add_strategy(_ForcedEntry(config, 4 * _H))
+    try:
+        engine.run()
+        positions = engine.trader.generate_positions_report()
+        closed = positions["ts_closed"].notna().sum() if "ts_closed" in positions else 0
+        return {"closes": float(closed)}
+    finally:
+        engine.dispose()

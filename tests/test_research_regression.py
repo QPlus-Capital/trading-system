@@ -103,3 +103,18 @@ def test_the_report_collects_every_unexpected_change(tmp_path: Path) -> None:
     assert "reference -> bad" in report["unexpected_changes"][0]
     assert report["thresholds"]["trade_count_pct"] == 1.0
     assert "full_history_trades.csv" in report["invariant_artifacts"]
+
+
+def test_a_zero_trade_reference_cannot_bound_anything(tmp_path: Path) -> None:
+    """A percentage of zero is undefined, not zero: it must not read as "within the bound"."""
+    ref = _run(tmp_path, "reference", n_trades=0)
+    cand = _run(tmp_path, "candidate", n_trades=42)
+    result = compare(ref, cand, _LIMITS)
+    assert result.metrics["n_trades_drift_pct"] is None
+    assert any("no baseline to bound this against" in u for u in result.unexpected)
+
+
+def test_two_empty_runs_are_not_flagged(tmp_path: Path) -> None:
+    ref = _run(tmp_path, "reference", n_trades=0)
+    cand = _run(tmp_path, "candidate", n_trades=0)
+    assert compare(ref, cand, _LIMITS).unexpected == []

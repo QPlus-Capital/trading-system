@@ -132,3 +132,31 @@ def test_the_real_window_scheme_produces_a_contiguous_schedule() -> None:
     assert len(segments) == len(windows) + 1  # one per window, plus the closing stop
     assert all(s.entries_allowed for s in segments[:-1])
     assert not segments[-1].entries_allowed
+
+
+# --------------------------------------------------------- Codex round 1 on PR #42
+def test_pinned_grid_keys_are_carried_into_the_continuous_run() -> None:
+    """A grid key with one value is a SETTING; training sees it, so execution must too.
+
+    Without this the continuous run is configured from the schedule alone -- which carries only
+    stop and target -- and every other pinned key silently falls back to the strategy default.
+    """
+    from research.engine.continuous import constant_params
+
+    pinned = constant_params(
+        {"stop_loss_pct": [0.2, 0.5], "take_profit_pct": [1.0], "rsi_length": [21]}
+    )
+    assert pinned == {"rsi_length": 21}, "switchable keys come from the schedule, not from here"
+
+
+def test_a_searched_key_is_not_mistaken_for_a_pinned_one() -> None:
+    from research.engine.continuous import constant_params
+
+    assert constant_params({"rsi_length": [14, 21]}) == {}
+
+
+def test_the_default_grid_is_schedulable() -> None:
+    """The shipped default must not raise before every ad-hoc walk-forward."""
+    from research.engine.recipe import DEFAULT_PARAM_GRID
+
+    check_switchable(DEFAULT_PARAM_GRID)
