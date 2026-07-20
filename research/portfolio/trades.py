@@ -23,12 +23,13 @@ from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
 from research.engine.schedule_builder import build_schedule, check_switchable, oos_span
 from research.engine.walkforward import (
+    PREROLL,
     WalkForwardWindow,
     calmar_score,
     split_windows,
     walk_forward_windows,
 )
-from research.engine.walkforward_runner import PREROLL, _data_span
+from research.engine.walkforward_runner import _data_span
 
 # ``pnl_base`` is the realized PnL in the account currency at the extraction's BASE risk
 # (risk_per_trade=1%), i.e. money -- not a percentage. It COMPOUNDS with the growing equity, so it

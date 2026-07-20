@@ -30,12 +30,14 @@ from core.data.mt5_csv import parse_mt5_timestamps, seeded_instruments
 from core.paths import REPO_ROOT
 
 from research.engine.config import extract_trade_pnls, load_config_module
+from research.engine.continuous import continuous_walk_forward
 from research.engine.grid import expand_grid
 from research.engine.montecarlo import equity_curve, monte_carlo_paths, summarize
+from research.engine.schedule_builder import check_switchable
 from research.engine.walkforward import (
+    PREROLL,
     WalkForwardResult,
     calmar_score,
-    run_walk_forward,
     split_windows,
     walk_forward_efficiency,
     walk_forward_windows,
@@ -43,13 +45,6 @@ from research.engine.walkforward import (
 
 _REPO_ROOT = REPO_ROOT
 _TRAIN_MONTHS, _TEST_MONTHS, _STEP_MONTHS = 24, 6, 6
-
-# #14: read-only warm-up ahead of every window. The signal engine needs ~26 bars before it
-# reports "warmed up", but the Wilder-smoothed RSI/EMA keep converging well past that, so this is
-# sized generously: 45 days is roughly 190 H4 bars. Trades that resolve inside the pre-roll are
-# filtered out (closed_from), so it only ever informs indicators and carries open positions.
-PREROLL = pd.Timedelta(days=45)
-
 
 def _data_span(csv_path: str | Path) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Return (first, last) bar timestamp from an MT5 CSV (fast date-only read)."""
@@ -101,6 +96,8 @@ def run_walkforward(
         windows = windows[:max_windows]
     combos = expand_grid(recipe.PARAM_GRID)
 
+    check_switchable(recipe.PARAM_GRID)
+
     def optimize(
         train_start: pd.Timestamp, train_end: pd.Timestamp
     ) -> tuple[dict[str, Any], float]:
@@ -125,23 +122,17 @@ def run_walkforward(
                 best_return = (float(curve[-1]) - start_equity) / start_equity
         return best_params, best_return
 
-    def evaluate(
-        params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
-    ) -> tuple[list[float], float]:
-        # #14: READ-ONLY pre-roll -- bars before test_start warm the indicators (live never
-        # restarts cold) but trade_from suppresses orders, so a pre-roll trade can never move the
-        # balance that the reported trades are sized from. closed_from stays as a safety net.
-        return extract_trade_pnls(
-            recipe.build_run_config(
-                params,
-                start=(test_start - PREROLL).isoformat(),
-                end=test_end.isoformat(),
-                trade_from=test_start.isoformat(),
-            ),
-            closed_from=test_start,
-        )
-
-    return run_walk_forward(windows, optimize, evaluate, combos if collect_matrix else None)
+    # #32: execution is ONE continuous run across the out-of-sample span, not one engine per
+    # window. Selection above is untouched -- each window's parameters still come from its own
+    # training interval -- but a position open at a seam now carries on the parameters that
+    # opened it instead of being dropped by its window or reopened by the next.
+    return continuous_walk_forward(
+        recipe,
+        windows,
+        combos,
+        lambda window: optimize(window.train_start, window.train_end),
+        collect_matrix=collect_matrix,
+    )
 
 
 def main(argv: list[str] | None = None) -> None:

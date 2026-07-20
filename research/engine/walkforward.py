@@ -9,13 +9,19 @@ This module only computes the window boundaries; running and scoring them lives 
 the walk-forward runner (built on top of this).
 """
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 import pandas as pd
 
 from research.engine.montecarlo import equity_curve, max_drawdown
+
+# Read-only warm-up ahead of the traded span. The signal engine reports "warmed up" after ~26
+# bars, but the Wilder-smoothed RSI/EMA keep converging well past that, so this is sized
+# generously: 45 days is roughly 190 H4 bars. Trades resolving inside it are filtered out, so it
+# only ever informs indicators -- live never restarts cold either.
+PREROLL = pd.Timedelta(days=45)
 
 
 @dataclass(frozen=True)
@@ -143,56 +149,6 @@ class WalkForwardResult:
 def combo_key(params: Mapping[str, Any]) -> str:
     """Stable identifier for a parameter combination (order-independent)."""
     return ",".join(f"{k}={params[k]}" for k in sorted(params))
-
-
-# Optimize on a train window -> (best params, that set's in-sample return).
-Optimize = Callable[[pd.Timestamp, pd.Timestamp], tuple[dict[str, Any], float]]
-# Evaluate params on a test window -> (out-of-sample trade PnLs, starting equity).
-EvaluateOOS = Callable[[dict[str, Any], pd.Timestamp, pd.Timestamp], tuple[list[float], float]]
-
-
-def run_walk_forward(
-    windows: Sequence[WalkForwardWindow],
-    optimize: Optimize,
-    evaluate: EvaluateOOS,
-    all_params: Sequence[Mapping[str, Any]] | None = None,
-) -> list[WalkForwardResult]:
-    """Optimize per train window and score the chosen params on the next test window.
-
-    With ``all_params`` every grid candidate is ALSO scored on each test window, giving one
-    chronologically-aligned OOS stream per candidate (#13). Without it the honest trial count
-    (the whole grid) has no matching performance matrix, so PBO/CSCV has to fall back to
-    comparing variations -- far fewer trials than were really searched. The extra cost is modest:
-    the train-window grid search already dominates, and these are short test windows.
-    """
-    results: list[WalkForwardResult] = []
-    for window in windows:
-        best_params, is_return = optimize(window.train_start, window.train_end)
-        pnls, start_equity = evaluate(best_params, window.test_start, window.test_end)
-        equity = equity_curve(pnls, start_equity)
-        oos_return = (float(equity[-1]) - start_equity) / start_equity
-        by_combo: dict[str, float] = {}
-        for params in all_params or ():
-            key = combo_key(params)
-            if params == best_params:  # already evaluated above -- don't pay for it twice
-                by_combo[key] = oos_return
-                continue
-            c_pnls, c_start = evaluate(dict(params), window.test_start, window.test_end)
-            c_equity = equity_curve(c_pnls, c_start)
-            by_combo[key] = (float(c_equity[-1]) - c_start) / c_start if c_start else 0.0
-        results.append(
-            WalkForwardResult(
-                window=window.label,
-                best_params=best_params,
-                is_return=is_return,
-                oos_return=oos_return,
-                oos_trades=len(pnls),
-                oos_max_dd=max_drawdown(equity),
-                oos_returns=[p / start_equity for p in pnls] if start_equity else [],
-                oos_by_combo=by_combo,
-            ),
-        )
-    return results
 
 
 def walk_forward_efficiency(results: Sequence[WalkForwardResult]) -> float:
