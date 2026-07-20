@@ -104,11 +104,11 @@ def test_without_a_fixed_basis_the_position_grows_with_the_account() -> None:
 
 
 def test_a_fixed_basis_makes_the_position_independent_of_the_account() -> None:
-    """The property a continuous walk-forward needs, and the one #32 shipped without.
+    """The property a continuous walk-forward needs.
 
-    Same basis, four times the balance, identical position. Every window in a span is then
-    measured under the conditions the first one saw, so the mean over windows is an equal-weighted
-    measure of edge rather than a curve weighted towards whatever the account had become.
+    Same basis, four times the balance, identical position. Every window in a span is then measured
+    on the conditions of one account size, so the mean over windows is an equal-weighted measure of
+    edge rather than a curve weighted towards whatever the account has become.
     """
     small = _entry_qty(balance=100_000.0, sizing_equity=Decimal(100_000))
     large = _entry_qty(balance=400_000.0, sizing_equity=Decimal(100_000))
