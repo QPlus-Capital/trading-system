@@ -203,15 +203,26 @@ def main(argv: list[str] | None = None) -> None:
     # into a token no strict parser accepts.
     args.out.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
 
+    def _num(metrics: dict[str, Any], key: str, spec: str) -> str:
+        """Format a metric, tolerating null.
+
+        Any metric can be null: a non-finite value is sanitised for the artifact, and formatting
+        it would raise before the collected failures could be printed -- the command would die on
+        exactly the case it exists to announce.
+        """
+        value = metrics.get(key)
+        return "n/a" if value is None else format(value, spec)
+
     print(f"\n  Regression report: {args.out}")
     for c in report["comparisons"]:
         m = c["metrics"]
-        drift = m["n_trades_drift_pct"]
-        drift_txt = "n/a" if drift is None else f"{drift:+.2f}%"
         print(
             f"    {c['reference']:24s} -> {c['candidate']:24s} "
-            f"trades {m['n_trades_before']:.0f}->{m['n_trades_after']:.0f} ({drift_txt})  "
-            f"annual {m['ann_return_pct_before']:.1f}%->{m['ann_return_pct_after']:.1f}%"
+            f"trades {_num(m, 'n_trades_before', '.0f')}->"
+            f"{_num(m, 'n_trades_after', '.0f')} "
+            f"({_num(m, 'n_trades_drift_pct', '+.2f')}%)  "
+            f"annual {_num(m, 'ann_return_pct_before', '.1f')}%->"
+            f"{_num(m, 'ann_return_pct_after', '.1f')}%"
         )
     if report["unexpected_changes"]:
         detail = "\n    - ".join(report["unexpected_changes"])

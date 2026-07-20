@@ -127,7 +127,7 @@ def test_a_grid_offering_indicator_lengths_is_still_searchable(market: Path) -> 
         us30,
         "data/SYN_H4.csv",
         15.0,
-        {"stop_loss_pct": [0.5, 1.5], "rsi_length": [14, 21]},
+        {"stop_loss_pct": [0.5, 1.5], "take_profit_pct": [2.0], "rsi_length": [14, 21]},
         "baseline",
         {},
         "US30",

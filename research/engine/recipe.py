@@ -95,6 +95,11 @@ class SweepRecipe:
             **(config_overrides or {}),  # e.g. long_only, use_rsi_filter for studies
         }
 
+    @property
+    def base_config(self) -> dict[str, Any]:
+        """The configuration every run merges its parameters onto (read-only copy)."""
+        return dict(self._base_config)
+
     def seed_catalog(self, catalog_path: str | Path | None = None) -> int:
         """Import this instrument's CSV (bid + ask bars) into the catalog."""
         return write_mt5_catalog(

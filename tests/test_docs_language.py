@@ -1,12 +1,12 @@
-"""AGENTS.md: everything in the repo is English.
+"""Enforces AGENTS.md's rule that everything in the repo is English.
 
-This exists because intending to follow the rule did not work. German operator strings slipped
-into `monitoring/dashboard.py` (#39) and then twice into `research/regression.py` (#42) -- the
-second time after I had reported them as translated without checking that the edit landed.
+Scans the four packages for German markers in source. One set of files is exempt: the research
+stages and the fact-sheet renderers, whose operator-facing terminal and report output is German.
+Issue #40 decides whether that becomes the documented rule or is translated away; until then the
+exemption is listed explicitly, so it stays visible and shrinks rather than spreading.
 
-The research STAGES are the deliberate exception: their terminal output is German throughout and
-predates the rule, which issue #40 exists to settle. They are listed here rather than silently
-skipped, so the exemption stays visible and shrinks when #40 lands.
+The rule is enforced here rather than left to review because a convention that depends on
+remembering it is not enforced at all.
 """
 
 from __future__ import annotations
