@@ -116,12 +116,9 @@ def test_a_grid_offering_indicator_lengths_is_still_searchable(market: Path) -> 
     """The constraint is on the SELECTION, not the grid.
 
     A grid may offer several indicator lengths; what one continuous run cannot honour is a choice
-    that DIFFERS between segments. Judging the grid instead refused searches that work -- and
-    invited narrowing a research grid to suit an execution detail, which is how a default grid
-    lost a dimension in an earlier round of this PR.
-
-    The refusal itself is unit-tested in ``test_research_param_schedule``, where a disagreeing
-    selection can be constructed; here the optimizer's choice is not ours to dictate.
+    that DIFFERS between segments. The refusal itself is unit-tested in
+    ``test_research_param_schedule``, where a disagreeing selection can be constructed; here the
+    optimizer's choice is not ours to dictate, so this asserts only that the search runs.
     """
     result = characterize._run_task(
         us30,

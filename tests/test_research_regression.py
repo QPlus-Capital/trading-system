@@ -141,3 +141,17 @@ def test_the_report_stays_valid_json_when_a_metric_is_not_finite(tmp_path: Path)
     text = json.dumps(report, allow_nan=False)  # must not raise
     assert "Infinity" not in text
     assert report["unexpected_changes"], "and the value is still reported in words"
+
+
+def test_a_non_finite_threshold_is_refused(tmp_path: Path) -> None:
+    """Nothing exceeds infinity and nothing compares true against NaN, so such a bound permits
+    everything while the report still claims the numbers held."""
+    from research import regression
+
+    out = tmp_path / "report.json"
+    ref, cand = _run(tmp_path, "reference"), _run(tmp_path, "candidate")
+    with pytest.raises(SystemExit, match="not a usable bound"):
+        regression.main(
+            ["--issue", "32", "--pair", f"{ref}={cand}", "--out", str(out),
+             "--annual-return-pp", "nan"]
+        )

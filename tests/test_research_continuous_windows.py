@@ -122,3 +122,26 @@ def test_a_candidate_schedule_closes_the_same_gaps_as_the_chosen_one() -> None:
     assert in_gap is not None and not in_gap.entries_allowed, "the gap must refuse entries"
     resumed = segment_at(candidate, _ns("2020-11-01"))
     assert resumed is not None and resumed.entries_allowed
+
+
+def test_a_trade_closing_exactly_at_the_final_boundary_is_counted() -> None:
+    """The last window has no successor to hand the instant to.
+
+    Between windows the next one's start owns the boundary, so the bound must be exclusive there
+    or the trade counts twice. At the very end an exclusive bound instead drops the trade from
+    every result while its PnL still sits in the account.
+    """
+    windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
+    closed = [(_ns("2021-01-01"), 400.0)]  # exactly on the final test_end
+    first, second = window_returns(closed, windows, start_balance=100_000.0)
+    assert first[1] == []
+    assert second[1] == [pytest.approx(0.004)], "the final-boundary close belongs to the last one"
+
+
+def test_a_close_on_an_inner_boundary_belongs_to_the_later_window() -> None:
+    """And it must be counted once, not in both."""
+    windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
+    closed = [(_ns("2020-07-01"), 400.0)]
+    first, second = window_returns(closed, windows, start_balance=100_000.0)
+    assert first[1] == []
+    assert len(second[1]) == 1

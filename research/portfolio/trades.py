@@ -18,7 +18,7 @@ import pandas as pd
 from core.broker import TTP_MARKETS
 
 from research.engine.config import extract_trade_pnls
-from research.engine.continuous import run_continuous_oos, stop_loss_lookup
+from research.engine.continuous import base_config_of, run_continuous_oos, stop_loss_lookup
 from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
 from research.engine.schedule_builder import build_schedule, oos_span, pinned_params
@@ -177,7 +177,7 @@ def extract_market_trades(
     # Refuses a selection wanting different indicator settings per segment, and returns what they
     # agree on -- covering both the grid's pinned keys and any frozen fixed_params.
     pinned = pinned_params(per_window)
-    segments = build_schedule(windows, per_window, defaults=recipe.base_config)
+    segments = build_schedule(windows, per_window, defaults=base_config_of(recipe))
 
     # EXECUTION: one run over the whole span (#32). Positions carry across segment boundaries on
     # the parameters that opened them, so no trade is dropped or reopened at a seam.
