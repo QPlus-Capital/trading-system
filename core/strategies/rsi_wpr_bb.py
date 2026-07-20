@@ -161,15 +161,20 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         buy_signal, sell_signal = self._signals.update(
             bar.open.as_double(), bar.high.as_double(), bar.low.as_double(), c
         )
-        if not self._entries_allowed(bar.ts_event):
-            return  # read-only warm-up / unowned interval: indicators updated above, no orders
+        if not self._within_scheduled_span(bar.ts_event):
+            return  # read-only warm-up: indicators updated above, and nothing is open to manage
+        # A signal has two legs: close what is open the other way, and open the new side. Only
+        # the ENTRY leg is withheld in an interval no test window owns -- suppressing the exit
+        # too would strand a carried position against its own signal, which is management, not
+        # information. That is the difference between not acting on a signal and ignoring it.
+        may_enter = self._entries_allowed(bar.ts_event)
         if buy_signal and not sell_signal:
-            self._go_long(c, bar.ts_event)
+            self._go_long(c, bar.ts_event, may_enter=may_enter)
         elif sell_signal and not buy_signal:
             if self.config.long_only:
                 self._go_flat()
             else:
-                self._go_short(c, bar.ts_event)
+                self._go_short(c, bar.ts_event, may_enter=may_enter)
 
     def on_position_opened(self, event: PositionOpened) -> None:
         """Attach stop-loss / take-profit to the position, anchored to its ACTUAL fill price.
@@ -236,23 +241,25 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
 
     # -- position management (long/short reversal) --
 
-    def _go_long(self, ref_price: float, ts_ns: int) -> None:
+    def _go_long(self, ref_price: float, ts_ns: int, *, may_enter: bool = True) -> None:
         instrument_id = self.config.instrument_id
         if self.portfolio.is_net_long(instrument_id):
             return
         if self.portfolio.is_net_short(instrument_id):
             self.cancel_all_orders(instrument_id)
-            self.close_all_positions(instrument_id)
-        self._enter(OrderSide.BUY, ref_price, ts_ns)
+            self.close_all_positions(instrument_id)  # the exit leg, always honoured
+        if may_enter:
+            self._enter(OrderSide.BUY, ref_price, ts_ns)
 
-    def _go_short(self, ref_price: float, ts_ns: int) -> None:
+    def _go_short(self, ref_price: float, ts_ns: int, *, may_enter: bool = True) -> None:
         instrument_id = self.config.instrument_id
         if self.portfolio.is_net_short(instrument_id):
             return
         if self.portfolio.is_net_long(instrument_id):
             self.cancel_all_orders(instrument_id)
-            self.close_all_positions(instrument_id)
-        self._enter(OrderSide.SELL, ref_price, ts_ns)
+            self.close_all_positions(instrument_id)  # the exit leg, always honoured
+        if may_enter:
+            self._enter(OrderSide.SELL, ref_price, ts_ns)
 
     def _go_flat(self) -> None:
         """Close any open position and cancel working orders (used by long_only)."""
@@ -261,13 +268,21 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
             self.cancel_all_orders(instrument_id)
             self.close_all_positions(instrument_id)
 
+    def _within_scheduled_span(self, ts_ns: int) -> bool:
+        """Is ``ts_ns`` inside the traded span at all, or still in the read-only pre-roll?
+
+        Before the span nothing has been able to open, so there is nothing to manage either and
+        the bar only warms indicators.
+        """
+        if not self.config.segments:
+            return bool(ts_ns >= self.config.trade_from_ns)
+        return segment_at(self.config.segments, ts_ns) is not None
+
     def _entries_allowed(self, ts_ns: int) -> bool:
         """May a NEW position be opened on a bar stamped ``ts_ns``?
 
-        Without a schedule this is the read-only pre-roll boundary. With one, an instant outside
-        every segment (before the first, or inside an interval no test window owns) opens nothing
-        -- while everything already open keeps being managed, because that is the difference
-        between withholding information and abandoning a trade.
+        False inside an interval no test window owns. Positions already open keep being managed
+        there -- withholding information is not the same as abandoning a trade.
         """
         if not self.config.segments:
             return bool(ts_ns >= self.config.trade_from_ns)

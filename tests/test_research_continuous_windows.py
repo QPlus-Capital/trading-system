@@ -55,3 +55,48 @@ def test_an_exhausted_account_is_not_reported_as_a_flat_window() -> None:
     closed = [(_ns("2020-03-01"), -100_000.0)]  # the account is gone
     with pytest.raises(RuntimeError, match="account exhausted"):
         window_returns(closed, windows, start_balance=100_000.0)
+
+
+def test_overlapping_windows_are_refused_before_any_run() -> None:
+    """Two segments claiming the same instant leave the schedule unable to say which governs."""
+    from research.engine.continuous import continuous_walk_forward
+
+    overlapping = [_window("2020-01-01", "2020-07-01"), _window("2020-04-01", "2020-10-01")]
+    with pytest.raises(ValueError, match="overlap"):
+        continuous_walk_forward(object(), overlapping, [], lambda w: ({}, 0.0))
+
+
+def test_a_config_module_without_start_balance_still_works() -> None:
+    """The runner's documented CLI passes a config MODULE, which exports only uppercase names."""
+    from research.engine.continuous import start_balance_of
+
+    class _Venue:
+        starting_balances = ["200_000 USD"]
+
+    class _Module:
+        VENUE = _Venue()
+
+    assert start_balance_of(_Module()) == 200_000.0
+
+
+def test_a_recipe_carrying_its_own_balance_is_used_directly() -> None:
+    from research.engine.continuous import start_balance_of
+
+    class _Recipe:
+        start_balance = 50_000.0
+        VENUE = None
+
+    assert start_balance_of(_Recipe()) == 50_000.0
+
+
+def test_window_order_from_the_caller_does_not_change_attribution() -> None:
+    """window_returns derives interval ends from sequence order, so it must be normalised once.
+
+    An unsorted caller would bound a window by an EARLIER start -- an empty or reversed interval
+    -- and the final zip would then hand those returns to the wrong labels and parameters.
+    """
+    ordered = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
+    closed = [(_ns("2020-03-01"), 100.0), (_ns("2020-09-01"), 200.0)]
+    assert window_returns(closed, ordered, 100_000.0) == window_returns(
+        closed, sorted(ordered, key=lambda w: w.test_start), 100_000.0
+    )

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -73,6 +74,18 @@ def compare(reference: Path, candidate: Path, thresholds: Thresholds) -> Compari
 
     ref_trades, cand_trades = float(ref["n_trades"]), float(cand["n_trades"])
     out.metrics |= _delta("n_trades", ref_trades, cand_trades)
+    # A comparison against NaN is False, so a non-finite metric would slip past every bound
+    # below and be reported as within expectation. It is missing evidence, not a passing value.
+    for label, value in (
+        ("n_trades", ref_trades), ("n_trades", cand_trades),
+        ("ann_return_pct", float(ref["ann_return_pct"])),
+        ("ann_return_pct", float(cand["ann_return_pct"])),
+    ):
+        if not math.isfinite(value):
+            out.unexpected.append(
+                f"{label} is not a finite number ({value}); it cannot be compared, and a "
+                "non-finite value silently satisfies every threshold."
+            )
     if not ref_trades:
         # A percentage of zero is not zero drift, it is undefined. Reporting 0% would let a
         # candidate that invented trades out of an empty reference pass the bound silently.
@@ -178,8 +191,8 @@ def main(argv: list[str] | None = None) -> None:
         drift_txt = "n/a" if drift is None else f"{drift:+.2f}%"
         print(
             f"    {c['reference']:24s} -> {c['candidate']:24s} "
-            f"Trades {m['n_trades_before']:.0f}->{m['n_trades_after']:.0f} ({drift_txt})  "
-            f"Rendite {m['ann_return_pct_before']:.1f}%->{m['ann_return_pct_after']:.1f}%"
+            f"trades {m['n_trades_before']:.0f}->{m['n_trades_after']:.0f} ({drift_txt})  "
+            f"annual {m['ann_return_pct_before']:.1f}%->{m['ann_return_pct_after']:.1f}%"
         )
     if report["unexpected_changes"]:
         detail = "\n    - ".join(report["unexpected_changes"])

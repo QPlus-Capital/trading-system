@@ -186,9 +186,14 @@ def extract_market_trades(
     span_start, span_end = oos_span(windows)
     # Pinned grid keys must reach the run too, or execution trades the strategy defaults while
     # selection scored the pinned ones.
+    # Everything pinned must reach the run: the schedule carries only stop and target, so any
+    # other frozen setting -- from the grid OR from fixed_params -- would fall back to the
+    # recipe default and execution would trade a different strategy than selection scored.
+    pinned = {**constant_params(grid), **constant_params(
+        {k: [v] for k, v in (fixed_params or {}).items()}
+    )}
     pos = run_continuous_oos(
-        recipe, segments, span_start=span_start, span_end=span_end,
-        params=constant_params(grid),
+        recipe, segments, span_start=span_start, span_end=span_end, params=pinned
     )
     rows = timed_trades_from_report(
         pos, market, stop_loss_lookup(segments), closed_from=span_start

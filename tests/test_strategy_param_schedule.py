@@ -227,3 +227,78 @@ def _run_with_flatten(flatten: bool) -> dict[str, float]:
         return {"closes": float(closed)}
     finally:
         engine.dispose()
+
+
+def test_a_carried_position_is_still_managed_in_a_no_entry_interval() -> None:
+    """The guarantee this change states: entries pause in a gap, management does not.
+
+    Suppressing the whole signal there would strand a carried position against its own reversal
+    signal until a stop or target -- which is not withholding information, it is abandoning a
+    trade nobody would have left open.
+    """
+    gap = ParamSegment(from_ns=5 * _H, stop_loss_pct=0.0, take_profit_pct=0.0,
+                       entries_allowed=False)
+    result = _run_reversal(segments=(_OLD, gap))
+    # Counted as POSITIONS, not orders: closing a long is itself a SELL order, so counting order
+    # sides would read the exit as a new short -- the same trap the on_stop liquidation set.
+    assert result["positions"] == 1, "exactly one position: the long, never an opposite one"
+    assert result["closed"] == 1, "and the reversal signal in the gap did close it"
+
+
+def _run_reversal(segments: tuple[ParamSegment, ...]) -> dict[str, float]:
+    """Open long at 2H, then force a reversal signal at 7H -- inside the no-entry interval."""
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            trader_id=TraderId("T-004"), logging=LoggingConfig(bypass_logging=True)
+        )
+    )
+    engine.add_venue(
+        venue=Venue("TTP"),
+        oms_type=OmsType.HEDGING,  # one Position per round trip, as the real recipe uses
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+        fill_model=FillModel(),
+    )
+    engine.add_instrument(_INSTR)
+    engine.add_data([_bar(100.0, i * _H) for i in range(1, 11)])
+
+    class _Signals:
+        """Stands in for the signal engine so the REAL on_bar runs, gating included.
+
+        Overriding on_bar instead would leave the production gate untested -- which is exactly
+        what happened here until disabling that gate failed to turn this test red.
+        """
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def update(self, o: float, h: float, low: float, c: float) -> tuple[bool, bool]:
+            self.calls += 1
+            return (self.calls == 2, self.calls == 7)  # buy on bar 2, sell on bar 7
+
+        def reset(self) -> None:
+            self.calls = 0
+
+    class _Reversal(RsiWprBb):
+        def __init__(self, config: RsiWprBbConfig) -> None:
+            super().__init__(config)
+            self._signals = _Signals()  # type: ignore[assignment]
+
+    config = RsiWprBbConfig(
+        instrument_id=_INSTR.id,
+        bar_type=_BAR_TYPE,
+        trade_size=Decimal(1),
+        segments=segments,
+        flatten_on_stop=False,
+    )
+    engine.add_strategy(_Reversal(config))
+    try:
+        engine.run()
+        positions = engine.trader.generate_positions_report()
+        return {
+            "positions": float(len(positions)),
+            "closed": float(positions["ts_closed"].notna().sum()) if len(positions) else 0.0,
+        }
+    finally:
+        engine.dispose()

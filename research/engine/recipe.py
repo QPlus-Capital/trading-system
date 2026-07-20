@@ -34,7 +34,7 @@ from nautilus_trader.model.instruments import Instrument
 
 _REPO_ROOT = REPO_ROOT
 
-# Default parameter grid swept for every instrument (4 x 4 x 3 = 48 combinations).
+# Default parameter grid swept for every instrument (4 x 4 = 16 combinations).
 # Risk parameters only. ``buy_rsi_threshold`` used to be searched here and is inert for this
 # strategy -- research/config/robustness.py already drops it for that reason. Searching a signal
 # parameter is also not schedulable: a continuous out-of-sample run cannot re-parameterise a
