@@ -59,12 +59,20 @@ def pinned_params(params_per_window: Sequence[Mapping[str, Any]]) -> dict[str, A
 def build_schedule(
     windows: Sequence[WalkForwardWindow],
     params_per_window: Sequence[Mapping[str, Any]],
+    *,
+    defaults: Mapping[str, Any] | None = None,
 ) -> tuple[ParamSegment, ...]:
     """One segment per test window, plus a no-entry segment for every gap between them.
 
     A gap arises whenever the step exceeds the test length: that interval belongs to no test
     window, so it may not open anything, while positions carried into it stay managed. The
     schedule ends with a closing no-entry segment so nothing opens after the final test window.
+
+    ``defaults`` supplies stop and target when the selection does not name them -- the recipe's
+    base configuration, which the training runs also merge under their parameters. It is not
+    optional in spirit: substituting a literal zero would silently disable both protective exits
+    and risk-based sizing for the whole span, so a value that is nowhere to be found is refused
+    rather than invented.
     """
     if len(windows) != len(params_per_window):
         raise ValueError(
@@ -80,11 +88,8 @@ def build_schedule(
         segments.append(
             ParamSegment(
                 from_ns=int(pd.Timestamp(window.test_start).value),
-                # Absent means the strategy's own default of 0.0, which is exactly what a
-                # single-window run would trade -- a grid that does not search the stop simply
-                # is not risk-managed, and the two paths must agree about that.
-                stop_loss_pct=float(params.get("stop_loss_pct", 0.0)),
-                take_profit_pct=float(params.get("take_profit_pct", 0.0)),
+                stop_loss_pct=_exit_value("stop_loss_pct", params, defaults, window),
+                take_profit_pct=_exit_value("take_profit_pct", params, defaults, window),
                 entries_allowed=True,
             )
         )
@@ -92,6 +97,29 @@ def build_schedule(
     if previous_end is not None:
         segments.append(_closed(previous_end))
     return tuple(segments)
+
+
+def _exit_value(
+    key: str,
+    params: Mapping[str, Any],
+    defaults: Mapping[str, Any] | None,
+    window: WalkForwardWindow,
+) -> float:
+    """The stop or target governing a segment, from the selection or the base configuration.
+
+    Never a literal fallback: the training runs merge the selection ONTO the base config, so a
+    key the selection omits still has an effective value there. Inventing a zero here would run
+    the out-of-sample span with no exits and no risk-based sizing while selection had both.
+    """
+    if key in params:
+        return float(params[key])
+    if defaults is not None and key in defaults:
+        return float(defaults[key])
+    raise UnschedulableGrid(
+        f"segment {window.label} has no '{key}': it is neither selected nor present in the "
+        "base configuration, so the schedule cannot say what the span should trade.\n"
+        "  Add it to the grid, to fixed_params, or to the recipe's config overrides."
+    )
 
 
 def _closed(at: pd.Timestamp) -> ParamSegment:

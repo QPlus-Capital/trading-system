@@ -177,7 +177,7 @@ def extract_market_trades(
     # Refuses a selection wanting different indicator settings per segment, and returns what they
     # agree on -- covering both the grid's pinned keys and any frozen fixed_params.
     pinned = pinned_params(per_window)
-    segments = build_schedule(windows, per_window)
+    segments = build_schedule(windows, per_window, defaults=recipe.base_config)
 
     # EXECUTION: one run over the whole span (#32). Positions carry across segment boundaries on
     # the parameters that opened them, so no trade is dropped or reopened at a seam.

@@ -204,7 +204,8 @@ def continuous_walk_forward(
     # Refuses a selection that wants a different indicator setting per segment; returns what the
     # segments agree on, which is constant for the span and therefore configured directly.
     pinned = pinned_params(selected)
-    schedule = build_schedule(windows, selected)
+    base = getattr(recipe, "base_config", {})
+    schedule = build_schedule(windows, selected, defaults=base)
     per_window = window_returns(
         closed_pnls(recipe, schedule, span_start, span_end, pinned),
         windows,
@@ -218,7 +219,7 @@ def continuous_walk_forward(
             # would let a candidate trade through gaps no test window owns, so the matrix would
             # compare periods the chosen strategy never traded -- and PBO/DSR are computed from
             # exactly that comparison.
-            candidate = build_schedule(windows, [params] * len(windows))
+            candidate = build_schedule(windows, [params] * len(windows), defaults=base)
             scored = window_returns(
                 closed_pnls(recipe, candidate, span_start, span_end, {**pinned, **params}),
                 windows,
