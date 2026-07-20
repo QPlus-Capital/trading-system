@@ -25,21 +25,35 @@ class UnschedulableGrid(ValueError):
     """The parameter grid varies something a continuous run cannot switch mid-flight."""
 
 
-def check_switchable(grid: Mapping[str, Sequence[Any]]) -> None:
-    """Refuse a grid that varies anything other than the switchable risk parameters.
+def pinned_params(params_per_window: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Non-switchable parameters the CHOSEN sets agree on, or a refusal naming the disagreement.
 
-    Fails closed on purpose. Adding an indicator length to the grid is a reasonable thing to want,
-    and it must stop the run rather than quietly produce a schedule whose later segments trade on
-    indicators that were never warmed for them.
+    The constraint belongs on the selection, not on the grid. A grid may offer several indicator
+    lengths and still be perfectly schedulable -- what cannot be executed as one continuous run is
+    a selection that wants a DIFFERENT one in different segments, because a rolling indicator
+    cannot be re-parameterised mid-flight without the next segment trading on a cold engine.
+    Judging the grid instead would refuse searches that work and, worse, invite narrowing a
+    research grid to satisfy an execution detail.
+
+    The returned settings are constant for the whole span, so they are passed to the run directly
+    rather than through the schedule (which carries only what actually switches).
     """
-    varying = {k for k, values in grid.items() if len(set(map(str, values))) > 1}
-    unsupported = sorted(varying - set(SWITCHABLE))
-    if unsupported:
-        raise UnschedulableGrid(
-            f"a continuous walk-forward can only switch {', '.join(SWITCHABLE)} between "
-            f"segments, but the grid also varies: {', '.join(unsupported)}.\n"
-            "  Those feed the rolling indicators, which cannot be re-parameterised mid-run."
-        )
+    if not params_per_window:
+        return {}
+    keys = {k for params in params_per_window for k in params} - set(SWITCHABLE)
+    pinned: dict[str, Any] = {}
+    for key in sorted(keys):
+        values = {str(params.get(key)) for params in params_per_window}
+        if len(values) > 1:
+            raise UnschedulableGrid(
+                f"the selection wants different '{key}' in different segments "
+                f"({', '.join(sorted(values))}), which one continuous run cannot honour: it "
+                "feeds a rolling indicator, and switching it mid-run would leave the next "
+                "segment trading on an engine that was never warmed for it.\n"
+                "  Pin that parameter for the span, or run the segments separately."
+            )
+        pinned[key] = params_per_window[0].get(key)
+    return pinned
 
 
 def build_schedule(
@@ -66,8 +80,11 @@ def build_schedule(
         segments.append(
             ParamSegment(
                 from_ns=int(pd.Timestamp(window.test_start).value),
-                stop_loss_pct=float(params["stop_loss_pct"]),
-                take_profit_pct=float(params["take_profit_pct"]),
+                # Absent means the strategy's own default of 0.0, which is exactly what a
+                # single-window run would trade -- a grid that does not search the stop simply
+                # is not risk-managed, and the two paths must agree about that.
+                stop_loss_pct=float(params.get("stop_loss_pct", 0.0)),
+                take_profit_pct=float(params.get("take_profit_pct", 0.0)),
                 entries_allowed=True,
             )
         )

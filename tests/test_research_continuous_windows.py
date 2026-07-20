@@ -100,3 +100,25 @@ def test_window_order_from_the_caller_does_not_change_attribution() -> None:
     assert window_returns(closed, ordered, 100_000.0) == window_returns(
         closed, sorted(ordered, key=lambda w: w.test_start), 100_000.0
     )
+
+
+def test_a_candidate_schedule_closes_the_same_gaps_as_the_chosen_one() -> None:
+    """PBO/DSR compare the candidate matrix against the chosen strategy, so both must trade the
+    same periods.
+
+    A single span-wide segment would let a candidate trade through a gap no test window owns,
+    making the comparison one between different periods. Only visible with step > test: the
+    study's own windows are contiguous, which is why the integration test cannot see this.
+    """
+    from research.engine.schedule_builder import build_schedule
+
+    gapped = [_window("2020-01-01", "2020-07-01"), _window("2020-10-01", "2021-04-01")]
+    params = {"stop_loss_pct": 0.5, "take_profit_pct": 2.0}
+    candidate = build_schedule(gapped, [params] * len(gapped))
+
+    from core.strategies.param_schedule import segment_at
+
+    in_gap = segment_at(candidate, _ns("2020-08-15"))
+    assert in_gap is not None and not in_gap.entries_allowed, "the gap must refuse entries"
+    resumed = segment_at(candidate, _ns("2020-11-01"))
+    assert resumed is not None and resumed.entries_allowed

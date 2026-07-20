@@ -135,6 +135,23 @@ def compare(reference: Path, candidate: Path, thresholds: Thresholds) -> Compari
     return out
 
 
+def _json_safe(value: Any) -> Any:
+    """Replace non-finite numbers with null, recursively.
+
+    ``json.dumps`` writes NaN and Infinity as bare tokens, which are not JSON: the artifact
+    produced for exactly the failure case that contains them would then be unreadable to a strict
+    parser. The value is already recorded as an unexpected change in words, so null here loses
+    nothing and keeps the file consumable.
+    """
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
 def build_report(
     issue: str, pairs: list[tuple[Path, Path]], thresholds: Thresholds
 ) -> dict[str, Any]:
@@ -144,7 +161,7 @@ def build_report(
         "generated_at": datetime.now(tz=UTC).isoformat(timespec="seconds"),
         "thresholds": asdict(thresholds),
         "invariant_artifacts": list(INVARIANT_ARTIFACTS),
-        "comparisons": [asdict(c) for c in comparisons],
+        "comparisons": [_json_safe(asdict(c)) for c in comparisons],
         "unexpected_changes": [
             f"{c.reference} -> {c.candidate}: {reason}"
             for c in comparisons
@@ -182,9 +199,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     report = build_report(args.issue, [_resolve(s) for s in args.pair], thresholds)
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    # allow_nan=False turns any surviving non-finite value into an error rather than
+    # into a token no strict parser accepts.
+    args.out.write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
 
-    print(f"\n  Regressionsbericht: {args.out}")
+    print(f"\n  Regression report: {args.out}")
     for c in report["comparisons"]:
         m = c["metrics"]
         drift = m["n_trades_drift_pct"]
@@ -197,11 +216,11 @@ def main(argv: list[str] | None = None) -> None:
     if report["unexpected_changes"]:
         detail = "\n    - ".join(report["unexpected_changes"])
         raise SystemExit(
-            f"\n  UNERWARTETE AENDERUNGEN ({len(report['unexpected_changes'])}):\n    - {detail}\n"
-            "\n  Diese Zahlen bewegen sich staerker als angekuendigt. Ursache klaeren, bevor\n"
-            "  daraus eine Entscheidung wird -- der Bericht allein rechtfertigt sie nicht."
+            f"\n  UNEXPECTED CHANGES ({len(report['unexpected_changes'])}):\n    - {detail}\n"
+            "\n  These numbers moved further than was announced. Find the cause before this\n"
+            "  becomes a decision -- the report alone does not justify one."
         )
-    print("  Alle Aenderungen liegen im angekuendigten Rahmen.\n")
+    print("  Every change is inside the announced range.\n")
 
 
 if __name__ == "__main__":

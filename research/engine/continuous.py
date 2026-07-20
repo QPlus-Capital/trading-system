@@ -23,7 +23,7 @@ from core.strategies.param_schedule import ParamSegment, segment_at
 
 from research.engine.montecarlo import equity_curve, max_drawdown
 from research.engine.recipe import SweepRecipe
-from research.engine.schedule_builder import SWITCHABLE, build_schedule
+from research.engine.schedule_builder import build_schedule, pinned_params
 from research.engine.walkforward import (
     PREROLL,
     WalkForwardResult,
@@ -64,21 +64,6 @@ def start_balance_of(recipe: Any) -> float:
             "balance; a continuous run cannot measure a return without one"
         )
     return float(str(balances[0]).split()[0].replace("_", ""))
-
-
-def constant_params(grid: Mapping[str, Sequence[Any]]) -> dict[str, Any]:
-    """Grid keys that take exactly one value -- pinned settings, not a search dimension.
-
-    Training runs receive the whole parameter set, so a pinned key reaches the strategy there. The
-    continuous run is configured from the schedule, which carries only stop and target, so without
-    this every other pinned key would silently fall back to the strategy default and execution
-    would trade a different strategy than selection scored.
-    """
-    return {
-        k: values[0]
-        for k, values in grid.items()
-        if k not in SWITCHABLE and len({str(v) for v in values}) == 1
-    }
 
 
 def run_continuous_oos(
@@ -138,33 +123,6 @@ def closed_pnls(
         pos, str(recipe.INSTRUMENT.raw_symbol), stop_loss_lookup(segments), closed_from=span_start
     )
     return [(int(row["ts_closed"]), float(row["pnl_base"])) for row in rows]
-
-
-def constant_schedule(
-    params: Mapping[str, Any], span_start: pd.Timestamp, span_end: pd.Timestamp
-) -> tuple[ParamSegment, ...]:
-    """A schedule that never switches -- one candidate held across the whole span.
-
-    Stage 1 scores every grid candidate on every window to give the overfitting statistics a real
-    per-candidate matrix. A candidate is by definition the same parameters everywhere, so it is a
-    schedule with a single open segment: one continuous run, not one run per window. That is both
-    the same arithmetic and less of it, because the read-only pre-roll is paid once instead of
-    once per window.
-    """
-    return (
-        ParamSegment(
-            from_ns=int(pd.Timestamp(span_start).value),
-            stop_loss_pct=float(params["stop_loss_pct"]),
-            take_profit_pct=float(params["take_profit_pct"]),
-            entries_allowed=True,
-        ),
-        ParamSegment(
-            from_ns=int(pd.Timestamp(span_end).value),
-            stop_loss_pct=0.0,
-            take_profit_pct=0.0,
-            entries_allowed=False,
-        ),
-    )
 
 
 def window_returns(
@@ -240,10 +198,13 @@ def continuous_walk_forward(
                 "needs step_months >= test_months, or no segment owns the overlap"
             )
     span_start, span_end = min(w.test_start for w in windows), max(w.test_end for w in windows)
-    pinned = constant_params({k: list(v) for k, v in (recipe.PARAM_GRID or {}).items()})
     balance = start_balance_of(recipe)
     chosen = [optimize(window) for window in windows]
-    schedule = build_schedule(windows, [params for params, _ in chosen])
+    selected = [params for params, _ in chosen]
+    # Refuses a selection that wants a different indicator setting per segment; returns what the
+    # segments agree on, which is constant for the span and therefore configured directly.
+    pinned = pinned_params(selected)
+    schedule = build_schedule(windows, selected)
     per_window = window_returns(
         closed_pnls(recipe, schedule, span_start, span_end, pinned),
         windows,
@@ -253,7 +214,11 @@ def continuous_walk_forward(
     by_combo: list[dict[str, float]] = [{} for _ in windows]
     if collect_matrix:
         for params in combos:
-            candidate = constant_schedule(params, span_start, span_end)
+            # The SAME window and gap boundaries as the chosen path. A single span-wide segment
+            # would let a candidate trade through gaps no test window owns, so the matrix would
+            # compare periods the chosen strategy never traded -- and PBO/DSR are computed from
+            # exactly that comparison.
+            candidate = build_schedule(windows, [params] * len(windows))
             scored = window_returns(
                 closed_pnls(recipe, candidate, span_start, span_end, {**pinned, **params}),
                 windows,

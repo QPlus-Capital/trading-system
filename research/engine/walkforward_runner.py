@@ -33,7 +33,6 @@ from research.engine.config import extract_trade_pnls, load_config_module
 from research.engine.continuous import continuous_walk_forward
 from research.engine.grid import expand_grid
 from research.engine.montecarlo import equity_curve, monte_carlo_paths, summarize
-from research.engine.schedule_builder import check_switchable
 from research.engine.walkforward import (
     PREROLL,
     WalkForwardResult,
@@ -96,7 +95,6 @@ def run_walkforward(
         windows = windows[:max_windows]
     combos = expand_grid(recipe.PARAM_GRID)
 
-    check_switchable(recipe.PARAM_GRID)
 
     def optimize(
         train_start: pd.Timestamp, train_end: pd.Timestamp

@@ -13,8 +13,8 @@ from core.strategies.param_schedule import ParamSegment, entry_params_at, segmen
 from research.engine.schedule_builder import (
     UnschedulableGrid,
     build_schedule,
-    check_switchable,
     oos_span,
+    pinned_params,
 )
 from research.engine.walkforward import WalkForwardWindow, walk_forward_windows
 
@@ -100,24 +100,40 @@ def test_an_empty_window_list_has_no_span() -> None:
         oos_span([])
 
 
-# ------------------------------------------------------------------ what may vary per segment
-def test_a_grid_of_risk_parameters_is_schedulable() -> None:
-    check_switchable({"stop_loss_pct": [0.2, 0.5], "take_profit_pct": [1.0, 2.0]})
+# ------------------------------------------------ what the SELECTION may vary per segment
+def test_a_selection_that_agrees_on_its_settings_is_schedulable() -> None:
+    """Every segment wants the same indicator length, so one continuous run can honour it."""
+    chosen = [
+        {"stop_loss_pct": 0.2, "take_profit_pct": 1.0, "rsi_length": 14},
+        {"stop_loss_pct": 1.5, "take_profit_pct": 4.0, "rsi_length": 14},
+    ]
+    assert pinned_params(chosen) == {"rsi_length": 14}
 
 
-def test_a_grid_that_varies_an_indicator_length_is_refused() -> None:
-    """Indicators are rolling: a mid-run change would trade the next segment on a cold engine.
+def test_a_selection_wanting_different_indicator_lengths_is_refused() -> None:
+    """The constraint is on the SELECTION, not the grid.
 
-    The real grid varies only stop and target, so this never fires today -- it exists so that
-    adding an indicator length later stops the run instead of silently producing that.
+    A grid offering several indicator lengths is perfectly searchable; what cannot be executed as
+    one run is a choice that differs per segment, because the rolling indicator would have to be
+    re-parameterised mid-flight. Judging the grid instead would refuse searches that work -- and
+    invite narrowing a research grid to suit an execution detail.
     """
+    chosen = [
+        {"stop_loss_pct": 0.2, "take_profit_pct": 1.0, "rsi_length": 14},
+        {"stop_loss_pct": 0.2, "take_profit_pct": 1.0, "rsi_length": 21},
+    ]
     with pytest.raises(UnschedulableGrid, match="rsi_length"):
-        check_switchable({"stop_loss_pct": [0.2, 0.5], "rsi_length": [14, 21]})
+        pinned_params(chosen)
 
 
-def test_a_constant_indicator_length_is_fine() -> None:
-    """Pinning a value is not varying it, so it cannot desynchronise anything."""
-    check_switchable({"stop_loss_pct": [0.2, 0.5], "rsi_length": [14]})
+def test_switchable_keys_are_not_reported_as_pinned() -> None:
+    """Stop and target travel in the schedule, so they must not also be set on the run."""
+    chosen = [{"stop_loss_pct": 0.2, "take_profit_pct": 1.0}] * 2
+    assert pinned_params(chosen) == {}
+
+
+def test_an_empty_selection_pins_nothing() -> None:
+    assert pinned_params([]) == {}
 
 
 # ------------------------------------------------------------------ against the real windows
@@ -132,31 +148,3 @@ def test_the_real_window_scheme_produces_a_contiguous_schedule() -> None:
     assert len(segments) == len(windows) + 1  # one per window, plus the closing stop
     assert all(s.entries_allowed for s in segments[:-1])
     assert not segments[-1].entries_allowed
-
-
-# --------------------------------------------------------- Codex round 1 on PR #42
-def test_pinned_grid_keys_are_carried_into_the_continuous_run() -> None:
-    """A grid key with one value is a SETTING; training sees it, so execution must too.
-
-    Without this the continuous run is configured from the schedule alone -- which carries only
-    stop and target -- and every other pinned key silently falls back to the strategy default.
-    """
-    from research.engine.continuous import constant_params
-
-    pinned = constant_params(
-        {"stop_loss_pct": [0.2, 0.5], "take_profit_pct": [1.0], "rsi_length": [21]}
-    )
-    assert pinned == {"rsi_length": 21}, "switchable keys come from the schedule, not from here"
-
-
-def test_a_searched_key_is_not_mistaken_for_a_pinned_one() -> None:
-    from research.engine.continuous import constant_params
-
-    assert constant_params({"rsi_length": [14, 21]}) == {}
-
-
-def test_the_default_grid_is_schedulable() -> None:
-    """The shipped default must not raise before every ad-hoc walk-forward."""
-    from research.engine.recipe import DEFAULT_PARAM_GRID
-
-    check_switchable(DEFAULT_PARAM_GRID)
