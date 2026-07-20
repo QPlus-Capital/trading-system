@@ -1,0 +1,136 @@
+"""The sizing basis a continuous run measures every window from.
+
+This is the test #32 needed and did not have. Its integration fixture ran a short synthetic series
+whose account never grew, so it proved the continuous path RUNS; it could not see that the path
+compounds across the whole span. On real index data the account passed the engine's MONEY_MAX
+ceiling and 100 of 432 Stage 1 tasks died, while the surviving markets moved by up to 6 percentage
+points -- because sizing is not scale-invariant and every window traded a different account size.
+
+So the property under test is stated directly: with ``sizing_equity`` set, the position a trade
+takes does NOT depend on what the account is worth. A growing balance inside one continuous run is
+the same thing as a larger starting balance here, which is what makes this a proxy for the failure
+rather than a restatement of the code.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+import pytest
+from core.instruments import us30
+from core.strategies.rsi_wpr_bb import RsiWprBb, RsiWprBbConfig
+from nautilus_trader.backtest.engine import BacktestEngine, BacktestEngineConfig
+from nautilus_trader.backtest.models import FillModel
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.data import Bar, BarType
+from nautilus_trader.model.enums import AccountType, OmsType
+from nautilus_trader.model.identifiers import TraderId, Venue
+from nautilus_trader.model.objects import Money
+
+_INSTR = us30()
+_BAR_TYPE = BarType.from_str(f"{_INSTR.id}-1-HOUR-LAST-EXTERNAL")
+_H = 3_600_000_000_000
+
+
+class _ForcedEntry(RsiWprBb):
+    """Real strategy and real sizing; only the entry TRIGGER is forced."""
+
+    def __init__(self, config: RsiWprBbConfig) -> None:
+        super().__init__(config)
+        self._done = False
+
+    def on_bar(self, bar: Bar) -> None:
+        if self._done or bar.ts_event != 3 * _H:
+            return
+        self._done = True
+        self._go_long(bar.close.as_double(), bar.ts_event)
+
+
+def _bar(price: float, ts: int) -> Bar:
+    p = _INSTR.make_price
+    return Bar(_BAR_TYPE, p(price), p(price), p(price), p(price), _INSTR.make_qty(1), ts, ts)
+
+
+def _entry_qty(*, balance: float, sizing_equity: float) -> float:
+    """The quantity the strategy actually sized, at a given account balance."""
+    engine = BacktestEngine(
+        BacktestEngineConfig(
+            trader_id=TraderId("T-001"), logging=LoggingConfig(bypass_logging=True)
+        )
+    )
+    engine.add_venue(
+        venue=Venue("TTP"),
+        oms_type=OmsType.NETTING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(balance, USD)],
+        fill_model=FillModel(),
+    )
+    engine.add_instrument(_INSTR)
+    engine.add_data([_bar(100.0, i * _H) for i in range(1, 8)])
+    engine.add_strategy(
+        _ForcedEntry(
+            RsiWprBbConfig(
+                instrument_id=_INSTR.id,
+                bar_type=_BAR_TYPE,
+                trade_size=Decimal(1),
+                stop_loss_pct=1.0,
+                take_profit_pct=2.0,
+                risk_per_trade_pct=1.0,
+                sizing_equity=sizing_equity,
+                flatten_on_stop=False,
+            )
+        )
+    )
+    try:
+        engine.run()
+        orders = engine.trader.generate_orders_report()
+        entries = orders[(orders["type"] == "MARKET") & (orders["side"] == "BUY")]
+        assert len(entries) == 1, "the fixture must place exactly one entry, or it proves nothing"
+        return float(entries["quantity"].iloc[0])
+    finally:
+        engine.dispose()
+
+
+def test_without_a_fixed_basis_the_position_grows_with_the_account() -> None:
+    """The control. Without this the test below could pass on a strategy that never sizes at all.
+
+    Four times the equity buys four times the position, because ``risk_per_trade_pct`` is a
+    percentage OF the account. That is correct for live trading -- and it is exactly what a
+    continuous run turns into an artefact, since a late window then trades an account earlier
+    windows grew.
+    """
+    small = _entry_qty(balance=100_000.0, sizing_equity=0.0)
+    large = _entry_qty(balance=400_000.0, sizing_equity=0.0)
+    assert large == pytest.approx(4 * small), "sizing must track the account when no basis is set"
+
+
+def test_a_fixed_basis_makes_the_position_independent_of_the_account() -> None:
+    """The property a continuous walk-forward needs, and the one #32 shipped without.
+
+    Same basis, four times the balance, identical position. Every window in a span is then
+    measured under the conditions the first one saw, so the mean over windows is an equal-weighted
+    measure of edge rather than a curve weighted towards whatever the account had become.
+    """
+    small = _entry_qty(balance=100_000.0, sizing_equity=100_000.0)
+    large = _entry_qty(balance=400_000.0, sizing_equity=100_000.0)
+    assert small == large, "a fixed basis must ignore the account balance entirely"
+
+
+def test_the_fixed_basis_is_the_size_it_claims_to_be() -> None:
+    """A basis that is merely CONSTANT would satisfy the test above while sizing anything at all.
+
+    At a 1% stop on a price of 100 the stop distance is 1.0, so risking 1% of a 100k basis is
+    1,000 units. Pinning the number keeps the basis meaningful rather than merely stable.
+    """
+    assert _entry_qty(balance=400_000.0, sizing_equity=100_000.0) == pytest.approx(1_000.0)
+
+
+def test_a_negative_or_zero_basis_falls_back_to_the_account() -> None:
+    """Zero is the documented default and every live path uses it.
+
+    A basis guarded with ``> 0`` rather than ``is not None`` means an unset value can never be
+    mistaken for "size nothing", which would silently stop a live strategy from trading.
+    """
+    assert _entry_qty(balance=250_000.0, sizing_equity=0.0) == pytest.approx(2_500.0)
