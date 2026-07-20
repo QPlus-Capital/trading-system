@@ -1,13 +1,13 @@
 """Tests for the walk-forward window scheme."""
 
 import math
-from typing import Any
 
 import pandas as pd
+import pytest
 from research.engine.walkforward import (
+    WalkForwardResult,
     calmar_score,
     normalized_wfe,
-    run_walk_forward,
     split_windows,
     walk_forward_efficiency,
     walk_forward_windows,
@@ -88,34 +88,23 @@ def test_calmar_score_too_few_trades_is_minus_inf() -> None:
     assert calmar_score([100.0], 1000.0, min_trades=10) == float("-inf")
 
 
-def test_run_walk_forward_and_efficiency() -> None:
-    windows = walk_forward_windows(
-        "2020-01-01", "2022-01-01", train_months=12, test_months=6, step_months=6
-    )
-    assert len(windows) == 2
-
-    # Fake optimize/evaluate: in-sample return 0.20; OOS +200 on 1000 -> +0.20.
-    def optimize(
-        train_start: pd.Timestamp, train_end: pd.Timestamp
-    ) -> tuple[dict[str, Any], float]:
-        return {"stop_loss_pct": 1.0}, 0.20
-
-    def evaluate(
-        params: dict[str, Any], test_start: pd.Timestamp, test_end: pd.Timestamp
-    ) -> tuple[list[float], float]:
-        return [100.0, 100.0], 1000.0
-
-    results = run_walk_forward(windows, optimize, evaluate)
-    assert len(results) == 2
-    assert all(r.best_params == {"stop_loss_pct": 1.0} for r in results)
-    assert all(math.isclose(r.oos_return, 0.20) for r in results)
-    # OOS return equals IS return here -> efficiency 1.0.
+def test_walk_forward_efficiency_and_its_length_normalisation() -> None:
+    """Efficiency compares OOS against in-sample; normalising removes the window-length bias."""
+    results = [
+        WalkForwardResult(
+            window=f"w{i}",
+            best_params={"stop_loss_pct": 1.0},
+            is_return=0.20,
+            oos_return=0.20,
+            oos_trades=2,
+            oos_max_dd=0.0,
+            oos_returns=[0.1, 0.1],
+        )
+        for i in range(2)
+    ]
+    # OOS equals IS here -> raw efficiency 1.0 ...
     assert math.isclose(walk_forward_efficiency(results), 1.0)
-    # Normalized per month: raw 1.0 scaled by train/test = 12/6 = 2.0.
+    # ... and per month, scaled by train/test = 12/6.
     assert math.isclose(normalized_wfe(results, train_months=12, test_months=6), 2.0)
-    try:
+    with pytest.raises(ValueError, match="test_months must be positive"):
         normalized_wfe(results, train_months=12, test_months=0)
-    except ValueError:
-        pass
-    else:
-        raise AssertionError("expected ValueError for test_months=0")
