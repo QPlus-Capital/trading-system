@@ -46,6 +46,26 @@ def stop_loss_lookup(segments: tuple[ParamSegment, ...]) -> Callable[[int], floa
     return resolve
 
 
+def start_balance_of(recipe: Any) -> float:
+    """The account balance a recipe's backtests start from.
+
+    A :class:`SweepRecipe` carries it directly. A config MODULE -- the interface the runner's CLI
+    documents, which re-exports only the uppercase names -- does not, and reading the attribute
+    there would break the advertised ``python -m research.engine.walkforward_runner <config.py>``
+    path. Both express the same number through the venue, so fall back to that.
+    """
+    direct = getattr(recipe, "start_balance", None)
+    if direct is not None:
+        return float(direct)
+    balances = list(getattr(recipe.VENUE, "starting_balances", []) or [])
+    if not balances:
+        raise AttributeError(
+            f"{type(recipe).__name__} exposes neither start_balance nor a venue starting "
+            "balance; a continuous run cannot measure a return without one"
+        )
+    return float(str(balances[0]).split()[0].replace("_", ""))
+
+
 def constant_params(grid: Mapping[str, Sequence[Any]]) -> dict[str, Any]:
     """Grid keys that take exactly one value -- pinned settings, not a search dimension.
 
@@ -187,7 +207,7 @@ def window_returns(
 
 
 def continuous_walk_forward(
-    recipe: SweepRecipe,
+    recipe: Any,
     windows: Sequence[WalkForwardWindow],
     combos: Sequence[Mapping[str, Any]],
     optimize: Callable[[WalkForwardWindow], tuple[dict[str, Any], float]],
@@ -206,14 +226,28 @@ def continuous_walk_forward(
     """
     if not windows:
         return []
+    # Sorted ONCE, here, so optimization, attribution and the result list all see the same order.
+    # build_schedule sorts its own input; window_returns derives interval ends from sequence
+    # order, so an unsorted caller would bound a window by an earlier start and hand the returns
+    # to the wrong labels.
+    windows = sorted(windows, key=lambda w: w.test_start)
+    for earlier, later in zip(windows, windows[1:], strict=False):
+        if later.test_start < earlier.test_end:
+            # Two segments would claim the same instant, so the schedule cannot say which
+            # parameters govern it and each window is silently shortened to the next one's start.
+            raise ValueError(
+                f"test windows overlap ({earlier.label} and {later.label}): a continuous run "
+                "needs step_months >= test_months, or no segment owns the overlap"
+            )
     span_start, span_end = min(w.test_start for w in windows), max(w.test_end for w in windows)
     pinned = constant_params({k: list(v) for k, v in (recipe.PARAM_GRID or {}).items()})
+    balance = start_balance_of(recipe)
     chosen = [optimize(window) for window in windows]
     schedule = build_schedule(windows, [params for params, _ in chosen])
     per_window = window_returns(
         closed_pnls(recipe, schedule, span_start, span_end, pinned),
         windows,
-        recipe.start_balance,
+        balance,
     )
 
     by_combo: list[dict[str, float]] = [{} for _ in windows]
@@ -223,7 +257,7 @@ def continuous_walk_forward(
             scored = window_returns(
                 closed_pnls(recipe, candidate, span_start, span_end, {**pinned, **params}),
                 windows,
-                recipe.start_balance,
+                balance,
             )
             key = combo_key(params)
             for slot, (window_return, _) in zip(by_combo, scored, strict=True):

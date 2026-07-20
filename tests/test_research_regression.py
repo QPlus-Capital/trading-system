@@ -118,3 +118,11 @@ def test_two_empty_runs_are_not_flagged(tmp_path: Path) -> None:
     ref = _run(tmp_path, "reference", n_trades=0)
     cand = _run(tmp_path, "candidate", n_trades=0)
     assert compare(ref, cand, _LIMITS).unexpected == []
+
+
+def test_a_non_finite_metric_cannot_satisfy_a_threshold(tmp_path: Path) -> None:
+    """Every comparison against NaN is False, so it would pass every bound in silence."""
+    ref = _run(tmp_path, "reference", ann_return_pct=40.0)
+    cand = _run(tmp_path, "candidate", ann_return_pct=float("nan"))
+    result = compare(ref, cand, _LIMITS)
+    assert any("not a finite number" in u for u in result.unexpected)
