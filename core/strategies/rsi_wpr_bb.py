@@ -69,6 +69,20 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     take_profit_pct: float = 0.0
     risk_per_trade_pct: float = 0.0
 
+    # The equity ``risk_per_trade_pct`` is a percentage OF. Zero reads the account's live balance,
+    # which is right for live trading and for any run modelling one account's history.
+    #
+    # A continuous out-of-sample run (``segments`` above) spans years in ONE engine run, so a live
+    # basis compounds across the whole span. Two things break. Sizing is not scale-invariant --
+    # lot quantisation, minimum and maximum quantities and margin all bind differently at 50k than
+    # at 500m -- so a late window is measured under conditions an early window never saw, and the
+    # per-window returns stop being comparable. And an index run reaches the engine's MONEY_MAX
+    # ceiling (9_223_372_036) outright, which kills the worker rather than reporting anything.
+    #
+    # A constant here sizes every trade in the span from the same equity, so every window is
+    # measured on the same footing. Research selects on that; live still compounds.
+    sizing_equity: float = 0.0
+
     # Read-only warm-up boundary (ns since epoch; 0 = trade from the first bar). Bars before it
     # still feed the indicators -- they MUST, or the engine desyncs -- but place no orders. The
     # walk-forward runs each window from a pre-roll so indicators enter warm; without this the
@@ -306,6 +320,15 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         return bool(sl > 0 and tp > 0)
 
     def _account_equity(self) -> float | None:
+        """The equity a position is sized as a percentage of.
+
+        ``sizing_equity`` replaces the account's live balance with a constant, so a run spanning
+        years sizes every trade from the same basis instead of compounding into conditions the
+        earlier windows never traded under. Zero -- the default, and every live path -- reads the
+        account, so nothing outside a continuous research run changes.
+        """
+        if self.config.sizing_equity > 0:
+            return float(self.config.sizing_equity)
         assert self.instrument is not None
         account = self.portfolio.account(self.instrument.id.venue)
         if account is None:

@@ -31,30 +31,49 @@ def test_a_trade_resolving_in_a_gap_still_belongs_to_a_window() -> None:
     """
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-10-01", "2021-04-01")]
     closed = [(_ns("2020-08-15"), 500.0)]  # inside the gap
-    first, second = window_returns(closed, windows, start_balance=100_000.0)
+    first, second = window_returns(closed, windows, basis=100_000.0)
 
     assert first[1] == [pytest.approx(0.005)], "the gap trade belongs to the window before it"
     assert second[0] == 0.0
-    # ...and the next window opens on equity that includes it, consistently.
-    assert window_returns(closed + [(_ns("2020-11-01"), 1_000.0)], windows, 100_000.0)[1][0] == (
-        pytest.approx(1_000.0 / 100_500.0)
-    )
 
 
 def test_contiguous_windows_are_unaffected_by_the_gap_rule() -> None:
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
     closed = [(_ns("2020-03-01"), 100.0), (_ns("2020-09-01"), 200.0)]
-    first, second = window_returns(closed, windows, start_balance=100_000.0)
+    first, second = window_returns(closed, windows, basis=100_000.0)
     assert first[1] == [pytest.approx(0.001)]
-    assert second[1] == [pytest.approx(200.0 / 100_100.0)]
+    assert second[1] == [pytest.approx(0.002)]
+
+
+def test_every_window_is_measured_against_the_same_constant_basis() -> None:
+    """The other half of constant sizing, and the half that is easy to leave behind.
+
+    The run pins ``sizing_equity``, so a trade late in the span is the same size as one early in
+    it. Dividing that flat PnL by a balance that had grown would report a smaller return purely
+    because earlier windows earned -- the precise bias constant sizing exists to remove. So the
+    denominator is the basis, and a large prior profit must not move a later window's return.
+    """
+    windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
+    late = (_ns("2020-09-01"), 200.0)
+
+    lean = window_returns([(_ns("2020-03-01"), 100.0), late], windows, basis=100_000.0)
+    rich = window_returns([(_ns("2020-03-01"), 50_000.0), late], windows, basis=100_000.0)
+
+    assert lean[1][0] == rich[1][0] == pytest.approx(0.002), (
+        "the same trade in the same window must score the same whatever preceded it"
+    )
 
 
 def test_an_exhausted_account_is_not_reported_as_a_flat_window() -> None:
-    """Post-ruin windows averaged in as 0% would flatter the strategy that caused the ruin."""
+    """Post-ruin windows averaged in as 0% would flatter the strategy that caused the ruin.
+
+    The denominator is constant, but whether an account still EXISTS is not: losing more than the
+    basis ends the run, and later windows are then arithmetic on a bankrupt account.
+    """
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
     closed = [(_ns("2020-03-01"), -100_000.0)]  # the account is gone
     with pytest.raises(RuntimeError, match="account exhausted"):
-        window_returns(closed, windows, start_balance=100_000.0)
+        window_returns(closed, windows, basis=100_000.0)
 
 
 def test_overlapping_windows_are_refused_before_any_run() -> None:
@@ -133,7 +152,7 @@ def test_a_trade_closing_exactly_at_the_final_boundary_is_counted() -> None:
     """
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
     closed = [(_ns("2021-01-01"), 400.0)]  # exactly on the final test_end
-    first, second = window_returns(closed, windows, start_balance=100_000.0)
+    first, second = window_returns(closed, windows, basis=100_000.0)
     assert first[1] == []
     assert second[1] == [pytest.approx(0.004)], "the final-boundary close belongs to the last one"
 
@@ -142,6 +161,6 @@ def test_a_close_on_an_inner_boundary_belongs_to_the_later_window() -> None:
     """And it must be counted once, not in both."""
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
     closed = [(_ns("2020-07-01"), 400.0)]
-    first, second = window_returns(closed, windows, start_balance=100_000.0)
+    first, second = window_returns(closed, windows, basis=100_000.0)
     assert first[1] == []
     assert len(second[1]) == 1
