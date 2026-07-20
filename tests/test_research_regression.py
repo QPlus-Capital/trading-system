@@ -126,3 +126,18 @@ def test_a_non_finite_metric_cannot_satisfy_a_threshold(tmp_path: Path) -> None:
     cand = _run(tmp_path, "candidate", ann_return_pct=float("nan"))
     result = compare(ref, cand, _LIMITS)
     assert any("not a finite number" in u for u in result.unexpected)
+
+
+def test_the_report_stays_valid_json_when_a_metric_is_not_finite(tmp_path: Path) -> None:
+    """json.dumps writes NaN as a bare token, which no strict parser accepts.
+
+    The artifact produced for exactly this failure case would then be unreadable by the tooling
+    meant to consume it.
+    """
+    ref = _run(tmp_path, "reference", ann_return_pct=40.0)
+    cand = _run(tmp_path, "candidate", ann_return_pct=float("inf"))
+    report = build_report("32", [(ref, cand)], _LIMITS)
+
+    text = json.dumps(report, allow_nan=False)  # must not raise
+    assert "Infinity" not in text
+    assert report["unexpected_changes"], "and the value is still reported in words"

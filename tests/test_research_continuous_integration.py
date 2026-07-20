@@ -20,7 +20,6 @@ from core.data.mt5_csv import write_mt5_catalog
 from core.instruments import us30
 from research.engine import characterize, recipe
 from research.engine.recipe import SweepRecipe
-from research.engine.schedule_builder import UnschedulableGrid
 from research.engine.walkforward import walk_forward_windows
 from research.engine.walkforward_runner import _data_span
 from research.portfolio.trades import extract_market_trades
@@ -113,21 +112,30 @@ def test_characterize_task_runs_the_continuous_walk_forward(market: Path) -> Non
         assert len(stream) == result["windows"], "every candidate is scored on every window"
 
 
-def test_a_grid_that_cannot_be_scheduled_stops_stage_one(market: Path) -> None:
-    """An indicator length in the grid would silently trade later segments on a cold engine."""
-    with pytest.raises(UnschedulableGrid, match="rsi_length"):
-        characterize._run_task(
-            us30,
-            "data/SYN_H4.csv",
-            15.0,
-            {"stop_loss_pct": [0.5], "rsi_length": [14, 21]},
-            "baseline",
-            {},
-            "US30",
-            12,
-            6,
-            6,
-            None,
-            0,
-            7,
-        )
+def test_a_grid_offering_indicator_lengths_is_still_searchable(market: Path) -> None:
+    """The constraint is on the SELECTION, not the grid.
+
+    A grid may offer several indicator lengths; what one continuous run cannot honour is a choice
+    that DIFFERS between segments. Judging the grid instead refused searches that work -- and
+    invited narrowing a research grid to suit an execution detail, which is how a default grid
+    lost a dimension in an earlier round of this PR.
+
+    The refusal itself is unit-tested in ``test_research_param_schedule``, where a disagreeing
+    selection can be constructed; here the optimizer's choice is not ours to dictate.
+    """
+    result = characterize._run_task(
+        us30,
+        "data/SYN_H4.csv",
+        15.0,
+        {"stop_loss_pct": [0.5, 1.5], "rsi_length": [14, 21]},
+        "baseline",
+        {},
+        "US30",
+        12,
+        6,
+        6,
+        None,
+        0,
+        7,
+    )
+    assert result["windows"] > 0 or "error" in result

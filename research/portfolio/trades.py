@@ -18,14 +18,10 @@ import pandas as pd
 from core.broker import TTP_MARKETS
 
 from research.engine.config import extract_trade_pnls
-from research.engine.continuous import (
-    constant_params,
-    run_continuous_oos,
-    stop_loss_lookup,
-)
+from research.engine.continuous import run_continuous_oos, stop_loss_lookup
 from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
-from research.engine.schedule_builder import build_schedule, check_switchable, oos_span
+from research.engine.schedule_builder import build_schedule, oos_span, pinned_params
 from research.engine.walkforward import (
     PREROLL,
     WalkForwardWindow,
@@ -174,11 +170,13 @@ def extract_market_trades(
         return pd.DataFrame([], columns=_COLUMNS)
 
     # SELECTION: each segment's parameters come from its own training interval and nothing else.
-    check_switchable(grid)
     per_window = [
         fixed_params if fixed_params is not None else _optimize(recipe, combos, window)
         for window in windows
     ]
+    # Refuses a selection wanting different indicator settings per segment, and returns what they
+    # agree on -- covering both the grid's pinned keys and any frozen fixed_params.
+    pinned = pinned_params(per_window)
     segments = build_schedule(windows, per_window)
 
     # EXECUTION: one run over the whole span (#32). Positions carry across segment boundaries on
@@ -186,12 +184,6 @@ def extract_market_trades(
     span_start, span_end = oos_span(windows)
     # Pinned grid keys must reach the run too, or execution trades the strategy defaults while
     # selection scored the pinned ones.
-    # Everything pinned must reach the run: the schedule carries only stop and target, so any
-    # other frozen setting -- from the grid OR from fixed_params -- would fall back to the
-    # recipe default and execution would trade a different strategy than selection scored.
-    pinned = {**constant_params(grid), **constant_params(
-        {k: [v] for k, v in (fixed_params or {}).items()}
-    )}
     pos = run_continuous_oos(
         recipe, segments, span_start=span_start, span_end=span_end, params=pinned
     )
