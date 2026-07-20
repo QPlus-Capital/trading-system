@@ -9,24 +9,24 @@ stays open, on its original stop and target, until it really closes.
 Two consequences follow from there being one account instead of many:
 
 * each trade appears exactly once, so the stream needs no de-duplication at the seams;
-* the account would compound across the entire span, which this module deliberately switches OFF.
+* sizing is pinned to a constant basis rather than left to compound across the span.
 
-The second needs saying, because the opposite was tried first and it was wrong. Compounding across
-one continuous span makes every window trade a different account size, and the strategy's sizing is
-not scale-invariant: lot quantisation, minimum and maximum quantities and margin bind differently
-at 50k than at 500m. A late window is then measured under conditions no early window saw, so the
-per-window returns are not comparable and the mean over windows is not an equal-weighted measure of
-edge. On index CFDs the balance also passes the engine's MONEY_MAX ceiling and the run simply dies.
-
-So the run pins ``sizing_equity`` to the opening balance and :func:`window_returns` divides by that
-same constant. Both halves are required: a flat position size measured against a growing denominator
-would shrink every later window's return by however much the account had earned. Stage 1 measures
-edge on equal footing; compounding belongs to the portfolio stage and to live trading.
+The pin matters because the strategy's sizing is not scale-invariant: lot quantisation, minimum
+and maximum quantities and margin bind differently at 50k than at 500m. Left to compound, a late
+window trades a different account size than an early one, so the per-window returns are not
+comparable and their mean is not an equal-weighted measure of edge; on index CFDs the balance also
+passes the engine's MONEY_MAX ceiling and the run dies. So every scoring backtest -- the training
+runs that select parameters and the out-of-sample run that grades them -- sizes off the same
+``sizing_equity`` via :func:`scoring_params`, and :func:`window_returns` divides by that same
+constant. Both halves are required together: a flat position size over a growing denominator would
+shrink every later window's return by whatever the account had earned. Stage 1 measures edge on
+equal footing; compounding belongs to the portfolio stage and to live trading.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from decimal import Decimal
 from typing import Any
 
 import pandas as pd
@@ -77,6 +77,18 @@ def start_balance_of(recipe: Any) -> float:
     return float(str(balances[0]).split()[0].replace("_", ""))
 
 
+def scoring_params(recipe: Any, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """``params`` plus the fixed sizing basis every scoring backtest must share.
+
+    Selection and evaluation have to model ONE strategy, so the training runs that pick the
+    parameters and the out-of-sample run that scores them must size the same way. Both go through
+    a recipe config, so both pass their parameters through here; a caller that sized without it
+    would rank candidates under compounding and then grade them flat -- the exact split this run
+    exists to remove. The basis is carried as ``Decimal`` because it is money.
+    """
+    return {**dict(params or {}), "sizing_equity": Decimal(str(start_balance_of(recipe)))}
+
+
 def base_config_of(recipe: Any) -> dict[str, Any]:
     """The configuration a recipe merges its parameters onto.
 
@@ -117,12 +129,8 @@ def run_continuous_oos(
         raise ValueError("a continuous run needs a schedule; an empty one authorises no trade")
     cfg = recipe.build_run_config(
         {
-            **dict(params or {}),
+            **scoring_params(recipe, params),
             "segments": segments,
-            # Every trade in the span is sized from the opening balance, never from what earlier
-            # windows left behind. See the module docstring: this and window_returns' constant
-            # denominator are one decision, and splitting them silently rescales late windows.
-            "sizing_equity": start_balance_of(recipe),
             # The stop-time liquidation is the end of the backtest, not an exit anyone traded.
             # Booking it would put an artificial close on the final position -- exactly the
             # boundary truncation this whole change removes, moved to the last seam.
@@ -169,12 +177,12 @@ def window_returns(
     A trade belongs to the window its outcome RESOLVED in, so a position straddling a boundary
     counts once, on the far side. Every window is measured against the SAME ``basis`` -- the
     constant equity the run sized every trade from (``sizing_equity``), not the balance the
-    account had grown to by then.
+    account holds by then.
 
-    The constant denominator is not a simplification, it is the other half of constant sizing. A
-    flat position size divided by a growing balance would report a smaller return for a later
-    window purely because earlier windows had earned, which is the opposite of the equal footing
-    this is for. Sizing and denominator move together or neither is meaningful.
+    The constant denominator is the other half of constant sizing, not a simplification. A flat
+    position size divided by a growing balance would report a smaller return for a later window
+    purely because earlier windows earned, the opposite of the equal footing this is for. Sizing
+    and denominator move together or neither is meaningful.
 
     Windows are treated as covering the interval up to the NEXT window's start, not merely up to
     their own end. With the study's contiguous windows the two are identical; where a step larger
