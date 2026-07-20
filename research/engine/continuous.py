@@ -23,7 +23,7 @@ from core.strategies.param_schedule import ParamSegment, segment_at
 
 from research.engine.montecarlo import equity_curve, max_drawdown
 from research.engine.recipe import SweepRecipe
-from research.engine.schedule_builder import build_schedule
+from research.engine.schedule_builder import SWITCHABLE, build_schedule
 from research.engine.walkforward import (
     PREROLL,
     WalkForwardResult,
@@ -46,12 +46,28 @@ def stop_loss_lookup(segments: tuple[ParamSegment, ...]) -> Callable[[int], floa
     return resolve
 
 
+def constant_params(grid: Mapping[str, Sequence[Any]]) -> dict[str, Any]:
+    """Grid keys that take exactly one value -- pinned settings, not a search dimension.
+
+    Training runs receive the whole parameter set, so a pinned key reaches the strategy there. The
+    continuous run is configured from the schedule, which carries only stop and target, so without
+    this every other pinned key would silently fall back to the strategy default and execution
+    would trade a different strategy than selection scored.
+    """
+    return {
+        k: values[0]
+        for k, values in grid.items()
+        if k not in SWITCHABLE and len({str(v) for v in values}) == 1
+    }
+
+
 def run_continuous_oos(
     recipe: SweepRecipe,
     segments: tuple[ParamSegment, ...],
     *,
     span_start: pd.Timestamp,
     span_end: pd.Timestamp,
+    params: Mapping[str, Any] | None = None,
 ) -> pd.DataFrame:
     """Run the whole out-of-sample span once and return its positions report.
 
@@ -65,7 +81,14 @@ def run_continuous_oos(
     if not segments:
         raise ValueError("a continuous run needs a schedule; an empty one authorises no trade")
     cfg = recipe.build_run_config(
-        {"segments": segments},
+        {
+            **dict(params or {}),
+            "segments": segments,
+            # The stop-time liquidation is the end of the backtest, not an exit anyone traded.
+            # Booking it would put an artificial close on the final position -- exactly the
+            # boundary truncation this whole change removes, moved to the last seam.
+            "flatten_on_stop": False,
+        },
         start=(span_start - PREROLL).isoformat(),
         end=pd.Timestamp(span_end).isoformat(),
     )
@@ -83,11 +106,14 @@ def closed_pnls(
     segments: tuple[ParamSegment, ...],
     span_start: pd.Timestamp,
     span_end: pd.Timestamp,
+    params: Mapping[str, Any] | None = None,
 ) -> list[tuple[int, float]]:
     """``(close timestamp ns, realized PnL)`` for every trade of one continuous run."""
     from research.portfolio.trades import timed_trades_from_report
 
-    pos = run_continuous_oos(recipe, segments, span_start=span_start, span_end=span_end)
+    pos = run_continuous_oos(
+        recipe, segments, span_start=span_start, span_end=span_end, params=params
+    )
     rows = timed_trades_from_report(
         pos, str(recipe.INSTRUMENT.raw_symbol), stop_loss_lookup(segments), closed_from=span_start
     )
@@ -132,17 +158,30 @@ def window_returns(
     counts once, on the far side. Each window's return is measured against the equity the account
     actually held when that window opened -- which in a continuous run is what earlier windows
     left behind, not the opening balance every time.
+
+    Windows are treated as covering the interval up to the NEXT window's start, not merely up to
+    their own end. With the study's contiguous windows the two are identical; where a step larger
+    than the test length leaves a gap, a position carried into that gap and closed there would
+    otherwise belong to no window at all -- its PnL would still move the next window's opening
+    equity while the trade itself vanished from every count.
     """
     ordered = sorted(closed)
+    starts = [int(pd.Timestamp(w.test_start).value) for w in windows]
     out: list[tuple[float, list[float]]] = []
-    for window in windows:
-        start_ns = int(pd.Timestamp(window.test_start).value)
-        end_ns = int(pd.Timestamp(window.test_end).value)
+    for i, window in enumerate(windows):
+        start_ns = starts[i]
+        end_ns = (
+            starts[i + 1] if i + 1 < len(starts) else int(pd.Timestamp(window.test_end).value)
+        )
         opening = start_balance + sum(pnl for ts, pnl in ordered if ts < start_ns)
-        inside = [pnl for ts, pnl in ordered if start_ns <= ts < end_ns]
         if opening <= 0:
-            out.append((0.0, []))
-            continue
+            # The account is gone. Reporting a flat window would let every later window average
+            # in as harmless, which flatters exactly the strategy whose losses caused this.
+            raise RuntimeError(
+                f"account exhausted before window {window.label}: equity {opening:,.0f} "
+                "-- post-ruin windows have no meaningful return and must not be averaged in"
+            )
+        inside = [pnl for ts, pnl in ordered if start_ns <= ts < end_ns]
         out.append((sum(inside) / opening, [pnl / opening for pnl in inside]))
     return out
 
@@ -168,10 +207,13 @@ def continuous_walk_forward(
     if not windows:
         return []
     span_start, span_end = min(w.test_start for w in windows), max(w.test_end for w in windows)
+    pinned = constant_params({k: list(v) for k, v in (recipe.PARAM_GRID or {}).items()})
     chosen = [optimize(window) for window in windows]
     schedule = build_schedule(windows, [params for params, _ in chosen])
     per_window = window_returns(
-        closed_pnls(recipe, schedule, span_start, span_end), windows, recipe.start_balance
+        closed_pnls(recipe, schedule, span_start, span_end, pinned),
+        windows,
+        recipe.start_balance,
     )
 
     by_combo: list[dict[str, float]] = [{} for _ in windows]
@@ -179,7 +221,7 @@ def continuous_walk_forward(
         for params in combos:
             candidate = constant_schedule(params, span_start, span_end)
             scored = window_returns(
-                closed_pnls(recipe, candidate, span_start, span_end),
+                closed_pnls(recipe, candidate, span_start, span_end, {**pinned, **params}),
                 windows,
                 recipe.start_balance,
             )

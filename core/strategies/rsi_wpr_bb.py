@@ -85,6 +85,14 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     # entry is placed in an interval no test window owns.
     segments: tuple[ParamSegment, ...] = ()
 
+    # Whether stopping the strategy flattens whatever is still open. True is right for a run that
+    # must end square. It is WRONG for a continuous out-of-sample run: the liquidation is the end
+    # of the backtest, not a trading decision, and booking it as a trade puts an artificial exit
+    # on the last position -- the very truncation at window boundaries that the schedule removes.
+    # With this off, a position still open when the data ends has no close time and is skipped,
+    # which is the honest record: it has no outcome yet.
+    flatten_on_stop: bool = True
+
     # Component switches (for structural ablation studies). Each confirmation filter
     # can be turned off; long_only ignores short signals (flatten instead).
     use_bb_confirm: bool = True  # require "was below lower band" on buys
@@ -321,9 +329,10 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         self.submit_order(order)
 
     def on_stop(self) -> None:
-        """Flatten and clean up when the strategy stops."""
+        """Clean up when the strategy stops, flattening only if asked to."""
         self.cancel_all_orders(self.config.instrument_id)
-        self.close_all_positions(self.config.instrument_id)
+        if self.config.flatten_on_stop:
+            self.close_all_positions(self.config.instrument_id)
         self.unsubscribe_bars(self.config.bar_type)
 
     def on_reset(self) -> None:

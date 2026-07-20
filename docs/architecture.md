@@ -195,6 +195,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/grid.py` | Parameter sweep across combinations |
 | `research/engine/montecarlo.py` | Monte-Carlo robustness from per-trade PnLs (profit probability, drawdown) |
 | `research/engine/overfitting.py` | Selection-bias statistics: deflated Sharpe, PBO, the multiple-testing budget |
+| `research/regression.py` | Compares a candidate run against a reference against stated expectations |
 | `research/engine/continuous.py` | Executes the out-of-sample span as ONE run under a schedule |
 | `research/engine/schedule_builder.py` | Turns windows + their selected parameters into that schedule |
 | `research/engine/walkforward.py` | Walk-forward window scheme (train/test splits, purge/embargo) |
@@ -251,7 +252,6 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `monitoring/dashboard.py` | Streamlit dashboard (account-aware, default ttp) |
 | `monitoring/deals.py` | MT5 deals → round-trip trades + cashflows + realized equity + stats |
 | `monitoring/risk_view.py` | What the dashboard may claim: open-risk determinacy + the window's risk basis |
-| `research/regression.py` | Compares a candidate run against a reference against stated expectations |
 | `monitoring/reference.py` | Backtest reference + Monte-Carlo expectation band |
 | `monitoring/study_explorer.py` | Study explorer: slice + aggregate study results |
 

@@ -73,9 +73,20 @@ def compare(reference: Path, candidate: Path, thresholds: Thresholds) -> Compari
 
     ref_trades, cand_trades = float(ref["n_trades"]), float(cand["n_trades"])
     out.metrics |= _delta("n_trades", ref_trades, cand_trades)
-    drift_pct = abs(cand_trades - ref_trades) / ref_trades * 100.0 if ref_trades else 0.0
-    out.metrics["n_trades_drift_pct"] = round(drift_pct, 3)
-    if drift_pct > thresholds.trade_count_pct:
+    if not ref_trades:
+        # A percentage of zero is not zero drift, it is undefined. Reporting 0% would let a
+        # candidate that invented trades out of an empty reference pass the bound silently.
+        out.metrics["n_trades_drift_pct"] = None
+        if cand_trades:
+            out.unexpected.append(
+                f"the reference traded nothing, the candidate traded {cand_trades:.0f} -- "
+                "there is no baseline to bound this against."
+            )
+        drift_pct = 0.0
+    else:
+        drift_pct = abs(cand_trades - ref_trades) / ref_trades * 100.0
+        out.metrics["n_trades_drift_pct"] = round(drift_pct, 3)
+    if ref_trades and drift_pct > thresholds.trade_count_pct:
         out.unexpected.append(
             f"trade count moved {drift_pct:.2f}% (limit {thresholds.trade_count_pct:.2f}%): "
             f"{ref_trades:.0f} -> {cand_trades:.0f}. Expected changes sit at window seams only, "
@@ -163,10 +174,11 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\n  Regressionsbericht: {args.out}")
     for c in report["comparisons"]:
         m = c["metrics"]
+        drift = m["n_trades_drift_pct"]
+        drift_txt = "n/a" if drift is None else f"{drift:+.2f}%"
         print(
             f"    {c['reference']:24s} -> {c['candidate']:24s} "
-            f"Trades {m['n_trades_before']:.0f}->{m['n_trades_after']:.0f} "
-            f"({m['n_trades_drift_pct']:+.2f}%)  "
+            f"Trades {m['n_trades_before']:.0f}->{m['n_trades_after']:.0f} ({drift_txt})  "
             f"Rendite {m['ann_return_pct_before']:.1f}%->{m['ann_return_pct_after']:.1f}%"
         )
     if report["unexpected_changes"]:

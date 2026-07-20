@@ -18,7 +18,11 @@ import pandas as pd
 from core.broker import TTP_MARKETS
 
 from research.engine.config import extract_trade_pnls
-from research.engine.continuous import run_continuous_oos, stop_loss_lookup
+from research.engine.continuous import (
+    constant_params,
+    run_continuous_oos,
+    stop_loss_lookup,
+)
 from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
 from research.engine.schedule_builder import build_schedule, check_switchable, oos_span
@@ -180,7 +184,12 @@ def extract_market_trades(
     # EXECUTION: one run over the whole span (#32). Positions carry across segment boundaries on
     # the parameters that opened them, so no trade is dropped or reopened at a seam.
     span_start, span_end = oos_span(windows)
-    pos = run_continuous_oos(recipe, segments, span_start=span_start, span_end=span_end)
+    # Pinned grid keys must reach the run too, or execution trades the strategy defaults while
+    # selection scored the pinned ones.
+    pos = run_continuous_oos(
+        recipe, segments, span_start=span_start, span_end=span_end,
+        params=constant_params(grid),
+    )
     rows = timed_trades_from_report(
         pos, market, stop_loss_lookup(segments), closed_from=span_start
     )
