@@ -99,12 +99,16 @@ The call stack from a stage down to the strategy — this is where things are
 research/stages/portfolio.py             orchestrates the stage
 └─ portfolio/trades.make_extract_fn()    builds the per-market extractor
    └─ portfolio/trades.extract_market_trades  extracts the timed OOS trade stream
-      └─ engine/walkforward_runner.py    drives walk-forward windows
-         └─ engine/walkforward.py        splits history into train/test windows
-            └─ engine/grid.py            runs the parameter sweep per window
-               └─ engine/recipe.py       builds one NautilusTrader engine run
+      ├─ SELECTION (per window, train data only)
+      │  └─ engine/walkforward.py        splits history into train/test windows
+      │     └─ engine/grid.py            runs the parameter sweep on each train window
+      └─ EXECUTION (once, across the whole out-of-sample span)
+         └─ engine/schedule_builder.py   windows + chosen params -> a parameter schedule
+            └─ engine/continuous.py      ONE engine run; positions carry across seams
+               └─ engine/recipe.py       builds the NautilusTrader run config
                   └─ NautilusTrader BacktestEngine
-                     └─ core/strategies/rsi_wpr_bb.py        (thin Nautilus wrapper)
+                     └─ core/strategies/rsi_wpr_bb.py        (thin Nautilus wrapper;
+                                                          obeys the schedule)
                         └─ core/strategies/rsi_wpr_bb_signals.py  (pure signal engine —
                                                           the SAME code live uses)
 ```
@@ -175,6 +179,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | File | Purpose |
 |---|---|
 | `core/strategies/rsi_wpr_bb_signals.py` | Pure signal engine for RsiWprBb — single source of truth shared by backtest and live |
+| `core/strategies/param_schedule.py` | Time-keyed parameter schedule: which parameters govern new entries, and when |
 | `core/strategies/rsi_wpr_bb.py` | Thin NautilusTrader wrapper around the signal engine (backtest execution) |
 | `core/instruments.py` | Instrument definitions for the venues we trade |
 | `core/broker.py` | Swappable broker/market cost profiles; `standard_broker()` = TTP + real swap snapshot |
@@ -190,6 +195,8 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/grid.py` | Parameter sweep across combinations |
 | `research/engine/montecarlo.py` | Monte-Carlo robustness from per-trade PnLs (profit probability, drawdown) |
 | `research/engine/overfitting.py` | Selection-bias statistics: deflated Sharpe, PBO, the multiple-testing budget |
+| `research/engine/continuous.py` | Executes the out-of-sample span as ONE run under a schedule |
+| `research/engine/schedule_builder.py` | Turns windows + their selected parameters into that schedule |
 | `research/engine/walkforward.py` | Walk-forward window scheme (train/test splits, purge/embargo) |
 | `research/engine/walkforward_runner.py` | Walk-forward runner (drives backtests over the windows) |
 | `research/engine/characterize.py` | The robustness study: walk-forward every instrument × variation, in parallel |
@@ -244,6 +251,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `monitoring/dashboard.py` | Streamlit dashboard (account-aware, default ttp) |
 | `monitoring/deals.py` | MT5 deals → round-trip trades + cashflows + realized equity + stats |
 | `monitoring/risk_view.py` | What the dashboard may claim: open-risk determinacy + the window's risk basis |
+| `research/regression.py` | Compares a candidate run against a reference against stated expectations |
 | `monitoring/reference.py` | Backtest reference + Monte-Carlo expectation band |
 | `monitoring/study_explorer.py` | Study explorer: slice + aggregate study results |
 
