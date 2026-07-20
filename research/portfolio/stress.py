@@ -12,9 +12,9 @@ drawdown bound (see :mod:`research.portfolio.risk`) -- so a worse-than-history g
 breaches.
 
 Works in **R-multiples** (the scale-invariant per-trade risk unit) via the trade stream's ``r``
-column -- NOT ``pnl_base``, which compounds with the growing equity over a long history and would
-explode. Run it on the FULL history (all crises), not the reserved holdout (which omits the worst
-tails -- exactly why a holdout-fit risk is unsafe).
+column -- NOT ``pnl_base``, which in this full-history stream compounds with the growing equity and
+would explode. Run it on the FULL history (all crises), not the reserved holdout (which omits the
+worst tails -- exactly why a holdout-fit risk is unsafe).
 """
 
 from __future__ import annotations

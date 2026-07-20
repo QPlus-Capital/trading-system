@@ -52,11 +52,24 @@ from research.engine.overfitting import study_trial_budget
 from research.engine.recipe import SweepRecipe
 from research.engine.walkforward import normalized_wfe, walk_forward_efficiency
 from research.engine.walkforward_runner import run_walkforward
+from research.portfolio.risk import AccountProfile
 
 _REPO_ROOT = REPO_ROOT
 
 # Per-task list payload kept in memory for reporting but dropped from the CSV.
 _LIST_KEYS = ("window_oos", "combo_oos")  # in-memory payloads, never written to the CSV
+
+
+def account_balance_of(cfg: Any) -> float:
+    """The account balance the whole pipeline runs on, read from the config's ``ACCOUNT``.
+
+    The portfolio holdout and live already size on ``cfg.ACCOUNT.start_balance``; Stage 1 must use
+    the same number, because scoring sizes off a constant basis and that sizing is scale-dependent.
+    A config without an ``ACCOUNT`` falls back to :class:`AccountProfile`'s own default -- the
+    point of the helper is that the balance comes from the account profile, never from the
+    recipe's unrelated 200k default, which is what silently split selection from deployment.
+    """
+    return float(getattr(cfg, "ACCOUNT", AccountProfile()).start_balance)
 
 
 def _run_task(
@@ -73,11 +86,17 @@ def _run_task(
     max_windows: int | None,
     holdout_months: int,
     embargo_days: int,
+    start_balance: float,
 ) -> dict[str, Any]:
     """Walk-forward one (instrument, variation) and return its OOS metrics + return series."""
     # Net-of-cost selection: the TTP profile applies slippage in-engine (spread + commission are
     # already in via the bid/ask bars + fees), so the variation ranking + DSR reflect what live
     # nets. Swap (~uniform across variations) is validated net separately in the equity report.
+    #
+    # ``start_balance`` is the account the whole pipeline runs on, not the recipe's 200k default.
+    # Scoring sizes off this constant (:func:`research.engine.continuous.scoring_params`) and it is
+    # scale-dependent, so selecting on a different balance than the portfolio holdout and live run
+    # would rank parameters for an account we never trade. Threaded from ``cfg.ACCOUNT``.
     recipe = SweepRecipe(
         factory(),
         csv,
@@ -85,6 +104,7 @@ def _run_task(
         param_grid=param_grid,
         config_overrides=overrides,
         broker=TTP_MARKETS,
+        start_balance=start_balance,
     )
     # Selection runs on the pre-holdout data only, so the reserved slice stays untouched (F2).
     results = run_walkforward(
@@ -444,6 +464,7 @@ def main(argv: list[str] | None = None) -> None:
         json.dumps(lineage.catalog_inputs(sorted(sources)), indent=2), encoding="utf-8"
     )
 
+    account_balance = account_balance_of(cfg)
     tasks = [
         (
             factory,
@@ -459,6 +480,7 @@ def main(argv: list[str] | None = None) -> None:
             max_windows,
             holdout_m,
             embargo_d,
+            account_balance,
         )
         for factory, csv, leverage in cfg.INSTRUMENTS
         for name, overrides in cfg.VARIATIONS.items()

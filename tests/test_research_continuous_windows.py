@@ -108,6 +108,46 @@ def test_a_recipe_carrying_its_own_balance_is_used_directly() -> None:
     assert start_balance_of(_Recipe()) == 50_000.0
 
 
+def test_scoring_params_injects_the_recipe_basis_as_decimal() -> None:
+    """Every scoring backtest sizes off this, so it must be the recipe's balance, carried exactly.
+
+    A float here would reintroduce the money-as-float the sizing field exists to avoid, and a basis
+    that did not equal ``start_balance_of`` would size selection off one account and grade it on
+    another.
+    """
+    from decimal import Decimal
+
+    from research.engine.continuous import scoring_params
+
+    class _Recipe:
+        start_balance = 100_000.0
+        VENUE = None
+
+    out = scoring_params(_Recipe(), {"stop_loss_pct": 1.5})
+    assert out["sizing_equity"] == Decimal("100000.0")
+    assert isinstance(out["sizing_equity"], Decimal), "money basis must be Decimal, never float"
+    assert out["stop_loss_pct"] == 1.5, "the caller's params must survive the merge"
+
+
+def test_stage_one_sizes_on_the_account_balance_not_the_recipe_default() -> None:
+    """The bug: Stage 1 built its recipe without a balance and silently used the 200k default,
+    while the portfolio holdout and live run on the configured account. Selection is
+    scale-dependent, so the two must be the same number.
+    """
+    from research.engine.characterize import account_balance_of
+    from research.portfolio.risk import AccountProfile
+
+    class _ConfiguredModule:
+        ACCOUNT = AccountProfile(start_balance=100_000.0)
+
+    class _BareModule:
+        pass
+
+    assert account_balance_of(_ConfiguredModule()) == 100_000.0, "must read cfg.ACCOUNT"
+    # Falls back to the account profile's own default, never the recipe's unrelated 200k.
+    assert account_balance_of(_BareModule()) == AccountProfile().start_balance
+
+
 def test_window_order_from_the_caller_does_not_change_attribution() -> None:
     """window_returns derives interval ends from sequence order, so it must be normalised once.
 
