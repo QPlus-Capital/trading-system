@@ -194,6 +194,18 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--annual-return-pp", type=float, default=Thresholds.annual_return_pp)
     args = parser.parse_args(argv)
 
+    # A non-finite threshold disables the gate silently: nothing exceeds infinity, and every
+    # comparison against NaN is false. A bound that cannot bind is worse than none, because the
+    # report then says the numbers held.
+    for name, value in (
+        ("--trade-count-pct", args.trade_count_pct),
+        ("--annual-return-pp", args.annual_return_pp),
+    ):
+        if not math.isfinite(value) or value < 0:
+            raise SystemExit(
+                f"{name}={value} is not a usable bound: a threshold must be finite and "
+                "non-negative, or it silently permits everything."
+            )
     thresholds = Thresholds(
         trade_count_pct=args.trade_count_pct, annual_return_pp=args.annual_return_pp
     )

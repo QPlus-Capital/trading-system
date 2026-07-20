@@ -66,6 +66,25 @@ def start_balance_of(recipe: Any) -> float:
     return float(str(balances[0]).split()[0].replace("_", ""))
 
 
+def base_config_of(recipe: Any) -> dict[str, Any]:
+    """The configuration a recipe merges its parameters onto.
+
+    Same shape of problem as :func:`start_balance_of`, and the same axis: a config MODULE
+    re-exports the uppercase names and does not carry the recipe's own attributes. Reaching only
+    for the public property would hand back an empty mapping there, so a stop or target fixed in
+    ``config_overrides`` -- present in every training run -- would be missing when the schedule
+    is built, and the span would be refused or run without it.
+    """
+    for attribute in ("base_config", "_base_config"):
+        found = getattr(recipe, attribute, None)
+        if isinstance(found, dict):
+            return dict(found)
+    wrapped = getattr(recipe, "_R", None)  # a config module built from a SweepRecipe
+    if wrapped is not None:
+        return base_config_of(wrapped)
+    return {}
+
+
 def run_continuous_oos(
     recipe: SweepRecipe,
     segments: tuple[ParamSegment, ...],
@@ -148,9 +167,12 @@ def window_returns(
     out: list[tuple[float, list[float]]] = []
     for i, window in enumerate(windows):
         start_ns = starts[i]
-        end_ns = (
-            starts[i + 1] if i + 1 < len(starts) else int(pd.Timestamp(window.test_end).value)
-        )
+        last = i + 1 == len(starts)
+        # Half-open everywhere except at the very end. Between windows the next one's start owns
+        # the instant, so it must not be counted twice; at the final boundary there is no next
+        # window, and an exclusive bound would drop a position closing exactly on test_end from
+        # every result while its PnL still sat in the account.
+        end_ns = int(pd.Timestamp(window.test_end).value) if last else starts[i + 1]
         opening = start_balance + sum(pnl for ts, pnl in ordered if ts < start_ns)
         if opening <= 0:
             # The account is gone. Reporting a flat window would let every later window average
@@ -159,7 +181,11 @@ def window_returns(
                 f"account exhausted before window {window.label}: equity {opening:,.0f} "
                 "-- post-ruin windows have no meaningful return and must not be averaged in"
             )
-        inside = [pnl for ts, pnl in ordered if start_ns <= ts < end_ns]
+        inside = [
+            pnl
+            for ts, pnl in ordered
+            if start_ns <= ts and (ts <= end_ns if last else ts < end_ns)
+        ]
         out.append((sum(inside) / opening, [pnl / opening for pnl in inside]))
     return out
 
@@ -204,7 +230,7 @@ def continuous_walk_forward(
     # Refuses a selection that wants a different indicator setting per segment; returns what the
     # segments agree on, which is constant for the span and therefore configured directly.
     pinned = pinned_params(selected)
-    base = getattr(recipe, "base_config", {})
+    base = base_config_of(recipe)
     schedule = build_schedule(windows, selected, defaults=base)
     per_window = window_returns(
         closed_pnls(recipe, schedule, span_start, span_end, pinned),
