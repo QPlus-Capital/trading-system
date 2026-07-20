@@ -28,6 +28,7 @@ from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.trading.strategy import Strategy
 
+from core.strategies.param_schedule import ParamSegment, segment_at
 from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
 
@@ -75,6 +76,14 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     # balance that later (reported) trades are sized from, while being filtered out of the
     # results. Reported returns would then depend on unreported PnL.
     trade_from_ns: int = 0
+
+    # #32: a time-keyed parameter schedule for ONE continuous walk-forward run. When it is
+    # empty the strategy trades ``stop_loss_pct`` / ``take_profit_pct`` above and gates on
+    # ``trade_from_ns`` -- the single-window behaviour. When it is set, those two are read from
+    # the segment governing the moment a position OPENED, so a position carried across a segment
+    # boundary keeps the stop and target it was opened with instead of being re-anchored, and no
+    # entry is placed in an interval no test window owns.
+    segments: tuple[ParamSegment, ...] = ()
 
     # Component switches (for structural ablation studies). Each confirmation filter
     # can be turned off; long_only ignores short signals (flatten instead).
@@ -144,15 +153,15 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         buy_signal, sell_signal = self._signals.update(
             bar.open.as_double(), bar.high.as_double(), bar.low.as_double(), c
         )
-        if bar.ts_event < self.config.trade_from_ns:
-            return  # read-only warm-up: indicators updated above, but place no orders
+        if not self._entries_allowed(bar.ts_event):
+            return  # read-only warm-up / unowned interval: indicators updated above, no orders
         if buy_signal and not sell_signal:
-            self._go_long(c)
+            self._go_long(c, bar.ts_event)
         elif sell_signal and not buy_signal:
             if self.config.long_only:
                 self._go_flat()
             else:
-                self._go_short(c)
+                self._go_short(c, bar.ts_event)
 
     def on_position_opened(self, event: PositionOpened) -> None:
         """Attach stop-loss / take-profit to the position, anchored to its ACTUAL fill price.
@@ -168,13 +177,17 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         trigger sits a full ``stop_loss_pct`` away from the price that actually filled, so it is
         never already "in the market" at submission (which the broker would reject).
         """
-        if not self._risk_managed() or self.instrument is None:
+        # Keyed by the position's OWN open time (#32): a position carried across a segment
+        # boundary must keep the stop and target that opened it. Re-reading the schedule at
+        # attachment time would re-anchor it to the next segment's parameters, which is precisely
+        # the approximation a continuous walk-forward exists to remove.
+        if not self._risk_managed(event.ts_opened) or self.instrument is None:
             return
         if event.instrument_id != self.config.instrument_id:
             return
-        cfg = self.config
+        stop_loss_pct, take_profit_pct = self._risk_params(event.ts_opened)
         exit_side, sl_px, tp_px = exit_prices(
-            float(event.avg_px_open), event.entry, cfg.stop_loss_pct, cfg.take_profit_pct
+            float(event.avg_px_open), event.entry, stop_loss_pct, take_profit_pct
         )
         qty: Quantity = self.instrument.make_qty(event.quantity)
         # Stop submitted first: if one bar spans both levels, the conservative exit wins.
@@ -215,23 +228,23 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
 
     # -- position management (long/short reversal) --
 
-    def _go_long(self, ref_price: float) -> None:
+    def _go_long(self, ref_price: float, ts_ns: int) -> None:
         instrument_id = self.config.instrument_id
         if self.portfolio.is_net_long(instrument_id):
             return
         if self.portfolio.is_net_short(instrument_id):
             self.cancel_all_orders(instrument_id)
             self.close_all_positions(instrument_id)
-        self._enter(OrderSide.BUY, ref_price)
+        self._enter(OrderSide.BUY, ref_price, ts_ns)
 
-    def _go_short(self, ref_price: float) -> None:
+    def _go_short(self, ref_price: float, ts_ns: int) -> None:
         instrument_id = self.config.instrument_id
         if self.portfolio.is_net_short(instrument_id):
             return
         if self.portfolio.is_net_long(instrument_id):
             self.cancel_all_orders(instrument_id)
             self.close_all_positions(instrument_id)
-        self._enter(OrderSide.SELL, ref_price)
+        self._enter(OrderSide.SELL, ref_price, ts_ns)
 
     def _go_flat(self) -> None:
         """Close any open position and cancel working orders (used by long_only)."""
@@ -240,8 +253,34 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
             self.cancel_all_orders(instrument_id)
             self.close_all_positions(instrument_id)
 
-    def _risk_managed(self) -> bool:
-        return bool(self.config.stop_loss_pct > 0 and self.config.take_profit_pct > 0)
+    def _entries_allowed(self, ts_ns: int) -> bool:
+        """May a NEW position be opened on a bar stamped ``ts_ns``?
+
+        Without a schedule this is the read-only pre-roll boundary. With one, an instant outside
+        every segment (before the first, or inside an interval no test window owns) opens nothing
+        -- while everything already open keeps being managed, because that is the difference
+        between withholding information and abandoning a trade.
+        """
+        if not self.config.segments:
+            return bool(ts_ns >= self.config.trade_from_ns)
+        seg = segment_at(self.config.segments, ts_ns)
+        return seg is not None and bool(seg.entries_allowed)
+
+    def _risk_params(self, ts_ns: int) -> tuple[float, float]:
+        """``(stop_loss_pct, take_profit_pct)`` governing a position opened at ``ts_ns``.
+
+        Keyed by the position's OWN open time, which is what carries a boundary-straddling
+        position on its original stop and target. Falls back to the static config when no
+        schedule is in play, so the single-window path is unchanged.
+        """
+        if not self.config.segments:
+            return self.config.stop_loss_pct, self.config.take_profit_pct
+        seg = segment_at(self.config.segments, ts_ns)
+        return (0.0, 0.0) if seg is None else (seg.stop_loss_pct, seg.take_profit_pct)
+
+    def _risk_managed(self, ts_ns: int) -> bool:
+        sl, tp = self._risk_params(ts_ns)
+        return bool(sl > 0 and tp > 0)
 
     def _account_equity(self) -> float | None:
         assert self.instrument is not None
@@ -254,21 +293,22 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         equity: float = balance.as_double()
         return equity
 
-    def _position_qty(self, ref_price: float) -> Quantity | None:
+    def _position_qty(self, ref_price: float, ts_ns: int) -> Quantity | None:
         assert self.instrument is not None
         cfg = self.config
-        if self._risk_managed() and cfg.risk_per_trade_pct > 0:
+        stop_loss_pct, _ = self._risk_params(ts_ns)
+        if self._risk_managed(ts_ns) and cfg.risk_per_trade_pct > 0:
             equity = self._account_equity()
-            sl_distance = ref_price * cfg.stop_loss_pct / 100.0
+            sl_distance = ref_price * stop_loss_pct / 100.0
             if equity is not None and sl_distance > 0:
                 risk_amount = equity * cfg.risk_per_trade_pct / 100.0
                 return risk_quantity(self.instrument, risk_amount, sl_distance)
         fixed_qty: Quantity = self.instrument.make_qty(cfg.trade_size)
         return fixed_qty
 
-    def _enter(self, side: OrderSide, ref_price: float) -> None:
+    def _enter(self, side: OrderSide, ref_price: float, ts_ns: int) -> None:
         assert self.instrument is not None
-        qty = self._position_qty(ref_price)
+        qty = self._position_qty(ref_price, ts_ns)
         if qty is None:
             return
         # Plain market entry; once it fills, the stop-loss / take-profit are attached as resting
