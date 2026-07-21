@@ -6,10 +6,12 @@ docs-only shortcut, a plain doc is R0, tooling is R1, and anything unmatched is 
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 from scripts.quality.classify import (
+    REPO_ROOT,
     Classification,
     Model,
     changed_paths,
@@ -35,15 +37,31 @@ def _model() -> Model:
         ("docs/methodology.md", "R3"),  # governance overrides docs-only
         ("docs/engineering/constitution.md", "R3"),
         (".ai/quality/risk-classes.toml", "R3"),  # the model cannot weaken itself
+        ("scripts/quality/classify.py", "R3"),  # the classifier decides everything else's gates
         ("README.md", "R0"),  # plain doc
         ("docs/architecture.md", "R0"),
-        ("scripts/quality/classify.py", "R1"),  # tooling with no gate role
+        ("scripts/seed_data.py", "R1"),  # tooling with no gate role
         ("core/paths.py", "R2"),  # matched by core/** fallback
         (".env.example", "R2"),  # unmatched -> safe default, never R1
     ],
 )
 def test_classify_path(path: str, expected: str) -> None:
     assert classify_path(path, _model()).risk_class == expected
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    [
+        "live/runner.py",
+        "./live/runner.py",
+        "live\\runner.py",
+        str(REPO_ROOT / "live" / "runner.py"),
+    ],
+)
+def test_path_spellings_classify_identically(spelling: str) -> None:
+    """A leading ./, a backslash, or an absolute path must not drop a live file to the safe
+    default."""
+    assert classify_path(spelling, _model()).risk_class == "R3"
 
 
 def test_an_explicit_rule_beats_the_docs_only_shortcut() -> None:
@@ -118,3 +136,30 @@ def test_required_gates_are_cumulative() -> None:
 def test_changed_paths_is_empty_against_head() -> None:
     """A deterministic check that the git plumbing runs: HEAD...HEAD has no changes."""
     assert changed_paths("HEAD") == []
+
+
+def _git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=root, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+def test_a_git_mv_of_a_live_file_to_a_doc_still_classifies_r3(tmp_path: Path) -> None:
+    """Rename detection would show only the destination (an R0 doc) and hide the R3 source; the
+    classifier's --no-renames must surface both, so the change stays R3."""
+    _git(tmp_path, "init", "-q")
+    _git(tmp_path, "config", "user.email", "t@example.com")
+    _git(tmp_path, "config", "user.name", "t")
+    (tmp_path / "live").mkdir()
+    (tmp_path / "live" / "runner.py").write_text("x = 1\n", encoding="utf-8")
+    _git(tmp_path, "add", "-A")
+    _git(tmp_path, "commit", "-qm", "base")
+    base = _git(tmp_path, "rev-parse", "HEAD")
+    _git(tmp_path, "checkout", "-qb", "feature")
+    (tmp_path / "docs").mkdir()
+    _git(tmp_path, "mv", "live/runner.py", "docs/runner.md")
+    _git(tmp_path, "commit", "-qm", "rename live file to a doc")
+
+    paths = changed_paths(base, root=tmp_path)
+    assert "live/runner.py" in paths, "the renamed-away live source must still be visible"
+    assert classify_paths(paths, _model()).risk_class == "R3"

@@ -80,6 +80,26 @@ class PathClass:
     reason: str
 
 
+def normalize(path: str) -> str:
+    """Repository-relative, forward-slash form -- so ``./live/runner.py``, a backslash spelling, and
+    an absolute path under the repo all match the same rule as ``live/runner.py``.
+
+    Without this, an ordinary spelling would miss ``live/**`` and be reported as the safe default
+    (R2) instead of R3, silently dropping the live-money gates. A path outside the repo is returned
+    unchanged (it cannot match a repo rule anyway).
+    """
+    raw = Path(path)
+    if raw.is_absolute():
+        try:
+            return raw.resolve().relative_to(REPO_ROOT).as_posix()
+        except ValueError:
+            return raw.as_posix()
+    slashed = path.replace("\\", "/")
+    while slashed.startswith("./"):
+        slashed = slashed[2:]
+    return slashed
+
+
 def classify_path(path: str, model: Model) -> PathClass:
     """The class of one path: the highest matching rule (explicit rules win over the docs-only
     fallback), else R0 for a plain non-governance document, else the safe default.
@@ -88,6 +108,7 @@ def classify_path(path: str, model: Model) -> PathClass:
     matches a nested file. Among equal-class matches the first in file order wins, and the rules are
     ordered most-specific first, so the reason is the specific one.
     """
+    path = normalize(path)
     matched = [r for r in model.rules if fnmatch.fnmatchcase(path, r.glob)]
     if matched:
         best = max(matched, key=lambda r: _RANK[r.min_class])
@@ -120,15 +141,18 @@ def classify_paths(paths: Iterable[str], model: Model) -> Classification:
     return Classification(top, per)
 
 
-def changed_paths(base: str) -> list[str]:
+def changed_paths(base: str, root: Path = REPO_ROOT) -> list[str]:
     """Repo-relative paths changed on this branch vs ``base`` (committed), forward slashes.
 
     Uses the three-dot form so only the branch's own commits count, not changes ``base`` gained
-    since it diverged. Raises if git fails, so a broken invocation cannot silently classify nothing.
+    since it diverged. ``--no-renames`` is essential: with rename detection a ``git mv`` of a
+    live-money file to a document would report only the destination, hiding the R3 source and its
+    gates; without it a rename shows as a delete + add, so both sides are classified. Raises if git
+    fails, so a broken invocation cannot silently classify nothing.
     """
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{base}...HEAD"],
-        cwd=REPO_ROOT,
+        ["git", "diff", "--no-renames", "--name-only", f"{base}...HEAD"],
+        cwd=root,
         capture_output=True,
         text=True,
         check=True,
