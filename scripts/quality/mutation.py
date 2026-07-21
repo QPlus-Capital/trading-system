@@ -56,7 +56,7 @@ class MutationTarget:
 
     id: str
     path: str
-    mutant_pattern: str
+    mutant_patterns: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -115,6 +115,7 @@ class Survivor:
     """A reviewed surviving mutant and the reason it is accepted."""
 
     name: str
+    classification: str
     reason: str
 
 
@@ -135,7 +136,11 @@ def load_policy(path: Path = POLICY_PATH) -> MutationPolicy:
     """Load and validate the mutation target policy with stdlib TOML."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     targets = tuple(
-        MutationTarget(str(item["id"]), normalize(str(item["path"])), str(item["mutant_pattern"]))
+        MutationTarget(
+            str(item["id"]),
+            normalize(str(item["path"])),
+            tuple(str(pattern) for pattern in item["mutant_patterns"]),
+        )
         for item in data["targets"]
     )
     if int(data["version"]) != 1 or not targets:
@@ -147,6 +152,8 @@ def load_policy(path: Path = POLICY_PATH) -> MutationPolicy:
     for target in targets:
         if not (REPO_ROOT / target.path).is_file():
             raise ValueError(f"mutation target does not exist: {target.path}")
+        if not target.mutant_patterns:
+            raise ValueError(f"mutation target needs at least one function pattern: {target.id}")
     return MutationPolicy(
         1,
         str(data["tool"]["name"]),
@@ -180,9 +187,17 @@ def _summary(data: Mapping[str, object]) -> MutationSummary:
 def load_baseline(path: Path = BASELINE_PATH) -> MutationBaseline:
     """Load the committed critical result and its reviewed survivor explanations."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    survivors = tuple(
-        Survivor(str(item["name"]), str(item["reason"])) for item in data.get("survivors", [])
-    )
+    try:
+        survivors = tuple(
+            Survivor(
+                str(item["name"]),
+                str(item["classification"]),
+                str(item["reason"]),
+            )
+            for item in data.get("survivors", [])
+        )
+    except KeyError as exc:
+        raise ValueError("every baseline survivor needs a classification") from exc
     baseline = MutationBaseline(
         version=int(data["version"]),
         tool=str(data["tool"]),
@@ -205,6 +220,11 @@ def load_baseline(path: Path = BASELINE_PATH) -> MutationBaseline:
         raise ValueError("baseline survivor names must be unique")
     if any(not item.reason.strip() for item in survivors):
         raise ValueError("every baseline survivor needs a non-empty explanation")
+    classifications = {"equivalent", "irrelevant", "meaningful"}
+    if any(item.classification not in classifications for item in survivors):
+        raise ValueError(
+            "survivor classification must be equivalent, irrelevant, or meaningful"
+        )
     return baseline
 
 
@@ -396,7 +416,7 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
         shutil.rmtree(work)
 
     command = _tool_command(policy)
-    patterns = [target.mutant_pattern for target in targets]
+    patterns = [pattern for target in targets for pattern in target.mutant_patterns]
     subprocess.run([*command, "run", *patterns], cwd=REPO_ROOT, check=True)
     listed = subprocess.run(
         all_results_command(command),
@@ -409,7 +429,11 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
     selected = {
         name: status
         for name, status in all_results.items()
-        if any(fnmatch.fnmatchcase(name, target.mutant_pattern) for target in targets)
+        if any(
+            fnmatch.fnmatchcase(name, pattern)
+            for target in targets
+            for pattern in target.mutant_patterns
+        )
     }
     report = MutationReport(scope, tuple(target.id for target in targets), selected)
     result_path = output or RESULT_ROOT / f"{scope}.toml"

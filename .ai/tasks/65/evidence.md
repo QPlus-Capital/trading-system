@@ -17,6 +17,7 @@ HEAD: 5f8ea724924a4ba547c10349f8a148ba11882eb6
 | `red-first` | Mutmut covered-line prepass guard | 1 | RED: coverage then stats reloaded NumPy's native extension under Linux Python 3.13 |
 | `red-first` | mutant-tree classifier resource guard | 1 | RED: clean-test stats could not load `.ai/quality/risk-classes.toml` |
 | `red-first` | hidden mutation artifact upload guard | 1 | RED: uploader excluded `.ai/mutation/critical.toml` by default |
+| `red-first` | named pure-function scope and survivor-classification guards | 1 | RED: module-wide policy included 298 no-test mutants; baseline schema did not require classification |
 | `format` | pending final command | 1 | PENDING |
 | `docs-consistency` | pending final command | 1 | PENDING |
 | `check` | pending final command | 1 | PENDING |

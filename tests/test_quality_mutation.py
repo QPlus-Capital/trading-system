@@ -41,6 +41,24 @@ def test_policy_names_every_required_critical_scope() -> None:
     } <= paths
 
 
+def test_policy_names_pure_functions_instead_of_whole_modules() -> None:
+    policy = load_policy()
+    patterns = [pattern for target in policy.targets for pattern in target.mutant_patterns]
+    assert patterns
+    assert all(not pattern.endswith(".*") for pattern in patterns)
+    for required in (
+        "position_volume",
+        "simulate",
+        "trailing_floor",
+        "tail_cap",
+        "r_multiples",
+        "segment_at",
+        "window_returns",
+        "compare",
+    ):
+        assert any(required in pattern for pattern in patterns)
+
+
 def test_fast_scope_reuses_the_classifier_and_selects_changed_r3_targets() -> None:
     policy = load_policy()
     selected = select_fast_targets(["README.md", "live/risk_control.py"], policy, load_model())
@@ -113,6 +131,36 @@ def test_committed_critical_baseline_is_complete_and_explained() -> None:
     assert baseline.summary.total > 0
     assert baseline.summary.not_checked == 0
     assert all(item.reason.strip() for item in baseline.survivors)
+
+
+def test_baseline_rejects_an_unclassified_survivor(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.toml"
+    baseline.write_text(
+        """version = 1
+tool = "mutmut"
+tool_version = "3.5.0"
+change_explanation = "test"
+targets = ["one"]
+[summary]
+total = 1
+killed = 0
+survived = 1
+no_tests = 0
+skipped = 0
+suspicious = 0
+timeout = 0
+not_checked = 0
+interrupted = 0
+segfault = 0
+caught_by_type_check = 0
+[[survivors]]
+name = "module.x__mutmut_1"
+reason = "not enough"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="classification"):
+        load_baseline(baseline)
 
 
 def test_a_weakened_test_creates_a_survivor_and_the_ratchet_rejects_it() -> None:
@@ -201,7 +249,7 @@ def test_a_real_weakened_test_increases_survivors_and_is_caught(tmp_path: Path) 
         targets=strong.targets,
         summary=strong.summary,
         survivors=tuple(
-            Survivor(name, "reviewed probe survivor")
+            Survivor(name, "meaningful", "reviewed probe survivor")
             for name, status in strong.mutants.items()
             if status == "survived"
         ),
