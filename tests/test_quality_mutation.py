@@ -153,14 +153,48 @@ not_checked = 0
 interrupted = 0
 segfault = 0
 caught_by_type_check = 0
-[[survivors]]
-name = "module.x__mutmut_1"
+[[survivor_groups]]
+names = ["module.x__mutmut_1"]
 reason = "not enough"
 """,
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="classification"):
         load_baseline(baseline)
+
+
+def test_baseline_group_classifies_each_exact_survivor(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.toml"
+    baseline.write_text(
+        """version = 1
+tool = "mutmut"
+tool_version = "3.5.0"
+change_explanation = "test"
+targets = ["one"]
+[summary]
+total = 2
+killed = 0
+survived = 2
+no_tests = 0
+skipped = 0
+suspicious = 0
+timeout = 0
+not_checked = 0
+interrupted = 0
+segfault = 0
+caught_by_type_check = 0
+[[survivor_groups]]
+classification = "meaningful"
+reason = "reviewed gap"
+names = ["module.x__mutmut_1", "module.x__mutmut_2"]
+""",
+        encoding="utf-8",
+    )
+    loaded = load_baseline(baseline)
+    assert loaded.survivors == (
+        Survivor("module.x__mutmut_1", "meaningful", "reviewed gap"),
+        Survivor("module.x__mutmut_2", "meaningful", "reviewed gap"),
+    )
 
 
 def test_a_weakened_test_creates_a_survivor_and_the_ratchet_rejects_it() -> None:
