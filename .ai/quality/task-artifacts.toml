@@ -1,0 +1,26 @@
+version = 1
+required_files = ["spec.md", "impact.md", "test-plan.md", "review.md", "evidence.md"]
+resolved_review_statuses = ["resolved", "closed", "false-positive", "not-applicable"]
+
+[sections]
+"spec.md" = [
+  "Problem",
+  "Goal",
+  "Non-goals",
+  "Behavioural requirements",
+  "Acceptance criteria",
+  "Invariants",
+  "Assumptions",
+  "Open questions",
+  "Expected artifacts",
+  "Risk class",
+  "Human decisions required",
+]
+"impact.md" = [
+  "Direct impact",
+  "Transitive impact",
+  "Critical dependencies",
+  "Unknown or dynamic edges",
+]
+"review.md" = ["Findings", "Dispositions"]
+"evidence.md" = ["HEAD", "Commands", "Coverage and mutation", "Deferred checks"]

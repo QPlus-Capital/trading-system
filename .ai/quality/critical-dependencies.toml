@@ -1,0 +1,40 @@
+version = 1
+
+[[edges]]
+source = "research/engine/continuous.py"
+tests = [
+  "tests/test_research_continuous_integration.py",
+  "tests/test_research_continuous_windows.py",
+  "tests/test_research_candidate_matrix.py",
+]
+possibly_affected = [
+  "tests/test_research_portfolio_trades.py",
+  "tests/test_research_stages.py",
+]
+reason = "continuous OOS execution feeds Stage 1 candidate scoring and Stage 3 trade extraction"
+
+[[edges]]
+source = "live/risk_control.py"
+tests = [
+  "tests/test_live_risk_control.py",
+  "tests/test_live_runner.py",
+  "tests/test_live_runner_cycle.py",
+  "tests/test_gate_consistency.py",
+]
+possibly_affected = [
+  "tests/test_monitoring_risk_view.py",
+  "tests/test_strategy_sizing_basis.py",
+]
+reason = "the live risk controller gates runner entries and supplies monitoring semantics"
+
+[[edges]]
+source = "core/strategies/rsi_wpr_bb_signals.py"
+tests = [
+  "tests/test_strategies_rsi_wpr_bb.py",
+  "tests/test_live_parity_check.py",
+]
+possibly_affected = [
+  "tests/test_live_runner.py",
+  "tests/test_research_continuous_integration.py",
+]
+reason = "the pure signal engine must remain identical across backtest and live adapters"
