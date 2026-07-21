@@ -193,6 +193,11 @@ glob = ".ai/quality/**"
 min_class = "R3"
 reason = "the risk model and finding registry govern every other change"
 
+[[rules]]
+glob = "scripts/quality/**"
+min_class = "R3"
+reason = "the classifier and pr-ready logic decide every other change's gates"
+
 # ---- R3: data ingestion (result integrity) ----
 [[rules]]
 glob = "core/data/**"

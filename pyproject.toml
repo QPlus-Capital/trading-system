@@ -32,7 +32,7 @@ packages = ["core", "research", "live", "monitoring"]
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-src = ["core", "research", "live", "monitoring", "tests"]
+src = ["core", "research", "live", "monitoring", "tests", "scripts"]
 
 [tool.ruff.lint]
 # A pragmatic, strict-ish default set: pyflakes, pycodestyle, isort,
@@ -45,7 +45,7 @@ select = ["E", "F", "I", "UP", "B", "C4", "SIM"]
 
 [tool.mypy]
 python_version = "3.13"
-files = ["core", "research", "live", "monitoring", "tests"]
+files = ["core", "research", "live", "monitoring", "tests", "scripts"]
 strict = true
 # NautilusTrader is added later and ships partial type info; don't fail on it.
 ignore_missing_imports = true
@@ -53,3 +53,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# Repo root on sys.path so the dev tooling under scripts/ is importable in tests without shipping
+# it in the wheel (it is not a runtime dependency of the trading system).
+pythonpath = ["."]

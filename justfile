@@ -38,4 +38,8 @@ check:
     uv run ruff check .
     uv run mypy
     uv run pytest -q
-    uvx vulture core research live monitoring --min-confidence 80
+    uvx vulture core research live monitoring scripts --min-confidence 80
+
+# Risk class (R0–R3) and required gates for this branch vs origin/main (or pass explicit paths)
+classify *paths:
+    uv run python -m scripts.quality.classify {{paths}}

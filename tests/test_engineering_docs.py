@@ -9,12 +9,12 @@ rule.
 
 from __future__ import annotations
 
-import fnmatch
 import tomllib
 from pathlib import Path
 from typing import Any
 
 import pytest
+from scripts.quality.classify import classify_path, load_model
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CLAUDE = _ROOT / "CLAUDE.md"
@@ -24,7 +24,6 @@ _RISK_DOC = _ROOT / "docs" / "engineering" / "risk-classes.md"
 _RISK_MODEL = _ROOT / ".ai" / "quality" / "risk-classes.toml"
 
 _CLASSES = ("R0", "R1", "R2", "R3")
-_RANK = {c: i for i, c in enumerate(_CLASSES)}
 
 
 def _text(path: Path) -> str:
@@ -36,22 +35,10 @@ def _model() -> dict[str, Any]:
     return tomllib.loads(_text(_RISK_MODEL))
 
 
-def _classify(path: str, model: dict[str, Any]) -> str:
-    """The class a changed path resolves to: the highest matched rule, else the default.
-
-    This mirrors the intended classifier semantics (the production CLI is built on top of this in a
-    later PR); it exists here so the money-path guarantees below are executable rather than asserted
-    on token presence. ``fnmatchcase`` is deterministic across platforms; ``*`` spans ``/`` so
-    ``core/**`` matches a nested file.
-    """
-    matched = [
-        r["min_class"] for r in model["rules"] if fnmatch.fnmatchcase(path, r["glob"])
-    ]
-    if matched:  # an explicit rule always wins over the docs-only shortcut
-        return str(max(matched, key=lambda c: _RANK[c]))
-    if any(fnmatch.fnmatchcase(path, g) for g in model["docs_only_globs"]):
-        return "R0"
-    return str(model["default_min_class"])
+def _class_of(path: str) -> str:
+    """The class the PRODUCTION classifier assigns -- one implementation, so the model, the tooling
+    and these guards cannot disagree."""
+    return classify_path(path, load_model()).risk_class
 
 
 # --------------------------------------------------------------- the three documents cross-link
@@ -188,7 +175,7 @@ def test_money_path_classifies_as_R3(path: str) -> None:
     assert (_ROOT / path).exists(), (
         f"the classification guard names {path}, which no longer exists -- update _MUST_BE_R3."
     )
-    got = _classify(path, _model())
+    got = _class_of(path)
     assert got == "R3", (
         f"{path} classifies as {got}, not R3. A money / methodology / result-integrity path must "
         "not be able to reach a PR without the R3 gates and a human merge."
@@ -208,7 +195,7 @@ _CLASSIFY_CASES = (
 
 @pytest.mark.parametrize("path,expected", _CLASSIFY_CASES, ids=lambda v: v)
 def test_classification_of_representative_paths(path: str, expected: str) -> None:
-    assert _classify(path, _model()) == expected
+    assert _class_of(path) == expected
 
 
 def test_risk_doc_and_model_agree() -> None:
