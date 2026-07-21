@@ -223,8 +223,9 @@ def net_r(trades: pd.DataFrame) -> np.ndarray:
 def flat_base_pnl(trades: pd.DataFrame, account: AccountProfile) -> np.ndarray:
     """Each trade's EUR contribution at exactly the base risk, sized FLAT off the start balance.
 
-    Built from ``r`` (not ``pnl_base``, which compounds with the backtest's growing equity), so the
-    daily simulation can scale it linearly by any risk multiple without inventing compounding.
+    Built from ``r`` (not ``pnl_base``, which compounds with the backtest's equity in the
+    full-history stream), so the daily simulation can scale it linearly by any risk multiple
+    without inventing compounding, whichever stream the trades came from.
     """
     r = trades["r"].to_numpy(dtype=float)
     out: np.ndarray = r * account.base_risk_frac * account.start_balance

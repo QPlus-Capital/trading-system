@@ -21,7 +21,12 @@ from nautilus_trader.config import PositiveInt, StrategyConfig
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar, BarType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.events import PositionClosed, PositionOpened
+from nautilus_trader.model.events import (
+    OrderDenied,
+    OrderRejected,
+    PositionClosed,
+    PositionOpened,
+)
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
@@ -68,6 +73,17 @@ class RsiWprBbConfig(StrategyConfig, frozen=True):
     stop_loss_pct: float = 0.0
     take_profit_pct: float = 0.0
     risk_per_trade_pct: float = 0.0
+
+    # The equity ``risk_per_trade_pct`` is a percentage OF. Zero -- the default and every live
+    # path -- reads the account's live balance, which compounds as it should for live trading.
+    #
+    # A scoring backtest sets this to a constant instead. Sizing is not scale-invariant: lot
+    # quantisation, minimum and maximum quantities and margin bind differently at 50k than at
+    # 500m. A continuous walk-forward run (``segments`` above) is one engine run across years, so a
+    # live basis would size each window off a different account, and an index run reaches the
+    # engine's MONEY_MAX ceiling (9_223_372_036) and the worker dies. A constant basis sizes every
+    # trade off the same equity, so every window is measured on one footing. Money, so ``Decimal``.
+    sizing_equity: Decimal = Decimal(0)
 
     # Read-only warm-up boundary (ns since epoch; 0 = trade from the first bar). Bars before it
     # still feed the indicators -- they MUST, or the engine desyncs -- but place no orders. The
@@ -306,6 +322,18 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
         return bool(sl > 0 and tp > 0)
 
     def _account_equity(self) -> float | None:
+        """The equity a position is sized as a percentage of.
+
+        ``sizing_equity`` replaces the account's live balance with a constant, so a run spanning
+        years sizes every trade from the same basis instead of compounding into conditions the
+        earlier windows never traded under. Zero -- the default, and every live path -- reads the
+        account, so nothing outside a continuous research run changes.
+        """
+        if self.config.sizing_equity > 0:
+            # Decimal basis converted at the point the existing sizing path becomes float
+            # (``balance.as_double()`` below) -- the money is carried as Decimal, spent as float,
+            # exactly like the live branch.
+            return float(self.config.sizing_equity)
         assert self.instrument is not None
         account = self.portfolio.account(self.instrument.id.venue)
         if account is None:
@@ -342,6 +370,32 @@ class RsiWprBb(Strategy):  # type: ignore[misc]
             quantity=qty,
         )
         self.submit_order(order)
+
+    def on_order_denied(self, event: OrderDenied) -> None:
+        self._refuse_dropped_entry("denied", event.reason)
+
+    def on_order_rejected(self, event: OrderRejected) -> None:
+        self._refuse_dropped_entry("rejected", event.reason)
+
+    def _refuse_dropped_entry(self, verb: str, reason: object) -> None:
+        """A scoring run may not lose an intended entry silently.
+
+        Constant-basis sizing sets the position size but does NOT isolate the engine account's
+        free margin, which still carries every prior trade's PnL. On a drawn-down path an entry
+        can be denied for margin while the account is still solvent; it then vanishes from the
+        positions report, and :func:`window_returns` -- which only objects once closed PnL drives
+        equity to zero -- reports that window as a harmless zero-trade window. That silently
+        flatters exactly the losing candidates a constant-basis run exists to compare equally.
+
+        So in a scoring run (``sizing_equity`` set) a dropped order is a hard stop, not a shrug.
+        Live keeps the default behaviour: ``sizing_equity`` is zero, real rejections happen, and
+        the runner must survive them.
+        """
+        if self.config.sizing_equity > 0:
+            raise RuntimeError(
+                f"scoring run lost an entry: order {verb} ({reason}). A constant-basis run must "
+                "not drop an intended trade, or the window is scored as if it never wanted one."
+            )
 
     def on_stop(self) -> None:
         """Clean up when the strategy stops, flattening only if asked to."""

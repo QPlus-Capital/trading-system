@@ -18,7 +18,12 @@ import pandas as pd
 from core.broker import TTP_MARKETS
 
 from research.engine.config import extract_trade_pnls
-from research.engine.continuous import base_config_of, run_continuous_oos, stop_loss_lookup
+from research.engine.continuous import (
+    base_config_of,
+    run_continuous_oos,
+    scoring_params,
+    stop_loss_lookup,
+)
 from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
 from research.engine.schedule_builder import build_schedule, oos_span, pinned_params
@@ -32,28 +37,47 @@ from research.engine.walkforward import (
 from research.engine.walkforward_runner import _data_span
 
 # ``pnl_base`` is the realized PnL in the account currency at the extraction's BASE risk
-# (risk_per_trade=1%), i.e. money -- not a percentage. It COMPOUNDS with the growing equity, so it
-# must never be scaled linearly to another risk. ``r`` is the scale-invariant twin: the PnL divided
-# by the risk that trade actually took. Re-book ``r * risk_amount`` to size at any flat risk.
+# (risk_per_trade=1%), i.e. money -- not a percentage. In the walk-forward stream this function
+# produces, positions are sized off the constant basis, so ``pnl_base`` is flat; in the
+# full-history stream (:mod:`research.portfolio.tail`) it compounds with the growing equity. ``r``
+# is the scale-invariant twin either way: each trade's PnL divided by the risk that trade actually
+# took, so re-booking ``r * risk_amount`` sizes at any flat risk regardless of which stream it came
+# from.
 _COLUMNS = [
     "market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "is_long", "r"
 ]
 
 
 def assign_r(
-    rows: list[dict[str, Any]], start_balance: float, base_risk_frac: float
+    rows: list[dict[str, Any]],
+    start_balance: float,
+    base_risk_frac: float,
+    *,
+    fixed_basis: bool = False,
 ) -> list[dict[str, Any]]:
-    """Add each trade's R-multiple: ``pnl / (base_risk * equity when it was booked)``.
+    """Add each trade's R-multiple: PnL divided by the risk the trade actually took.
 
-    The backtest sizes every position at ``base_risk_frac`` of the *current* equity, so the risk a
-    trade took is recovered by walking the equity forward in close order. Walk exactly the account
-    that produced the trades: one continuous out-of-sample run (#32) is a single account, so the
-    walk spans the whole stream and its compounding is real. Splitting that walk per window would
-    reset the equity at every seam and invent a discontinuity the account never had.
+    The denominator has to match how the backtest sized the position, and the two backtests that
+    feed this size differently:
 
-    R is what makes the framework sizing-agnostic: it is independent of the backtest's own
-    compounding, so any flat or dynamic risk policy can re-book it linearly.
+    * The full-history run (``fixed_basis=False``, the default) sizes every position at
+      ``base_risk_frac`` of the *current* compounding equity, so the risk is recovered by walking
+      the equity forward in close order over the single continuous account. This path produces the
+      invariant ``full_history_trades.csv``; its behaviour must not change.
+    * The walk-forward run (``fixed_basis=True``) sizes every position off the constant
+      ``sizing_equity`` basis (:func:`research.engine.continuous.scoring_params`), so the risk is
+      the SAME ``base_risk_frac * start_balance`` for every trade -- no walk. The denominator must
+      match how the position was sized: dividing flat-sized trades by a walked compounding equity
+      reports every trade but the first at the wrong R.
+
+    R is what makes the framework sizing-agnostic: independent of the backtest's own sizing, so any
+    flat or dynamic risk policy can re-book it linearly.
     """
+    if fixed_basis:
+        risk = base_risk_frac * start_balance
+        for row in rows:
+            row["r"] = row["pnl_base"] / risk if risk > 0 else 0.0
+        return rows
     equity = start_balance
     for row in sorted(rows, key=lambda r: r["ts_closed"]):
         risk = base_risk_frac * equity
@@ -190,10 +214,12 @@ def extract_market_trades(
     rows = timed_trades_from_report(
         pos, market, stop_loss_lookup(segments), closed_from=span_start
     )
-    # ONE walk over the whole stream: with a single continuous account the compounding is real,
-    # where a per-window walk would restart the equity at the opening balance every seam.
+    # Positions were sized off the constant basis, so every trade's risk is the same
+    # base_risk_frac * start_balance -- R divides by that, not by a walked compounding equity that
+    # the flat-sized trades never traded against.
     return pd.DataFrame(
-        assign_r(rows, recipe.start_balance, recipe.base_risk_frac), columns=_COLUMNS
+        assign_r(rows, recipe.start_balance, recipe.base_risk_frac, fixed_basis=True),
+        columns=_COLUMNS,
     )
 
 
@@ -213,7 +239,10 @@ def _optimize(
         # describe the methodology that was selected.
         pnls, equity = extract_trade_pnls(
             recipe.build_run_config(
-                params,
+                # The same constant basis the OOS run uses, so selection and execution model one
+                # strategy. A compounding training run here would rank candidates by a scale the
+                # graded run does not share.
+                scoring_params(recipe, params),
                 start=(window.train_start - PREROLL).isoformat(),
                 end=window.train_end.isoformat(),
                 trade_from=window.train_start.isoformat(),

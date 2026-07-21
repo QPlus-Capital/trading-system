@@ -8,14 +8,25 @@ stays open, on its original stop and target, until it really closes.
 
 Two consequences follow from there being one account instead of many:
 
-* the equity path compounds across the entire span, which is what actually happened, rather than
-  restarting at the opening balance every window;
-* each trade appears exactly once, so the stream needs no de-duplication at the seams.
+* each trade appears exactly once, so the stream needs no de-duplication at the seams;
+* sizing is pinned to a constant basis rather than left to compound across the span.
+
+The pin matters because the strategy's sizing is not scale-invariant: lot quantisation, minimum
+and maximum quantities and margin bind differently at 50k than at 500m. Left to compound, a late
+window trades a different account size than an early one, so the per-window returns are not
+comparable and their mean is not an equal-weighted measure of edge; on index CFDs the balance also
+passes the engine's MONEY_MAX ceiling and the run dies. So every scoring backtest -- the training
+runs that select parameters and the out-of-sample run that grades them -- sizes off the same
+``sizing_equity`` via :func:`scoring_params`, and :func:`window_returns` divides by that same
+constant. Both halves are required together: a flat position size over a growing denominator would
+shrink every later window's return by whatever the account had earned. Stage 1 measures edge on
+equal footing; compounding belongs to the portfolio stage and to live trading.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from decimal import Decimal
 from typing import Any
 
 import pandas as pd
@@ -66,6 +77,18 @@ def start_balance_of(recipe: Any) -> float:
     return float(str(balances[0]).split()[0].replace("_", ""))
 
 
+def scoring_params(recipe: Any, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """``params`` plus the fixed sizing basis every scoring backtest must share.
+
+    Selection and evaluation have to model ONE strategy, so the training runs that pick the
+    parameters and the out-of-sample run that scores them must size the same way. Both go through
+    a recipe config, so both pass their parameters through here; a caller that sized without it
+    would rank candidates under compounding and then grade them flat -- the exact split this run
+    exists to remove. The basis is carried as ``Decimal`` because it is money.
+    """
+    return {**dict(params or {}), "sizing_equity": Decimal(str(start_balance_of(recipe)))}
+
+
 def base_config_of(recipe: Any) -> dict[str, Any]:
     """The configuration a recipe merges its parameters onto.
 
@@ -106,7 +129,7 @@ def run_continuous_oos(
         raise ValueError("a continuous run needs a schedule; an empty one authorises no trade")
     cfg = recipe.build_run_config(
         {
-            **dict(params or {}),
+            **scoring_params(recipe, params),
             "segments": segments,
             # The stop-time liquidation is the end of the backtest, not an exit anyone traded.
             # Booking it would put an artificial close on the final position -- exactly the
@@ -147,14 +170,19 @@ def closed_pnls(
 def window_returns(
     closed: Sequence[tuple[int, float]],
     windows: Sequence[WalkForwardWindow],
-    start_balance: float,
+    basis: float,
 ) -> list[tuple[float, list[float]]]:
     """Per window: ``(return, per-trade returns)`` from one continuous stream of ``(ts, pnl)``.
 
     A trade belongs to the window its outcome RESOLVED in, so a position straddling a boundary
-    counts once, on the far side. Each window's return is measured against the equity the account
-    actually held when that window opened -- which in a continuous run is what earlier windows
-    left behind, not the opening balance every time.
+    counts once, on the far side. Every window is measured against the SAME ``basis`` -- the
+    constant equity the run sized every trade from (``sizing_equity``), not the balance the
+    account holds by then.
+
+    The constant denominator is the other half of constant sizing, not a simplification. A flat
+    position size divided by a growing balance would report a smaller return for a later window
+    purely because earlier windows earned, the opposite of the equal footing this is for. Sizing
+    and denominator move together or neither is meaningful.
 
     Windows are treated as covering the interval up to the NEXT window's start, not merely up to
     their own end. With the study's contiguous windows the two are identical; where a step larger
@@ -173,12 +201,14 @@ def window_returns(
         # window, and an exclusive bound would drop a position closing exactly on test_end from
         # every result while its PnL still sat in the account.
         end_ns = int(pd.Timestamp(window.test_end).value) if last else starts[i + 1]
-        opening = start_balance + sum(pnl for ts, pnl in ordered if ts < start_ns)
-        if opening <= 0:
+        equity = basis + sum(pnl for ts, pnl in ordered if ts < start_ns)
+        if equity <= 0:
             # The account is gone. Reporting a flat window would let every later window average
-            # in as harmless, which flatters exactly the strategy whose losses caused this.
+            # in as harmless, which flatters exactly the strategy whose losses caused this. The
+            # denominator below stays the constant basis; this only asks whether there was still
+            # an account to trade, and a run that lost more than it started with had none.
             raise RuntimeError(
-                f"account exhausted before window {window.label}: equity {opening:,.0f} "
+                f"account exhausted before window {window.label}: equity {equity:,.0f} "
                 "-- post-ruin windows have no meaningful return and must not be averaged in"
             )
         inside = [
@@ -186,7 +216,7 @@ def window_returns(
             for ts, pnl in ordered
             if start_ns <= ts and (ts <= end_ns if last else ts < end_ns)
         ]
-        out.append((sum(inside) / opening, [pnl / opening for pnl in inside]))
+        out.append((sum(inside) / basis, [pnl / basis for pnl in inside]))
     return out
 
 
