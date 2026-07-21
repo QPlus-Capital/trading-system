@@ -2,39 +2,42 @@
 
 ## HEAD
 
-HEAD: 367e44485f713eafa2b5b2d4b1095c53f1467baa
+HEAD: dfa70635e4ca3c6599991cd1a59cdf899bbc9a76
 
 ## Commands
 
-| Command | Exit status | Result |
-|---|---:|---|
-| `uv run pytest -q tests/test_quality_validate_task.py tests/test_quality_impact.py tests/test_quality_pr_ready.py` | 1 | RED: three new modules absent during collection |
-| same focused command after implementation | 0 | GREEN: 19 tests passed before added hardening cases |
-| adversarial validator bypass cases before implementation | 1 | RED: empty section and missing command evidence were accepted |
-| `uv run pytest -q tests/test_quality_validate_task.py tests/test_quality_impact.py tests/test_quality_pr_ready.py` | 0 | GREEN: 31 tests passed |
-| `uv run ruff check .` | 0 | All checks passed |
-| `uv run mypy` | 0 | No issues in 131 source files |
-| `uv run pytest -q` | 0 | 609 passed; 86 pre-existing warnings tracked in #68 |
-| `uvx vulture core research live monitoring scripts --min-confidence 80` | 0 | No dead code reported |
-| `uv run python -m scripts.quality.validate_task 64` | 0 | Four ACs and four INVs valid |
-| `uv run python -m scripts.quality.classify ...` | 0 | Every new gate/config path reported R3 |
-| `uv run python -m scripts.quality.pr_ready 64 --base origin/main` | 0 | R3 task, risk, and current-evidence checks ready |
-| `uvx --from rust-just just --list` and recipe dry runs | 0 | New recipe syntax and argument expansion valid |
-| `uvx --from rust-just just ... check-fast origin/main` | 0 | Format, lint, types, and 31 focused tests passed |
-| `uvx --from rust-just just ... check` | 0 | Actual recipe passed: lint, types, 609 tests, and vulture |
-| `uv run ruff format --check .` | 1 | RED: 42 untouched baseline files are not formatter-clean |
-| impact determinism test before canonical ordering | 1 | RED: identical path sets produced unequal reports |
+| Gate | Command | Exit status | Result |
+|---|---|---:|---|
+| `red-first` | initial focused collection | 1 | RED: three new modules absent |
+| `red-first` | adversarial validator bypass cases | 1 | RED: empty sections and command evidence passed |
+| `red-first` | repository-wide format check | 1 | RED: 42 untouched baseline files failed |
+| `red-first` | impact determinism test | 1 | RED: path order changed the JSON |
+| `red-first` | F1/F2/F3 review guards before fixes | 1 | RED: four selected counterexamples failed as expected |
+| `format` | `just check-fast origin/main` (changed-file format phase) | 0 | Six changed Python files formatted |
+| `docs-consistency` | `uv run pytest -q tests/test_docs_architecture_map.py tests/test_engineering_docs.py` | 0 | 56 passed |
+| `check` | `just check` via `uvx rust-just` | 0 | Ruff, mypy, 618 tests, and vulture passed |
+| `impacted-tests` | `just check-fast origin/main` via `uvx rust-just` | 0 | 40 focused tests passed |
+| `property-tests-where-applicable` | applicability review | 0 | No numerical/stateful property target in workflow parsing |
+| `integration-tests` | `uv run pytest -q` | 0 | 618 passed; 86 pre-existing warnings tracked in #68 |
+| `artifact-schema` | `uv run python -m scripts.quality.validate_task 64` | 0 | Four ACs and four INVs valid |
+| `adversarial-review` | Claude adversarial review on PR #69 | 0 | F1-P1, F2-P2, and F3-P3 attempted and dispositioned |
+| `invariants` | focused validator, impact, and readiness suite | 0 | 40 tests passed |
+| `mutation-on-touched-critical` | deferred to workflow issue #65 | 1 | BLOCKED: no mutation runner; the stub is not evidence of success |
+| `parity-where-applicable` | applicability review | 0 | No signal, backtest, or live adapter changed |
+| `live-money-review` | live-path scope review | 0 | No live-money module changed; quality-gate semantics reviewed as R3 |
+| `human-decision-escalation` | Jan's issue #64 and PR #69 scope decisions | 0 | Scope and no-merge decision remain human-owned |
+| `no-autonomous-merge` | `gh pr view 69 --json isDraft,state` | 0 | PR remains open, draft, and unmerged |
+| `readiness-audit` | `uv run python -m scripts.quality.pr_ready 64 --base origin/main` | 1 | Expected NOT READY: mutation gate is non-zero; every other readiness check passed |
 
 ## Coverage and mutation
 
-Behavioural branch coverage includes malformed task artifacts, direct/transitive/inheritance/dynamic
-impact edges, risk understatement, CLI exit status, stale SHA, and the evidence-only commit rule.
-Mutation testing is out of scope for issue 64 and is explicitly represented by the `check-critical`
-stub; no mutation pass is claimed.
+Behavioural coverage includes malformed task artifacts, missing and failed cumulative gates, a
+clean full R3 gate run, empty/zero-counterexample R3 reviews, direct/transitive/inheritance/dynamic
+impact edges, ignored-artifact enforcement, stale SHA, and the evidence-only commit rule. No
+mutation pass is claimed.
 
 ## Deferred checks
 
-- Independent Claude review occurs on the opened PR.
-- Dedicated security scanning and mutation infrastructure are later workflow PRs per issue scope.
-- The combined gate invocation hit a 120-second harness timeout; each constituent command then ran
-  separately to completion with the results above.
+- Mutation testing remains blocked on workflow issue #65; therefore the real R3 task is NOT READY.
+- Dedicated security scanning remains a later workflow PR per issue scope.
+- Claude re-review of the F1/F2/F3 fixes is pending on PR #69.
