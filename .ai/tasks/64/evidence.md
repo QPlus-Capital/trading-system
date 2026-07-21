@@ -21,6 +21,7 @@ HEAD: 367e44485f713eafa2b5b2d4b1095c53f1467baa
 | `uv run python -m scripts.quality.pr_ready 64 --base origin/main` | 0 | R3 task, risk, and current-evidence checks ready |
 | `uvx --from rust-just just --list` and recipe dry runs | 0 | New recipe syntax and argument expansion valid |
 | `uvx --from rust-just just ... check-fast origin/main` | 0 | Format, lint, types, and 31 focused tests passed |
+| `uvx --from rust-just just ... check` | 0 | Actual recipe passed: lint, types, 609 tests, and vulture |
 | `uv run ruff format --check .` | 1 | RED: 42 untouched baseline files are not formatter-clean |
 | impact determinism test before canonical ordering | 1 | RED: identical path sets produced unequal reports |
 
