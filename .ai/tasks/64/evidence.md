@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: pending-final-code-commit
+HEAD: 94d1b78bb8f0deec41c94a670e0cba50be08a221
 
 ## Commands
 
@@ -18,6 +18,7 @@ HEAD: pending-final-code-commit
 | `uvx vulture core research live monitoring scripts --min-confidence 80` | 0 | No dead code reported |
 | `uv run python -m scripts.quality.validate_task 64` | 0 | Four ACs and four INVs valid |
 | `uv run python -m scripts.quality.classify ...` | 0 | Every new gate/config path reported R3 |
+| `uv run python -m scripts.quality.pr_ready 64 --base origin/main` | 0 | R3 task, risk, and current-evidence checks ready |
 | `uvx --from rust-just just --list` and recipe dry runs | 0 | New recipe syntax and argument expansion valid |
 | `uv run ruff format --check .` | 1 | RED: 42 untouched baseline files are not formatter-clean |
 
