@@ -1,0 +1,46 @@
+name: Critical mutation
+
+on:
+  pull_request:
+    paths:
+      - "live/risk_control.py"
+      - "research/portfolio/sizing.py"
+      - "research/portfolio/drawdown.py"
+      - "research/portfolio/risk.py"
+      - "research/portfolio/stats.py"
+      - "core/strategies/param_schedule.py"
+      - "research/engine/continuous.py"
+      - "research/regression.py"
+      - "tests/**"
+      - "scripts/quality/**"
+      - ".ai/quality/mutation*.toml"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "justfile"
+      - ".github/workflows/mutation.yml"
+  workflow_dispatch:
+
+jobs:
+  mutation-critical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - name: Install locked dependencies except the Windows-only MT5 bridge
+        run: uv sync --locked --no-install-package metatrader5
+      - name: Prove a real weakened test creates a caught survivor
+        run: >-
+          uv run --no-sync --with mutmut==3.5.0 pytest -q
+          tests/test_quality_mutation.py::test_a_real_weakened_test_increases_survivors_and_is_caught
+      - name: Run the focused critical mutation ratchet
+        run: uvx rust-just mutation-critical
+      - name: Retain the machine-readable mutation result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutation-critical-result
+          path: .ai/mutation/critical.toml
+          if-no-files-found: error
