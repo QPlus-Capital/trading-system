@@ -119,12 +119,14 @@ def test_a_real_weakened_test_increases_survivors_and_is_caught(tmp_path: Path) 
         if mutants.exists():
             shutil.rmtree(mutants)
         command = [sys.executable, "-m", "mutmut"]
-        subprocess.run(
+        mutation = subprocess.run(
             [*command, "run", "sample.*"],
             cwd=tmp_path,
-            check=True,
             capture_output=True,
             text=True,
+        )
+        assert mutation.returncode == 0, (
+            f"Mutmut probe failed:\nSTDOUT:\n{mutation.stdout}\nSTDERR:\n{mutation.stderr}"
         )
         result = subprocess.run(
             [*command, "results", "--all"],
