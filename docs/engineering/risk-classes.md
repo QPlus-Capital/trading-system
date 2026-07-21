@@ -8,12 +8,15 @@ companion to the machine-readable model in
 
 ## How the class is decided
 
-1. **Path minimum (conservative).** Each changed path is matched against the rules in the TOML; the
-   class is the **highest** minimum over all matched paths. A change touching only markdown/docs is
-   `R0`; anything unmatched falls back to `R1`.
+1. **Safe by default.** Each changed path is matched against the rules in the TOML; the class is the
+   **highest** among the matched rules. An explicit rule always wins. A path that matches **no** rule
+   is `R0` only if it is a plain, non-governance document (the docs-only fallback); otherwise it
+   falls back to **`R2`** — never `R1`. Governance and methodology documents (`docs/engineering/**`,
+   `docs/methodology.md`, `docs/live-runbook.md`, `docs/strategies/**`, `CLAUDE.md`, `AGENTS.md`)
+   carry explicit R3 rules, so they never take the docs-only R0 path.
 2. **Semantic upgrade (mandatory).** The author raises the class when the real impact is broader
-   than the paths suggest — e.g. an `R1`-looking helper that a sizing function calls, or a config
-   value that flows into live. Path matching may never *lower* the class below the matched minimum.
+   than the paths suggest — e.g. a helper that a sizing function calls, or a config value that flows
+   into live. Path matching may never *lower* the class below the matched minimum.
 
 The class and the one-line reason go in the task spec and the PR.
 
