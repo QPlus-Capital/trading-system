@@ -1,0 +1,97 @@
+# The finding registry required by the constitution (section 14): every confirmed reviewer finding
+# is reproduced, generalized, and recorded here so a defect CLASS becomes permanent protection and a
+# recurrence is treated as a workflow failure, not just another code bug. Read with stdlib tomllib;
+# schema enforced by tests/test_finding_registry.py.
+#
+# Each [[finding]] records: id, source, defect_class, severity, affected, root_cause,
+# why_tests_missed, regression (the test that now guards it), generalized (the rule/property), and
+# workflow_change (what skill/hook/check/rule this strengthened, or "none").
+version = 1
+
+# ---- The four representative defect classes the workflow is calibrated against ----
+
+[[finding]]
+id = "F-001"
+source = "characterize/continuous walk-forward"
+defect_class = "lifecycle-side-effect"
+severity = "P1"
+affected = "core/strategies/rsi_wpr_bb.py, research/engine/continuous.py"
+root_cause = "engine stop called close_all_positions, so an end-of-span liquidation was booked as a real OOS trade"
+why_tests_missed = "the fixture never exercised on_stop; the lifecycle was not traced end to end"
+regression = "flatten_on_stop=False path + boundary-close attribution tests"
+generalized = "for any engine/runner/context-manager, test whether stop/cleanup changes a domain-visible result"
+workflow_change = "constitution section 8 (lifecycle matrix); adversarial-review lifecycle step"
+
+[[finding]]
+id = "F-002"
+source = "continuous walk-forward"
+defect_class = "config-propagation-loss"
+severity = "P1"
+affected = "research/engine/continuous.py, core/strategies/rsi_wpr_bb.py"
+root_cause = "a constant non-default grid value (e.g. rsi_length=21) was lost between selection and execution; execution reverted to the default"
+why_tests_missed = "no test compared the value selection scored against the value execution used"
+regression = "pinned_params + scoring_params parity tests"
+generalized = "every configuration value on a changed path: test omitted, default, constant non-default, and that a validator cannot accept a mode execution silently ignores"
+workflow_change = "constitution section 5 (parity); risk model treats selection/execution as one"
+
+[[finding]]
+id = "F-003"
+source = "continuous walk-forward"
+defect_class = "unclassified-outcome-bucket"
+severity = "P1"
+affected = "research/engine/continuous.py (window_returns)"
+root_cause = "a position closing in a gap between windows (step > test) belonged to no result bucket while its PnL still moved the next window's balance"
+why_tests_missed = "the study's windows are contiguous, so the gap case never arose in tests"
+regression = "gapped-window attribution tests in test_research_continuous_windows.py"
+generalized = "enumerate every domain outcome; assert each accepted record lands in exactly one bucket and none is dropped or double-counted"
+workflow_change = "constitution section 8 (reconciliation properties)"
+
+[[finding]]
+id = "F-004"
+source = "research/regression.py"
+defect_class = "numeric-boundary"
+severity = "P1"
+affected = "research/regression.py"
+root_cause = "trade-count drift computed as 0% when the reference count was zero, hiding a real zero->nonzero transition"
+why_tests_missed = "no test covered a zero reference with a nonzero candidate"
+regression = "zero-reference drift tests in test_research_regression.py"
+generalized = "test zero/empty/NaN/inf reference and candidate, and every near-zero denominator; an undefined ratio is a stop, not a pass"
+workflow_change = "constitution section 6 (guard every denominator); section 8 (numeric matrix)"
+
+# ---- Confirmed classes from building this workflow ----
+
+[[finding]]
+id = "F-005"
+source = "PR #57 (constant-basis sizing)"
+defect_class = "coupled-quantity-partial-change"
+severity = "P1"
+affected = "core/strategies/rsi_wpr_bb.py, research/engine/continuous.py, research/portfolio/trades.py, research/engine/characterize.py"
+root_cause = "the sizing basis was pinned at one call site (OOS execution) while training sizing, R attribution, margin, and the Stage 1 account basis were left inconsistent"
+why_tests_missed = "synthetic fixtures never compounded far enough to reveal the coupling; each site passed in isolation"
+regression = "test_strategy_sizing_basis.py, test_research_risk.py (fixed-basis), account_balance_of tests"
+generalized = "before changing a coupled quantity (sizing basis, risk denominator, cost), enumerate EVERY entry point and change them in one pass; a partial change is the dominant multi-round defect"
+workflow_change = "CLAUDE.md protocol step 2; risk-classes.md upgrade rationale"
+
+[[finding]]
+id = "F-006"
+source = "PR #59 (constitution + risk model)"
+defect_class = "risk-model-underclassification"
+severity = "P1"
+affected = ".ai/quality/risk-classes.toml"
+root_cause = "money/methodology paths matched no rule or only a too-broad fallback and fell below R3 (a directory glob for a file module, no live/** catch-all, broker snapshot only core/**, research fallback R2)"
+why_tests_missed = "the consistency test asserted token presence, not that concrete paths classify R3"
+regression = "test_money_path_classifies_as_R3 in test_engineering_docs.py"
+generalized = "for the risk model, assert concrete production paths on the money/methodology/result path resolve to R3 via the matcher; keep catch-alls so nothing falls through"
+workflow_change = "risk model catch-alls (live/**, research/engine/**, research/portfolio/**, .ai/quality/**)"
+
+[[finding]]
+id = "F-007"
+source = "PR #59 (constitution + risk model)"
+defect_class = "doc-model-drift"
+severity = "P2"
+affected = "docs/engineering/risk-classes.md, docs/architecture.md"
+root_cause = "prose duplicated a list held authoritatively in the model (and in architecture.md), then drifted from it"
+why_tests_missed = "agreement was checked by keyword presence, not structurally"
+regression = "test_risk_doc_and_model_agree; test_import_boundaries architecture assertions"
+generalized = "do not duplicate a machine-authoritative list in prose; point to the source, or compare structurally in a test"
+workflow_change = "risk-classes.md points to the model as authoritative"

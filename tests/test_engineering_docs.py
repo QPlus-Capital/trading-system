@@ -75,6 +75,10 @@ _REQUIRED: tuple[tuple[str, tuple[Path, ...]], ...] = (
     ("Never touch a running live trade", (_CLAUDE,)),
     ("Never claim correctness without executable evidence", (_CONSTITUTION,)),
     ("readiness check", (_CLAUDE,)),  # PR prohibition
+    ("fail closed", (_CONSTITUTION, _CLAUDE)),  # safety default
+    ("signal engine", (_CONSTITUTION, _CLAUDE)),  # the real parity boundary
+    ("secret", (_CONSTITUTION, _CLAUDE)),  # secrets rule
+    ("english", (_CONSTITUTION, _CLAUDE)),  # english-only repository
 )
 
 
@@ -155,7 +159,14 @@ _MUST_BE_R3 = (
     "research/regression.py",
     "research/portfolio/trades.py",
     "research/portfolio/stats.py",  # per-trade R/swap attribution
+    "research/portfolio/factsheet.py",  # reported results; fell to research/** = R2 before review
+    "research/portfolio/curves.py",  # equity/swap/holdout curves
+    "research/engine/config.py",  # the config loader live shares — parity
+    "research/engine/overfitting.py",  # DSR/PBO selection-bias methodology
+    "research/engine/schedule_builder.py",  # selected execution params and protective exits
     "research/stages/select.py",
+    ".ai/quality/risk-classes.toml",  # the model must not be able to weaken itself below R3
+    ".ai/quality/finding-patterns.toml",
 )
 
 
@@ -183,8 +194,22 @@ def test_risk_doc_and_model_agree() -> None:
     for cid in _CLASSES:
         assert cid in doc, f"{cid} is defined in the model but not documented in risk-classes.md"
     assert ".ai/quality/risk-classes.toml" in doc, "the doc must point at the model it describes"
+    # The prose must NOT re-list the globs (they drift): the model is authoritative. Guard against
+    # the specific stale form that already drifted once, and against re-introducing a raw glob list.
+    assert "core/instruments/**" not in doc, "stale glob: the model uses core/instruments.py"
+    assert "authoritative" in doc.lower(), "the doc must defer to the model as authoritative"
     # The distinctive R3-only obligations must be described, not just named -- so the prose cannot
     # drift into promising less than the model enforces.
     lowered = doc.lower()
     for concept in ("mutation", "adversarial", "live-money", "autonomous merge"):
         assert concept in lowered, f"risk-classes.md must describe the R3 obligation '{concept}'"
+
+
+def test_direct_to_main_exception_is_R0_only_everywhere() -> None:
+    """CLAUDE.md and the constitution must agree: only a trivial R0 change may skip the PR."""
+    for path in (_CLAUDE, _CONSTITUTION):
+        text = _text(path)
+        assert "R0/R1" not in text, (
+            f"{path.relative_to(_ROOT)} still permits R1 straight to main; the constitution allows "
+            "only trivial R0 there."
+        )

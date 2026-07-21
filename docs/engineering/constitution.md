@@ -38,8 +38,10 @@ would cost, real money or a real methodology guarantee.
   `research/portfolio/swap_analysis.py` reaches into the live MT5 bridge to refresh the broker swap
   snapshot. Both are architecture debt tracked for removal (move the shared piece into `core/`); a
   *new* crossing fails the test, and a removed one must leave the allowlist.
-- A strategy is **one class** in `core/strategies/`, run by either a backtest or a live config.
-  Strategy logic is never duplicated across backtest and live.
+- A strategy's signal logic is **one pure engine** (`core/strategies/rsi_wpr_bb_signals.py`, no
+  Nautilus, no MT5), driven by two thin execution adapters: the Nautilus backtest wrapper
+  (`core/strategies/rsi_wpr_bb.py`) and the live runner (`live/runner.py`). Signal logic is never
+  duplicated across them.
 
 ## 3. Real-money safety
 
@@ -50,7 +52,7 @@ would cost, real money or a real methodology guarantee.
   a runner as a side effect of another task. Never run two runners on one account (double orders).
 - Live merges need a quiet window: the runners hold old code in memory; stop them, merge,
   `uv sync`, restart.
-- Fail **closed**, never open: when a safety input is missing, ambiguous, or unverifiable, refuse
+- **Fail closed**, never open: when a safety input is missing, ambiguous, or unverifiable, refuse
   the action rather than proceed on a guess.
 
 ## 4. Research methodology invariants
@@ -69,7 +71,8 @@ would cost, real money or a real methodology guarantee.
 ## 5. Backtest / live parity
 
 - The shared signal engine (`core/strategies/rsi_wpr_bb_signals.py`) is the single source of truth;
-  backtest and live drive the same code and must produce identical signals.
+  both adapters instantiate it and must produce identical signals. The backtest wrapper and the
+  live runner each construct `RsiWprBbSignals` directly — neither reimplements a signal.
 - A change to selection must be mirrored in execution and vice versa: parameters, sizing basis, and
   cost model used to *choose* a configuration must equal those used to *run* it.
 
@@ -162,7 +165,8 @@ no gate, because the report then says the numbers held.
 ## 16. Git and commits
 
 - Feature branch → PR → CI green + adversarial review + Codex review → operator approves → merge.
-  Never commit a non-trivial change straight to `main`.
+  Only a **trivial R0** change (docs/comments) may go straight to `main`; every R1+ change — any
+  code change — goes through a branch and a PR.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`,
   `docs:`, `test:`, `chore:`. Author as **Jan Cwik <j.cwik@qplus-capital.com>**.
 - Commit and push finished, green work immediately; never push broken or half-done code.
