@@ -223,9 +223,7 @@ def load_baseline(path: Path = BASELINE_PATH) -> MutationBaseline:
         raise ValueError("every baseline survivor needs a non-empty explanation")
     classifications = {"equivalent", "irrelevant", "meaningful"}
     if any(item.classification not in classifications for item in survivors):
-        raise ValueError(
-            "survivor classification must be equivalent, irrelevant, or meaningful"
-        )
+        raise ValueError("survivor classification must be equivalent, irrelevant, or meaningful")
     return baseline
 
 
