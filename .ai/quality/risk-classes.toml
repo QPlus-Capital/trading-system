@@ -10,8 +10,10 @@ version = 1
 # Anything matching none of the rules falls back to this minimum.
 default_min_class = "R1"
 
-# If EVERY changed path matches one of these globs, the change is R0.
-docs_only_globs = ["**/*.md", "docs/**", "LICENSE"]
+# If EVERY changed path matches one of these globs, the change is R0. Both "*.md" (repository-root
+# markdown) and "**/*.md" (nested) are listed so the set is correct under both simple and recursive
+# glob semantics.
+docs_only_globs = ["*.md", "**/*.md", "docs/**", "LICENSE"]
 
 [classes.R0]
 name = "Documentation or comments only"
@@ -67,6 +69,13 @@ glob = "live/config/**"
 min_class = "R3"
 reason = "configuration promoted to live"
 
+# Catch-all so no live file can fall through to a lower class. The specific rules above give better
+# reasons; this guarantees signal-parity checks and any future live file are at least R3.
+[[rules]]
+glob = "live/**"
+min_class = "R3"
+reason = "the live trading package"
+
 # ---- R3: strategy, broker, money, methodology, result integrity ----
 [[rules]]
 glob = "core/strategies/**"
@@ -79,9 +88,14 @@ min_class = "R3"
 reason = "broker/instrument conversion and money calculations"
 
 [[rules]]
-glob = "core/instruments/**"
+glob = "core/instruments.py"
 min_class = "R3"
 reason = "instrument definitions feed sizing and money conversion"
+
+[[rules]]
+glob = "core/config/broker/**"
+min_class = "R3"
+reason = "broker swap/cost snapshots feed swap_r and net statistical returns"
 
 [[rules]]
 glob = "research/regression.py"
@@ -117,6 +131,11 @@ reason = "full-history tail cap — the invariant artifact"
 glob = "research/portfolio/stress.py"
 min_class = "R3"
 reason = "crisis-derived risk ceiling"
+
+[[rules]]
+glob = "research/portfolio/stats.py"
+min_class = "R3"
+reason = "per-trade R and swap attribution — gross/net stream integrity"
 
 [[rules]]
 glob = "research/engine/continuous.py"

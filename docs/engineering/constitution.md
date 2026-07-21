@@ -31,7 +31,13 @@ would cost, real money or a real methodology guarantee.
 - Four flat packages: `core/` (shared: strategies, instruments, broker, data), `research/`,
   `live/`, `monitoring/`. No `src/` nesting.
 - Dependencies flow inward to `core/`. `research/`, `live/`, and `monitoring/` may depend on
-  `core/`; `core/` depends on none of them; `research/` and `live/` do not import each other.
+  `core/`; `core/` depends on none of them. `research/` and `live/` do not import each other's
+  domain logic. Two crossings exist today and are the **only** ones permitted, each an explicit,
+  shrinking allowlist entry in `tests/test_import_boundaries.py`: `live/` may import the generic
+  config-module loader `research.engine.config` to read its own config; and
+  `research/portfolio/swap_analysis.py` reaches into the live MT5 bridge to refresh the broker swap
+  snapshot. Both are architecture debt tracked for removal (move the shared piece into `core/`); a
+  *new* crossing fails the test, and a removed one must leave the allowlist.
 - A strategy is **one class** in `core/strategies/`, run by either a backtest or a live config.
   Strategy logic is never duplicated across backtest and live.
 
