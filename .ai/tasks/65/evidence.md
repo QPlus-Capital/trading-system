@@ -11,6 +11,7 @@ HEAD: 5f8ea724924a4ba547c10349f8a148ba11882eb6
 | `red-first` | initial focused collection | 1 | RED: `tests.support` and `scripts.quality.mutation` absent |
 | `red-first` | first property/helper execution | 1 | RED: boundary zip and fixture-lifetime counterexamples found in new tests |
 | `red-first` | native Windows Mutmut probe | 1 | RED: Mutmut 3.5.0 refuses native Windows and requires WSL/Linux |
+| `red-first` | first Linux Mutmut probe via `python -m` | 1 | RED: trampoline re-imported `mutmut.__main__` and reset multiprocessing context |
 | `format` | pending final command | 1 | PENDING |
 | `docs-consistency` | pending final command | 1 | PENDING |
 | `check` | pending final command | 1 | PENDING |
