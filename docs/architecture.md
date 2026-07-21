@@ -263,6 +263,10 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `scripts/quality/validate_task.py` | Validates task sections, AC/INV test traceability, and review dispositions |
 | `scripts/quality/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `scripts/quality/pr_ready.py` | Composes risk, task, review, traceability, and evidence-freshness gates |
+| `scripts/quality/mutation.py` | Runs focused Linux mutation scopes and enforces the TOML survivor ratchet |
+
+Test design matrices, reusable semantic assertions, deterministic property strategies, and the
+Windows/Linux mutation split are specified in `docs/engineering/testing.md`.
 
 ---
 
@@ -304,7 +308,7 @@ flowchart TD
 | `live/config/` | frozen live configs (promotion == adding one) | yes |
 | `core/config/broker/` | pulled swap snapshots per broker | yes |
 | `docs/` | methodology (the spec), runbook, this file | yes |
-| `.ai/quality/` | TOML risk, finding, task-schema, and critical-dependency models | yes |
+| `.ai/quality/` | TOML risk, finding, task-schema, critical-dependency, and mutation models | yes |
 | `.ai/tasks/` | concise task specifications, test traceability, review, and evidence | yes |
 | `.ai/impact/test-map.json` | local conservative changed-file test-impact recommendation | no |
 

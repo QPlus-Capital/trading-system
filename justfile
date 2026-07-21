@@ -59,9 +59,17 @@ check-fast range="origin/main":
 check-security:
     @uv run python -c "print('STUB: no automated security scanner is configured; human review required')"
 
-# Explicit placeholder until critical-path mutation testing lands; never substitutes for `just check`
-check-critical:
-    @uv run python -c "print('STUB: no critical-path mutation runner is configured; record deferral')"
+# Fast mutation feedback for configured R3 modules changed on this branch (Linux/WSL only)
+mutation-fast range="origin/main":
+    uv run --no-sync --with mutmut==3.5.0 python -m scripts.quality.mutation run --scope fast --base {{range}}
+
+# Full focused critical mutation scope with the committed TOML ratchet (Linux/WSL only)
+mutation-critical:
+    uv run --no-sync --with mutmut==3.5.0 python -m scripts.quality.mutation run --scope critical
+
+# Critical-path gate; never substitutes for `just check`
+check-critical range="origin/main":
+    just mutation-fast {{range}}
 
 # Validate task artifacts, traceability, risk classification, review findings, and HEAD evidence
 pr-ready task_id="" range="origin/main":

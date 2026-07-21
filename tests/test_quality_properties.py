@@ -1,0 +1,227 @@
+"""Deterministic properties over high-value pure trading and quality logic."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import replace
+from decimal import Decimal
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import numpy as np
+import pandas as pd
+import pytest
+from core.strategies.param_schedule import ParamSegment, entry_params_at, segment_at
+from hypothesis import given
+from hypothesis import strategies as st
+from live.risk_control import RiskController, RiskLimits, position_volume
+from research.engine.continuous import window_returns
+from research.engine.walkforward import WalkForwardWindow
+from research.portfolio.drawdown import evaluate, trailing_floor
+from research.portfolio.sizing import flat, simulate
+from research.regression import Thresholds, compare
+from scripts.quality.classify import classify_paths, load_model
+
+from tests.support.assertions import assert_limit_monotonicity
+from tests.support.strategies import (
+    SymbolLotMetadata,
+    TradeSample,
+    finite_decimals,
+    schedule_segments,
+    symbol_lot_metadata,
+    trade_streams,
+    valid_windows,
+)
+
+
+@given(
+    finite_decimals(min_value=Decimal("0.01"), max_value=Decimal("10000"), places=2),
+    finite_decimals(min_value=Decimal("0.0001"), max_value=Decimal("100"), places=4),
+    symbol_lot_metadata(),
+)
+def test_position_volume_never_exceeds_the_requested_risk(
+    risk: Decimal, stop: Decimal, metadata: SymbolLotMetadata
+) -> None:
+    tick_size = float(metadata.tick_size)
+    tick_value = float(metadata.tick_value)
+    volume = position_volume(
+        float(risk),
+        float(stop),
+        tick_size,
+        tick_value,
+        min_lot=float(metadata.min_lot),
+        lot_step=float(metadata.lot_step),
+        max_lot=float(metadata.max_lot),
+    )
+    actual_risk = volume * (float(stop) / tick_size) * tick_value
+    assert actual_risk <= float(risk) + 1e-7
+    assert 0.0 <= volume <= float(metadata.max_lot)
+
+
+@given(
+    start=st.floats(min_value=50_000, max_value=500_000, allow_nan=False, allow_infinity=False),
+    equity_frac=st.floats(min_value=0.96, max_value=1.04, allow_nan=False, allow_infinity=False),
+    open_frac=st.floats(min_value=0.0, max_value=0.018, allow_nan=False, allow_infinity=False),
+    trade_frac=st.floats(min_value=0.0, max_value=0.003, allow_nan=False, allow_infinity=False),
+)
+def test_stricter_live_limits_never_admit_a_trade_weaker_limits_block(
+    start: float, equity_frac: float, open_frac: float, trade_frac: float
+) -> None:
+    strict_limits = RiskLimits()
+    weak_limits = replace(
+        strict_limits,
+        gate_daily_stop=0.029,
+        trailing_stop=0.055,
+        open_risk_cap=0.025,
+        stress_mult=1.25,
+    )
+    equity = start * equity_frac
+
+    def allowed(limits: RiskLimits) -> bool:
+        controller = RiskController(limits, start)
+        controller.open_risk = start * open_frac
+        return controller.check_open(start * trade_frac, equity).allowed
+
+    assert_limit_monotonicity(
+        (strict_limits,),
+        weaker=lambda _x: allowed(weak_limits),
+        stronger=lambda _x: allowed(strict_limits),
+    )
+
+
+@given(
+    balances=st.lists(
+        st.floats(min_value=50_000, max_value=250_000, allow_nan=False, allow_infinity=False),
+        min_size=1,
+        max_size=25,
+    ),
+    scale=st.floats(min_value=0.1, max_value=10, allow_nan=False, allow_infinity=False),
+)
+def test_drawdown_floor_and_breach_are_scale_invariant(balances: list[float], scale: float) -> None:
+    start = 100_000.0
+    equity = np.asarray(balances)
+    realized = np.asarray(list(reversed(balances)))
+    floor = trailing_floor(realized, start, 0.06)
+    scaled_floor = trailing_floor(realized * scale, start * scale, 0.06)
+    assert np.allclose(scaled_floor, floor * scale)
+    assert (
+        evaluate(equity, realized, start, 0.06).breached
+        == evaluate(equity * scale, realized * scale, start * scale, 0.06).breached
+    )
+
+
+@given(schedule_segments(), st.integers(min_value=-(10**15), max_value=10**15))
+def test_parameter_schedule_lookup_matches_the_latest_started_segment(
+    segments: tuple[ParamSegment, ...], timestamp: int
+) -> None:
+    expected = next(
+        (segment for segment in reversed(segments) if segment.from_ns <= timestamp), None
+    )
+    assert segment_at(segments, timestamp) == expected
+    expected_params = (
+        None
+        if expected is None
+        else (
+            expected.stop_loss_pct,
+            expected.take_profit_pct,
+        )
+    )
+    assert entry_params_at(segments, timestamp) == expected_params
+
+
+@given(valid_windows(), st.data())
+def test_every_continuous_trade_is_attributed_exactly_once(
+    windows: tuple[WalkForwardWindow, ...], data: st.DataObject
+) -> None:
+    first = int(windows[0].test_start.value)
+    last = int(windows[-1].test_end.value)
+    closed = data.draw(
+        st.lists(
+            st.tuples(
+                st.integers(min_value=first, max_value=last),
+                st.floats(min_value=-5_000, max_value=5_000, allow_nan=False, allow_infinity=False),
+            ),
+            max_size=30,
+        )
+    )
+    result = window_returns(closed, windows, 100_000.0)
+    attributed = [
+        trade_return * 100_000.0 for _window_return, trades in result for trade_return in trades
+    ]
+    assert len(attributed) == len(closed)
+    assert sum(attributed) == pytest.approx(sum(pnl for _timestamp, pnl in closed))
+
+
+@given(trade_streams(), st.sampled_from([0.25, 0.5, 1.0, 1.5]))
+def test_flat_sizing_reconciles_to_every_realized_trade(
+    trades: tuple[TradeSample, ...], multiple: float
+) -> None:
+    rows = []
+    prices: dict[str, np.ndarray] = {}
+    for trade in trades:
+        market = trade.market
+        close_day = trade.close_day
+        entry = float(trade.entry)
+        exit_price = float(trade.exit)
+        series = np.full(max(close_day + 1, 1), entry)
+        series[close_day] = exit_price
+        prices[market] = series
+        rows.append(
+            {
+                "market": market,
+                "od": trade.open_day,
+                "cd": close_day,
+                "pnl_base": float(trade.pnl_base),
+                "swap_base": float(trade.swap_base),
+                "entry": entry,
+                "exit": exit_price,
+                "is_long": trade.is_long,
+            }
+        )
+    frame = pd.DataFrame(rows)
+    final_day = max(trade.close_day for trade in trades)
+    realized, _equity, sizes, _minimum = simulate(
+        frame, prices, 0, final_day, 100_000.0, 0.06, flat(multiple)
+    )
+    expected = 100_000.0 + sum(
+        (float(trade.pnl_base) + float(trade.swap_base)) * multiple for trade in trades
+    )
+    assert realized[-1] == pytest.approx(expected)
+    assert np.allclose(sizes, multiple)
+
+
+def _write_run(path: Path, trades: int, annual: float) -> Path:
+    path.mkdir(exist_ok=True)
+    (path / "portfolio.json").write_text(
+        json.dumps({"n_trades": trades, "ann_return_pct": annual}), encoding="utf-8"
+    )
+    (path / "full_history_trades.csv").write_text("market,r\nX,1\n", encoding="utf-8")
+    return path
+
+
+@given(
+    reference=st.integers(min_value=1, max_value=20_000),
+    drift=st.integers(min_value=-10_000, max_value=10_000),
+)
+def test_regression_trade_threshold_is_exact_and_fail_closed(reference: int, drift: int) -> None:
+    candidate = max(0, reference + drift)
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        ref = _write_run(root / "reference", reference, 40.0)
+        cand = _write_run(root / "candidate", candidate, 40.0)
+        result = compare(ref, cand, Thresholds(trade_count_pct=1.0, annual_return_pp=2.0))
+    observed = abs(candidate - reference) / reference * 100.0
+    flagged = any("trade count moved" in issue for issue in result.unexpected)
+    assert flagged == (observed > 1.0)
+
+
+@given(st.sampled_from(["README.md", "scripts/x.py", "core/paths.py", "live/runner.py"]))
+def test_classification_is_spelling_invariant_and_change_sets_take_the_maximum(path: str) -> None:
+    model = load_model()
+    forms = (path, f"./{path}", path.replace("/", "\\"))
+    classes = {classify_paths([form], model).risk_class for form in forms}
+    assert len(classes) == 1
+    assert (
+        classify_paths(["README.md", path], model).risk_class
+        == classify_paths([path], model).risk_class
+    )

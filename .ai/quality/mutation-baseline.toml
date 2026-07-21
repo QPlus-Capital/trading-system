@@ -1,0 +1,31 @@
+# This placeholder is replaced by the first clean Linux critical run before this PR is ready.
+# Baseline updates are deliberate review events: update the explanation and before/after figures.
+version = 1
+tool = "mutmut"
+tool_version = "3.5.0"
+change_explanation = "Initial focused critical-scope baseline for issue 65."
+targets = [
+    "live-risk-control",
+    "portfolio-sizing",
+    "portfolio-drawdown",
+    "portfolio-risk",
+    "portfolio-accounting",
+    "parameter-schedule",
+    "continuous-attribution",
+    "result-regression",
+]
+
+[summary]
+total = 1
+killed = 1
+survived = 0
+no_tests = 0
+skipped = 0
+suspicious = 0
+timeout = 0
+not_checked = 0
+interrupted = 0
+segfault = 0
+caught_by_type_check = 0
+
+survivors = []

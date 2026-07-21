@@ -1,0 +1,49 @@
+# Focused mutation policy. The Python orchestrator reads this with stdlib tomllib and delegates
+# R3 classification and changed-path discovery to scripts/quality/classify.py.
+version = 1
+
+[tool]
+name = "mutmut"
+version = "3.5.0"
+execution_platform = "linux"
+python = "3.13"
+
+[[targets]]
+id = "live-risk-control"
+path = "live/risk_control.py"
+mutant_pattern = "live.risk_control.*"
+
+[[targets]]
+id = "portfolio-sizing"
+path = "research/portfolio/sizing.py"
+mutant_pattern = "research.portfolio.sizing.*"
+
+[[targets]]
+id = "portfolio-drawdown"
+path = "research/portfolio/drawdown.py"
+mutant_pattern = "research.portfolio.drawdown.*"
+
+[[targets]]
+id = "portfolio-risk"
+path = "research/portfolio/risk.py"
+mutant_pattern = "research.portfolio.risk.*"
+
+[[targets]]
+id = "portfolio-accounting"
+path = "research/portfolio/stats.py"
+mutant_pattern = "research.portfolio.stats.*"
+
+[[targets]]
+id = "parameter-schedule"
+path = "core/strategies/param_schedule.py"
+mutant_pattern = "core.strategies.param_schedule.*"
+
+[[targets]]
+id = "continuous-attribution"
+path = "research/engine/continuous.py"
+mutant_pattern = "research.engine.continuous.*"
+
+[[targets]]
+id = "result-regression"
+path = "research/regression.py"
+mutant_pattern = "research.regression.*"
