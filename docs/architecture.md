@@ -275,8 +275,12 @@ flowchart TD
   what makes backtest/live parity possible. Only the thin wrapper touches Nautilus;
   only the bridge touches MT5.
 - The portfolio math never talks to an engine — stages pass it DataFrames.
-- Live imports from `research/` only the generic `load_config_module` helper (a by-path module
-  loader) to read its own config; it never touches the research engine or portfolio math.
+- The import direction has exactly **two** allowlisted crossings, both architecture debt tracked
+  for removal and frozen by `tests/test_import_boundaries.py`:
+  - `live/` imports from `research/` only the generic `load_config_module` helper (a by-path module
+    loader) to read its own config; it never touches the research engine or portfolio math.
+  - `research/portfolio/swap_analysis.py` imports `live.accounts` / `live.mt5_bridge` to refresh the
+    broker swap snapshot from the live MT5 bridge (cleanup tracked in issue #61).
 
 ---
 
