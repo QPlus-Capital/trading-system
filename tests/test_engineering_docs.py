@@ -9,8 +9,10 @@ rule.
 
 from __future__ import annotations
 
+import fnmatch
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -22,11 +24,32 @@ _RISK_DOC = _ROOT / "docs" / "engineering" / "risk-classes.md"
 _RISK_MODEL = _ROOT / ".ai" / "quality" / "risk-classes.toml"
 
 _CLASSES = ("R0", "R1", "R2", "R3")
+_RANK = {c: i for i, c in enumerate(_CLASSES)}
 
 
 def _text(path: Path) -> str:
     assert path.is_file(), f"required engineering doc is missing: {path.relative_to(_ROOT)}"
     return path.read_text(encoding="utf-8")
+
+
+def _model() -> dict[str, Any]:
+    return tomllib.loads(_text(_RISK_MODEL))
+
+
+def _classify(path: str, model: dict[str, Any]) -> str:
+    """The class a changed path resolves to: the highest matched rule, else the default.
+
+    This mirrors the intended classifier semantics (the production CLI is built on top of this in a
+    later PR); it exists here so the money-path guarantees below are executable rather than asserted
+    on token presence. ``fnmatchcase`` is deterministic across platforms; ``*`` spans ``/`` so
+    ``core/**`` matches a nested file.
+    """
+    matched = [
+        r["min_class"] for r in model["rules"] if fnmatch.fnmatchcase(path, r["glob"])
+    ]
+    if not matched:
+        return str(model["default_min_class"])
+    return str(max(matched, key=lambda c: _RANK[c]))
 
 
 # --------------------------------------------------------------- the three documents cross-link
@@ -118,8 +141,50 @@ def test_every_R3_live_money_path_is_in_the_model() -> None:
     assert not missing, f"these money/methodology paths must be R3 in the model: {sorted(missing)}"
 
 
-def test_risk_doc_and_model_agree_on_the_classes() -> None:
+#: Concrete production paths whose classification is safety-critical. Each MUST resolve to R3, and
+#: each must still exist so the guard cannot rot into asserting on a deleted path. Several were
+#: gaps found in review: the money paths a weak model let slip to R1/R2.
+_MUST_BE_R3 = (
+    "live/risk_control.py",
+    "live/runner.py",
+    "live/accounts.py",
+    "live/parity_check.py",  # signal parity — fell to the R1 default before review
+    "core/instruments.py",  # a file, not a package — the dir glob never matched it
+    "core/broker.py",
+    "core/config/broker/ttp_markets_swaps.json",  # swap snapshot feeds swap_r; matched only core/**
+    "research/regression.py",
+    "research/portfolio/trades.py",
+    "research/portfolio/stats.py",  # per-trade R/swap attribution
+    "research/stages/select.py",
+)
+
+
+@pytest.mark.parametrize("path", _MUST_BE_R3, ids=lambda p: p)
+def test_money_path_classifies_as_R3(path: str) -> None:
+    assert (_ROOT / path).exists(), (
+        f"the classification guard names {path}, which no longer exists -- update _MUST_BE_R3."
+    )
+    got = _classify(path, _model())
+    assert got == "R3", (
+        f"{path} classifies as {got}, not R3. A money / methodology / result-integrity path must "
+        "not be able to reach a PR without the R3 gates and a human merge."
+    )
+
+
+def test_docs_only_change_is_R0() -> None:
+    model = _model()
+    globs = model["docs_only_globs"]
+    assert any(fnmatch.fnmatchcase("docs/engineering/constitution.md", g) for g in globs)
+    assert any(fnmatch.fnmatchcase("README.md", g) for g in globs)
+
+
+def test_risk_doc_and_model_agree() -> None:
     doc = _text(_RISK_DOC)
     for cid in _CLASSES:
         assert cid in doc, f"{cid} is defined in the model but not documented in risk-classes.md"
     assert ".ai/quality/risk-classes.toml" in doc, "the doc must point at the model it describes"
+    # The distinctive R3-only obligations must be described, not just named -- so the prose cannot
+    # drift into promising less than the model enforces.
+    lowered = doc.lower()
+    for concept in ("mutation", "adversarial", "live-money", "autonomous merge"):
+        assert concept in lowered, f"risk-classes.md must describe the R3 obligation '{concept}'"
