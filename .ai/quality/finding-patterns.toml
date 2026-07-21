@@ -131,3 +131,15 @@ why_tests_missed = "the stale-entry check existed for research->live but not liv
 regression = "test_live_to_research_allowlist_has_no_stale_entries"
 generalized = "an exception allowlist must ratchet: assert each entry is still actually present, so it can only shrink"
 workflow_change = "both crossing directions now have stale-entry tests"
+
+[[finding]]
+id = "F-011"
+source = "PR #70 (mutation execution)"
+defect_class = "correct-code-wrong-entrypoint"
+severity = "P2"
+affected = "scripts/quality/mutation.py"
+root_cause = "the wrapper launched mutmut with python -m, so trampolines imported mutmut.__main__ under a second identity and repeated multiprocessing setup before any mutant ran"
+why_tests_missed = "native Windows correctly refused mutation, while the initial Linux probe captured the child error without exposing it"
+regression = "console-script resolution unit test plus the real Linux weakened-test mutation probe"
+generalized = "test the exact production entrypoint on its supported platform; importable code is not evidence that the command path executes"
+workflow_change = "mutation CI runs the real console script and must complete the weakened-test probe before the baseline"

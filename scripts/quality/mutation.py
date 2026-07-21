@@ -343,13 +343,30 @@ def _validate_mutmut_config(policy: MutationPolicy) -> None:
         )
 
 
+def mutation_executable(tool: str, python: str, system: str) -> str:
+    """Resolve the console script beside the overlay Python, never ``python -m mutmut``.
+
+    Mutmut's trampolines import ``mutmut.__main__``. Launching that module as ``__main__`` creates
+    a second module identity when the trampoline imports it, rerunning multiprocessing setup and
+    failing on Linux before any mutant executes.
+    """
+    name = f"{tool}.exe" if system == "Windows" else tool
+    candidate = Path(python).with_name(name)
+    if candidate.is_file():
+        return str(candidate)
+    found = shutil.which(name)
+    if found is None:
+        raise RuntimeError(f"cannot find the {tool!r} console script beside {python!r} or on PATH")
+    return found
+
+
 def _tool_command(policy: MutationPolicy) -> list[str]:
     installed = importlib.metadata.version(policy.tool)
     if installed != policy.tool_version:
         raise RuntimeError(
             f"mutation policy requires {policy.tool} {policy.tool_version}, found {installed}"
         )
-    return [sys.executable, "-m", policy.tool]
+    return [mutation_executable(policy.tool, sys.executable, platform.system())]
 
 
 def run(scope: str, base: str, output: Path | None = None) -> int:

@@ -18,6 +18,7 @@ from scripts.quality.mutation import (
     ensure_supported_platform,
     load_baseline,
     load_policy,
+    mutation_executable,
     parse_mutmut_results,
     select_fast_targets,
 )
@@ -58,6 +59,16 @@ def test_mutmut_results_are_parsed_into_machine_statuses() -> None:
         "live.risk_control.x__mutmut_1": "killed",
         "live.risk_control.x__mutmut_2": "survived",
     }
+
+
+def test_mutation_uses_the_console_script_not_python_module_execution(tmp_path: Path) -> None:
+    binary = tmp_path / "bin"
+    binary.mkdir()
+    python = binary / "python"
+    console = binary / "mutmut"
+    python.touch()
+    console.touch()
+    assert mutation_executable("mutmut", str(python), "Linux") == str(console)
 
 
 def test_committed_critical_baseline_is_complete_and_explained() -> None:
@@ -118,7 +129,7 @@ def test_a_real_weakened_test_increases_survivors_and_is_caught(tmp_path: Path) 
         mutants = tmp_path / "mutants"
         if mutants.exists():
             shutil.rmtree(mutants)
-        command = [sys.executable, "-m", "mutmut"]
+        command = [mutation_executable("mutmut", sys.executable, platform.system())]
         mutation = subprocess.run(
             [*command, "run", "sample.*"],
             cwd=tmp_path,
