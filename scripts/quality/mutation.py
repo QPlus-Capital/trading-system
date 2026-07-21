@@ -360,6 +360,11 @@ def mutation_executable(tool: str, python: str, system: str) -> str:
     return found
 
 
+def all_results_command(command: Sequence[str]) -> list[str]:
+    """The Mutmut 3.5 CLI requires an explicit boolean value for ``--all``."""
+    return [*command, "results", "--all", "true"]
+
+
 def _tool_command(policy: MutationPolicy) -> list[str]:
     installed = importlib.metadata.version(policy.tool)
     if installed != policy.tool_version:
@@ -394,7 +399,7 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
     patterns = [target.mutant_pattern for target in targets]
     subprocess.run([*command, "run", *patterns], cwd=REPO_ROOT, check=True)
     listed = subprocess.run(
-        [*command, "results", "--all"],
+        all_results_command(command),
         cwd=REPO_ROOT,
         check=True,
         capture_output=True,

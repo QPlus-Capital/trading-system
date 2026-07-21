@@ -14,6 +14,7 @@ from scripts.quality.mutation import (
     MutationBaseline,
     MutationReport,
     Survivor,
+    all_results_command,
     check_baseline,
     ensure_supported_platform,
     load_baseline,
@@ -69,6 +70,10 @@ def test_mutation_uses_the_console_script_not_python_module_execution(tmp_path: 
     python.touch()
     console.touch()
     assert mutation_executable("mutmut", str(python), "Linux") == str(console)
+
+
+def test_mutmut_all_results_passes_the_required_boolean_value() -> None:
+    assert all_results_command(["mutmut"]) == ["mutmut", "results", "--all", "true"]
 
 
 def test_committed_critical_baseline_is_complete_and_explained() -> None:
@@ -140,7 +145,7 @@ def test_a_real_weakened_test_increases_survivors_and_is_caught(tmp_path: Path) 
             f"Mutmut probe failed:\nSTDOUT:\n{mutation.stdout}\nSTDERR:\n{mutation.stderr}"
         )
         result = subprocess.run(
-            [*command, "results", "--all"],
+            all_results_command(command),
             cwd=tmp_path,
             check=True,
             capture_output=True,
