@@ -1,0 +1,186 @@
+# Machine-readable change-risk model. Read with stdlib `tomllib` by the risk classifier (added in
+# the tooling PR) and by CI — no third-party dependency. Path matching is a CONSERVATIVE MINIMUM:
+# the classifier takes the highest class over all matched rules, and the author MUST upgrade when
+# semantic impact is broader than the paths suggest. It must never DOWNGRADE below the matched
+# minimum.
+#
+# Prose companion: docs/engineering/risk-classes.md. Constitution: docs/engineering/constitution.md.
+version = 1
+
+# Anything matching none of the rules falls back to this minimum.
+default_min_class = "R1"
+
+# If EVERY changed path matches one of these globs, the change is R0.
+docs_only_globs = ["**/*.md", "docs/**", "LICENSE"]
+
+[classes.R0]
+name = "Documentation or comments only"
+description = "No behaviour change. Docs, comments, markdown."
+gates = ["format", "docs-consistency"]
+
+[classes.R1]
+name = "Local non-financial implementation"
+description = "Code with no financial, methodology, or result-integrity impact (tooling, scripts)."
+gates = ["check", "impacted-tests"]
+
+[classes.R2]
+name = "Shared core / research orchestration / artifact schema / config / monitoring semantics"
+description = "Widely depended on, but not on the money or methodology path."
+gates = ["check", "property-tests-where-applicable", "integration-tests", "artifact-schema", "adversarial-review"]
+
+[classes.R3]
+name = "Live-money / sizing / risk / methodology / result integrity"
+description = "Live-money path, sizing, risk control, account identity, orders, signal parity, broker conversion, money calculations, methodology, holdout, selection, or result integrity."
+gates = ["check", "invariants", "mutation-on-touched-critical", "parity-where-applicable", "adversarial-review", "live-money-review", "human-decision-escalation", "no-autonomous-merge"]
+
+# Ordered rules; the classifier takes the MAX class over all matched rules and records the reason of
+# the highest match. Most-specific R3 paths first for clear reasons.
+
+# ---- R3: the live-money path ----
+[[rules]]
+glob = "live/risk_control.py"
+min_class = "R3"
+reason = "internal risk limits must stay stricter than the prop firm's"
+
+[[rules]]
+glob = "live/runner.py"
+min_class = "R3"
+reason = "live order placement and position sizing"
+
+[[rules]]
+glob = "live/accounts.py"
+min_class = "R3"
+reason = "account identity guard"
+
+[[rules]]
+glob = "live/mt5_bridge.py"
+min_class = "R3"
+reason = "broker bridge — orders, fills, money legs"
+
+[[rules]]
+glob = "live/preflight.py"
+min_class = "R3"
+reason = "go/no-go safety pre-flight for the live account"
+
+[[rules]]
+glob = "live/config/**"
+min_class = "R3"
+reason = "configuration promoted to live"
+
+# ---- R3: strategy, broker, money, methodology, result integrity ----
+[[rules]]
+glob = "core/strategies/**"
+min_class = "R3"
+reason = "signal parity, sizing, and exit logic shared by backtest and live"
+
+[[rules]]
+glob = "core/broker.py"
+min_class = "R3"
+reason = "broker/instrument conversion and money calculations"
+
+[[rules]]
+glob = "core/instruments/**"
+min_class = "R3"
+reason = "instrument definitions feed sizing and money conversion"
+
+[[rules]]
+glob = "research/regression.py"
+min_class = "R3"
+reason = "result-integrity gate for numerical changes"
+
+[[rules]]
+glob = "research/portfolio/risk.py"
+min_class = "R3"
+reason = "risk-constrained sizing and drawdown policy"
+
+[[rules]]
+glob = "research/portfolio/sizing.py"
+min_class = "R3"
+reason = "position sizing and intraday drawdown"
+
+[[rules]]
+glob = "research/portfolio/drawdown.py"
+min_class = "R3"
+reason = "drawdown and breach evaluation"
+
+[[rules]]
+glob = "research/portfolio/trades.py"
+min_class = "R3"
+reason = "out-of-sample trade stream, R attribution, selection/execution parity"
+
+[[rules]]
+glob = "research/portfolio/tail.py"
+min_class = "R3"
+reason = "full-history tail cap — the invariant artifact"
+
+[[rules]]
+glob = "research/portfolio/stress.py"
+min_class = "R3"
+reason = "crisis-derived risk ceiling"
+
+[[rules]]
+glob = "research/engine/continuous.py"
+min_class = "R3"
+reason = "continuous walk-forward sizing basis and window attribution"
+
+[[rules]]
+glob = "research/engine/walkforward.py"
+min_class = "R3"
+reason = "walk-forward window construction and selection"
+
+[[rules]]
+glob = "research/engine/walkforward_runner.py"
+min_class = "R3"
+reason = "selection optimiser and OOS execution"
+
+[[rules]]
+glob = "research/engine/characterize.py"
+min_class = "R3"
+reason = "Stage 1 selection and account basis"
+
+[[rules]]
+glob = "research/stages/**"
+min_class = "R3"
+reason = "selection, holdout handling, verdict, and lineage"
+
+[[rules]]
+glob = "research/config/**"
+min_class = "R3"
+reason = "methodology configuration promoted to live"
+
+# ---- R2: shared core, orchestration, artifacts, monitoring ----
+[[rules]]
+glob = "core/data/**"
+min_class = "R2"
+reason = "catalog and data ingestion — artifact schema and drift"
+
+[[rules]]
+glob = "core/**"
+min_class = "R2"
+reason = "shared core"
+
+[[rules]]
+glob = "research/**"
+min_class = "R2"
+reason = "research orchestration and reporting"
+
+[[rules]]
+glob = "monitoring/**"
+min_class = "R2"
+reason = "live-vs-backtest monitoring semantics"
+
+[[rules]]
+glob = ".github/workflows/**"
+min_class = "R2"
+reason = "CI is a quality gate"
+
+# ---- R1: tests and tooling ----
+[[rules]]
+glob = "tests/**"
+min_class = "R1"
+reason = "test-only change"
+
+[[rules]]
+glob = "scripts/**"
+min_class = "R1"
+reason = "repository tooling"
