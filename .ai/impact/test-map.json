@@ -1,7 +1,5 @@
 {
   "changed_paths": [
-    "docs/architecture.md",
-    "justfile",
     ".ai/impact/test-map.json",
     ".ai/quality/critical-dependencies.toml",
     ".ai/quality/task-artifacts.toml",
@@ -15,6 +13,8 @@
     ".ai/tasks/_templates/review.md",
     ".ai/tasks/_templates/spec.md",
     ".ai/tasks/_templates/test-plan.md",
+    "docs/architecture.md",
+    "justfile",
     "scripts/quality/impact.py",
     "scripts/quality/pr_ready.py",
     "scripts/quality/validate_task.py",

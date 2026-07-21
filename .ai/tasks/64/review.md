@@ -7,6 +7,7 @@
 | R-01 | P1 | Exact-HEAD evidence creates an impossible self-referential committed SHA | Permit exactly one later evidence-only commit; test that later code makes it stale | resolved |
 | R-02 | P2 | A typo in the critical map could silently recommend a nonexistent test | Test every configured recommendation against a real repository path | resolved |
 | R-03 | P1 | Repository-wide format checking fails on 42 untouched baseline files | Format-check only changed Python paths obtained from `changed_paths` | resolved |
+| R-04 | P2 | Impact JSON changed when the same paths arrived in a different order | Sort normalized unique paths before analysis and test order independence | resolved |
 
 ## Dispositions
 
