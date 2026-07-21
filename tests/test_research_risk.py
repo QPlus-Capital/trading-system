@@ -74,8 +74,10 @@ def test_throttle_degenerates_to_flat_when_the_floor_exceeds_the_cap() -> None:
 
 
 def test_assign_r_removes_the_backtests_compounding() -> None:
-    # Both trades earn the same money, but the second was sized off a LARGER equity, so it risked
-    # more -- its R must be smaller. That difference is exactly the compounding we must strip.
+    # The default (full-history) mode: positions were sized off the CURRENT compounding equity, so
+    # both trades earn the same money but the second risked more off a larger equity -- its R must
+    # be smaller. That difference is exactly the compounding this mode must strip. Feeds the
+    # invariant full_history_trades.csv, so its behaviour must not change.
     rows = [
         {"ts_closed": 0, "pnl_base": 2_000.0},
         {"ts_closed": 1 * DAY_NS, "pnl_base": 2_000.0},
@@ -84,6 +86,20 @@ def test_assign_r_removes_the_backtests_compounding() -> None:
     assert math.isclose(rows[0]["r"], 1.0)  # 2000 / (1% of 200,000)
     assert math.isclose(rows[1]["r"], 2_000.0 / (0.01 * 202_000.0))  # equity had grown
     assert rows[1]["r"] < rows[0]["r"]
+
+
+def test_assign_r_fixed_basis_divides_every_trade_by_the_same_risk() -> None:
+    # The walk-forward mode: positions were sized off the CONSTANT basis, so the risk each trade
+    # took is the same base_risk * start_balance regardless of position in the stream. Two trades
+    # earning the same money must report the same R -- walking a compounding equity here, against
+    # flat-sized trades, is the mismatch that made every trade after the first report the wrong R.
+    rows = [
+        {"ts_closed": 0, "pnl_base": 2_000.0},
+        {"ts_closed": 1 * DAY_NS, "pnl_base": 2_000.0},
+    ]
+    assign_r(rows, start_balance=200_000.0, base_risk_frac=0.01, fixed_basis=True)
+    assert math.isclose(rows[0]["r"], 1.0)  # 2000 / (1% of 200,000)
+    assert math.isclose(rows[1]["r"], 1.0), "a fixed basis must not shrink a later trade's R"
 
 
 def _winners() -> tuple[pd.DataFrame, dict[str, pd.Series]]:

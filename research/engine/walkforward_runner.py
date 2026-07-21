@@ -30,7 +30,7 @@ from core.data.mt5_csv import parse_mt5_timestamps, seeded_instruments
 from core.paths import REPO_ROOT
 
 from research.engine.config import extract_trade_pnls, load_config_module
-from research.engine.continuous import continuous_walk_forward
+from research.engine.continuous import continuous_walk_forward, scoring_params
 from research.engine.grid import expand_grid
 from research.engine.montecarlo import equity_curve, monte_carlo_paths, summarize
 from research.engine.walkforward import (
@@ -105,7 +105,11 @@ def run_walkforward(
         for params in combos:
             pnls, start_equity = extract_trade_pnls(
                 recipe.build_run_config(
-                    params,
+                    # Same constant basis as the OOS run that grades these choices. Without it the
+                    # training run sizes off compounding equity, so parameters are selected under
+                    # the scale-dependent behaviour the OOS run rejects, and WFE then compares a
+                    # compounded in-sample return with a flat out-of-sample one.
+                    scoring_params(recipe, params),
                     start=(train_start - PREROLL).isoformat(),
                     end=train_end.isoformat(),
                     trade_from=train_start.isoformat(),

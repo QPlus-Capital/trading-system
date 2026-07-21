@@ -57,7 +57,7 @@ def test_stage_three_extraction_produces_one_continuous_stream(market: Path) -> 
     assert not trades.duplicated(subset=["ts_opened", "ts_closed"]).any()
     assert trades["ts_closed"].is_monotonic_increasing or len(trades) == 1
     assert set(trades["sl_pct"]).issubset({0.5, 1.5})
-    assert (trades["r"] != 0).any(), "R must be assigned from the continuous equity walk"
+    assert (trades["r"] != 0).any(), "R must be assigned off the constant sizing basis"
 
     # The stream must span EVERY window, not just the first. Without this the test passes on a
     # schedule truncated to one segment -- which is exactly the stitched behaviour it exists to
@@ -101,6 +101,7 @@ def test_characterize_task_runs_the_continuous_walk_forward(market: Path) -> Non
         None,  # max_windows
         0,  # holdout_months
         7,  # embargo_days
+        100_000.0,  # start_balance -- the account the pipeline runs on, not the 200k recipe default
     )
     assert result["instrument"] == "US30"
     assert result["windows"] > 0, "no windows means the walk-forward never ran"
@@ -134,5 +135,6 @@ def test_a_grid_offering_indicator_lengths_is_still_searchable(market: Path) -> 
         None,
         0,
         7,
+        100_000.0,  # start_balance
     )
     assert result["windows"] > 0 or "error" in result
