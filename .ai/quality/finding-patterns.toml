@@ -179,3 +179,27 @@ why_tests_missed = "unit tests exercised policy and parsing without running the 
 regression = "test_mutation_skips_the_in_process_covered_line_prepass plus the repository Linux mutation job"
 generalized = "verify multi-pass test tools against native extensions on the exact supported interpreter and execution path"
 workflow_change = "disable Mutmut's covered-line prepass; explicit module and test scopes retain focus"
+
+[[finding]]
+id = "F-015"
+source = "PR #70 (isolated mutation tree)"
+defect_class = "isolated-runner-missing-resource"
+severity = "P2"
+affected = "pyproject.toml, scripts/quality/classify.py"
+root_cause = "Mutmut copied the classifier code and property test but omitted the classifier's authoritative TOML model, so clean tests failed in the isolated tree"
+why_tests_missed = "local tests ran at repository root where the model existed; only the real isolated Linux path exposed the missing non-Python resource"
+regression = "test_mutation_copies_the_classifier_model_into_the_mutant_tree plus the repository Linux mutation job"
+generalized = "inventory code and data-file dependencies whenever a tool reconstructs an isolated test tree"
+workflow_change = "copy `.ai/` into Mutmut's isolated tree so reused quality tooling executes unchanged"
+
+[[finding]]
+id = "F-016"
+source = "PR #70 (mutation result artifact)"
+defect_class = "hidden-artifact-default-exclusion"
+severity = "P2"
+affected = ".github/workflows/mutation.yml"
+root_cause = "the workflow wrote its machine report below `.ai/`, but actions/upload-artifact excludes hidden paths unless explicitly enabled"
+why_tests_missed = "the upload step had never reached a completed report and no test bound the action's hidden-file option"
+regression = "test_mutation_workflow_uploads_the_hidden_machine_report"
+generalized = "for dot-directory build evidence, assert both file creation and the uploader's hidden-file inclusion setting"
+workflow_change = "upload the machine-readable mutation report with include-hidden-files enabled"

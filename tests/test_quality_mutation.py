@@ -93,6 +93,20 @@ def test_mutation_skips_the_in_process_covered_line_prepass() -> None:
     assert config["tool"]["mutmut"]["mutate_only_covered_lines"] is False
 
 
+def test_mutation_copies_the_classifier_model_into_the_mutant_tree() -> None:
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    with pyproject.open("rb") as handle:
+        config = tomllib.load(handle)
+    assert ".ai" in config["tool"]["mutmut"]["also_copy"]
+
+
+def test_mutation_workflow_uploads_the_hidden_machine_report() -> None:
+    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "mutation.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "include-hidden-files: true" in workflow
+
+
 def test_committed_critical_baseline_is_complete_and_explained() -> None:
     baseline = load_baseline()
     assert baseline.change_explanation.strip()
