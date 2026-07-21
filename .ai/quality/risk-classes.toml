@@ -7,12 +7,18 @@
 # Prose companion: docs/engineering/risk-classes.md. Constitution: docs/engineering/constitution.md.
 version = 1
 
-# Anything matching none of the rules falls back to this minimum.
-default_min_class = "R1"
+# SAFE BY DEFAULT. This repository is almost entirely on the money / methodology / result path, so
+# the model does NOT enumerate R3 and let the rest fall low -- it defaults high and downgrades only
+# clearly-safe things. An unmatched path is R2 (it still gets adversarial review); R0/R1 are reached
+# only by an explicit rule or the docs-only fallback below.
+default_min_class = "R2"
 
-# If EVERY changed path matches one of these globs, the change is R0. Both "*.md" (repository-root
-# markdown) and "**/*.md" (nested) are listed so the set is correct under both simple and recursive
-# glob semantics.
+# Classification of a single path:
+#   1. if it matches any rule -> the HIGHEST class among the matched rules (explicit rules always
+#      win, so a governance .md matches its R3 rule rather than the docs-only fallback);
+#   2. else if it matches a docs-only glob -> R0 (a plain, non-governance doc);
+#   3. else -> default_min_class.
+# Governance and methodology documents are NOT docs-only: they have explicit R3 rules below.
 docs_only_globs = ["*.md", "**/*.md", "docs/**", "LICENSE"]
 
 [classes.R0]
@@ -187,6 +193,57 @@ glob = ".ai/quality/**"
 min_class = "R3"
 reason = "the risk model and finding registry govern every other change"
 
+# ---- R3: data ingestion (result integrity) ----
+[[rules]]
+glob = "core/data/**"
+min_class = "R3"
+reason = "reconstructs bid/ask, timestamps, spreads and bars -- a parser change alters every result"
+
+# ---- R3: the pinned engine and broker (fills, numeric behaviour) ----
+[[rules]]
+glob = "pyproject.toml"
+min_class = "R3"
+reason = "selects the NautilusTrader engine and MetaTrader bridge versions"
+
+[[rules]]
+glob = "uv.lock"
+min_class = "R3"
+reason = "pins every dependency version that produces the numbers"
+
+# ---- R3: the quality gates themselves ----
+[[rules]]
+glob = "justfile"
+min_class = "R3"
+reason = "defines the gate commands; disabling one weakens every other change's checks"
+
+[[rules]]
+glob = ".github/workflows/**"
+min_class = "R3"
+reason = "runs the gates in CI; a change here can stop enforcing them"
+
+# ---- R3: governance and methodology documents ----
+# These define the quality policy, the holdout rules and the trading methodology, so a change to
+# them must not slip through the docs-only R0 shortcut.
+[[rules]]
+glob = "docs/engineering/**"
+min_class = "R3"
+reason = "the constitution and risk model -- the governance itself"
+
+[[rules]]
+glob = "docs/methodology.md"
+min_class = "R3"
+reason = "the trading methodology and holdout discipline"
+
+[[rules]]
+glob = "CLAUDE.md"
+min_class = "R3"
+reason = "the builder contract and immutable constraints"
+
+[[rules]]
+glob = "AGENTS.md"
+min_class = "R3"
+reason = "the independent-review contract"
+
 # ---- R2: shared core, orchestration, artifacts, monitoring ----
 [[rules]]
 glob = "core/data/**"
@@ -214,12 +271,14 @@ min_class = "R2"
 reason = "CI is a quality gate"
 
 # ---- R1: tests and tooling ----
+# Tests are the guards. A "test-only" change can delete a money-path check, so it is R2 (adversarial
+# review sees it), not R1.
 [[rules]]
 glob = "tests/**"
-min_class = "R1"
-reason = "test-only change"
+min_class = "R2"
+reason = "the guards themselves -- a deleted check must be reviewed"
 
 [[rules]]
 glob = "scripts/**"
 min_class = "R1"
-reason = "repository tooling"
+reason = "repository tooling with no gate role"

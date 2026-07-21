@@ -52,4 +52,4 @@ The most expensive defects this repository has seen were **coupled-quantity** ch
 (a sizing basis, a risk denominator, a cost) was changed at one call site while other consumers were
 left inconsistent. Path matching cannot see that. Before changing such a value, enumerate every
 place it enters the pipeline and raise the class to cover all of them. See the finding registry
-(`.ai/quality/finding-patterns.yaml`) for the recorded instances.
+(`.ai/quality/finding-patterns.toml`) for the recorded instances.

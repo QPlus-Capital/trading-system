@@ -85,27 +85,65 @@ def test_research_to_live_ratchet_has_no_stale_entries() -> None:
     assert not stale, f"remove these resolved crossings from _KNOWN_RESEARCH_TO_LIVE: {stale}"
 
 
-def test_both_execution_adapters_use_the_shared_signal_engine() -> None:
-    """Parity boundary (constitution section 5): the backtest wrapper and the live runner both
-    construct the SAME pure signal engine, so neither can reimplement a signal.
+def test_live_to_research_allowlist_has_no_stale_entries() -> None:
+    """The other direction ratchets too: an allowed loader import that no longer exists must be
+    removed, so a later crossing cannot silently reuse a still-permissive allowlist."""
+    actual = {m for path in _package_files("live") for m in _imports_from(path, "research")}
+    stale = _ALLOWED_LIVE_TO_RESEARCH - actual
+    assert not stale, (
+        f"these live -> research allowlist entries are no longer imported: {sorted(stale)}. "
+        "Remove them from _ALLOWED_LIVE_TO_RESEARCH so a future crossing cannot reuse them."
+    )
+
+
+def _constructs(path: Path, name: str) -> bool:
+    """True if the source has an actual call ``name(...)`` -- an AST Call node, not a mention.
+
+    A string search (``f'{name}(' in src``) is satisfied by a comment, a docstring, or a type
+    annotation; only a real ``ast.Call`` proves the adapter constructs the engine.
     """
-    engine = "RsiWprBbSignals"
-    for rel in ("core/strategies/rsi_wpr_bb.py", "live/runner.py"):
-        src = (_ROOT / rel).read_text(encoding="utf-8")
-        assert engine in _imports_from_names(_ROOT / rel), f"{rel} must import {engine}"
-        assert f"{engine}(" in src, f"{rel} must instantiate {engine}, not reimplement signals"
-
-
-def _imports_from_names(path: Path) -> set[str]:
-    """Every imported name (module tails and from-imports), for a coarse 'is it imported' check."""
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    names: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            names.update(a.name for a in node.names)
-        elif isinstance(node, ast.Import):
-            names.update(a.name.split(".")[-1] for a in node.names)
-    return names
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id == name:
+                return True
+            if isinstance(func, ast.Attribute) and func.attr == name:
+                return True
+    return False
+
+
+def test_both_execution_adapters_construct_the_shared_signal_engine() -> None:
+    """Parity boundary (constitution section 5): the backtest wrapper and the live runner both
+    CONSTRUCT the same pure signal engine, so neither can reimplement a signal.
+    """
+    for rel in ("core/strategies/rsi_wpr_bb.py", "live/runner.py"):
+        assert _constructs(_ROOT / rel, "RsiWprBbSignals"), (
+            f"{rel} must construct RsiWprBbSignals(...), not reimplement signals"
+        )
+
+
+def test_nothing_imports_the_monitoring_layer() -> None:
+    """monitoring/ sits on top (it compares live against backtest); no package may depend on it."""
+    offenders: dict[str, list[str]] = {}
+    for package in ("core", "research", "live"):
+        for path in _package_files(package):
+            crossings = _imports_from(path, "monitoring")
+            if crossings:
+                offenders[_rid(path)] = crossings
+    assert not offenders, f"nothing may import monitoring (it is the top layer): {offenders}"
+
+
+def test_architecture_doc_lists_both_allowlisted_crossings() -> None:
+    """The doc reviewers orient from must name the same crossings the test allowlists, so the two
+    cannot drift (the earlier documentation-drift finding)."""
+    arch = (_ROOT / "docs" / "architecture.md").read_text(encoding="utf-8")
+    assert "research.engine.config" in arch or "load_config_module" in arch, (
+        "architecture.md must document the live -> research loader crossing"
+    )
+    assert "swap_analysis" in arch, (
+        "architecture.md must document the research -> live swap_analysis crossing"
+    )
 
 
 def test_core_depends_on_no_sibling_package() -> None:

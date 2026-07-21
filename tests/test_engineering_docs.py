@@ -47,9 +47,11 @@ def _classify(path: str, model: dict[str, Any]) -> str:
     matched = [
         r["min_class"] for r in model["rules"] if fnmatch.fnmatchcase(path, r["glob"])
     ]
-    if not matched:
-        return str(model["default_min_class"])
-    return str(max(matched, key=lambda c: _RANK[c]))
+    if matched:  # an explicit rule always wins over the docs-only shortcut
+        return str(max(matched, key=lambda c: _RANK[c]))
+    if any(fnmatch.fnmatchcase(path, g) for g in model["docs_only_globs"]):
+        return "R0"
+    return str(model["default_min_class"])
 
 
 # --------------------------------------------------------------- the three documents cross-link
@@ -167,6 +169,15 @@ _MUST_BE_R3 = (
     "research/stages/select.py",
     ".ai/quality/risk-classes.toml",  # the model must not be able to weaken itself below R3
     ".ai/quality/finding-patterns.toml",
+    "core/data/mt5_csv.py",  # data ingestion -> every result
+    "pyproject.toml",  # pins the engine / bridge versions
+    "uv.lock",
+    "justfile",  # the gate commands
+    ".github/workflows/ci.yml",  # runs the gates
+    "docs/engineering/constitution.md",  # governance -- not a docs-only R0
+    "docs/methodology.md",
+    "CLAUDE.md",
+    "AGENTS.md",
 )
 
 
@@ -182,11 +193,20 @@ def test_money_path_classifies_as_R3(path: str) -> None:
     )
 
 
-def test_docs_only_change_is_R0() -> None:
-    model = _model()
-    globs = model["docs_only_globs"]
-    assert any(fnmatch.fnmatchcase("docs/engineering/constitution.md", g) for g in globs)
-    assert any(fnmatch.fnmatchcase("README.md", g) for g in globs)
+#: A plain, non-governance document is R0; unmatched code is at least R2 (never R1 by default).
+_CLASSIFY_CASES = (
+    ("README.md", "R0"),
+    ("docs/architecture.md", "R0"),
+    ("docs/engineering/constitution.md", "R3"),  # governance overrides docs-only
+    ("scripts/foo.py", "R1"),
+    ("core/paths.py", "R2"),
+    ("monitoring/dashboard.py", "R2"),
+)
+
+
+@pytest.mark.parametrize("path,expected", _CLASSIFY_CASES, ids=lambda v: v)
+def test_classification_of_representative_paths(path: str, expected: str) -> None:
+    assert _classify(path, _model()) == expected
 
 
 def test_risk_doc_and_model_agree() -> None:
@@ -206,10 +226,15 @@ def test_risk_doc_and_model_agree() -> None:
 
 
 def test_direct_to_main_exception_is_R0_only_everywhere() -> None:
-    """CLAUDE.md and the constitution must agree: only a trivial R0 change may skip the PR."""
+    """CLAUDE.md and the constitution must agree: only a trivial R0 change may skip the PR.
+
+    Positive assertion, not just the absence of the old ``R0/R1`` spelling: each document must state
+    that R0 (and not a broader class) is what may go straight to main.
+    """
     for path in (_CLAUDE, _CONSTITUTION):
-        text = _text(path)
-        assert "R0/R1" not in text, (
-            f"{path.relative_to(_ROOT)} still permits R1 straight to main; the constitution allows "
-            "only trivial R0 there."
+        lowered = _text(path).lower()
+        assert "r0/r1" not in lowered, f"{path.relative_to(_ROOT)} still lets R1 reach main"
+        assert "trivial r0" in lowered and "straight to `main`" in lowered, (
+            f"{path.relative_to(_ROOT)} must state that only a trivial R0 change goes straight to "
+            "main."
         )
