@@ -43,3 +43,26 @@ check:
 # Risk class (R0–R3) and required gates for this branch vs origin/main (or pass explicit paths)
 classify *paths:
     uv run python -m scripts.quality.classify {{paths}}
+
+# Conservative changed-file impact report and machine-readable .ai/impact/test-map.json
+impact range="origin/main":
+    uv run python -m scripts.quality.impact --base {{range}}
+
+# Fast local feedback: format, lint, types, then the conservative focused-test recommendation
+check-fast range="origin/main":
+    uv run python -m scripts.quality.impact --base {{range}} --check-format
+    uv run ruff check .
+    uv run mypy
+    uv run python -m scripts.quality.impact --base {{range}} --run-focused
+
+# Explicit placeholder until the dedicated security scanner lands; succeeds without claiming a scan
+check-security:
+    @uv run python -c "print('STUB: no automated security scanner is configured; human review required')"
+
+# Explicit placeholder until critical-path mutation testing lands; never substitutes for `just check`
+check-critical:
+    @uv run python -c "print('STUB: no critical-path mutation runner is configured; record deferral')"
+
+# Validate task artifacts, traceability, risk classification, review findings, and HEAD evidence
+pr-ready task_id="" range="origin/main":
+    uv run python -m scripts.quality.pr_ready {{task_id}} --base {{range}}

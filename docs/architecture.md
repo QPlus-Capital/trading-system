@@ -255,6 +255,15 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `monitoring/reference.py` | Backtest reference + Monte-Carlo expectation band |
 | `monitoring/study_explorer.py` | Study explorer: slice + aggregate study results |
 
+### Engineering quality tooling
+
+| File | Purpose |
+|---|---|
+| `scripts/quality/classify.py` | Applies the authoritative TOML risk model to changed paths |
+| `scripts/quality/validate_task.py` | Validates task sections, AC/INV test traceability, and review dispositions |
+| `scripts/quality/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
+| `scripts/quality/pr_ready.py` | Composes risk, task, review, traceability, and evidence-freshness gates |
+
 ---
 
 ## 6. Dependency rules
@@ -295,6 +304,9 @@ flowchart TD
 | `live/config/` | frozen live configs (promotion == adding one) | yes |
 | `core/config/broker/` | pulled swap snapshots per broker | yes |
 | `docs/` | methodology (the spec), runbook, this file | yes |
+| `.ai/quality/` | TOML risk, finding, task-schema, and critical-dependency models | yes |
+| `.ai/tasks/` | concise task specifications, test traceability, review, and evidence | yes |
+| `.ai/impact/test-map.json` | latest conservative changed-file test-impact recommendation | yes |
 
 ## 8. Conventions that keep the numbers honest
 
