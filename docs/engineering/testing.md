@@ -113,6 +113,9 @@ in the dedicated Ubuntu job with Python 3.13; `just check` and deterministic pro
 on Windows CI. The Ubuntu setup omits the Windows-only MetaTrader5 wheel and mutates only pure
 modules that do not import it. The tool is a pinned ephemeral `uv --with` dependency, so it does not
 add Mutmut's transitive packages (including YAML tooling) to the project dependency lock.
+`mutate_only_covered_lines` is disabled: Mutmut's in-process coverage prepass followed by its stats
+pass attempts to load NumPy's native extension twice under Python 3.13. Focus remains bounded by the
+eight explicit module targets and their dedicated test selection.
 
 Compatibility evidence collected before adoption:
 

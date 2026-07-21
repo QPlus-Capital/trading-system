@@ -167,3 +167,15 @@ why_tests_missed = "the recipe and Python orchestrator were tested, but the work
 regression = "test_mutation_workflow_invokes_the_just_executable"
 generalized = "for package runners, test the exact package-to-executable mapping used by CI rather than assuming both names match"
 workflow_change = "mutation workflow uses and guards uvx --from rust-just just"
+
+[[finding]]
+id = "F-014"
+source = "PR #70 (Python 3.13 mutation stats)"
+defect_class = "in-process-native-extension-reload"
+severity = "P2"
+affected = "pyproject.toml, .github/workflows/mutation.yml"
+root_cause = "Mutmut's covered-line prepass and stats pass execute pytest in one process, causing NumPy's native extension to be loaded twice under Linux Python 3.13"
+why_tests_missed = "unit tests exercised policy and parsing without running the repository's NumPy-dependent test selection through Mutmut on Linux"
+regression = "test_mutation_skips_the_in_process_covered_line_prepass plus the repository Linux mutation job"
+generalized = "verify multi-pass test tools against native extensions on the exact supported interpreter and execution path"
+workflow_change = "disable Mutmut's covered-line prepass; explicit module and test scopes retain focus"

@@ -6,6 +6,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -82,6 +83,14 @@ def test_mutation_workflow_invokes_the_just_executable() -> None:
     )
     assert "uvx --from rust-just just mutation-critical" in workflow
     assert "uvx rust-just" not in workflow
+
+
+def test_mutation_skips_the_in_process_covered_line_prepass() -> None:
+    """Avoid reloading native extensions between Mutmut's pytest passes."""
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    with pyproject.open("rb") as handle:
+        config = tomllib.load(handle)
+    assert config["tool"]["mutmut"]["mutate_only_covered_lines"] is False
 
 
 def test_committed_critical_baseline_is_complete_and_explained() -> None:
