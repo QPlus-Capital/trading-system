@@ -1,9 +1,9 @@
-# This placeholder is replaced by the first clean Linux critical run before this PR is ready.
-# Baseline updates are deliberate review events: update the explanation and before/after figures.
+# Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor is conservatively classified
+# as a meaningful test-strength gap; the exact-name ratchet rejects any additional survivor.
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "Initial focused critical-scope baseline for issue 65."
+change_explanation = "Initial measured pure-function critical baseline for issue 65: 774 selected mutants, 585 killed, 189 meaningful survivors, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -16,9 +16,9 @@ targets = [
 ]
 
 [summary]
-total = 1
-killed = 1
-survived = 0
+total = 774
+killed = 585
+survived = 189
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -28,4 +28,293 @@ interrupted = 0
 segfault = 0
 caught_by_type_check = 0
 
-survivors = []
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these position-sizing mutations; retained as measured test-strength gaps."
+names = [
+    "live.risk_control.x_position_volume__mutmut_1",
+    "live.risk_control.x_position_volume__mutmut_10",
+    "live.risk_control.x_position_volume__mutmut_12",
+    "live.risk_control.x_position_volume__mutmut_16",
+    "live.risk_control.x_position_volume__mutmut_18",
+    "live.risk_control.x_position_volume__mutmut_2",
+    "live.risk_control.x_position_volume__mutmut_3",
+    "live.risk_control.x_position_volume__mutmut_30",
+    "live.risk_control.x_position_volume__mutmut_4",
+    "live.risk_control.x_position_volume__mutmut_6",
+    "live.risk_control.x_position_volume__mutmut_8",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these live admission mutations; retained as measured test-strength gaps."
+names = [
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_1",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_12",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_26",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_29",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_30",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_31",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_32",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_33",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_34",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_41",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_43",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_47",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_53",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_57",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_58",
+    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_7",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these live flattening mutations; retained as measured test-strength gaps."
+names = [
+    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_1",
+    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_13",
+    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_14",
+    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_18",
+    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3",
+    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_7",
+    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these continuous-attribution mutations; retained as measured test-strength gaps."
+names = [
+    "research.engine.continuous.x_window_returns__mutmut_16",
+    "research.engine.continuous.x_window_returns__mutmut_21",
+    "research.engine.continuous.x_window_returns__mutmut_23",
+    "research.engine.continuous.x_window_returns__mutmut_25",
+    "research.engine.continuous.x_window_returns__mutmut_26",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these daily-breach mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.drawdown.x_daily_breach__mutmut_11",
+    "research.portfolio.drawdown.x_daily_breach__mutmut_14",
+    "research.portfolio.drawdown.x_daily_breach__mutmut_19",
+    "research.portfolio.drawdown.x_daily_breach__mutmut_29",
+    "research.portfolio.drawdown.x_daily_breach__mutmut_3",
+    "research.portfolio.drawdown.x_daily_breach__mutmut_5",
+    "research.portfolio.drawdown.x_daily_breach__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these drawdown-evaluation mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.drawdown.x_evaluate__mutmut_16",
+    "research.portfolio.drawdown.x_evaluate__mutmut_17",
+    "research.portfolio.drawdown.x_evaluate__mutmut_26",
+    "research.portfolio.drawdown.x_evaluate__mutmut_3",
+    "research.portfolio.drawdown.x_evaluate__mutmut_5",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these trailing-floor mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.drawdown.x_trailing_floor__mutmut_3",
+    "research.portfolio.drawdown.x_trailing_floor__mutmut_5",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish this flat-PnL mutation; retained as a measured test-strength gap."
+names = ["research.portfolio.risk.x_flat_base_pnl__mutmut_2"]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these net-R accounting mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.risk.x_net_r__mutmut_10",
+    "research.portfolio.risk.x_net_r__mutmut_2",
+    "research.portfolio.risk.x_net_r__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these risk-constrained-Kelly mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.risk.x_rck_fraction__mutmut_1",
+    "research.portfolio.risk.x_rck_fraction__mutmut_10",
+    "research.portfolio.risk.x_rck_fraction__mutmut_13",
+    "research.portfolio.risk.x_rck_fraction__mutmut_14",
+    "research.portfolio.risk.x_rck_fraction__mutmut_15",
+    "research.portfolio.risk.x_rck_fraction__mutmut_18",
+    "research.portfolio.risk.x_rck_fraction__mutmut_19",
+    "research.portfolio.risk.x_rck_fraction__mutmut_20",
+    "research.portfolio.risk.x_rck_fraction__mutmut_21",
+    "research.portfolio.risk.x_rck_fraction__mutmut_29",
+    "research.portfolio.risk.x_rck_fraction__mutmut_30",
+    "research.portfolio.risk.x_rck_fraction__mutmut_35",
+    "research.portfolio.risk.x_rck_fraction__mutmut_36",
+    "research.portfolio.risk.x_rck_fraction__mutmut_38",
+    "research.portfolio.risk.x_rck_fraction__mutmut_4",
+    "research.portfolio.risk.x_rck_fraction__mutmut_40",
+    "research.portfolio.risk.x_rck_fraction__mutmut_6",
+    "research.portfolio.risk.x_rck_fraction__mutmut_61",
+    "research.portfolio.risk.x_rck_fraction__mutmut_62",
+    "research.portfolio.risk.x_rck_fraction__mutmut_63",
+    "research.portfolio.risk.x_rck_fraction__mutmut_66",
+    "research.portfolio.risk.x_rck_fraction__mutmut_7",
+    "research.portfolio.risk.x_rck_fraction__mutmut_70",
+    "research.portfolio.risk.x_rck_fraction__mutmut_71",
+    "research.portfolio.risk.x_rck_fraction__mutmut_77",
+    "research.portfolio.risk.x_rck_fraction__mutmut_78",
+    "research.portfolio.risk.x_rck_fraction__mutmut_79",
+    "research.portfolio.risk.x_rck_fraction__mutmut_8",
+    "research.portfolio.risk.x_rck_fraction__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these tail-cap mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.risk.x_tail_cap__mutmut_1",
+    "research.portfolio.risk.x_tail_cap__mutmut_8",
+    "research.portfolio.risk.x_tail_cap__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these event-order mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.sizing.x__events__mutmut_15",
+    "research.portfolio.sizing.x__events__mutmut_16",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these portfolio-replay mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.sizing.x_simulate__mutmut_1",
+    "research.portfolio.sizing.x_simulate__mutmut_115",
+    "research.portfolio.sizing.x_simulate__mutmut_12",
+    "research.portfolio.sizing.x_simulate__mutmut_124",
+    "research.portfolio.sizing.x_simulate__mutmut_125",
+    "research.portfolio.sizing.x_simulate__mutmut_131",
+    "research.portfolio.sizing.x_simulate__mutmut_138",
+    "research.portfolio.sizing.x_simulate__mutmut_146",
+    "research.portfolio.sizing.x_simulate__mutmut_147",
+    "research.portfolio.sizing.x_simulate__mutmut_150",
+    "research.portfolio.sizing.x_simulate__mutmut_166",
+    "research.portfolio.sizing.x_simulate__mutmut_178",
+    "research.portfolio.sizing.x_simulate__mutmut_20",
+    "research.portfolio.sizing.x_simulate__mutmut_24",
+    "research.portfolio.sizing.x_simulate__mutmut_28",
+    "research.portfolio.sizing.x_simulate__mutmut_29",
+    "research.portfolio.sizing.x_simulate__mutmut_35",
+    "research.portfolio.sizing.x_simulate__mutmut_36",
+    "research.portfolio.sizing.x_simulate__mutmut_38",
+    "research.portfolio.sizing.x_simulate__mutmut_41",
+    "research.portfolio.sizing.x_simulate__mutmut_45",
+    "research.portfolio.sizing.x_simulate__mutmut_46",
+    "research.portfolio.sizing.x_simulate__mutmut_47",
+    "research.portfolio.sizing.x_simulate__mutmut_50",
+    "research.portfolio.sizing.x_simulate__mutmut_54",
+    "research.portfolio.sizing.x_simulate__mutmut_57",
+    "research.portfolio.sizing.x_simulate__mutmut_58",
+    "research.portfolio.sizing.x_simulate__mutmut_61",
+    "research.portfolio.sizing.x_simulate__mutmut_69",
+    "research.portfolio.sizing.x_simulate__mutmut_70",
+    "research.portfolio.sizing.x_simulate__mutmut_8",
+    "research.portfolio.sizing.x_simulate__mutmut_83",
+    "research.portfolio.sizing.x_simulate__mutmut_88",
+    "research.portfolio.sizing.x_simulate__mutmut_93",
+    "research.portfolio.sizing.x_simulate__mutmut_98",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish this drawdown-throttle mutation; retained as a measured test-strength gap."
+names = ["research.portfolio.sizing.x_throttle__mutmut_1"]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these edge-statistic mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.stats.x_edge_stats__mutmut_13",
+    "research.portfolio.stats.x_edge_stats__mutmut_18",
+    "research.portfolio.stats.x_edge_stats__mutmut_19",
+    "research.portfolio.stats.x_edge_stats__mutmut_2",
+    "research.portfolio.stats.x_edge_stats__mutmut_24",
+    "research.portfolio.stats.x_edge_stats__mutmut_25",
+    "research.portfolio.stats.x_edge_stats__mutmut_26",
+    "research.portfolio.stats.x_edge_stats__mutmut_27",
+    "research.portfolio.stats.x_edge_stats__mutmut_28",
+    "research.portfolio.stats.x_edge_stats__mutmut_29",
+    "research.portfolio.stats.x_edge_stats__mutmut_3",
+    "research.portfolio.stats.x_edge_stats__mutmut_30",
+    "research.portfolio.stats.x_edge_stats__mutmut_32",
+    "research.portfolio.stats.x_edge_stats__mutmut_33",
+    "research.portfolio.stats.x_edge_stats__mutmut_34",
+    "research.portfolio.stats.x_edge_stats__mutmut_36",
+    "research.portfolio.stats.x_edge_stats__mutmut_4",
+    "research.portfolio.stats.x_edge_stats__mutmut_40",
+    "research.portfolio.stats.x_edge_stats__mutmut_5",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these R-multiple accounting mutations; retained as measured test-strength gaps."
+names = [
+    "research.portfolio.stats.x_r_multiples__mutmut_7",
+    "research.portfolio.stats.x_r_multiples__mutmut_8",
+    "research.portfolio.stats.x_r_multiples__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish this regression-delta mutation; retained as a measured test-strength gap."
+names = ["research.regression.x__delta__mutmut_1"]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing focused tests do not distinguish these result-comparison mutations; retained as measured test-strength gaps."
+names = [
+    "research.regression.x_compare__mutmut_100",
+    "research.regression.x_compare__mutmut_101",
+    "research.regression.x_compare__mutmut_104",
+    "research.regression.x_compare__mutmut_119",
+    "research.regression.x_compare__mutmut_124",
+    "research.regression.x_compare__mutmut_125",
+    "research.regression.x_compare__mutmut_126",
+    "research.regression.x_compare__mutmut_127",
+    "research.regression.x_compare__mutmut_16",
+    "research.regression.x_compare__mutmut_18",
+    "research.regression.x_compare__mutmut_24",
+    "research.regression.x_compare__mutmut_25",
+    "research.regression.x_compare__mutmut_26",
+    "research.regression.x_compare__mutmut_27",
+    "research.regression.x_compare__mutmut_28",
+    "research.regression.x_compare__mutmut_29",
+    "research.regression.x_compare__mutmut_30",
+    "research.regression.x_compare__mutmut_31",
+    "research.regression.x_compare__mutmut_35",
+    "research.regression.x_compare__mutmut_36",
+    "research.regression.x_compare__mutmut_43",
+    "research.regression.x_compare__mutmut_44",
+    "research.regression.x_compare__mutmut_50",
+    "research.regression.x_compare__mutmut_52",
+    "research.regression.x_compare__mutmut_53",
+    "research.regression.x_compare__mutmut_67",
+    "research.regression.x_compare__mutmut_69",
+    "research.regression.x_compare__mutmut_71",
+    "research.regression.x_compare__mutmut_72",
+    "research.regression.x_compare__mutmut_82",
+    "research.regression.x_compare__mutmut_88",
+    "research.regression.x_compare__mutmut_89",
+    "research.regression.x_compare__mutmut_92",
+    "research.regression.x_compare__mutmut_94",
+    "research.regression.x_compare__mutmut_95",
+    "research.regression.x_compare__mutmut_96",
+    "research.regression.x_compare__mutmut_97",
+    "research.regression.x_compare__mutmut_98",
+    "research.regression.x_compare__mutmut_99",
+]

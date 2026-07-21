@@ -190,11 +190,12 @@ def load_baseline(path: Path = BASELINE_PATH) -> MutationBaseline:
     try:
         survivors = tuple(
             Survivor(
-                str(item["name"]),
-                str(item["classification"]),
-                str(item["reason"]),
+                str(name),
+                str(group["classification"]),
+                str(group["reason"]),
             )
-            for item in data.get("survivors", [])
+            for group in data.get("survivor_groups", [])
+            for name in group["names"]
         )
     except KeyError as exc:
         raise ValueError("every baseline survivor needs a classification") from exc
