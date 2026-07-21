@@ -30,14 +30,15 @@ would cost, real money or a real methodology guarantee.
 
 - Four flat packages: `core/` (shared: strategies, instruments, broker, data), `research/`,
   `live/`, `monitoring/`. No `src/` nesting.
-- Dependencies flow inward to `core/`. `research/`, `live/`, and `monitoring/` may depend on
-  `core/`; `core/` depends on none of them. `research/` and `live/` do not import each other's
-  domain logic. Two crossings exist today and are the **only** ones permitted, each an explicit,
-  shrinking allowlist entry in `tests/test_import_boundaries.py`: `live/` may import the generic
-  config-module loader `research.engine.config` to read its own config; and
-  `research/portfolio/swap_analysis.py` reaches into the live MT5 bridge to refresh the broker swap
-  snapshot. Both are architecture debt tracked for removal (move the shared piece into `core/`); a
-  *new* crossing fails the test, and a removed one must leave the allowlist.
+- `core/` is the base and depends on no sibling. `research/` and `live/` depend on `core/` and **not
+  on each other's domain logic**. `monitoring/` sits on top: it exists to compare live against
+  backtest, so it may read from `core/`, `live/`, and `research/` — nothing imports `monitoring/`.
+- The `research/` ↔ `live/` rule has exactly two allowlisted crossings today, each an explicit,
+  shrinking entry in `tests/test_import_boundaries.py`: `live/` may import the generic config-module
+  loader `research.engine.config` to read its own config; and `research/portfolio/swap_analysis.py`
+  reaches into the live MT5 bridge to refresh the broker swap snapshot. Both are architecture debt
+  tracked for removal (move the shared piece into `core/`); a *new* crossing fails the test, and a
+  removed one must leave the allowlist.
 - A strategy's signal logic is **one pure engine** (`core/strategies/rsi_wpr_bb_signals.py`, no
   Nautilus, no MT5), driven by two thin execution adapters: the Nautilus backtest wrapper
   (`core/strategies/rsi_wpr_bb.py`) and the live runner (`live/runner.py`). Signal logic is never
@@ -151,7 +152,7 @@ code and documented.
 
 A confirmed reviewer finding (Codex or the adversarial subagent) is not just fixed. It is: reproduced
 with a failing test, fixed, root-caused, and recorded in the finding registry
-(`.ai/quality/finding-patterns.yaml`) as a **generalized** pattern. A defect class that recurs is a
+(`.ai/quality/finding-patterns.toml`) as a **generalized** pattern. A defect class that recurs is a
 failure of the workflow, not just of the code, and strengthens a skill, hook, check, or this file.
 
 ## 15. Prohibited quality-gate bypasses

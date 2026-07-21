@@ -54,9 +54,9 @@ gates. The loop:
 **Do not open a pull request until the readiness check for the change's risk class passes** and its
 evidence is current for HEAD. R3 changes never merge autonomously — the operator approves.
 
-Feature branch → PR → CI + Codex + adversarial review → operator approves → merge. Only a trivial
-**R0** change (docs/comments) may go straight to `main`; every code change goes through a branch and
-a PR. A valid issue outside a PR's scope → open a GitHub issue, don't widen the PR.
+Feature branch → PR → CI + Codex + adversarial review → operator approves → merge. Only a
+**trivial R0** change (docs/comments) may go straight to `main`; every code change goes through a
+branch and a PR. A valid issue outside a PR's scope → open a GitHub issue, don't widen the PR.
 
 **Roles:** Claude builds, verifies, and drives the PR loop; the adversarial subagent and Codex
 review independently; the operator decides judgment calls and approves merges.
