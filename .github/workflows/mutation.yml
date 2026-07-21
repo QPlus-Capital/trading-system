@@ -36,7 +36,7 @@ jobs:
           uv run --no-sync --with mutmut==3.5.0 pytest -q
           tests/test_quality_mutation.py::test_a_real_weakened_test_increases_survivors_and_is_caught
       - name: Run the focused critical mutation ratchet
-        run: uvx rust-just mutation-critical
+        run: uvx --from rust-just just mutation-critical
       - name: Retain the machine-readable mutation result
         if: always()
         uses: actions/upload-artifact@v4
