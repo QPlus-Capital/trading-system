@@ -1,111 +1,72 @@
 # CLAUDE.md
 
-Guidance for Claude Code (and any AI agent) working in this repository. This file
-is the **single source of project context** — it must be self-contained, so that any
-machine or account running Claude Code produces the same high-quality results without
-relying on prior chat history.
+Orientation and the immutable constraints for any AI agent building in this repository. The full
+rules live in **[docs/engineering/constitution.md](docs/engineering/constitution.md)** — the shared
+source of truth for Claude, Codex, humans, and CI. This file is the short version that must stay in
+permanent context; when it and the constitution appear to differ, the constitution wins.
 
 ## Project
 
-QPlus Capital's quantitative trading-system framework, built on
-[NautilusTrader](https://nautilustrader.io/). A strategy flows through three worlds:
-**research** (backtest & validate) → **live** (execute the frozen config) →
-**monitoring** (live vs. backtest). The framework is strategy-, venue-, and
-timeframe-neutral; the current instance is one detail of configuration, not a constraint.
+QPlus Capital's quantitative trading-system framework on
+[NautilusTrader](https://nautilustrader.io/). A strategy flows **research** (backtest & validate) →
+**live** (execute the frozen config on MetaTrader 5) → **monitoring**. Four flat packages: `core/`
+(shared: strategies, instruments, broker, data), `research/`, `live/`, `monitoring/`. No `src/`.
+Stack: Python 3.13, `uv`, NautilusTrader, `just` as the command hub.
 
-- **Structure:** four flat packages — `core/` (shared: strategies, instruments, broker,
-  data), `research/`, `live/`, `monitoring/`. No `src/` nesting.
-- **Stack:** Python 3.13, `uv` for packaging, NautilusTrader (backtest engine), `just`
-  as the command hub. Tooling: `ruff`, `mypy`, `pytest`.
-- **Orientation:** read [docs/architecture.md](docs/architecture.md) first — diagrams of
-  the research pipeline, live path and monitoring, plus a one-line-per-file module map.
+**Read first:** [docs/architecture.md](docs/architecture.md) — pipeline / live path / monitoring
+diagrams and a one-line-per-file module map.
 
-## Conventions (always follow)
+## This repository trades real money
 
-- **Language:** Everything in the repository — code, identifiers, comments, docs,
-  commit messages — is in **English**. (Conversation with the user may be in German;
-  the repo is not.)
-- **Tests:** Write tests automatically wherever they add value, without being asked.
-  Use `pytest`; tests live in `tests/`.
-- **Gates:** a change is not done until **`just check`** is green — `ruff` + `mypy`
-  (strict) + `pytest` + `vulture`. CI runs the same on every PR (see `.github/workflows/ci.yml`).
-- **Money & prices:** Never use `float` for prices, quantities, or money — use
-  `Decimal` (or NautilusTrader's `Price`/`Quantity`/`Money` types). Floating-point
-  rounding is unacceptable in a trading system.
-- **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`,
-  `test:`). Do **not** add Claude as a co-author.
-- **Commit & push when done:** When a unit of work is complete (a feature, a fix, a
-  new or updated strategy, etc.), commit it and **push to the remote immediately** —
-  do not leave finished work unpushed and do not wait to be asked. Jan does not push
-  manually. Only push work that is actually finished and green (`ruff`, `mypy`,
-  `pytest` all pass); never push broken or half-done code.
-- **Git workflow:** feature branch → PR → CI green + Codex review → merge to `main`.
-- **Definition of done (anti-drift):** a change is complete only when its callers,
-  docstrings, the `docs/architecture.md` module map, and tests are all updated to match,
-  `just check` is green, and no stale cruft (dead code, orphaned files, stale docs/paths)
-  is left behind. `tests/test_docs_architecture_map.py` enforces that the map stays honest.
-  See [AGENTS.md](AGENTS.md) for the full reviewer checklist (shared with Codex).
+A defect is a loss, not a bug report. The constraints below are non-negotiable and always apply.
 
-## Development workflow — the standard for larger changes
+- **Never touch a running live trade** — do not place, modify, or close an order, and never restart
+  a runner as a side effect. Never run two runners on one account.
+- **Internal risk limits stay stricter than the prop firm's** (0.18%/trade, 2.5% daily, 5%
+  trailing, 2% open-risk vs. TTP's 3%/6%). Tighten, never loosen past the prop limits. Fail closed.
+- **Never `float` for money, prices, or quantities** — `Decimal` or NautilusTrader `Price`/
+  `Quantity`/`Money`.
+- **The holdout is sacred**, live data is out-of-sample — monitor, never retune from it.
+- **Backtest and live share one pure signal engine** (`rsi_wpr_bb_signals.py`); the Nautilus
+  backtest wrapper and the live runner are thin adapters over it — never diverge them.
+- **Secrets** live in `.env` + the password manager; never commit a credential or account number.
+- Everything committed is **English**; docstrings describe the current state, not history.
+- **Commit as Jan Cwik; never add an AI co-author** or `Co-Authored-By` trailer.
 
-Bundle related work into a coherent theme, then run it through this loop (this is the default
-for any feature/refactor of more than trivial size; small self-contained fixes may still go
-straight to `main` when it clearly makes sense):
+## Development protocol
 
-1. **Claude implements on a feature branch** — never commit a larger feature straight to `main`;
-   keep `just check` green throughout.
-2. **Claude opens the PR** (`gh pr create`) when the theme is done — proactively, without being asked.
-3. **CI + Codex review run automatically** on the PR (CI = ruff / mypy / pytest / vulture;
-   Codex = the independent reviewer, per [AGENTS.md](AGENTS.md)).
-4. **Claude drives the review loop via `gh`** (`gh pr view --comments`, `gh api .../pulls/N/reviews`
-   and `/comments`): read Codex's findings **directly** — never make Jan copy-paste them — then
-   triage: fix the valid ones and push, dismiss the wrong ones with a one-line reason. Surface to
-   Jan **only** genuine decision topics (a design / logic / methodology choice, or anything on the
-   live money path where a *choice* — not just an obvious bug fix — is needed). A valid issue
-   that is outside the theme's scope → open a GitHub issue rather than widen the PR.
-5. **Merge** once CI is green, Codex's findings are resolved, and Jan approves.
+Every non-trivial change carries a **risk class R0–R3**
+([docs/engineering/risk-classes.md](docs/engineering/risk-classes.md)) that sets its mandatory
+gates. The loop:
 
-**Roles:** Claude = builder/fixer **and** PR driver; Codex = independent reviewer (correctness,
-methodology, security, the money path); Jan = decides the judgment calls and approves the merge,
-otherwise stays out of the loop. Codex reads AGENTS.md on every review, so its role is
-self-documented; Claude drives everything else.
+1. **Specify** — a task spec with acceptance criteria and invariants under `.ai/tasks/<id>/`, and
+   the risk class with its reason. Surface genuine business / trading / methodology / live-money /
+   architecture / risk decisions to the operator; decide everything else from the constitution.
+2. **Analyse impact** — the files, callers, config routes, lifecycle, artifacts, and tests a change
+   touches, before writing it. For any coupled quantity (a sizing basis, a risk denominator, a
+   cost), enumerate **every** entry point and change them in one pass.
+3. **Design tests, then implement** — red tests before the fix where applicable; keep `just check`
+   green throughout; keep scope to the spec.
+4. **Adversarial review** — a fresh isolated review of the final diff before any PR (see the
+   review subagents and skills under `.claude/`, added progressively).
+5. **Prepare the PR** — only after the readiness check passes.
 
-**Live merges need a quiet window:** the running MT5 runners hold the old code in memory. Merge
-+ `uv sync` + restart the runners only when they are **stopped** — and never start a second runner
-on an account that already has one (double orders on real money).
+**Do not open a pull request until the readiness check for the change's risk class passes** and its
+evidence is current for HEAD. R3 changes never merge autonomously — the operator approves.
 
-## Backtest vs. live
+Feature branch → PR → CI + Codex + adversarial review → operator approves → merge. Only a
+**trivial R0** change (docs/comments) may go straight to `main`; every code change goes through a
+branch and a PR. A valid issue outside a PR's scope → open a GitHub issue, don't widen the PR.
 
-A strategy is **one class** in `core/strategies/`, run with either a backtest or
-a live config. Never duplicate strategy logic across backtest and live. Promotion to
-live = adding the strategy's config under `live/config/` after it is backtested and
-approved. Always keep it unambiguous which strategies are live.
+**Roles:** Claude builds, verifies, and drives the PR loop; the adversarial subagent and Codex
+review independently; the operator decides judgment calls and approves merges.
 
-## Secrets
+## Environment
 
-- Secrets go in `.env` (gitignored); `.env.example` holds placeholders only.
-- **Never** commit real credentials, API keys, or account numbers.
-- **Whenever you introduce or generate new credentials, remind the user to store them
-  in the shared password manager** so both teammates can retrieve them later.
-
-## Data
-
-- Market data and the NautilusTrader Parquet catalog live in `data/` (gitignored).
-  Backtest outputs go in `results/` or `reports/` (also gitignored).
-- Code is versioned; data and secrets never are ("code in, data and secrets out").
-
-## Environment notes
-
-- Target platforms are **Apple Silicon macOS (arm64)** and **Linux**, where
-  `nautilus_trader` wheels exist. Intel macOS (x86_64) has no wheel and is
-  unsupported; do not add Intel-macOS / Docker workarounds.
-- `nautilus_trader` is **pinned in `pyproject.toml` and `uv.lock`** (added 2026-07-01,
-  currently v1.230.0), so `uv sync` installs it automatically — no separate setup
-  step, and it is safe to import and run NautilusTrader in code.
-- Always use `uv` (`uv sync`, `uv add`, `uv run …`), never bare `pip`.
-
-## Reproducibility
-
-This repo must run identically on any machine/account: keep `uv.lock` committed and
-current, keep `CLAUDE.md` and `RUN.md` accurate and self-contained, and never rely on
-context that exists only in a chat session.
+- `nautilus_trader` is pinned in `pyproject.toml` / `uv.lock`; `uv sync` installs everything. Always
+  use `uv` (`uv sync`, `uv add`, `uv run …`), never bare `pip`.
+- Target platforms: Apple Silicon macOS (arm64) and Linux, where wheels exist. Intel macOS is
+  unsupported.
+- `data/`, `reports/`, `results/` are gitignored: "code in, data and secrets out."
+- This repo must run identically on any machine — keep `uv.lock`, `CLAUDE.md`, and `RUN.md` current
+  and self-contained; never rely on chat-session context.
