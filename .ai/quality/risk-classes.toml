@@ -244,6 +244,16 @@ glob = "AGENTS.md"
 min_class = "R3"
 reason = "the independent-review contract"
 
+[[rules]]
+glob = "docs/live-runbook.md"
+min_class = "R3"
+reason = "real-account execution and risk-state reset instructions"
+
+[[rules]]
+glob = "docs/strategies/**"
+min_class = "R3"
+reason = "the pre-registered trial universe and DSR denominator -- methodology integrity"
+
 # ---- R2: shared core, orchestration, artifacts, monitoring ----
 [[rules]]
 glob = "core/data/**"

@@ -176,6 +176,8 @@ _MUST_BE_R3 = (
     ".github/workflows/ci.yml",  # runs the gates
     "docs/engineering/constitution.md",  # governance -- not a docs-only R0
     "docs/methodology.md",
+    "docs/live-runbook.md",  # real-account ops -- not a docs-only R0
+    "docs/strategies/rsi_wpr_bb.md",  # trial universe / DSR denominator
     "CLAUDE.md",
     "AGENTS.md",
 )
@@ -218,6 +220,11 @@ def test_risk_doc_and_model_agree() -> None:
     # the specific stale form that already drifted once, and against re-introducing a raw glob list.
     assert "core/instruments/**" not in doc, "stale glob: the model uses core/instruments.py"
     assert "authoritative" in doc.lower(), "the doc must defer to the model as authoritative"
+    # The documented unmatched-path fallback must match the model's actual default, so the companion
+    # doc cannot tell an author a lower class than the model enforces.
+    default = _model()["default_min_class"]
+    assert f"`{default}`" in doc, f"the doc must state the unmatched fallback is {default}"
+    assert "falls back to `R1`" not in doc, "stale: the model's unmatched fallback is R2, not R1"
     # The distinctive R3-only obligations must be described, not just named -- so the prose cannot
     # drift into promising less than the model enforces.
     lowered = doc.lower()
@@ -231,10 +238,10 @@ def test_direct_to_main_exception_is_R0_only_everywhere() -> None:
     Positive assertion, not just the absence of the old ``R0/R1`` spelling: each document must state
     that R0 (and not a broader class) is what may go straight to main.
     """
-    for path in (_CLAUDE, _CONSTITUTION):
+    for path in (_CLAUDE, _CONSTITUTION, _ROOT / "README.md"):
         lowered = _text(path).lower()
         assert "r0/r1" not in lowered, f"{path.relative_to(_ROOT)} still lets R1 reach main"
         assert "trivial r0" in lowered and "straight to `main`" in lowered, (
             f"{path.relative_to(_ROOT)} must state that only a trivial R0 change goes straight to "
-            "main."
+            "main -- every contributor-facing doc must state the same exception."
         )
