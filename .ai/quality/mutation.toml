@@ -11,39 +11,70 @@ python = "3.13"
 [[targets]]
 id = "live-risk-control"
 path = "live/risk_control.py"
-mutant_pattern = "live.risk_control.*"
+mutant_patterns = [
+    "live.risk_control.x_position_volume__mutmut_*",
+    "live.risk_control.x*RiskController*check_open__mutmut_*",
+    "live.risk_control.x*RiskController*must_flatten__mutmut_*",
+    "live.risk_control.x*RiskController*trailing_floor__mutmut_*",
+    "live.risk_control.x*RiskController*daily_floor__mutmut_*",
+    "live.risk_control.x*RiskController*gate_daily_floor__mutmut_*",
+    "live.risk_control.x*RiskController*prop_daily_floor__mutmut_*",
+]
 
 [[targets]]
 id = "portfolio-sizing"
 path = "research/portfolio/sizing.py"
-mutant_pattern = "research.portfolio.sizing.*"
+mutant_patterns = [
+    "research.portfolio.sizing.x__events__mutmut_*",
+    "research.portfolio.sizing.x_simulate__mutmut_*",
+    "research.portfolio.sizing.x_flat__mutmut_*",
+    "research.portfolio.sizing.x_throttle__mutmut_*",
+]
 
 [[targets]]
 id = "portfolio-drawdown"
 path = "research/portfolio/drawdown.py"
-mutant_pattern = "research.portfolio.drawdown.*"
+mutant_patterns = [
+    "research.portfolio.drawdown.x_trailing_floor__mutmut_*",
+    "research.portfolio.drawdown.x_evaluate__mutmut_*",
+    "research.portfolio.drawdown.x_daily_breach__mutmut_*",
+]
 
 [[targets]]
 id = "portfolio-risk"
 path = "research/portfolio/risk.py"
-mutant_pattern = "research.portfolio.risk.*"
+mutant_patterns = [
+    "research.portfolio.risk.x_tail_cap__mutmut_*",
+    "research.portfolio.risk.x_rck_fraction__mutmut_*",
+    "research.portfolio.risk.x_net_r__mutmut_*",
+    "research.portfolio.risk.x_flat_base_pnl__mutmut_*",
+]
 
 [[targets]]
 id = "portfolio-accounting"
 path = "research/portfolio/stats.py"
-mutant_pattern = "research.portfolio.stats.*"
+mutant_patterns = [
+    "research.portfolio.stats.x_r_multiples__mutmut_*",
+    "research.portfolio.stats.x_edge_stats__mutmut_*",
+]
 
 [[targets]]
 id = "parameter-schedule"
 path = "core/strategies/param_schedule.py"
-mutant_pattern = "core.strategies.param_schedule.*"
+mutant_patterns = [
+    "core.strategies.param_schedule.x_segment_at__mutmut_*",
+    "core.strategies.param_schedule.x_entry_params_at__mutmut_*",
+]
 
 [[targets]]
 id = "continuous-attribution"
 path = "research/engine/continuous.py"
-mutant_pattern = "research.engine.continuous.*"
+mutant_patterns = ["research.engine.continuous.x_window_returns__mutmut_*"]
 
 [[targets]]
 id = "result-regression"
 path = "research/regression.py"
-mutant_pattern = "research.regression.*"
+mutant_patterns = [
+    "research.regression.x__delta__mutmut_*",
+    "research.regression.x_compare__mutmut_*",
+]

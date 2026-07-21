@@ -101,10 +101,12 @@ property and a named regression example, and adds its generalized class to
 
 `mutation-fast` mutates only configured critical modules changed relative to its base; it obtains
 the changed paths and R3 result from `scripts/quality/classify.py`. `mutation-critical` runs all eight
-focused scopes and checks `.ai/quality/mutation-baseline.toml`. The current TOML result is written
+focused scopes and checks `.ai/quality/mutation-baseline.toml`. Each scope names its pure functions;
+module-wide wildcards and command/orchestration entry points are excluded. The current TOML result is written
 under `.ai/mutation/` and uploaded by CI; it is intentionally unversioned. A new survivor, an
 unchecked/no-test/timeout/suspicious outcome, a score decrease, or a changed mutant total blocks.
-Every accepted survivor must be named and explained in the baseline, and every baseline update
+Every accepted survivor must be named, classified as `equivalent`, `irrelevant`, or `meaningful`,
+and explained in the baseline, and every baseline update
 must explain why the target or result changed.
 
 The selected tool is Mutmut 3.5.0. Its package metadata supports Python 3.13, but the tool exits on
