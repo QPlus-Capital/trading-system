@@ -22,4 +22,4 @@ jobs:
       - name: Tests (pytest)
         run: uv run pytest -q
       - name: Dead code (vulture)
-        run: uvx vulture core research live monitoring --min-confidence 80
+        run: uvx vulture core research live monitoring scripts --min-confidence 80
