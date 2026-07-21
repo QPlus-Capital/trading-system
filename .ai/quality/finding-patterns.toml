@@ -143,3 +143,15 @@ why_tests_missed = "native Windows correctly refused mutation, while the initial
 regression = "console-script resolution unit test plus the real Linux weakened-test mutation probe"
 generalized = "test the exact production entrypoint on its supported platform; importable code is not evidence that the command path executes"
 workflow_change = "mutation CI runs the real console script and must complete the weakened-test probe before the baseline"
+
+[[finding]]
+id = "F-012"
+source = "PR #70 (mutation result collection)"
+defect_class = "external-cli-contract-assumption"
+severity = "P2"
+affected = "scripts/quality/mutation.py, tests/test_quality_mutation.py"
+root_cause = "the wrapper treated Mutmut 3.5's --all option as a flag, but Click requires the explicit value true, so completed mutations could not become gate evidence"
+why_tests_missed = "the parser was unit-tested with text but the exact producer command had not executed on the supported platform"
+regression = "all_results_command exact-argument unit test plus the real Linux weakened-test probe"
+generalized = "centralize and execute the exact external CLI command; testing only its downstream parser leaves argument-shape failures invisible"
+workflow_change = "the probe and repository mutation runner share one version-pinned results command"

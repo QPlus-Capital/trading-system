@@ -12,6 +12,7 @@ HEAD: 5f8ea724924a4ba547c10349f8a148ba11882eb6
 | `red-first` | first property/helper execution | 1 | RED: boundary zip and fixture-lifetime counterexamples found in new tests |
 | `red-first` | native Windows Mutmut probe | 1 | RED: Mutmut 3.5.0 refuses native Windows and requires WSL/Linux |
 | `red-first` | first Linux Mutmut probe via `python -m` | 1 | RED: trampoline re-imported `mutmut.__main__` and reset multiprocessing context |
+| `red-first` | first Mutmut results listing | 2 | RED: `--all` requires the explicit value `true` in 3.5.0 |
 | `format` | pending final command | 1 | PENDING |
 | `docs-consistency` | pending final command | 1 | PENDING |
 | `check` | pending final command | 1 | PENDING |
