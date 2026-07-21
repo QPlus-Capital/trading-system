@@ -27,7 +27,8 @@ A defect is a loss, not a bug report. The constraints below are non-negotiable a
 - **Never `float` for money, prices, or quantities** — `Decimal` or NautilusTrader `Price`/
   `Quantity`/`Money`.
 - **The holdout is sacred**, live data is out-of-sample — monitor, never retune from it.
-- **Backtest and live share one strategy class and one signal engine** — never diverge them.
+- **Backtest and live share one pure signal engine** (`rsi_wpr_bb_signals.py`); the Nautilus
+  backtest wrapper and the live runner are thin adapters over it — never diverge them.
 - **Secrets** live in `.env` + the password manager; never commit a credential or account number.
 - Everything committed is **English**; docstrings describe the current state, not history.
 - **Commit as Jan Cwik; never add an AI co-author** or `Co-Authored-By` trailer.
@@ -53,9 +54,9 @@ gates. The loop:
 **Do not open a pull request until the readiness check for the change's risk class passes** and its
 evidence is current for HEAD. R3 changes never merge autonomously — the operator approves.
 
-Feature branch → PR → CI + Codex + adversarial review → operator approves → merge. Small
-self-contained R0/R1 fixes may still go straight to `main` when it clearly makes sense. A valid
-issue outside a PR's scope → open a GitHub issue, don't widen the PR.
+Feature branch → PR → CI + Codex + adversarial review → operator approves → merge. Only a trivial
+**R0** change (docs/comments) may go straight to `main`; every code change goes through a branch and
+a PR. A valid issue outside a PR's scope → open a GitHub issue, don't widen the PR.
 
 **Roles:** Claude builds, verifies, and drives the PR loop; the adversarial subagent and Codex
 review independently; the operator decides judgment calls and approves merges.

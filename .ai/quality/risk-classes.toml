@@ -167,6 +167,26 @@ glob = "research/config/**"
 min_class = "R3"
 reason = "methodology configuration promoted to live"
 
+# Catch-alls so no engine or portfolio file can fall to the R2 fallback below. The whole research
+# engine (config loader, grid, overfitting, schedule builder, recipe, montecarlo, ...) and the whole
+# portfolio (curves, factsheet, ...) compute selection, methodology, money, or reported results.
+[[rules]]
+glob = "research/engine/**"
+min_class = "R3"
+reason = "selection, parameter search, and the config loader that live shares"
+
+[[rules]]
+glob = "research/portfolio/**"
+min_class = "R3"
+reason = "equity, swap, holdout and reported-result computation"
+
+# The quality model and the finding registry themselves: a change here could weaken an R3 rule or
+# remove no-autonomous-merge, so it must not be able to reach main without the R3 gates.
+[[rules]]
+glob = ".ai/quality/**"
+min_class = "R3"
+reason = "the risk model and finding registry govern every other change"
+
 # ---- R2: shared core, orchestration, artifacts, monitoring ----
 [[rules]]
 glob = "core/data/**"

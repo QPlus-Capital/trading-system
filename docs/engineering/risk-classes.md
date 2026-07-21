@@ -30,18 +30,21 @@ Gates are cumulative: R2 includes R1's, R3 includes R2's.
 
 ## R3 — the paths that are always at least R3
 
-These are matched automatically (see the YAML for the exact globs and reasons):
+The **authoritative, exhaustive list is the model** (`.ai/quality/risk-classes.toml`); this prose
+deliberately does not repeat it, so the two cannot drift. By category, R3 covers:
 
-- `live/risk_control.py`, `live/runner.py`, `live/accounts.py`, `live/mt5_bridge.py`,
-  `live/preflight.py`, `live/config/**`
-- `core/strategies/**`, `core/broker.py`, `core/instruments/**`
-- `research/regression.py`
-- `research/portfolio/{risk,sizing,drawdown,trades,tail,stress}.py`
-- `research/engine/{continuous,walkforward,walkforward_runner,characterize}.py`
-- `research/stages/**`, `research/config/**`
+- the whole **live trading package** (`live/**`) — orders, sizing, risk control, account identity,
+  the broker bridge, and signal-parity checks;
+- the **shared strategy signals**, **broker**, and **instrument** definitions in `core/`, plus the
+  **broker cost/swap snapshots** that feed net returns;
+- the whole **research engine and portfolio** (`research/engine/**`, `research/portfolio/**`) and
+  the **stages** and **config** — selection, methodology, money, holdout, and reported results;
+- the **regression gate** and the **quality model itself** (`.ai/quality/**`).
 
 A change to any of these ranks parameters, sizes a position, moves money, decides selection, or
-guards result integrity. It gets the full R3 treatment and a human approves the merge.
+guards result integrity. It gets the full R3 treatment and a human approves the merge. The concrete
+globs and their reasons live in the model; `tests/test_engineering_docs.py` asserts real production
+paths on these categories resolve to R3.
 
 ## Why the upgrade rule matters
 

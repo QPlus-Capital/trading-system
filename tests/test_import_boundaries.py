@@ -85,6 +85,29 @@ def test_research_to_live_ratchet_has_no_stale_entries() -> None:
     assert not stale, f"remove these resolved crossings from _KNOWN_RESEARCH_TO_LIVE: {stale}"
 
 
+def test_both_execution_adapters_use_the_shared_signal_engine() -> None:
+    """Parity boundary (constitution section 5): the backtest wrapper and the live runner both
+    construct the SAME pure signal engine, so neither can reimplement a signal.
+    """
+    engine = "RsiWprBbSignals"
+    for rel in ("core/strategies/rsi_wpr_bb.py", "live/runner.py"):
+        src = (_ROOT / rel).read_text(encoding="utf-8")
+        assert engine in _imports_from_names(_ROOT / rel), f"{rel} must import {engine}"
+        assert f"{engine}(" in src, f"{rel} must instantiate {engine}, not reimplement signals"
+
+
+def _imports_from_names(path: Path) -> set[str]:
+    """Every imported name (module tails and from-imports), for a coarse 'is it imported' check."""
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            names.update(a.name for a in node.names)
+        elif isinstance(node, ast.Import):
+            names.update(a.name.split(".")[-1] for a in node.names)
+    return names
+
+
 def test_core_depends_on_no_sibling_package() -> None:
     """core/ is the shared base; it must not reach up into research, live, or monitoring."""
     offenders: dict[str, list[str]] = {}
