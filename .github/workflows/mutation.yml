@@ -44,3 +44,4 @@ jobs:
           name: mutation-critical-result
           path: .ai/mutation/critical.toml
           if-no-files-found: error
+          include-hidden-files: true

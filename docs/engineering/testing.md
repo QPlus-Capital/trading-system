@@ -116,6 +116,9 @@ add Mutmut's transitive packages (including YAML tooling) to the project depende
 `mutate_only_covered_lines` is disabled: Mutmut's in-process coverage prepass followed by its stats
 pass attempts to load NumPy's native extension twice under Python 3.13. Focus remains bounded by the
 eight explicit module targets and their dedicated test selection.
+The mutant tree copies `.ai/` because the reused classifier loads its authoritative risk model
+from `.ai/quality/risk-classes.toml`. CI explicitly includes hidden files when uploading the
+unversioned `.ai/mutation/critical.toml` report.
 
 Compatibility evidence collected before adoption:
 

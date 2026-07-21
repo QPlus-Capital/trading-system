@@ -15,6 +15,8 @@ HEAD: 5f8ea724924a4ba547c10349f8a148ba11882eb6
 | `red-first` | first Mutmut results listing | 2 | RED: `--all` requires the explicit value `true` in 3.5.0 |
 | `red-first` | mutation workflow just launcher | 1 | RED: `uvx rust-just` names a package without selecting its `just` executable |
 | `red-first` | Mutmut covered-line prepass guard | 1 | RED: coverage then stats reloaded NumPy's native extension under Linux Python 3.13 |
+| `red-first` | mutant-tree classifier resource guard | 1 | RED: clean-test stats could not load `.ai/quality/risk-classes.toml` |
+| `red-first` | hidden mutation artifact upload guard | 1 | RED: uploader excluded `.ai/mutation/critical.toml` by default |
 | `format` | pending final command | 1 | PENDING |
 | `docs-consistency` | pending final command | 1 | PENDING |
 | `check` | pending final command | 1 | PENDING |

@@ -70,7 +70,7 @@ paths_to_mutate = [
     "research/engine/continuous.py",
     "research/regression.py",
 ]
-also_copy = ["core", "research", "live", "monitoring", "scripts"]
+also_copy = ["core", "research", "live", "monitoring", "scripts", ".ai"]
 mutate_only_covered_lines = false
 pytest_add_cli_args = ["--disable-warnings"]
 pytest_add_cli_args_test_selection = [
