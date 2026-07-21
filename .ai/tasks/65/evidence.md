@@ -14,6 +14,7 @@ HEAD: 5f8ea724924a4ba547c10349f8a148ba11882eb6
 | `red-first` | first Linux Mutmut probe via `python -m` | 1 | RED: trampoline re-imported `mutmut.__main__` and reset multiprocessing context |
 | `red-first` | first Mutmut results listing | 2 | RED: `--all` requires the explicit value `true` in 3.5.0 |
 | `red-first` | mutation workflow just launcher | 1 | RED: `uvx rust-just` names a package without selecting its `just` executable |
+| `red-first` | Mutmut covered-line prepass guard | 1 | RED: coverage then stats reloaded NumPy's native extension under Linux Python 3.13 |
 | `format` | pending final command | 1 | PENDING |
 | `docs-consistency` | pending final command | 1 | PENDING |
 | `check` | pending final command | 1 | PENDING |
