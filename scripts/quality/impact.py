@@ -185,7 +185,7 @@ def analyze_impact(
     critical_map: Path | None = CRITICAL_MAP_PATH,
 ) -> ImpactReport:
     """Return a conservative test-impact report for explicit repository-relative paths."""
-    changed = tuple(dict.fromkeys(normalize(path) for path in paths))
+    changed = tuple(sorted({normalize(path) for path in paths}))
     python_files = _python_files(root)
     known = frozenset(_module_name(path.relative_to(root).as_posix()) for path in python_files)
     all_facts = tuple(

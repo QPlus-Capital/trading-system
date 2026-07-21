@@ -82,6 +82,13 @@ def test_impact_artifact_is_machine_readable(tmp_path: Path) -> None:
     assert payload["recommended_pytest_command"].startswith("uv run pytest -q")
 
 
+def test_impact_artifact_is_independent_of_input_path_order() -> None:
+    paths = ["scripts/quality/impact.py", "docs/architecture.md", "justfile"]
+    forward = analyze_impact(paths)
+    reverse = analyze_impact(list(reversed(paths)))
+    assert forward == reverse
+
+
 def test_report_never_claims_complete_coverage() -> None:
     report = analyze_impact(["research/engine/continuous.py"], root=REPO_ROOT)
     assert "not complete" in report.completeness_note.lower()
