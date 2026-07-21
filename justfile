@@ -44,7 +44,7 @@ check:
 classify *paths:
     uv run python -m scripts.quality.classify {{paths}}
 
-# Conservative changed-file impact report and machine-readable .ai/impact/test-map.json
+# Conservative changed-file impact report and ignored local .ai/impact/test-map.json
 impact range="origin/main":
     uv run python -m scripts.quality.impact --base {{range}}
 

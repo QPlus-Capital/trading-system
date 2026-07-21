@@ -21,15 +21,17 @@ summary on top of the existing classifier.
 - Reuse `scripts/quality/classify.py` for path classification and git-range discovery.
 - Treat focused impact tests as recommendations; the full suite remains mandatory.
 - Keep `just check` unchanged and green.
+- Require every cumulative risk gate to have successful evidence; missing or non-zero gates block.
+- Require R3 review evidence to include findings or a positive counterexample-attempt count.
 
 ## Acceptance criteria
 
 - AC-01: Task validation rejects missing sections, unmapped AC/INV IDs, and unresolved P0/P1/P2,
   while accepting a complete task.
 - AC-02: Impact analysis surfaces the known tests for `research/engine/continuous.py` and
-  `live/risk_control.py`, emits JSON, and states that the full suite remains mandatory.
+  `live/risk_control.py`, emits ignored local JSON, and states that the full suite remains mandatory.
 - AC-03: PR readiness returns non-zero for missing or stale evidence, zero for a clean task, and
-  reports cumulative R3 gates.
+  reports cumulative R3 gates; missing or non-zero required gates and empty R3 reviews block.
 - AC-04: All new quality tooling classifies as R3, adds no dependency, and passes `just check`.
 
 ## Invariants

@@ -16,7 +16,7 @@ from scripts.quality.classify import (
     classify_paths,
     load_model,
 )
-from scripts.quality.validate_task import validate_task_dir
+from scripts.quality.validate_task import evidence_records, validate_task_dir
 
 _RISK_RE = re.compile(r"\bR([0-3])\b")
 _HEAD_RE = re.compile(r"^HEAD:\s*(\S+)\s*$", re.MULTILINE)
@@ -123,6 +123,7 @@ def assess_readiness(
 
     model = load_model()
     classification = classify_paths(changed, model)
+    required_gates = model.required_gates(classification.risk_class)
     validation = validate_task_dir(task_dir)
     declared = _declared_risk(task_dir / "spec.md")
 
@@ -156,16 +157,45 @@ def assess_readiness(
             )
         )
 
-    evidence_ok, evidence_detail = evidence_is_current(
-        task_dir / "evidence.md", head_sha, root=root
+    evidence_path = task_dir / "evidence.md"
+    evidence_text = evidence_path.read_text(encoding="utf-8") if evidence_path.is_file() else ""
+    records = evidence_records(evidence_text)
+    missing_gates = [
+        gate for gate in required_gates if not any(record.gate == gate for record in records)
+    ]
+    failed_gates = {
+        gate: tuple(record.exit_status for record in records if record.gate == gate)
+        for gate in required_gates
+        if any(record.gate == gate and record.exit_status != 0 for record in records)
+    }
+    gate_details: list[str] = []
+    if missing_gates:
+        gate_details.append(f"missing required gates: {', '.join(missing_gates)}")
+    if failed_gates:
+        failures = ", ".join(
+            f"{gate} ({'/'.join(str(status) for status in statuses)})"
+            for gate, statuses in failed_gates.items()
+        )
+        gate_details.append(f"required gates with non-zero exit: {failures}")
+    gates_ok = not gate_details
+    checks.append(
+        ReadinessCheck(
+            "required-gates",
+            gates_ok,
+            f"all {len(required_gates)} required gates have exit 0"
+            if gates_ok
+            else "; ".join(gate_details),
+        )
     )
+
+    evidence_ok, evidence_detail = evidence_is_current(evidence_path, head_sha, root=root)
     checks.append(ReadinessCheck("evidence-current", evidence_ok, evidence_detail))
 
     return ReadinessResult(
         ready=all(check.ok for check in checks),
         classification=classification,
         risk_class=classification.risk_class,
-        required_gates=model.required_gates(classification.risk_class),
+        required_gates=required_gates,
         declared_risk=declared,
         checks=tuple(checks),
     )

@@ -26,6 +26,12 @@ _SECTION = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 _CRITICAL = {"P0", "P1", "P2"}
+_SEVERITIES = {"P0", "P1", "P2", "P3"}
+_RISK = re.compile(r"\bR([0-3])\b")
+_NO_FINDINGS = re.compile(
+    r"^\s*no findings;\s*(?P<count>\d+)\s+counterexamples attempted\.?\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
 
 
 @dataclass(frozen=True)
@@ -51,6 +57,16 @@ class ValidationResult:
     @property
     def ok(self) -> bool:
         return not self.issues
+
+
+@dataclass(frozen=True)
+class EvidenceRecord:
+    """One command result associated with a machine-readable gate identifier."""
+
+    gate: str
+    command: str
+    exit_status: int
+    result: str
 
 
 def load_schema(path: Path = SCHEMA_PATH) -> TaskSchema:
@@ -102,6 +118,65 @@ def _traceability_rows(text: str) -> dict[str, list[str]]:
         for requirement_id in ids:
             mapped[requirement_id] = cells
     return mapped
+
+
+def _plain_cell(value: str) -> str:
+    return value.strip().strip("`").strip()
+
+
+def evidence_records(text: str) -> tuple[EvidenceRecord, ...]:
+    """Parse gate evidence from the four-column schema or its legacy three-column form."""
+
+    rows = _table_rows(_sections(text).get("commands", ""))
+    if not rows:
+        return ()
+    header = [_normal_heading(cell) for cell in rows[0]]
+    modern = header[:4] == ["gate", "command", "exit status", "result"]
+    legacy = header[:3] == ["command", "exit status", "result"]
+    if not modern and not legacy:
+        return ()
+
+    records: list[EvidenceRecord] = []
+    for cells in rows[1:]:
+        if modern and len(cells) >= 4:
+            gate, command, status, result = cells[:4]
+        elif legacy and len(cells) >= 3:
+            command, status, result = cells[:3]
+            gate = command
+        else:
+            continue
+        if re.fullmatch(r"-?\d+", status) is None:
+            continue
+        normalized_gate = _plain_cell(gate).casefold()
+        normalized_command = _plain_cell(command)
+        if not normalized_gate or not normalized_command or not result.strip():
+            continue
+        records.append(
+            EvidenceRecord(
+                normalized_gate,
+                normalized_command,
+                int(status),
+                result.strip(),
+            )
+        )
+    return tuple(records)
+
+
+def _declared_risk(spec: str) -> str | None:
+    match = _RISK.search(_sections(spec).get("risk class", ""))
+    return f"R{match.group(1)}" if match is not None else None
+
+
+def _review_ran(text: str) -> bool:
+    findings = _sections(text).get("findings", "")
+    has_finding = any(
+        len(cells) >= 5
+        and cells[1].upper() in _SEVERITIES
+        and all(cell.strip() for cell in cells[:5])
+        for cells in _table_rows(findings)
+    )
+    no_findings = _NO_FINDINGS.search(findings)
+    return has_finding or (no_findings is not None and int(no_findings.group("count")) >= 1)
 
 
 def _critical_review_issues(text: str, resolved: frozenset[str]) -> list[ValidationIssue]:
@@ -181,23 +256,23 @@ def validate_task_dir(task_dir: Path, schema_path: Path = SCHEMA_PATH) -> Valida
     review = content.get("review.md")
     if review is not None:
         issues.extend(_critical_review_issues(review, schema.resolved_review_statuses))
-
-    evidence = content.get("evidence.md")
-    if evidence is not None:
-        command_rows = [
-            cells
-            for cells in _table_rows(_sections(evidence).get("commands", ""))
-            if len(cells) >= 3
-            and cells[0].casefold() != "command"
-            and re.fullmatch(r"-?\d+", cells[1])
-        ]
-        if not command_rows:
+        if _declared_risk(spec) == "R3" and not _review_ran(review):
             issues.append(
                 ValidationIssue(
-                    "missing-command-evidence",
-                    "evidence.md must record a command with a numeric exit status and result",
+                    "missing-adversarial-review",
+                    "R3 review.md must record a finding row or 'No findings; N counterexamples "
+                    "attempted' with N >= 1",
                 )
             )
+
+    evidence = content.get("evidence.md")
+    if evidence is not None and not evidence_records(evidence):
+        issues.append(
+            ValidationIssue(
+                "missing-command-evidence",
+                "evidence.md must record gate, command, numeric exit status, and result",
+            )
+        )
 
     return ValidationResult(task_dir, tuple(issues), acceptance, invariants)
 

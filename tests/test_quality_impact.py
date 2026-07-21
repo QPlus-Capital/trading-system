@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 from scripts.quality.classify import REPO_ROOT
@@ -87,6 +88,17 @@ def test_impact_artifact_is_independent_of_input_path_order() -> None:
     forward = analyze_impact(paths)
     reverse = analyze_impact(list(reversed(paths)))
     assert forward == reverse
+
+
+def test_default_impact_artifact_is_gitignored() -> None:
+    completed = subprocess.run(
+        ["git", "check-ignore", ".ai/impact/test-map.json"],
+        cwd=REPO_ROOT,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0
 
 
 def test_report_never_claims_complete_coverage() -> None:

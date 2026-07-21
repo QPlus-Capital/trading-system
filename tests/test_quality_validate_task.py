@@ -51,6 +51,14 @@ _TEST_PLAN = """# Test plan
 | INV-01 | `test_invariant` | RED: invariant absent | GREEN: invariant holds |
 """
 
+_R1_EVIDENCE_ROWS = """| Gate | Command | Exit status | Result |
+|---|---|---:|---|
+| `format` | `verify format` | 0 | pass |
+| `docs-consistency` | `verify docs-consistency` | 0 | pass |
+| `check` | `verify check` | 0 | pass |
+| `impacted-tests` | `verify impacted-tests` | 0 | pass |
+"""
+
 
 def _task(tmp_path: Path, *, spec: str = _SPEC, test_plan: str = _TEST_PLAN) -> Path:
     task = tmp_path / "task"
@@ -62,7 +70,7 @@ def _task(tmp_path: Path, *, spec: str = _SPEC, test_plan: str = _TEST_PLAN) -> 
         "test-plan.md": test_plan,
         "review.md": "# Review\n\n## Findings\nNo findings.\n\n## Dispositions\nNone.\n",
         "evidence.md": "# Evidence\n\n## HEAD\nHEAD: abc123\n\n## Commands\n"
-        "| Command | Exit status | Result |\n|---|---:|---|\n| `pytest` | 0 | pass |\n\n"
+        f"{_R1_EVIDENCE_ROWS}\n"
         "## Coverage and mutation\nDeferred.\n\n## Deferred checks\nNone.\n",
     }
     for name, content in files.items():
@@ -140,6 +148,46 @@ def test_an_unresolved_p1_fails(tmp_path: Path) -> None:
     assert "P1" in _messages(task)
 
 
+def test_an_empty_r3_review_fails(tmp_path: Path) -> None:
+    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    result = validate_task_dir(task)
+    assert not result.ok
+    assert "counterexamples" in _messages(task).lower()
+
+
+def test_an_r3_no_findings_review_records_counterexamples(tmp_path: Path) -> None:
+    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\nNo findings; 3 counterexamples attempted\n\n"
+        "## Dispositions\nNone required.\n",
+        encoding="utf-8",
+    )
+    assert validate_task_dir(task).ok
+
+
+def test_an_r3_no_findings_review_requires_a_counterexample(tmp_path: Path) -> None:
+    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\nNo findings; 0 counterexamples attempted\n\n"
+        "## Dispositions\nNone required.\n",
+        encoding="utf-8",
+    )
+    result = validate_task_dir(task)
+    assert not result.ok
+    assert "N >= 1" in _messages(task)
+
+
+def test_an_r3_review_rejects_a_malformed_finding_row(tmp_path: Path) -> None:
+    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n| P3 |\n\n## Dispositions\nNone.\n",
+        encoding="utf-8",
+    )
+    result = validate_task_dir(task)
+    assert not result.ok
+    assert "counterexamples" in _messages(task).lower()
+
+
 def test_an_unresolved_p0_fails(tmp_path: Path) -> None:
     task = _task(tmp_path)
     (task / "review.md").write_text(
@@ -160,7 +208,7 @@ def test_evidence_without_command_results_fails(tmp_path: Path) -> None:
     evidence = task / "evidence.md"
     evidence.write_text(
         evidence.read_text(encoding="utf-8").replace(
-            "| Command | Exit status | Result |\n|---|---:|---|\n| `pytest` | 0 | pass |\n",
+            _R1_EVIDENCE_ROWS,
             "No commands recorded.\n",
         ),
         encoding="utf-8",

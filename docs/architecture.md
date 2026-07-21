@@ -306,7 +306,7 @@ flowchart TD
 | `docs/` | methodology (the spec), runbook, this file | yes |
 | `.ai/quality/` | TOML risk, finding, task-schema, and critical-dependency models | yes |
 | `.ai/tasks/` | concise task specifications, test traceability, review, and evidence | yes |
-| `.ai/impact/test-map.json` | latest conservative changed-file test-impact recommendation | yes |
+| `.ai/impact/test-map.json` | local conservative changed-file test-impact recommendation | no |
 
 ## 8. Conventions that keep the numbers honest
 
