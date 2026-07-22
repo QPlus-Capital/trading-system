@@ -1,8 +1,10 @@
 """Deterministic property settings and a fail-closed real-MT5 test boundary."""
 
+import importlib
+import importlib.util
+from types import ModuleType
 from typing import NoReturn
 
-import MetaTrader5 as mt5
 import pytest
 from hypothesis import settings
 
@@ -29,9 +31,25 @@ _MT5_BOUNDARIES = (
 )
 
 
+def _mt5_available() -> bool:
+    return importlib.util.find_spec("MetaTrader5") is not None
+
+
+def _load_mt5_module() -> ModuleType | None:
+    """Load the Windows-only bridge when available without breaking Linux test collection."""
+
+    if not _mt5_available():
+        return None
+    return importlib.import_module("MetaTrader5")
+
+
 @pytest.fixture(autouse=True)
 def _block_real_mt5(monkeypatch: pytest.MonkeyPatch) -> None:
     """Make an unmocked terminal/account call fail before it can reach MetaTrader 5."""
+
+    mt5 = _load_mt5_module()
+    if mt5 is None:
+        return
 
     class BlockedMT5Boundary:
         __qplus_test_block__ = True
