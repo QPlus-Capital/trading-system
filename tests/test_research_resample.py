@@ -42,6 +42,24 @@ def test_politis_white_matches_the_corrected_ar1_reference() -> None:
     assert estimate == pytest.approx(5.085266752079944, rel=1e-12)
 
 
+@pytest.mark.parametrize(
+    ("daily_returns", "expected"),
+    [
+        (np.arange(2, dtype=np.float64), 1.0),
+        ((-1.0) ** np.arange(3), 3.634241185664279),
+        ((-1.0) ** np.arange(4), 1.587401051968198),
+        (np.arange(5, dtype=np.float64), 1.3049558803896213),
+        (np.arange(6, dtype=np.float64), 1.1447142425533319),
+        (np.arange(6, dtype=np.float64) * 1e-8, 1.144714242553332),
+    ],
+)
+def test_politis_white_matches_corrected_small_sample_references(
+    daily_returns: FloatArray, expected: float
+) -> None:
+    """Pin bandwidth boundaries that a long AR(1) reference does not exercise."""
+    assert politis_white_block_length(daily_returns) == pytest.approx(expected, rel=1e-12)
+
+
 def test_white_noise_selects_a_block_length_near_one() -> None:
     white_noise = np.random.default_rng(55).normal(size=2_000)
     selected = select_block_length({"white-noise": white_noise})
@@ -58,17 +76,31 @@ def test_selector_ceilings_the_maximum_and_keeps_minimum_one() -> None:
 def test_selector_fails_closed_above_one_tenth_with_complete_diagnostic() -> None:
     with pytest.raises(ValueError) as raised:
         select_block_length({"trend-candidate": np.arange(100, dtype=np.float64)})
-    message = str(raised.value)
-    assert "L=15" in message
-    assert "T=100" in message
-    assert "trend-candidate" in message
+    assert str(raised.value) == (
+        "Politis-White block length rejected: L=15 exceeds floor(T/10)=10 "
+        "for candidate 'trend-candidate' (T=100)"
+    )
+
+
+def test_selector_fails_closed_on_an_infinite_estimate() -> None:
+    with pytest.raises(ValueError) as raised:
+        select_block_length({"zero-long-run-variance": np.array([-1.0, 1.0, 0.0])})
+    assert str(raised.value) == (
+        "Politis-White block length rejected: L=inf exceeds floor(T/10)=0 "
+        "for candidate 'zero-long-run-variance' (T=3)"
+    )
 
 
 def test_selector_requires_a_nonempty_common_daily_grid() -> None:
-    with pytest.raises(ValueError, match="at least one candidate"):
+    with pytest.raises(ValueError) as empty:
         select_block_length({})
-    with pytest.raises(ValueError, match="common daily grid"):
+    assert str(empty.value) == "candidate_returns must contain at least one candidate"
+
+    with pytest.raises(ValueError) as mismatched:
         select_block_length({"short": np.zeros(20), "long": np.zeros(21)})
+    assert str(mismatched.value) == "candidate returns must share one common daily grid"
+
+    assert select_block_length({"boundary": np.zeros(10)}) == 1
 
 
 @pytest.mark.parametrize(
@@ -83,6 +115,12 @@ def test_selector_requires_a_nonempty_common_daily_grid() -> None:
 def test_estimator_rejects_invalid_return_arrays(bad: FloatArray, message: str) -> None:
     with pytest.raises(ValueError, match=message):
         politis_white_block_length(bad)
+
+
+def test_estimator_validation_names_its_input() -> None:
+    with pytest.raises(ValueError) as raised:
+        politis_white_block_length(np.array([], dtype=np.float64))
+    assert str(raised.value) == "daily_returns must be non-empty"
 
 
 @pytest.mark.parametrize("mean_block_length", [0, -1, 0.5, np.nan, np.inf])
@@ -151,6 +189,22 @@ def test_seed_is_bit_for_bit_reproducible_and_input_is_not_mutated() -> None:
     assert np.array_equal(explicit_a, explicit_b)
     assert not np.array_equal(default_a, explicit_a)
     assert np.array_equal(daily_returns, original)
+
+
+def test_seed_pins_independent_restart_draws_and_uniform_zero_starts() -> None:
+    samples = stationary_bootstrap(
+        np.arange(2, dtype=np.float64),
+        1,
+        replications=3,
+        seed=0,
+    )
+    assert np.array_equal(samples, np.array([[1.0, 0.0], [1.0, 1.0], [1.0, 1.0]]))
+
+
+def test_bootstrap_validation_names_its_input() -> None:
+    with pytest.raises(ValueError) as raised:
+        stationary_bootstrap(np.array([], dtype=np.float64), 2)
+    assert str(raised.value) == "daily_returns must be non-empty"
 
 
 def test_sensitivity_and_public_defaults_are_fixed() -> None:
