@@ -275,3 +275,27 @@ why_tests_missed = "the pure bypass test supplied the synthetic suppression as a
 regression = "test_bypass_decision_blocks_bypass_and_allows_narrow_suppression fixture-source and documentation cases"
 generalized = "source-policy scanners must distinguish language tokens from strings and documentation examples"
 workflow_change = "Python bypass checks inspect comment and code tokens only; per-file ignores are scoped to TOML diffs"
+
+[[finding]]
+id = "F-023"
+source = "issue #66 (bypass-hook adversarial review)"
+defect_class = "coded-broad-suppression"
+severity = "P2"
+affected = "scripts/quality/hooks/decisions.py"
+root_cause = "the bypass matcher treated any bracketed type ignore or colon-qualified noqa as narrow, so empty type codes and noqa ALL passed"
+why_tests_missed = "the initial block/allow pair compared only a bare suppression with one valid specific code"
+regression = "test_bypass_decision_blocks_bypass_and_allows_narrow_suppression coded broad cases"
+generalized = "a syntactically qualified suppression is not necessarily scoped; validate the qualifier semantics"
+workflow_change = "only non-empty type codes and specific numeric Ruff codes are accepted"
+
+[[finding]]
+id = "F-024"
+source = "issue #66 (mutation-evidence adversarial review)"
+defect_class = "baseline-guard-incomplete-path-set"
+severity = "P1"
+affected = "scripts/quality/hooks/decisions.py"
+root_cause = "the evidence hook covered files named baseline but not mutation.toml, even though changing mutation scope can weaken the measured baseline"
+why_tests_missed = "the first block/allow pair exercised only mutation-baseline.toml and an unrelated document"
+regression = "test_baseline_evidence_decision_blocks_missing_and_allows_explicit_evidence mutation-policy case"
+generalized = "a baseline guard must include the policy that defines what the baseline measures"
+workflow_change = "mutation policy and every named quality baseline require successful mutation evidence"
