@@ -299,3 +299,15 @@ why_tests_missed = "the first block/allow pair exercised only mutation-baseline.
 regression = "test_baseline_evidence_decision_blocks_missing_and_allows_explicit_evidence mutation-policy case"
 generalized = "a baseline guard must include the policy that defines what the baseline measures"
 workflow_change = "mutation policy and every named quality baseline require successful mutation evidence"
+
+[[finding]]
+id = "F-025"
+source = "PR #75 Claude adversarial review"
+defect_class = "runtime-config-unsupported-shape"
+severity = "P1"
+affected = ".claude/settings.json, tests/test_claude_runtime_files.py"
+root_cause = "the hook used a command-plus-args split that the installed Claude Code version is not known to execute, risking a silent failure of every safety decision"
+why_tests_missed = "the schema test asserted the same unverified split shape and executed the module through a separate sys.executable path"
+regression = "test_settings_use_thin_documented_pre_tool_hook_schema and test_configured_hook_module_executes_a_safe_payload_without_output"
+generalized = "runtime configuration must use the canonical shape supported by the deployed version and execute the exact configured command in tests"
+workflow_change = "Claude hooks use one command string; the schema test parses and runs that string with the documented stdin payload"

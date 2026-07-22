@@ -16,7 +16,8 @@ formats follow the current official documentation:
 - [Settings](https://code.claude.com/docs/en/settings) identifies `.claude/settings.json` as
   shareable project settings.
 
-The JSON remains wiring only. Its command is the shell-neutral executable/argument form:
+The JSON remains wiring only. Its handler uses the canonical single-command string supported by
+the installed Claude Code version:
 
 ```text
 uv run python -m scripts.quality.hooks.pre_bash

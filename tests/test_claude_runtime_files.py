@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
-import sys
 from pathlib import Path
 
 from scripts.quality.classify import REPO_ROOT, classify_path, load_model
@@ -89,8 +89,7 @@ def test_settings_use_thin_documented_pre_tool_hook_schema() -> None:
     assert handlers == [
         {
             "type": "command",
-            "command": "uv",
-            "args": ["run", "python", "-m", "scripts.quality.hooks.pre_bash"],
+            "command": "uv run python -m scripts.quality.hooks.pre_bash",
             "timeout": 30,
         }
     ]
@@ -101,13 +100,17 @@ def test_claude_hook_settings_are_classified_r3() -> None:
 
 
 def test_configured_hook_module_executes_a_safe_payload_without_output() -> None:
+    settings = json.loads((REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+    command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    invocation = shlex.split(command, posix=True)
+    assert invocation == ["uv", "run", "python", "-m", "scripts.quality.hooks.pre_bash"]
     payload = {
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",
         "tool_input": {"command": "git status --short"},
     }
     completed = subprocess.run(
-        [sys.executable, "-m", "scripts.quality.hooks.pre_bash"],
+        invocation,
         cwd=REPO_ROOT,
         input=json.dumps(payload),
         capture_output=True,

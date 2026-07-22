@@ -13,13 +13,15 @@
 | R-07 | P2 | Raw bypass matching treated the test's quoted `# type: ignore` counterexample as a real suppression and blocked the dogfood commit | Tokenize Python additions, inspect actual comments/code only, scope per-file ignores to TOML, and register F-022 | resolved |
 | R-08 | P2 | Qualified suppressions such as `# noqa: ALL` and `# type: ignore[]` bypassed the bare-ignore matcher | Validate qualifier semantics, retain specific-code allows and coded-broad blocks, and register F-023 | resolved |
 | R-09 | P1 | Baseline evidence covered `mutation-baseline.toml` but not `mutation.toml`, whose target/pattern changes can weaken what the baseline measures | Treat the mutation policy as baseline-governing, add the missing unsafe case, and register F-024 | resolved |
+| R-10 | P1 | `.claude/settings.json:9` used an unverified `command` plus `args` split that could silently prevent the installed Claude Code version from launching any safety hook | Use the canonical single command string, parse and execute that exact configured value in the runtime test, and register F-025 | resolved |
 
 ## Dispositions
 
-The review attempted 23 counterexamples: dotted and slash module spellings, signal-only live start,
+The review attempted 24 counterexamples: dotted and slash module spellings, signal-only live start,
 service stop, explicit order placement, offline runner tests, documentation search, two force-push
 forms, a synthetic fake secret, its committed source placeholder, direct main R0/R1, failed and
 successful readiness, missing baseline evidence, broad and narrow suppressions, missing R3 task,
 unresolved review, staged-versus-working-tree drift, quoted suppression fixtures, and documentation
-examples, coded broad suppressions, and mutation-policy drift. R-01 through R-09 are resolved with
-executable guards. No live process, account, terminal, runner, order, or position was accessed.
+examples, coded broad suppressions, mutation-policy drift, and canonical command-string execution.
+R-01 through R-10 are resolved with executable guards. No live process, account, terminal, runner,
+order, or position was accessed.
