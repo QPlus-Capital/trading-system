@@ -19,6 +19,7 @@ dev = [
     "ruff>=0.6",
     "mypy>=1.11",
     "pytest>=8.0",
+    "hypothesis>=6.158.1",
 ]
 
 [build-system]
@@ -56,3 +57,30 @@ addopts = "-ra"
 # Repo root on sys.path so the dev tooling under scripts/ is importable in tests without shipping
 # it in the wheel (it is not a runtime dependency of the trading system).
 pythonpath = ["."]
+
+[tool.mutmut]
+# Mutmut needs import-complete package copies, but only these eight pure critical files are mutated.
+paths_to_mutate = [
+    "live/risk_control.py",
+    "research/portfolio/sizing.py",
+    "research/portfolio/drawdown.py",
+    "research/portfolio/risk.py",
+    "research/portfolio/stats.py",
+    "core/strategies/param_schedule.py",
+    "research/engine/continuous.py",
+    "research/regression.py",
+]
+also_copy = ["core", "research", "live", "monitoring", "scripts", ".ai"]
+mutate_only_covered_lines = false
+pytest_add_cli_args = ["--disable-warnings"]
+pytest_add_cli_args_test_selection = [
+    "tests/test_live_risk_control.py",
+    "tests/test_research_sizing.py",
+    "tests/test_research_portfolio_dd.py",
+    "tests/test_research_risk.py",
+    "tests/test_research_stats.py",
+    "tests/test_research_param_schedule.py",
+    "tests/test_research_continuous_windows.py",
+    "tests/test_research_regression.py",
+    "tests/test_quality_properties.py",
+]
