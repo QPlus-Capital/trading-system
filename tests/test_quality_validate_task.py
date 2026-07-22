@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+import scripts.quality.validate_task as task_validator
 from scripts.quality.classify import REPO_ROOT
-from scripts.quality.validate_task import discover_task_id, validate_task_dir
+from scripts.quality.validate_task import ValidationResult, discover_task_id, validate_task_dir
 
 _SPEC = """# Task
 
@@ -90,6 +92,19 @@ def test_changed_task_discovery_requires_exactly_one_artifact() -> None:
     assert discover_task_id([".ai/tasks/67/spec.md", "scripts/quality/pr_body.py"]) == "67"
     assert discover_task_id([".ai/tasks/66/spec.md", ".ai/tasks/67/spec.md"]) is None
     assert discover_task_id(["scripts/quality/pr_body.py"]) is None
+
+
+def test_cli_reports_the_discovered_task_id(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(task_validator, "changed_paths", lambda _base: [".ai/tasks/67/spec.md"])
+    monkeypatch.setattr(
+        task_validator,
+        "validate_task",
+        lambda task_id: ValidationResult(Path(task_id), (), ("AC-01",), ("INV-01",)),
+    )
+    assert task_validator.main(["--base", "origin/main"]) == 0
+    assert "Task 67: valid" in capsys.readouterr().out
 
 
 def test_the_versioned_templates_satisfy_the_schema() -> None:

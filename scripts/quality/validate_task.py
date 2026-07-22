@@ -310,7 +310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     result = validate_task(task_id)
     if result.ok:
         print(
-            f"Task {args.task_id}: valid "
+            f"Task {task_id}: valid "
             f"({len(result.acceptance_ids)} AC, {len(result.invariant_ids)} INV)."
         )
         return 0

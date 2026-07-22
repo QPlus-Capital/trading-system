@@ -371,3 +371,15 @@ why_tests_missed = "the first positive and negative cases used one task referenc
 regression = "test_pr_body_validator_requires_a_linked_issue_matching_a_numeric_task"
 generalized = "independently valid provenance fields must also be reconciled to the same identity"
 workflow_change = "PR evidence now requires a numeric linked issue and matches it to a numeric task artifact ID"
+
+[[finding]]
+id = "F-031"
+source = "issue #67 task-artifact recipe dogfood"
+defect_class = "validated-identity-not-propagated-to-output"
+severity = "P2"
+affected = "scripts/quality/validate_task.py"
+root_cause = "the CLI printed the optional raw argument after discovering a concrete task ID, so successful CI output named Task None"
+why_tests_missed = "discovery was tested as a pure function but the no-argument CLI execution path was not exercised"
+regression = "test_cli_reports_the_discovered_task_id"
+generalized = "after fallback or discovery, reporting must use the resolved value consumed by the decision"
+workflow_change = "the CI-facing task validator now tests and reports the discovered task identity"

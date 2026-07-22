@@ -43,6 +43,7 @@ def _block_real_mt5(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in _MT5_BOUNDARIES:
         monkeypatch.setattr(mt5, name, blocked)
 
+
 settings.register_profile(
     "qplus",
     derandomize=True,
