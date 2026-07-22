@@ -35,10 +35,32 @@ _DASHBOARD_OPERATOR_CALLS = {"caption", "error", "info", "warning"}
 #: words that also appear in English or inside identifiers are deliberately absent: a check that
 #: cries wolf gets disabled, and then it protects nothing.
 _MARKERS = (
-    "aenderung", "änderung", "abbruch", "bericht", "rendite", "gewaehlt", "gewählt",
-    "naechster", "nächster", "maerkte", "märkte", "auswahl", "handelbar", "urteil",
-    "unbestimmt", "nicht bestimmbar", "herkunft", "laesst", "lässt", "klaeren", "klären",
-    "angekuendigt", "angekündigt", "staerker", "stärker", "zahlen bewegen",
+    "aenderung",
+    "änderung",
+    "abbruch",
+    "bericht",
+    "rendite",
+    "gewaehlt",
+    "gewählt",
+    "naechster",
+    "nächster",
+    "maerkte",
+    "märkte",
+    "auswahl",
+    "handelbar",
+    "urteil",
+    "unbestimmt",
+    "nicht bestimmbar",
+    "herkunft",
+    "laesst",
+    "lässt",
+    "klaeren",
+    "klären",
+    "angekuendigt",
+    "angekündigt",
+    "staerker",
+    "stärker",
+    "zahlen bewegen",
 )
 
 
@@ -107,9 +129,7 @@ def test_no_new_file_carries_german(path: Path) -> None:
     if rel in _KNOWN_VIOLATIONS:
         return  # covered by the ratchet test below, not skipped
     hits = _carries_german(path)
-    assert not hits, (
-        f"{rel} contains German outside approved operator literals: {', '.join(hits)}."
-    )
+    assert not hits, f"{rel} contains German outside approved operator literals: {', '.join(hits)}."
 
 
 def test_dashboard_exception_is_limited_to_direct_operator_literals() -> None:
@@ -119,7 +139,7 @@ def test_dashboard_exception_is_limited_to_direct_operator_literals() -> None:
 
     unscoped = (
         operator_only
-        + '# Märkte remain English in source comments\n'
+        + "# Märkte remain English in source comments\n"
         + 'log.warning("nicht bestimmbar")\n'
     )
     hits = {
@@ -137,8 +157,7 @@ def test_the_known_violations_are_exactly_those_that_remain() -> None:
     translated must leave the list, so it cannot quietly become a permanent exemption.
     """
     still_german = {
-        rel for rel in _KNOWN_VIOLATIONS
-        if (_ROOT / rel).is_file() and _carries_german(_ROOT / rel)
+        rel for rel in _KNOWN_VIOLATIONS if (_ROOT / rel).is_file() and _carries_german(_ROOT / rel)
     }
     gone = _KNOWN_VIOLATIONS - still_german
     assert not gone, (
