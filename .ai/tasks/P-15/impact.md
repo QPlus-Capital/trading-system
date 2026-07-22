@@ -4,6 +4,8 @@
 
 - Dashboard operators see the issue #40 guidance in German.
 - A focused rendering test protects the risk and history copy.
+- The existing language guard ignores German only inside direct dashboard Streamlit rendering
+  literals while continuing to scan comments, docstrings, logs, identifiers, and indirect strings.
 
 ## Transitive impact
 
