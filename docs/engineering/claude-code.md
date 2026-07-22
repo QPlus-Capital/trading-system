@@ -31,3 +31,8 @@ readiness to `validate_task.py` and `pr_ready.py`.
 The repository's Python 3.13 environment and tests validate every runtime file and the exact hook
 schema on Windows. Claude Code itself is not a project dependency, so discovery is additionally
 dogfooded by the independent Claude review after the PR opens.
+
+Claude's primary runtime path is conceptual design followed by independent, read-only review of the
+completed Codex build. `adversarial-review` and the three reviewer subagents implement that path.
+The implementation and PR-preparation skills remain available only when Jan assigns Claude the
+highest-stakes trading-work exception; a fresh independent reviewer must then review Claude's work.

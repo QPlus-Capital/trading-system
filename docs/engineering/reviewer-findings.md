@@ -1,6 +1,6 @@
 # Reviewer-findings feedback loop
 
-Every confirmed Codex or adversarial-review defect becomes permanent protection. The implementer
+Every confirmed Claude or read-only adversarial-review defect becomes permanent protection. The builder
 must reproduce it with a failing test, fix the root cause, keep the generalized regression test,
 and add one entry to `.ai/quality/finding-patterns.toml` before readiness is reassessed.
 

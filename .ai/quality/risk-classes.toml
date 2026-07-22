@@ -247,12 +247,12 @@ reason = "the trading methodology and holdout discipline"
 [[rules]]
 glob = "CLAUDE.md"
 min_class = "R3"
-reason = "the builder contract and immutable constraints"
+reason = "the reviewer and conceptual-designer contract and immutable constraints"
 
 [[rules]]
 glob = "AGENTS.md"
 min_class = "R3"
-reason = "the independent-review contract"
+reason = "the builder contract and immutable constraints"
 
 [[rules]]
 glob = "docs/live-runbook.md"
