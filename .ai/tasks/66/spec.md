@@ -47,7 +47,8 @@ block unsafe commit, push, PR, live-command, secret, bypass, baseline, and revie
 ## Assumptions
 
 - Claude Code command hooks receive JSON on stdin with `tool_name` and `tool_input.command`.
-- A project settings handler may use the documented executable-plus-`args` form.
+- A project settings handler uses the canonical single `command` string supported by the installed
+  Claude Code version.
 - `uv`, Git, and the repository checkout are available to Claude Code in Git Bash on Windows.
 
 ## Open questions

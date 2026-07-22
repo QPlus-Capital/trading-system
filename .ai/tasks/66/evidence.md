@@ -15,14 +15,16 @@ HEAD: 05365c71d779b0cd6de4744c8d9f6035be4812a0
 | `red-first` | staged commit-hook bypass dogfood | 1 | RED: a quoted broad-ignore counterexample was treated as a real Python suppression |
 | `red-first` | coded broad-suppression probe | 1 | RED: `noqa: ALL` passed as if it were a narrow code |
 | `red-first` | mutation-policy evidence probe | 1 | RED: `mutation.toml` changed without explicit mutation evidence |
+| `red-first` | `uv run pytest -q tests/test_claude_runtime_files.py -k "settings_use_thin or configured_hook_module"` | 1 | RED: 2 failed because settings still exposed `command: uv` plus `args`, and parsing the wired command yielded only `uv` |
 | `format` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | Five changed Python files already formatted; branch classified R3 |
-| `docs-consistency` | `uv run pytest -q tests/test_docs_architecture_map.py tests/test_engineering_docs.py` | 0 | 57 passed |
+| `runtime-wiring` | `uv run pytest -q tests/test_claude_runtime_files.py -k "settings_use_thin or configured_hook_module"` | 0 | 2 passed; no `args` key, exact command parses to the module invocation and runs successfully |
+| `docs-consistency` | `uv run pytest -q tests/test_docs_architecture_map.py tests/test_engineering_docs.py` | 0 | 56 passed |
 | `check` | `uvx --from rust-just just --shell powershell.exe --shell-arg -Command check` | 0 | Ruff, mypy (144 files), pytest (684 passed, 1 Linux-only skip), and vulture passed |
 | `impacted-tests` | `uvx --from rust-just just --shell powershell.exe --shell-arg -Command check-fast` | 0 | R3; 27 recommended hook/runtime tests passed after format, Ruff, and mypy |
 | `property-tests-where-applicable` | `uv run pytest -q tests/test_quality_properties.py --hypothesis-seed=20260721` twice | 0 | 8 passed twice with the same seed |
 | `integration-tests` | full pytest within `check` | 0 | 684 passed, 1 Linux-only mutation skip |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task 66` | 0 | Valid: 4 acceptance criteria and 4 invariants |
-| `adversarial-review` | `.ai/tasks/66/review.md` | 0 | 23 counterexamples attempted; R-01 through R-09 resolved |
+| `adversarial-review` | `.ai/tasks/66/review.md` | 0 | 24 counterexamples attempted; R-01 through R-10 resolved |
 | `invariants` | `uv run pytest -q tests/test_quality_hooks.py tests/test_claude_runtime_files.py tests/test_engineering_docs.py` | 0 | 82 passed; block/allow, schemas, snapshots, fail-closed output, and risk rules covered |
 | `mutation-on-touched-critical` | Linux `mutation-critical` workflow (run 29898400124) | 0 | Weakened-test probe and complete focused critical ratchet passed; later hook-only commit leaves all configured critical targets byte-identical |
 | `parity-where-applicable` | `git diff --quiet origin/main -- core research live monitoring` | 0 | No production trading package changed |
