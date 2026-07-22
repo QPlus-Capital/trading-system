@@ -4,26 +4,112 @@ on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  check:
+  standard-quality:
     runs-on: windows-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.13"
       - name: Install dependencies
-        run: uv sync
-      - name: Lint (ruff)
-        run: uv run ruff check .
-      - name: Type-check (mypy)
-        run: uv run mypy
-      - name: Tests (pytest)
-        run: uv run pytest -q
-      - name: Deterministic property replay (same seed twice)
-        run: |
-          uv run pytest -q tests/test_quality_properties.py --hypothesis-seed=20260721
-          uv run pytest -q tests/test_quality_properties.py --hypothesis-seed=20260721
-      - name: Dead code (vulture)
-        run: uvx vulture core research live monitoring scripts --min-confidence 80
+        run: uv sync --locked
+      - name: Run the local Standard Quality recipe
+        run: uvx --from rust-just just check-standard
+
+  tests:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run the local Tests recipe
+        run: uvx --from rust-just just check-tests
+      - name: Run the local deterministic Property Replay recipe
+        run: uvx --from rust-just just check-properties
+
+  task-artifact-validation:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run the local Task-Artifact Validation recipe
+        run: uvx --from rust-just just check-task-artifact
+
+  security:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run the local Security recipe
+        run: uvx --from rust-just just check-security
+
+  critical-invariants:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run the local Critical Invariants recipe
+        run: uvx --from rust-just just check-invariants
+
+  pr-evidence-validation:
+    if: github.event_name == 'pull_request'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Run the local PR-Evidence Validation recipe
+        run: uvx --from rust-just just check-pr-evidence

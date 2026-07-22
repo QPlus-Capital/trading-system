@@ -264,6 +264,8 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `scripts/quality/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `scripts/quality/pr_ready.py` | Composes risk, task, review, traceability, and evidence-freshness gates |
 | `scripts/quality/mutation.py` | Runs focused Linux mutation scopes and enforces the TOML survivor ratchet |
+| `scripts/quality/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
+| `scripts/quality/pr_body.py` | Binds required PR sections to one current, ready task artifact |
 | `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `scripts/quality/hooks/pre_bash.py` | Collects Git/task metadata and emits Claude Code hook responses |
 

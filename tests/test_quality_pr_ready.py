@@ -138,6 +138,17 @@ def test_an_r3_change_reports_the_cumulative_r3_gates(tmp_path: Path) -> None:
     assert "check" in result.required_gates
 
 
+def test_a_manual_r3_upgrade_enforces_the_cumulative_r3_gates(tmp_path: Path) -> None:
+    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    _record_no_findings_review(task)
+    result = assess_readiness(task, changed=["scripts/tool.py"], head_sha="abc123")
+    assert not result.ready
+    assert result.classification.risk_class == "R1"
+    assert result.risk_class == "R3"
+    assert "no-autonomous-merge" in result.required_gates
+    assert any("missing required gates" in check.detail for check in result.checks if not check.ok)
+
+
 def test_declared_risk_may_not_understate_the_classifier(tmp_path: Path) -> None:
     task = _task(tmp_path)
     result = assess_readiness(
