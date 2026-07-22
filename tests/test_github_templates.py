@@ -139,6 +139,5 @@ def test_pr_body_validator_requires_a_linked_issue_matching_a_numeric_task(tmp_p
     result = validate_pr_body(body, task_root=tmp_path, policy=policy)
     assert not result.ok
     assert any(
-        "linked issue #66 does not match task artifact 67" in issue
-        for issue in result.issues
+        "linked issue #66 does not match task artifact 67" in issue for issue in result.issues
     )

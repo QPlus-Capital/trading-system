@@ -106,9 +106,10 @@ def validate_pr_body(
             issues.append("Linked issue must contain a GitHub issue number such as #67")
         else:
             linked_issue = linked_match.group("number")
-    if "risk class and reason" in required_names and re.search(
-        r"\bR[0-3]\b", sections.get("risk class and reason", "")
-    ) is None:
+    if (
+        "risk class and reason" in required_names
+        and re.search(r"\bR[0-3]\b", sections.get("risk class and reason", "")) is None
+    ):
         issues.append("Risk class and reason must name R0, R1, R2, or R3")
 
     task_matches = tuple(dict.fromkeys(match.group("task_id") for match in _TASK.finditer(body)))
