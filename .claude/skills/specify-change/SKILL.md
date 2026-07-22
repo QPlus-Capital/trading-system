@@ -1,9 +1,10 @@
 ---
 name: specify-change
-description: Invoke before implementing any non-trivial repository change to create its executable task contract.
+description: Invoke as Claude's primary design path to turn Jan's intent into an executable contract.
 ---
 
-This skill is mandatory before implementation begins for every non-trivial change.
+This is Claude's primary conceptual-design skill. It is mandatory before Codex implements a
+non-trivial change, or before Claude implements a highest-stakes trading exception assigned by Jan.
 
 ## Required inputs
 

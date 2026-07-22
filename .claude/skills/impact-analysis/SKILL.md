@@ -1,9 +1,10 @@
 ---
 name: impact-analysis
-description: Invoke after specifying a change and before test design to trace its direct and transitive effects.
+description: Invoke to bound a design before Codex builds or Claude receives the trading exception.
 ---
 
-This skill is mandatory after `specify-change` for every non-trivial change.
+Use this skill to bound Claude's conceptual specification before the Codex build. It is also
+mandatory when Jan assigns Claude the highest-stakes trading-work builder exception.
 
 ## Required inputs
 

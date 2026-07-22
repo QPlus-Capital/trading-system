@@ -1,10 +1,12 @@
 ---
 name: implement-change
-description: Invoke only after specification impact analysis and red-first tests to implement the bounded change.
+description: Invoke only for Claude's highest-stakes trading builder exception assigned by Jan.
 ---
 
-This skill is mandatory for implementation after `specify-change`, `impact-analysis`, and
-`design-tests` complete.
+Claude uses this builder skill only when Jan assigns the highest-stakes trading-work exception.
+Codex is the primary builder. Under the exception this skill remains mandatory after
+`specify-change`, `impact-analysis`, and `design-tests`, and a fresh independent reviewer must
+review Claude's implementation.
 
 ## Required inputs
 

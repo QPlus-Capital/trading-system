@@ -41,9 +41,9 @@ from idea to a tradeable, prop-firm-compliant config — is [methodology.md](met
 
 ## Next
 
-- **Codex as a permanent second AI.** PR workflow + Codex cloud review on every PR, so a second
-  model challenges the code before it merges. Setup: ChatGPT Plus + the Codex GitHub integration;
-  an `AGENTS.md` carries the same conventions as `CLAUDE.md`.
+- **Two-agent build/review separation.** Codex is the primary builder; Claude turns Jan's intent
+  into the design and performs the independent adversarial review. The highest-stakes trading work
+  may be built by either agent but is always reviewed by the other, and Jan approves every merge.
 - **Slippage calibration.** Calibrate `prob_slippage` against the live accounts' actual fills as
   trades close — the one standing reason to keep the monitor alive.
 
