@@ -1,0 +1,25 @@
+# Stable PR-body contract. The validator reads this with stdlib tomllib.
+version = 1
+required_sections = [
+  "Linked issue",
+  "Task artifact",
+  "Summary",
+  "Risk class and reason",
+  "Acceptance criteria",
+  "Invariant checklist",
+  "Affected modules",
+  "Impact-analysis summary",
+  "Tests added",
+  "Proof of red-first regression",
+  "Commands and outcomes",
+  "Property-test summary",
+  "Mutation summary",
+  "Security summary",
+  "Live-money impact",
+  "Deferred validations",
+  "Adversarial-review summary",
+  "Codex status",
+  "Human decisions required",
+  "Live-runner attestation",
+]
+required_attestation = "No live runner was touched."
