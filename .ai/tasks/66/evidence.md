@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: dd03fd821b3d008c42ec0ca1c60c6681a8b9a725
+HEAD: 05365c71d779b0cd6de4744c8d9f6035be4812a0
 
 ## Commands
 
@@ -24,7 +24,7 @@ HEAD: dd03fd821b3d008c42ec0ca1c60c6681a8b9a725
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task 66` | 0 | Valid: 4 acceptance criteria and 4 invariants |
 | `adversarial-review` | `.ai/tasks/66/review.md` | 0 | 23 counterexamples attempted; R-01 through R-09 resolved |
 | `invariants` | `uv run pytest -q tests/test_quality_hooks.py tests/test_claude_runtime_files.py tests/test_engineering_docs.py` | 0 | 82 passed; block/allow, schemas, snapshots, fail-closed output, and risk rules covered |
-| `mutation-on-touched-critical` | Linux `mutation-critical` workflow (run 29898400124) | 0 | Weakened-test probe and complete focused critical ratchet passed; hidden TOML result retained |
+| `mutation-on-touched-critical` | Linux `mutation-critical` workflow (run 29898400124) | 0 | Weakened-test probe and complete focused critical ratchet passed; later hook-only commit leaves all configured critical targets byte-identical |
 | `parity-where-applicable` | `git diff --quiet origin/main -- core research live monitoring` | 0 | No production trading package changed |
 | `live-money-review` | R3 review plus production-package diff check | 0 | No live implementation changed and no live interaction occurred |
 | `human-decision-escalation` | issue #66 scope and merge rule | 0 | Jan retains scope and merge authority |
