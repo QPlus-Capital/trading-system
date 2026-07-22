@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from scripts.quality.classify import REPO_ROOT
-from scripts.quality.validate_task import validate_task_dir
+from scripts.quality.validate_task import discover_task_id, validate_task_dir
 
 _SPEC = """# Task
 
@@ -84,6 +84,12 @@ def _messages(task: Path) -> str:
 
 def test_a_clean_task_passes(tmp_path: Path) -> None:
     assert validate_task_dir(_task(tmp_path)).ok
+
+
+def test_changed_task_discovery_requires_exactly_one_artifact() -> None:
+    assert discover_task_id([".ai/tasks/67/spec.md", "scripts/quality/pr_body.py"]) == "67"
+    assert discover_task_id([".ai/tasks/66/spec.md", ".ai/tasks/67/spec.md"]) is None
+    assert discover_task_id(["scripts/quality/pr_body.py"]) is None
 
 
 def test_the_versioned_templates_satisfy_the_schema() -> None:

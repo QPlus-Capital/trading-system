@@ -16,7 +16,7 @@ from scripts.quality.classify import (
     classify_paths,
     load_model,
 )
-from scripts.quality.validate_task import evidence_records, validate_task_dir
+from scripts.quality.validate_task import discover_task_id, evidence_records, validate_task_dir
 
 _RISK_RE = re.compile(r"\bR([0-3])\b")
 _HEAD_RE = re.compile(r"^HEAD:\s*(\S+)\s*$", re.MULTILINE)
@@ -123,9 +123,12 @@ def assess_readiness(
 
     model = load_model()
     classification = classify_paths(changed, model)
-    required_gates = model.required_gates(classification.risk_class)
     validation = validate_task_dir(task_dir)
     declared = _declared_risk(task_dir / "spec.md")
+    risk_class = classification.risk_class
+    if declared is not None and int(declared[1]) > int(risk_class[1]):
+        risk_class = declared
+    required_gates = model.required_gates(risk_class)
 
     checks: list[ReadinessCheck] = [
         ReadinessCheck(
@@ -194,22 +197,11 @@ def assess_readiness(
     return ReadinessResult(
         ready=all(check.ok for check in checks),
         classification=classification,
-        risk_class=classification.risk_class,
+        risk_class=risk_class,
         required_gates=required_gates,
         declared_risk=declared,
         checks=tuple(checks),
     )
-
-
-def _discover_task_id(paths: Sequence[str]) -> str | None:
-    task_ids = {
-        parts[2]
-        for path in paths
-        if len(parts := path.replace("\\", "/").split("/")) >= 4
-        and parts[:2] == [".ai", "tasks"]
-        and parts[2] != "_templates"
-    }
-    return next(iter(task_ids)) if len(task_ids) == 1 else None
 
 
 def _head_sha(root: Path) -> str:
@@ -235,7 +227,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = _parser().parse_args(argv)
     paths = changed_paths(args.base)
-    task_id = args.task_id or _discover_task_id(paths)
+    task_id = args.task_id or discover_task_id(paths)
     if task_id is None:
         print(
             "NOT READY: provide a task ID or change files in exactly one .ai/tasks/<id>/ directory"
