@@ -2,10 +2,13 @@
 
 ## Findings
 
-No findings; 3 counterexamples attempted
+No findings; 7 counterexamples attempted
 
 ## Dispositions
 
-Pre-implementation contract review challenged an accidental Monte Carlo consumer, a hidden
-block-length clamp, and an unseeded global RNG. The spec prohibits all three. This preliminary
-contract check does not replace Claude's independent review of the completed pull request.
+The completed implementation was challenged with an accidental Monte Carlo consumer, a hidden
+block-length clamp, an unseeded global RNG, one scalar restart shared by every replication,
+near-cancelling plug-in moments, equality at the `T/10` boundary, and implicit NumPy dtype changes.
+Focused regressions cover the executable counterexamples. The remaining mutation survivors are
+exact-name ratcheted and classified; no unexplained survivor remains. This builder review does not
+replace Claude's independent review of the pull request.
