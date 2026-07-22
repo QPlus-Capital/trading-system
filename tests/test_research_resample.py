@@ -122,7 +122,9 @@ def test_selector_requires_a_nonempty_common_daily_grid() -> None:
 
     with pytest.raises(ValueError) as invalid_candidate:
         select_block_length({"empty-candidate": np.array([], dtype=np.float64)})
-    assert str(invalid_candidate.value) == "candidate 'empty-candidate' daily_returns must be non-empty"
+    assert str(invalid_candidate.value) == (
+        "candidate 'empty-candidate' daily_returns must be non-empty"
+    )
 
 
 @pytest.mark.parametrize(
