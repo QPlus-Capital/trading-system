@@ -12,6 +12,7 @@ HEAD: replace-with-tested-commit-sha
 | `red-first` | `uv run pytest -q tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries` | 1 | RED: real MT5 functions had no pytest boundary |
 | `red-first` | focused manual-R3 and unchecked-attestation tests | 1 | RED: both unsafe states were accepted |
 | `red-first` | `uv run pip-audit --skip-editable` before lock refresh | 1 | RED: GitPython 3.1.50 had three published vulnerabilities |
+| `red-first` | Linux mutation workflow run `29905820402` | 1 | RED: global pytest fixture imported Windows-only MetaTrader5 during collection |
 
 ## Coverage and mutation
 

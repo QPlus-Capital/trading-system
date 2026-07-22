@@ -6,8 +6,10 @@ import ast
 from pathlib import Path
 
 import MetaTrader5 as mt5
+import pytest
 from scripts.quality.pr_ready import assess_readiness
 
+from tests import conftest as test_config
 from tests.test_quality_validate_task import _task
 
 
@@ -43,3 +45,10 @@ def test_workflow_self_tests_have_no_live_or_network_imports() -> None:
 def test_pytest_blocks_real_mt5_boundaries() -> None:
     assert getattr(mt5.initialize, "__qplus_test_block__", False)
     assert getattr(mt5.order_send, "__qplus_test_block__", False)
+
+
+def test_pytest_boundary_imports_without_the_windows_only_mt5_package(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(test_config, "_mt5_available", lambda: False)
+    assert test_config._load_mt5_module() is None
