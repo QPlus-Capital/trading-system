@@ -144,22 +144,19 @@ def test_live_dashboard_renders_key_operator_guidance_in_german(
             "amount": pd.Series(dtype=float),
         }
     )
+    live: dict[str, Any] = {
+        "deals": [],
+        "balance": 200.0,
+        "equity": 190.0,
+        "currency": "EUR",
+        "open_risk": OpenRisk(total=0.0, unpriceable=["DE40"]),
+        "positions": [],
+        "term_to_research": {},
+    }
 
     monkeypatch.setattr(dashboard, "st", rendered)
     monkeypatch.setattr(dashboard, "_REPO", tmp_path)
-    monkeypatch.setattr(
-        dashboard,
-        "_load_live",
-        lambda _account: {
-            "deals": [],
-            "balance": 200.0,
-            "equity": 190.0,
-            "currency": "EUR",
-            "open_risk": OpenRisk(total=0.0, unpriceable=["DE40"]),
-            "positions": [],
-            "term_to_research": {},
-        },
-    )
+    monkeypatch.setattr(dashboard, "_load_live", lambda _account: live)
     monkeypatch.setattr(dashboard, "load_reference", lambda _path: {})
     monkeypatch.setattr(dashboard, "deals_to_trades", lambda _deals: trades.copy())
     monkeypatch.setattr(dashboard, "deal_ledger", lambda _deals: ledger.copy())
@@ -204,3 +201,15 @@ def test_live_dashboard_renders_key_operator_guidance_in_german(
     )
     assert "Keine offenen Positionen." in rendered.captions
     assert any(text.startswith("Noch keine geschlossenen Trades") for text in rendered.infos)
+
+    determinate = _RenderedStreamlit()
+    live["open_risk"] = OpenRisk(total=25.0)
+    monkeypatch.setattr(dashboard, "st", determinate)
+    dashboard._live_view()
+    risk_metric = next(
+        metric for metric in determinate.metrics if metric["label"] == "Offenes Risiko"
+    )
+    assert risk_metric["value"] == "25 / 4"
+    assert risk_metric["help"] == (
+        "Gesamtes offenes Stop-Risiko im Verhältnis zur Obergrenze von 2,0 %"
+    )
