@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.quality.classify import REPO_ROOT
+from scripts.quality.classify import REPO_ROOT, changed_paths
 
 SCHEMA_PATH = REPO_ROOT / ".ai" / "quality" / "task-artifacts.toml"
 TASK_ROOT = REPO_ROOT / ".ai" / "tasks"
@@ -282,14 +282,35 @@ def validate_task(task_id: str, task_root: Path = TASK_ROOT) -> ValidationResult
     return validate_task_dir(task_root / task_id)
 
 
+def discover_task_id(paths: Sequence[str]) -> str | None:
+    """Return the sole changed task-artifact ID, or ``None`` when discovery is ambiguous."""
+
+    task_ids = {
+        parts[2]
+        for path in paths
+        if len(parts := path.replace("\\", "/").split("/")) >= 4
+        and parts[:2] == [".ai", "tasks"]
+        and parts[2] != "_templates"
+    }
+    return next(iter(task_ids)) if len(task_ids) == 1 else None
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Validate an engineering task artifact set.")
-    parser.add_argument("task_id", help="directory name under .ai/tasks")
+    parser.add_argument("task_id", nargs="?", help="directory name under .ai/tasks")
+    parser.add_argument("--task-id", dest="task_id_option", default="")
+    parser.add_argument("--base", default="origin/main")
     args = parser.parse_args(argv)
-    result = validate_task(args.task_id)
+    task_id = args.task_id_option.strip() or args.task_id
+    if task_id is None:
+        task_id = discover_task_id(changed_paths(args.base))
+    if task_id is None:
+        print("Task artifact: NOT VALID (cannot discover exactly one changed task ID)")
+        return 1
+    result = validate_task(task_id)
     if result.ok:
         print(
-            f"Task {args.task_id}: valid "
+            f"Task {task_id}: valid "
             f"({len(result.acceptance_ids)} AC, {len(result.invariant_ids)} INV)."
         )
         return 0
