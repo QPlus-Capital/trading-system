@@ -51,7 +51,8 @@ _PLACEHOLDERS = re.compile(
     r"\$?\{[^}]+\}[\\nrt]*|<[^>]+>)$",
     re.IGNORECASE,
 )
-_BROAD_IGNORE = re.compile(r"#\s*(?:type:\s*ignore|noqa)(?!\s*[:\[])", re.IGNORECASE)
+_TYPE_IGNORE = re.compile(r"#\s*type:\s*ignore\b(?P<suffix>.*)", re.IGNORECASE)
+_NOQA = re.compile(r"#\s*noqa\b(?P<suffix>.*)", re.IGNORECASE)
 _SKIP = re.compile(r"(?:@|\.)pytest\.mark\.skip(?:if)?\b", re.IGNORECASE)
 _REVIEW_CODES = {"missing-adversarial-review", "unresolved-review"}
 
@@ -104,6 +105,24 @@ def _python_controls(line: str) -> tuple[str, str]:
     )
     comments = " ".join(token.string for token in tokens if token.type == tokenize.COMMENT)
     return code, comments
+
+
+def _has_broad_ignore(comments: str) -> bool:
+    type_ignore = _TYPE_IGNORE.search(comments)
+    if type_ignore is not None:
+        suffix = type_ignore.group("suffix").strip()
+        if re.fullmatch(r"\[[A-Za-z0-9_, -]+\]", suffix) is None:
+            return True
+    noqa = _NOQA.search(comments)
+    if noqa is None:
+        return False
+    suffix = noqa.group("suffix").strip()
+    if not suffix.startswith(":"):
+        return True
+    codes = [code.strip().upper() for code in suffix.removeprefix(":").split(",")]
+    return not codes or any(
+        code == "ALL" or re.fullmatch(r"[A-Z]{1,4}\d{3}", code) is None for code in codes
+    )
 
 
 def _widens_per_file_ignores(diff: str) -> bool:
@@ -213,8 +232,11 @@ def baseline_evidence_decision(
     if _BOUNDARY.search(command) is None:
         return _allow()
     baseline_changed = any(
-        path.replace("\\", "/").startswith(".ai/quality/")
-        and "baseline" in path.rsplit("/", maxsplit=1)[-1].casefold()
+        (normalized := path.replace("\\", "/")).startswith(".ai/quality/")
+        and (
+            "baseline" in normalized.rsplit("/", maxsplit=1)[-1].casefold()
+            or normalized == ".ai/quality/mutation.toml"
+        )
         for path in changed
     )
     if not baseline_changed:
@@ -240,7 +262,7 @@ def bypass_decision(command: str, diff: str) -> Decision:
         return _allow()
     for line in _added_python_lines(diff):
         code, comments = _python_controls(line)
-        if _BROAD_IGNORE.search(comments) or _SKIP.search(code):
+        if _has_broad_ignore(comments) or _SKIP.search(code):
             return _deny("Blocked: newly added broad ignores or test skips require removal.")
     if _widens_per_file_ignores(diff):
         return _deny("Blocked: widening per-file ignores is prohibited.")

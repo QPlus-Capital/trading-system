@@ -93,6 +93,7 @@ def test_baseline_evidence_decision_blocks_missing_and_allows_explicit_evidence(
     assert not baseline_evidence_decision(command, paths, ()).allowed
     evidence = (EvidenceRecord("mutation-on-touched-critical", "just mutation-critical", 0, "ok"),)
     assert baseline_evidence_decision(command, paths, evidence).allowed
+    assert not baseline_evidence_decision(command, (".ai/quality/mutation.toml",), ()).allowed
     assert baseline_evidence_decision(command, ("README.md",), ()).allowed
 
 
@@ -100,6 +101,8 @@ def test_bypass_decision_blocks_bypass_and_allows_narrow_suppression() -> None:
     assert not bypass_decision("git commit --no-verify", "").allowed
     assert not bypass_decision("git commit", "+value = parse(raw)  # type: ignore\n").allowed
     assert not bypass_decision("git commit", '+@pytest.mark.skip(reason="force green")\n').allowed
+    assert not bypass_decision("git commit", "+value = call()  # noqa: ALL\n").allowed
+    assert not bypass_decision("git commit", "+value = parse(raw)  # type: ignore[]\n").allowed
     assert bypass_decision("git commit", "+value = parse(raw)  # type: ignore[arg-type]\n").allowed
     assert bypass_decision("git commit", "+value = call()  # noqa: S603\n").allowed
     fixture_source = '+assert not bypass_decision("git commit", "+x = 1  # type: ignore\\n")\n'
