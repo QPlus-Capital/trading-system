@@ -60,6 +60,11 @@ def test_politis_white_matches_corrected_small_sample_references(
     assert politis_white_block_length(daily_returns) == pytest.approx(expected, rel=1e-12)
 
 
+def test_politis_white_treats_near_zero_long_run_variance_as_unbounded() -> None:
+    daily_returns = np.array([-100.0, 100.00000000000011, 0.0])
+    assert math.isinf(politis_white_block_length(daily_returns))
+
+
 def test_white_noise_selects_a_block_length_near_one() -> None:
     white_noise = np.random.default_rng(55).normal(size=2_000)
     selected = select_block_length({"white-noise": white_noise})
@@ -101,6 +106,10 @@ def test_selector_requires_a_nonempty_common_daily_grid() -> None:
     assert str(mismatched.value) == "candidate returns must share one common daily grid"
 
     assert select_block_length({"boundary": np.zeros(10)}) == 1
+
+    with pytest.raises(ValueError) as invalid_candidate:
+        select_block_length({"empty-candidate": np.array([], dtype=np.float64)})
+    assert str(invalid_candidate.value) == "candidate 'empty-candidate' daily_returns must be non-empty"
 
 
 @pytest.mark.parametrize(
