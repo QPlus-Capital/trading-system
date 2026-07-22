@@ -197,8 +197,7 @@ def test_live_dashboard_renders_key_operator_guidance_in_german(
         text.startswith("Offenes Risiko kann nicht bestimmt werden") for text in rendered.errors
     )
     assert any(
-        text.startswith("Die Handelshistorie scheint unvollständig")
-        for text in rendered.captions
+        text.startswith("Die Handelshistorie scheint unvollständig") for text in rendered.captions
     )
     assert any(
         "3 ältere Trades außerhalb dieses Zeitfensters" in text for text in rendered.captions
