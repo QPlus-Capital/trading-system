@@ -198,6 +198,11 @@ glob = "scripts/quality/**"
 min_class = "R3"
 reason = "the classifier and pr-ready logic decide every other change's gates"
 
+[[rules]]
+glob = ".claude/settings.json"
+min_class = "R3"
+reason = "project hooks can block or permit every commit, push, and pull request"
+
 # ---- R3: data ingestion (result integrity) ----
 [[rules]]
 glob = "core/data/**"
