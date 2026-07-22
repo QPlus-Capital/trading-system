@@ -1,0 +1,32 @@
+# Claude Code project workflow
+
+The project-scoped Claude Code files under `.claude/` are versioned workflow configuration. Their
+formats follow the current official documentation:
+
+- [Skills](https://code.claude.com/docs/en/skills) are directories containing `SKILL.md`; YAML
+  frontmatter declares `name` and the trigger-oriented `description`, and the Markdown body is the
+  procedure Claude loads on invocation.
+- [Subagents](https://code.claude.com/docs/en/sub-agents) are Markdown files under
+  `.claude/agents/`; their YAML frontmatter declares `name`, `description`, and the least-privilege
+  `tools` list, while the body is the reviewer system prompt.
+- [Hooks](https://code.claude.com/docs/en/hooks) are declared in `.claude/settings.json`. The
+  `PreToolUse` group matches `Bash` and invokes a command handler. Claude sends the tool payload as
+  JSON on stdin; a block is returned as `hookSpecificOutput` with `hookEventName`,
+  `permissionDecision`, and `permissionDecisionReason`.
+- [Settings](https://code.claude.com/docs/en/settings) identifies `.claude/settings.json` as
+  shareable project settings.
+
+The JSON remains wiring only. Its command is the shell-neutral executable/argument form:
+
+```text
+uv run python -m scripts.quality.hooks.pre_bash
+```
+
+All decisions live in `scripts/quality/hooks/`. Safe commands produce no output. Denials use fixed,
+actionable messages and never echo the command, staged diff, file contents, or a matched credential.
+The hook reads the existing TOML-governed risk model and delegates task validity and current-HEAD
+readiness to `validate_task.py` and `pr_ready.py`.
+
+The repository's Python 3.13 environment and tests validate every runtime file and the exact hook
+schema on Windows. Claude Code itself is not a project dependency, so discovery is additionally
+dogfooded by the independent Claude review after the PR opens.

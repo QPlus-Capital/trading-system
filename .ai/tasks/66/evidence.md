@@ -1,0 +1,39 @@
+# Evidence
+
+## HEAD
+
+HEAD: dd03fd821b3d008c42ec0ca1c60c6681a8b9a725
+
+## Commands
+
+| Gate | Command | Exit status | Result |
+|---|---|---:|---|
+| `red-first` | `uv run pytest -q tests/test_quality_hooks.py tests/test_claude_runtime_files.py` | 1 | RED at collection: `scripts.quality.hooks` absent |
+| `red-first` | focused hook/runtime suite after first implementation | 1 | RED: exact dotted live command was allowed and agent read-only prose wrapped unexpectedly |
+| `red-first` | focused hook/runtime suite after matcher fix | 1 | RED: synthetic fixture source was misclassified as a real secret |
+| `red-first` | staged commit-hook dogfood | 1 | RED: the exact fake-secret f-string with an escaped newline blocked its own commit |
+| `red-first` | staged commit-hook bypass dogfood | 1 | RED: a quoted broad-ignore counterexample was treated as a real Python suppression |
+| `docs-consistency` | `uv run pytest -q tests/test_docs_architecture_map.py tests/test_engineering_docs.py` | 0 | 57 passed |
+| `check` | `uvx --from rust-just just --shell powershell.exe --shell-arg -Command check` | 0 | Ruff, mypy (144 files), pytest (684 passed, 1 Linux-only skip), and vulture passed |
+| `property-tests-where-applicable` | `uv run pytest -q tests/test_quality_properties.py --hypothesis-seed=20260721` twice | 0 | 8 passed twice with the same seed |
+| `integration-tests` | full pytest within `check` | 0 | 684 passed, 1 Linux-only mutation skip |
+| `artifact-schema` | `uv run python -m scripts.quality.validate_task 66` | 0 | Valid: 4 acceptance criteria and 4 invariants |
+| `adversarial-review` | `.ai/tasks/66/review.md` | 0 | 20 counterexamples attempted; R-01 through R-07 resolved |
+| `invariants` | `uv run pytest -q tests/test_quality_hooks.py tests/test_claude_runtime_files.py tests/test_engineering_docs.py` | 0 | 82 passed; block/allow, schemas, snapshots, fail-closed output, and risk rules covered |
+| `mutation-on-touched-critical` | Linux `mutation-critical` workflow | 1 | Pending branch publication; Windows has no WSL and the bootstrap deadlock is tracked in issue #74 |
+| `parity-where-applicable` | `git diff --quiet origin/main -- core research live monitoring` | 0 | No production trading package changed |
+| `live-money-review` | R3 review plus production-package diff check | 0 | No live implementation changed and no live interaction occurred |
+| `human-decision-escalation` | issue #66 scope and merge rule | 0 | Jan retains scope and merge authority |
+| `no-autonomous-merge` | branch/PR policy review | 0 | No merge or autonomous-merge action exists in the change |
+
+## Coverage and mutation
+
+The hook/runtime suite has 25 tests and includes paired unsafe/safe decisions for all eight policy
+areas. The deterministic property suite passed twice. No configured production mutation target or
+production trading module changed; the complete Linux baseline ratchet will nevertheless run on
+this branch before PR readiness is claimed.
+
+## Deferred checks
+
+- Linux mutation and current-HEAD readiness remain pending.
+- Issue #74 tracks a fail-closed bootstrap for Linux-only evidence before the first Windows push.
