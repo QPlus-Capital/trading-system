@@ -65,6 +65,19 @@ def test_politis_white_treats_near_zero_long_run_variance_as_unbounded() -> None
     assert math.isinf(politis_white_block_length(daily_returns))
 
 
+def test_politis_white_returns_one_when_both_plugin_moments_vanish() -> None:
+    daily_returns = np.array(
+        [
+            4.7453952939404387e-09,
+            -1.8075136182508785e-08,
+            1.5338231205719854e-08,
+            -1.0096430548083076e-08,
+            2.3998281111964333e-08,
+        ]
+    )
+    assert politis_white_block_length(daily_returns) == 1.0
+
+
 def test_white_noise_selects_a_block_length_near_one() -> None:
     white_noise = np.random.default_rng(55).normal(size=2_000)
     selected = select_block_length({"white-noise": white_noise})
