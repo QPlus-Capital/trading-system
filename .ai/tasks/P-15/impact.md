@@ -25,6 +25,8 @@ None. The strings are static UI output and have no reflection or dynamic dispatc
 
 ## Scope audit
 
-The final `just impact origin/main` result and forbidden-path diff are recorded in `evidence.md`.
-Expected direct production impact is exactly `monitoring/dashboard.py`; `research/stages/**`, logs,
-governance, live code, and research calculations are excluded.
+`just impact origin/main` reports R2, exactly `monitoring/dashboard.py` as changed production, and
+`tests/test_docs_language.py` plus `tests/test_monitoring_dashboard_copy.py` as direct tests. It
+finds no transitive test, critical escalation, unknown/dynamic edge, or additional possible test.
+The forbidden-path diff confirms `research/stages/**`, logs, governance, live code, and research
+calculations are excluded.
