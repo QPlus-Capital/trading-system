@@ -38,7 +38,8 @@ rendering guard that prevents the key risk and history captions from returning t
 - AC-04: A behavioral test invokes the live dashboard view with faked data and asserts the rendered
   risk, history, empty-trade, and empty-position output is German; it fails before translation.
 - AC-05: The classifier reports R2, impact remains confined to the dashboard and its test, and all
-  cumulative R2 gates pass.
+  cumulative R2 gates pass; the repository language guard permits only direct dashboard rendering
+  literals and continues to reject German in comments and logs.
 
 ## Invariants
 
@@ -53,6 +54,7 @@ rendering guard that prevents the key risk and history captions from returning t
 
 - `monitoring/dashboard.py`
 - One focused behavioral test under `tests/`
+- The existing language guard, narrowed to direct dashboard rendering literals
 - `.ai/tasks/P-15/`
 
 ## Assumptions
@@ -63,7 +65,7 @@ rendering guard that prevents the key risk and history captions from returning t
 ## Expected artifacts
 
 - One literal-only production diff in `monitoring/dashboard.py`.
-- One focused behavioral rendering test.
+- One focused behavioral rendering test and a narrow update to the existing language guard.
 - The five validated `.ai/tasks/P-15/` files.
 
 ## Risk class
