@@ -1,15 +1,30 @@
 # Engineering Constitution
 
 The single source of truth for how changes are made in this repository — shared by Claude, Codex,
-humans, CI, and repository tooling. [CLAUDE.md](../../CLAUDE.md) (builder) and
-[AGENTS.md](../../AGENTS.md) (reviewer) are short role documents that point here; where any of them
-appears to disagree, **this file wins**. A consistency test
+humans, CI, and repository tooling. [AGENTS.md](../../AGENTS.md) (Codex builder) and
+[CLAUDE.md](../../CLAUDE.md) (Claude reviewer and conceptual designer) are short role documents
+that point here; where any of them appears to disagree, **this file wins**. A consistency test
 (`tests/test_engineering_docs.py`) fails if the load-bearing rules below stop being referenced by
 all three.
 
 This repository trades **real money** on a live prop-firm account, sized off validated backtests. A
 defect here is not a bug report — it is a loss. Every rule exists because its absence has cost, or
 would cost, real money or a real methodology guarantee.
+
+## Roles and authority
+
+- **Codex is the primary builder.** It specifies the bounded change, classifies risk, analyses
+  impact, proves the guard red, implements, verifies every required gate, maintains the task
+  artifact, and opens the ready pull request. It does not merge.
+- **Claude is the primary reviewer and conceptual designer.** It translates Jan's intent into a
+  precise specification, then independently reviews the completed Codex change in fresh context
+  through its read-only review skills and subagents. The builder never reviews its own work.
+- For the highest-stakes trading work — `live/**`, P-packages, sizing, methodology, and result
+  integrity — **either agent may build**. This is an exception to the primary assignment, not a
+  shortcut: the independent review must be performed by the other agent and be doubly rigorous.
+- **Jan decides** every business, trading, methodology, live-money, architecture, and risk question.
+  Jan approves every merge. R3 changes never merge autonomously, regardless of green tools or AI
+  reviews.
 
 ---
 
@@ -150,7 +165,7 @@ code and documented.
 
 ## 14. Confirmed review defects become permanent protection
 
-A confirmed reviewer finding (Codex or the adversarial subagent) is not just fixed. It is: reproduced
+A confirmed reviewer finding (Claude or a read-only adversarial review subagent) is not just fixed. It is: reproduced
 with a failing test, fixed, root-caused, and recorded in the finding registry
 (`.ai/quality/finding-patterns.toml`) as a **generalized** pattern. A defect class that recurs is a
 failure of the workflow, not just of the code, and strengthens a skill, hook, check, or this file.
@@ -165,7 +180,7 @@ no gate, because the report then says the numbers held.
 
 ## 16. Git and commits
 
-- Feature branch → PR → CI green + adversarial review + Codex review → operator approves → merge.
+- Feature branch → PR → CI green + Claude adversarial review → Jan approves → merge.
   Only a **trivial R0** change (docs/comments) may go straight to `main`; every R1+ change — any
   code change — goes through a branch and a PR.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`,

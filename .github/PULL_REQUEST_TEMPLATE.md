@@ -68,7 +68,7 @@ Closes #<!-- issue number -->
 
 ## Codex status
 
-<!-- Pending / reviewed with findings / approved, with review link. -->
+<!-- Builder status: implementation complete / readiness passed / review fixes pending. -->
 
 ## Human decisions required
 

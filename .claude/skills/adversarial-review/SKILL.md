@@ -1,9 +1,10 @@
 ---
 name: adversarial-review
-description: Invoke after implementation verification for every non-trivial change and before PR preparation.
+description: Invoke as Claude's primary path after Codex verifies a change and before Jan approves it.
 ---
 
-This skill is mandatory after implementation and deterministic gates complete.
+This is Claude's primary workflow skill. It is mandatory after Codex completes implementation and
+deterministic gates, and it remains read-only and independent of the builder.
 
 ## Required inputs
 

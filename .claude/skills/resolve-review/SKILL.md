@@ -1,9 +1,11 @@
 ---
 name: resolve-review
-description: Invoke whenever adversarial or pull-request review reports an actionable finding.
+description: Invoke to record review dispositions; implement only under Claude's builder exception.
 ---
 
-This skill is mandatory for every actionable P0-P3 review finding selected for resolution.
+As the primary reviewer, Claude records and hands off actionable findings to Codex. Claude executes
+the implementation steps in this skill only when Jan assigned Claude the highest-stakes trading
+builder exception and a different reviewer owns the independent review.
 
 ## Required inputs
 

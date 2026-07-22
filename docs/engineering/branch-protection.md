@@ -32,11 +32,12 @@ Do not mark a path-filtered or aggregate substitute as required. Each context ma
 
 - Direct pushes to `main` are prohibited by the pull-request rule; Jan merges only after every
   required check is successful and every conversation is resolved.
-- Codex performs the independent review after the implementation and adversarial-review artifact
-  are complete. Its findings are resolved or dispositioned before approval.
-- R3 has no autonomous merge: Jan makes the scope, go-live, and merge decisions. Auto-merge is not
+- Claude performs the independent review after the Codex implementation and read-only adversarial-
+  review artifact are complete. Its findings are resolved or dispositioned before approval.
+- R3 has no autonomous merge: Jan decides every business, trading, methodology, live-money,
+  architecture, risk, scope, go-live, and merge question. Auto-merge is not
   used for R3 even when all technical checks are green.
-- The operator's merge remains a human action; CI, Claude, Codex, and hooks never merge.
+- Jan approves every merge; CI, Claude, Codex, and hooks never merge.
 
 Audit this ruleset after workflow/job renames and quarterly. A renamed required check must be
 updated here and in GitHub in the same rollout window so protection never silently disappears.

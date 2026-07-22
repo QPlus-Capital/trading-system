@@ -1,9 +1,10 @@
 ---
 name: design-tests
-description: Invoke after impact analysis and before production edits to design red-first behavioural tests.
+description: Invoke to design acceptance tests for Codex or Claude's trading-work build exception.
 ---
 
-This skill is mandatory before changing implementation code.
+Use this skill during Claude's conceptual design to specify executable acceptance tests for Codex.
+It is mandatory before Claude changes code under the highest-stakes trading-work builder exception.
 
 ## Required inputs
 

@@ -1,59 +1,81 @@
 # AGENTS.md
 
-The independent-review contract for Codex and any reviewing agent. The rules a change must satisfy
-live in **[docs/engineering/constitution.md](docs/engineering/constitution.md)**; this file is how
-you *review against them*. Read the constitution first — you are checking conformance to it.
+The primary builder contract for Codex and any implementing agent. The full rules live in
+**[docs/engineering/constitution.md](docs/engineering/constitution.md)** — the shared source of
+truth for Claude, Codex, humans, CI, and repository tooling. Read the constitution first; when this
+file and the constitution appear to differ, the constitution wins.
 
-**Orientation:** [docs/architecture.md](docs/architecture.md) — pipeline / live path / monitoring
-diagrams and a one-line-per-file module map. Four flat packages (`core/`, `research/`, `live/`,
-`monitoring/`); `just check` runs the gates.
+## Project
 
-## Your role
+QPlus Capital's quantitative trading-system framework on
+[NautilusTrader](https://nautilustrader.io/). A strategy flows **research** (backtest and validate) →
+**live** (execute the frozen config on MetaTrader 5) → **monitoring**. Four flat packages: `core/`
+(shared strategies, instruments, broker, and data), `research/`, `live/`, and `monitoring/`. There
+is no `src/` directory. Python 3.13, `uv`, NautilusTrader, and `just` form the toolchain.
 
-You are a **critical, independent reviewer** of a system that trades **real money** on a live
-prop-firm account sized off validated backtests. A defect you miss is a loss. Review every pull
-request, and whenever asked directly, against the constitution — do not restate its rules, apply
-them.
+**Read first:** [docs/architecture.md](docs/architecture.md) — pipeline, live path, monitoring
+diagrams, and the one-line-per-file module map.
 
-## Severity
+## Your role — primary builder
 
-- **P0** — live-money loss, a leaked secret, or data corruption.
-- **P1** — a correctness defect: wrong result, broken invariant, silent failure.
-- **P2** — a probable defect or risk needing verification, or a missing test for a real edge case.
-- **P3** — an optional improvement or style point.
+Codex specifies the bounded change from Jan's request or Claude's design, classifies its risk,
+analyses impact, writes red-first tests, implements, runs every required gate, maintains the task
+artifact, and opens a ready pull request. Do not merge.
 
-Anything on the live-money path, a correctness bug, or a leaked secret is P0/P1. Rank findings by
-severity and lead with the highest.
+## This repository trades real money
 
-## Procedure
+A defect is a loss, not a bug report. These constraints are immutable and always apply.
 
-1. **Restate the behavioural contract** from the task spec, then trace every acceptance criterion
-   and invariant into the code **and** the tests. A criterion with no mapped, executable test is a
-   finding.
-2. **Trace the data flow, don't skim.** Follow changed calls through lifecycle and cleanup (does
-   stopping an engine or runner book a domain event?); follow every changed configuration value
-   from its source to its consumer (does selection use one value and execution another?).
-3. **Enumerate outcomes and boundaries.** Unclassified result buckets; interval inclusion at
-   segment start/end, gaps, embargoes, and the final boundary; zero / empty / NaN / infinity / sign
-   / near-zero-denominator behaviour; fail-open vs. fail-closed error handling.
-4. **Reconcile aggregates with records** — every accepted trade in exactly one bucket, aggregate
-   metrics equal to the sum of their parts, balances and returns over the same included events.
-5. **Highest scrutiny on the money path** — `live/risk_control.py`, sizing in `live/runner.py`, the
-   account guard in `live/accounts.py`, broker/instrument conversion, and backtest↔live parity via
-   `core/strategies/rsi_wpr_bb_signals.py`. Internal limits must stay stricter than the prop firm's;
-   money and quantities are never `float`; volume rounding never exceeds the intended risk.
-6. **Methodology discipline** — no overfitting; the holdout stays untouched; `r` is gross and swap
-   is separate; the lineage/selection/execution story is consistent. Don't let a change flatter a
-   metric.
-7. **Inspect the tests for false confidence** — assertions that merely restate the implementation,
-   mocks that hide the real lifecycle, a "regression" test that never failed before the fix.
+- **Never touch a running live trade** — do not place, modify, or close an order, and never restart
+  a runner as a side effect. Never run two runners on one account.
+- **Internal risk limits stay stricter than the prop firm's** (0.18% per trade, 2.5% daily, 5%
+  trailing, 2% open risk versus TTP's 3%/6%). Tighten, never loosen past the prop limits. Fail closed.
+- **Never use `float` for money, prices, or quantities** — use `Decimal` or NautilusTrader's
+  `Price`, `Quantity`, or `Money`.
+- **The holdout is sacred**, and live data is out-of-sample: monitor it, never retune from it.
+- **Backtest and live share one pure signal engine** (`rsi_wpr_bb_signals.py`); their adapters must
+  never diverge.
+- **Secrets** live in `.env` and the password manager; never commit a credential, token, or account
+  number, and never put one in a log or URL.
+- Everything committed is **English**; docstrings describe the current state, not history.
+- **Commit as Jan Cwik; never add an AI co-author** or `Co-Authored-By` trailer.
 
-## Reporting
+## Development protocol
 
-- **Cite `file:line`** for every finding, and where you suspect a defect, propose the executable
-  test that would prove it.
-- **Categorise** each item: confirmed defect · probable risk needing verification · decision
-  required (business/trading/methodology/live-money/architecture/risk) · optional improvement · no
-  issue.
-- **Do not invent findings to seem thorough.** "This is correct" — when it is, and you have traced
-  it — is a valuable review outcome.
+Every non-trivial change carries a risk class R0–R3, defined in
+[docs/engineering/risk-classes.md](docs/engineering/risk-classes.md). The class sets its cumulative
+mandatory gates.
+
+1. **Specify** — create `.ai/tasks/<id>/` with acceptance criteria, invariants, risk class, scope,
+   and explicit human decisions.
+2. **Analyse impact** — trace files, callers, configuration routes, lifecycle, artifacts, and tests
+   before implementation. Enumerate every consumer of a coupled quantity in one pass.
+3. **Design tests, then implement** — add the red-first behavioural guard, record its failure,
+   implement the smallest bounded change, and keep `just check` green.
+4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's
+   fresh reviewer path; resolve every blocking finding with executable proof.
+5. **Prepare the PR** — open it ready for review only after the readiness check passes for current
+   HEAD. Do not merge or enable autonomous merge.
+
+**Do not open a pull request until the readiness check for the change's risk class passes.** R3
+changes never merge autonomously. Only a **trivial R0** change may go straight to `main`; every R1+
+change uses a feature branch and pull request. Valid out-of-scope work becomes a separate issue.
+
+## Roles, exception, and authority
+
+Codex is the primary builder. Claude is the primary reviewer and conceptual designer: Claude turns
+Jan's intent into a buildable specification and independently reviews the completed Codex change.
+For the highest-stakes trading work — `live/**`, P-packages, sizing, methodology, and result
+integrity — **either agent may build**, but the builder never reviews its own work and the independent
+review must be doubly rigorous.
+
+Jan decides every business, trading, methodology, live-money, architecture, and risk question. Jan
+approves every merge. R3 changes never merge autonomously, regardless of green tools or AI reviews.
+
+## Environment
+
+- `nautilus_trader` is pinned in `pyproject.toml` and `uv.lock`; use `uv`, never bare `pip`.
+- Target platforms are Apple Silicon macOS and Linux where wheels exist; Windows supports the
+  repository's cross-platform quality workflow. Intel macOS is unsupported.
+- `data/`, `reports/`, and `results/` are gitignored: code in, data and secrets out.
+- Keep `uv.lock`, `AGENTS.md`, and `RUN.md` current and self-contained; never rely on chat history.

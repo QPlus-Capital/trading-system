@@ -42,8 +42,10 @@ just monitor         # the monitoring dashboard
 just check           # ruff + mypy + pytest (before every commit)
 ```
 
-Getting from a fresh clone to a runnable setup: **[RUN.md](RUN.md)**. Project
-conventions every contributor (human or AI) follows: **[CLAUDE.md](CLAUDE.md)**.
+Getting from a fresh clone to a runnable setup: **[RUN.md](RUN.md)**. The shared engineering rules
+are the **[constitution](docs/engineering/constitution.md)**; **[AGENTS.md](AGENTS.md)** is Codex's
+builder contract and **[CLAUDE.md](CLAUDE.md)** is Claude's reviewer and conceptual-designer
+contract.
 
 ## Tech stack
 
@@ -73,6 +75,10 @@ Two-person team, lightweight by design:
   comments) may go straight to `main`; every code change goes through a branch and a PR.
 - [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
   `chore:`, `docs:`, `refactor:`, `test:` …).
+- Codex is the primary builder; Claude is the primary conceptual designer and independent reviewer.
+  Either agent may build the highest-stakes trading work, but never review its own implementation.
+  Jan decides business, trading, methodology, live-money, architecture, and risk questions and
+  approves every merge; R3 never merges autonomously.
 
 ## Principle: code in, data and secrets out
 
