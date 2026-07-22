@@ -59,6 +59,15 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "portfolio-resample"
+path = "research/portfolio/resample.py"
+mutant_patterns = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_*",
+    "research.portfolio.resample.x_select_block_length__mutmut_*",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_*",
+]
+
+[[targets]]
 id = "parameter-schedule"
 path = "core/strategies/param_schedule.py"
 mutant_patterns = [

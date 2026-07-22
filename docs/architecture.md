@@ -208,6 +208,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 |---|---|
 | `research/portfolio/trades.py` | The timestamped OOS trade stream + the stage-3 extractor factory |
 | `research/portfolio/stats.py` | Shared metric helpers: edge/risk stats, R-multiples, daily equity |
+| `research/portfolio/resample.py` | Corrected Politis-White block length + stationary bootstrap for daily net returns |
 | `research/portfolio/curves.py` | Daily realized + mark-to-market equity curves (swap realized-only) |
 | `research/portfolio/sizing.py` | Position-sizing simulation: per-trade risk + the daily path |
 | `research/portfolio/risk.py` | The risk system: account context + pluggable tail-capped sizing policies |
