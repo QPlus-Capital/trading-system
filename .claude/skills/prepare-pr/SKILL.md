@@ -1,9 +1,10 @@
 ---
 name: prepare-pr
-description: Invoke before every pull request to require current evidence and assemble the reviewable handoff.
+description: Invoke only when Claude prepares a PR under the highest-stakes trading exception.
 ---
 
-This skill is mandatory immediately before a pull request is created.
+Codex normally prepares pull requests. Claude uses this skill only after implementing a
+highest-stakes trading-work exception assigned by Jan, and only after a fresh independent review.
 
 ## Required inputs
 

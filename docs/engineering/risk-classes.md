@@ -31,6 +31,11 @@ The class and the one-line reason go in the task spec and the PR.
 
 Gates are cumulative: R2 includes R1's, R3 includes R2's.
 
+Codex is the primary builder and Claude is the primary conceptual designer and independent
+reviewer. For highest-stakes trading work, either agent may build, but the other agent must perform
+the independent review. Jan decides business, trading, methodology, live-money, architecture, and
+risk questions and approves every merge. An R3 change never merges autonomously.
+
 `pr-ready` binds those cumulative gate IDs to the task's `evidence.md`. Every required gate must
 have a record with exit status 0, and any non-zero record for a required gate blocks readiness even
 when another attempt passed. Before-fix failures use the non-gate label `red-first`. For R3, the

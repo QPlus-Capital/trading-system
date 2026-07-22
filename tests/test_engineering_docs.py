@@ -1,7 +1,8 @@
 """The engineering docs and the machine-readable risk model must stay consistent.
 
-The constitution is the single source of truth; CLAUDE.md (builder, permanent context) and
-AGENTS.md (reviewer) are short role documents that point to it. This test fails if a load-bearing
+The constitution is the single source of truth; AGENTS.md (builder, permanent Codex context) and
+CLAUDE.md (reviewer, permanent Claude context) are short role documents that point to it. This
+test fails if a load-bearing
 rule stops being stated where it must be, if the three documents stop cross-referencing, or if the
 risk model drifts from its prose companion -- so the split into three files cannot silently lose a
 rule.
@@ -22,6 +23,8 @@ _AGENTS = _ROOT / "AGENTS.md"
 _CONSTITUTION = _ROOT / "docs" / "engineering" / "constitution.md"
 _RISK_DOC = _ROOT / "docs" / "engineering" / "risk-classes.md"
 _RISK_MODEL = _ROOT / ".ai" / "quality" / "risk-classes.toml"
+_CLAUDE_SKILLS = _ROOT / ".claude" / "skills"
+_CLAUDE_AGENTS = _ROOT / ".claude" / "agents"
 
 _CLASSES = ("R0", "R1", "R2", "R3")
 
@@ -55,19 +58,19 @@ def test_claude_and_agents_point_to_the_constitution() -> None:
 #: which is the point: dropping a safety rule cannot pass silently.
 _REQUIRED: tuple[tuple[str, tuple[Path, ...]], ...] = (
     ("Co-Authored-By", (_CONSTITUTION,)),  # no AI co-author
-    ("co-author", (_CLAUDE,)),
-    ("float", (_CONSTITUTION, _CLAUDE)),  # money is never float
-    ("holdout", (_CONSTITUTION, _CLAUDE)),  # the holdout is sacred
+    ("co-author", (_CLAUDE, _AGENTS)),
+    ("float", (_CONSTITUTION, _CLAUDE, _AGENTS)),  # money is never float
+    ("holdout", (_CONSTITUTION, _CLAUDE, _AGENTS)),  # the holdout is sacred
     ("parity", (_CONSTITUTION,)),  # backtest/live parity
-    ("0.18%", (_CONSTITUTION, _CLAUDE)),  # the internal risk limit
+    ("0.18%", (_CONSTITUTION, _CLAUDE, _AGENTS)),  # the internal risk limit
     ("lineage", (_CONSTITUTION,)),
-    ("Never touch a running live trade", (_CLAUDE,)),
+    ("Never touch a running live trade", (_CLAUDE, _AGENTS)),
     ("Never claim correctness without executable evidence", (_CONSTITUTION,)),
-    ("readiness check", (_CLAUDE,)),  # PR prohibition
-    ("fail closed", (_CONSTITUTION, _CLAUDE)),  # safety default
-    ("signal engine", (_CONSTITUTION, _CLAUDE)),  # the real parity boundary
-    ("secret", (_CONSTITUTION, _CLAUDE)),  # secrets rule
-    ("english", (_CONSTITUTION, _CLAUDE)),  # english-only repository
+    ("readiness check", (_AGENTS,)),  # builder's PR prohibition
+    ("fail closed", (_CONSTITUTION, _CLAUDE, _AGENTS)),  # safety default
+    ("signal engine", (_CONSTITUTION, _CLAUDE, _AGENTS)),  # the real parity boundary
+    ("secret", (_CONSTITUTION, _CLAUDE, _AGENTS)),  # secrets rule
+    ("english", (_CONSTITUTION, _CLAUDE, _AGENTS)),  # english-only repository
 )
 
 
@@ -80,11 +83,79 @@ def test_load_bearing_rule_is_stated(phrase: str, files: tuple[Path, ...]) -> No
         )
 
 
-def test_agents_is_a_review_contract() -> None:
+def test_tool_contracts_bind_builder_and_reviewer_to_the_correct_files() -> None:
     agents = _text(_AGENTS)
-    for token in ("P0", "P1", "P2", "P3", "file:line"):
-        assert token in agents, f"the review contract must define {token}"
-    assert "do not invent findings" in agents.lower()
+    claude = _text(_CLAUDE)
+
+    for marker in (
+        "primary builder",
+        "Development protocol",
+        "Specify",
+        "Analyse impact",
+        "Design tests, then implement",
+        "Do not open a pull request until",
+        "Do not merge",
+    ):
+        assert marker.lower() in agents.lower(), f"AGENTS.md builder contract must define {marker}"
+    for stale_reviewer_marker in ("independent-review contract", "critical, independent reviewer"):
+        assert stale_reviewer_marker not in agents.lower(), (
+            f"AGENTS.md must not retain the reviewer role marker {stale_reviewer_marker}"
+        )
+
+    for marker in (
+        "primary reviewer",
+        "conceptual designer",
+        "Severity",
+        "Procedure",
+        "Cite `file:line`",
+        "Do not invent findings",
+    ):
+        assert marker.lower() in claude.lower(), f"CLAUDE.md reviewer contract must define {marker}"
+    for stale_builder_marker in ("claude builds", "development protocol"):
+        assert stale_builder_marker not in claude.lower(), (
+            f"CLAUDE.md must not retain the builder role marker {stale_builder_marker}"
+        )
+
+
+def test_role_contracts_preserve_exception_and_human_authority() -> None:
+    for path in (_AGENTS, _CLAUDE, _CONSTITUTION):
+        lowered = _text(path).lower()
+        assert "either agent may build" in lowered, (
+            f"{path.relative_to(_ROOT)} must preserve the highest-stakes trading exception"
+        )
+        decisions = ("business", "trading", "methodology", "live-money", "architecture", "risk")
+        for decision in decisions:
+            assert decision in lowered, (
+                f"{path.relative_to(_ROOT)} must reserve {decision} decisions for Jan"
+            )
+        assert "jan" in lowered and "approves every merge" in lowered, (
+            f"{path.relative_to(_ROOT)} must preserve Jan's merge authority"
+        )
+        assert "r3" in lowered and "never merge" in lowered, (
+            f"{path.relative_to(_ROOT)} must prohibit autonomous R3 merges"
+        )
+
+
+def test_claude_runtime_files_match_the_primary_review_role() -> None:
+    adversarial_skill = _text(_CLAUDE_SKILLS / "adversarial-review" / "SKILL.md").lower()
+    assert "claude's primary workflow skill" in adversarial_skill
+    assert "read-only and independent of the builder" in adversarial_skill
+
+    reviewers = (
+        "adversarial-code-reviewer.md",
+        "live-money-reviewer.md",
+        "test-quality-reviewer.md",
+    )
+    for name in reviewers:
+        reviewer = _text(_CLAUDE_AGENTS / name).lower()
+        assert "claude's primary" in reviewer, f"{name} must be part of Claude's primary path"
+        assert "read-only" in reviewer, f"{name} must retain a read-only remit"
+
+    for name in ("implement-change", "prepare-pr"):
+        builder_skill = _text(_CLAUDE_SKILLS / name / "SKILL.md").lower()
+        assert "only" in builder_skill and "highest-stakes trading" in builder_skill, (
+            f"{name} must be limited to Claude's explicit builder exception"
+        )
 
 
 # --------------------------------------------------------------- the risk model parses and holds
