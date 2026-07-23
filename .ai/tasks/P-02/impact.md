@@ -57,8 +57,9 @@ These are the complete training-selector config paths found by auditing every
 - The deferred Stage-1 study and regression thresholds are critical to methodology acceptance but
   are not code dependencies and are outside this draft's execution scope.
 
-## Initial tool result
+## Tool result
 
-Before committed changes, `just impact` has no branch diff to report. The intended-path classifier
-returns R3 for both production files. Final impact analysis must identify both focused behavioral
-tests and retain the full-suite requirement.
+`just impact origin/main` classifies the committed change R3 and identifies both production files,
+the new behavioral test, three existing direct tests, and twelve transitive research/monitoring
+tests. It reports no critical-path escalation, unknown/dynamic edge, or additional possibly
+affected test, while retaining the mandatory full-suite warning.
