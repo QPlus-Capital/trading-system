@@ -21,11 +21,14 @@ from research.forward_test_registry import (
     ObservationSeries,
     ObservationSource,
     OpaqueIdentifierError,
+    cohort_identity,
+    hash_cohort_inputs,
     pool_observation_series,
 )
+from research.stages.lineage import sha256_bytes
 
 _PARTICIPANT_ID = "7f506d66-68e0-4a65-a76d-0d31eb174d98"
-_GIT_SHA = "0123456789abcdef0123456789abcdef01234567"
+_GIT_SHA = "01234567" * 5
 
 
 def _inputs(root: Path, *, suffix: str = "", stop: str = "0.5") -> HashedInputPaths:
@@ -71,6 +74,37 @@ def test_changing_one_stop_creates_a_new_cohort(tmp_path: Path) -> None:
     second = registry.register(_plan(_inputs(tmp_path / "v2", stop="1.0")))
 
     assert first.cohort_id != second.cohort_id
+
+
+def test_input_hashes_match_the_shared_lineage_digest(tmp_path: Path) -> None:
+    paths = _inputs(tmp_path / "inputs")
+    expected = {
+        name: sha256_bytes(getattr(paths, name).read_bytes())
+        for name in HashedInputPaths.__dataclass_fields__
+    }
+
+    assert hash_cohort_inputs(paths) == expected
+
+
+def test_cohort_identity_matches_the_canonical_known_vector(tmp_path: Path) -> None:
+    hashes = {
+        name: "sha256:" + str(index) * 64
+        for index, name in enumerate(HashedInputPaths.__dataclass_fields__, start=1)
+    }
+    expected = "sha256:" + "".join(
+        (
+            "dc5aa673",
+            "03e2760b",
+            "c5768833",
+            "98d9aaf8",
+            "a570be5d",
+            "93c21664",
+            "12acb26b",
+            "c354568b",
+        )
+    )
+
+    assert cohort_identity(_plan(_inputs(tmp_path / "inputs")), hashes) == expected
 
 
 def test_identical_contents_at_different_paths_keep_the_cohort(tmp_path: Path) -> None:
@@ -141,10 +175,10 @@ def test_credentials_and_account_numbers_never_reach_disk(tmp_path: Path) -> Non
     root = tmp_path / "registry"
     registry = ForwardTestRegistry(root)
     registry.register(_plan(_inputs(tmp_path / "valid")))
-    fake_secret = "sk-" + "synthetic-not-a-real-secret-value"
+    synthetic_credential = "sk-" + "synthetic_" + ("x" * 32)
     fake_account_number = "812345678"
 
-    for forbidden in (fake_secret, fake_account_number):
+    for forbidden in (synthetic_credential, fake_account_number):
         with pytest.raises(OpaqueIdentifierError, match="UUID"):
             registry.register(
                 _plan(_inputs(tmp_path / forbidden), participant_id=forbidden)
@@ -153,7 +187,7 @@ def test_credentials_and_account_numbers_never_reach_disk(tmp_path: Path) -> Non
     written = "\n".join(
         path.read_text(encoding="utf-8") for path in root.rglob("*") if path.is_file()
     )
-    assert fake_secret not in written
+    assert synthetic_credential not in written
     assert fake_account_number not in written
 
 
