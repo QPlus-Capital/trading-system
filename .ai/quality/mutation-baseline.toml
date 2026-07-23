@@ -1,27 +1,30 @@
-# Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor is conservatively classified
-# as a meaningful test-strength gap; the exact-name ratchet rejects any additional survivor.
+# Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor has an exact-name
+# classification; the ratchet rejects any additional survivor.
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-14 extends the measured critical scope to MT5 deal export, Decimal monitoring reconstruction, and stable dashboard snapshots: 1,237 selected mutants, 967 killed, 270 conservatively meaningful survivors, zero unhealthy outcomes, and a score increase from 75.6% to 78.2%."
+change_explanation = "The merged P-04/P-12/P-13/P-14 scope retains every package target and measured survivor: 1,914 selected mutants, 1,624 killed, 288 meaningful survivors, two equivalent survivors, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
     "portfolio-drawdown",
     "portfolio-risk",
     "portfolio-accounting",
+    "portfolio-resample",
     "parameter-schedule",
     "continuous-attribution",
     "result-regression",
     "mt5-deal-export",
     "monitoring-deal-reconstruction",
     "monitoring-stable-snapshot",
+    "forward-cohort-identity",
+    "forward-decision",
 ]
 
 [summary]
-total = 1237
-killed = 967
-survived = 270
+total = 1914
+killed = 1624
+survived = 290
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -30,6 +33,11 @@ not_checked = 0
 interrupted = 0
 segfault = 0
 caught_by_type_check = 0
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Removing ensure_ascii=True is equivalent because json.dumps defaults ensure_ascii to True."
+names = ["research.forward_test_registry.x__digest_canonical__mutmut_7"]
 
 [[survivor_groups]]
 classification = "meaningful"
@@ -335,6 +343,29 @@ names = [
 ]
 
 [[survivor_groups]]
+classification = "equivalent"
+reason = "NumPy infers the same integer or float dtype, and omitting integers(low=0) preserves the exact generator call."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_109",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_112",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_53",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_55",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_25",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_44",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_62",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_64",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "These mutations change unused allocation capacity or a value that is overwritten before any read."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_57",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_58",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_59",
+]
+
+[[survivor_groups]]
 classification = "meaningful"
 reason = "Focused monitoring tests do not distinguish these remaining Decimal reconstruction mutations; retained as measured test-strength gaps."
 names = [
@@ -414,3 +445,25 @@ names = [
     "monitoring.deals.x_per_trade_risk__mutmut_32",
     "monitoring.deals.x_per_trade_risk__mutmut_4",
 ]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "These estimator mutations only differ at exact floating-point tolerance or bandwidth boundaries; retained as measured boundary-test gaps."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_137",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_140",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_23",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_24",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_79",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_88",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "The restart comparison differs only when a generated uniform draw equals the restart threshold exactly; retained as a measured boundary-test gap."
+names = ["research.portfolio.resample.x_stationary_bootstrap__mutmut_39"]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The function rejects empty input and validates every element as Decimal, so omitting the explicit Decimal zero start from sum preserves the exact mean."
+names = ["research.forward_decision.x_bootstrap_mean_bounds__mutmut_76"]
