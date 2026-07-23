@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-04 and P-12 union the measured stationary-resampling and forward-cohort targets: 1,082 selected mutants, 874 killed, 207 meaningful survivors, one equivalent survivor, and zero unhealthy outcomes."
+change_explanation = "P-13 adds the measured forward-decision target: 1,451 selected mutants, 1,242 killed, 207 meaningful survivors, two equivalent survivors, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -19,9 +19,9 @@ targets = [
 ]
 
 [summary]
-total = 1082
-killed = 874
-survived = 208
+total = 1451
+killed = 1242
+survived = 209
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -366,3 +366,8 @@ names = [
 classification = "meaningful"
 reason = "The restart comparison differs only when a generated uniform draw equals the restart threshold exactly; retained as a measured boundary-test gap."
 names = ["research.portfolio.resample.x_stationary_bootstrap__mutmut_39"]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The function rejects empty input and validates every element as Decimal, so omitting the explicit Decimal zero start from sum preserves the exact mean."
+names = ["research.forward_decision.x_bootstrap_mean_bounds__mutmut_76"]

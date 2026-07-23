@@ -94,8 +94,14 @@ fixed endpoint.
 
 ## Open questions
 
-None. Option A, endpoint, thresholds, confidence levels, seed, sensitivity lengths, and suppression
-behaviour are fixed by Jan and Claude's pinned build contract.
+The P-12 schema stores generic named thresholds and a minimum duration in days, but the build
+contract does not define an enrollment key for P-13's per-trade threshold or a day count equivalent
+to 30 calendar months. P-13 therefore applies the fixed protocol constants and reports the
+immutable registered values without guessing a mapping. An operational cohort-enrollment package
+must specify those registry names/values before wiring a caller.
+
+Option A, endpoint, decision thresholds, confidence levels, seed, sensitivity lengths, and
+suppression behaviour are otherwise fixed by Jan and Claude's pinned build contract.
 
 ## Expected artifacts
 
