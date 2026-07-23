@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import inspect
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from decimal import Decimal
 from pathlib import Path
 from typing import cast
@@ -155,7 +155,11 @@ def _patch_bounds(
     calls: list[tuple[int, Decimal, tuple[Decimal, ...]]] = []
 
     def fake_select(candidate_returns: object) -> int:
-        assert candidate_returns
+        assert isinstance(candidate_returns, dict)
+        assert len(candidate_returns) == 1
+        candidate = next(iter(candidate_returns))
+        assert candidate.startswith("cohort:")
+        UUID(candidate.removeprefix("cohort:"))
         return selected_block
 
     def fake_bounds(
@@ -344,6 +348,26 @@ def test_calendar_and_endpoint_validation_fail_closed_with_exact_diagnostics() -
     with pytest.raises(ValueError) as naive_start:
         decision_module._calendar_anniversary(datetime(2024, 1, 1), 1)
     assert str(naive_start.value) == "cohort start_timestamp must be timezone-aware"
+
+    class _IndeterminateTimezone(tzinfo):
+        def utcoffset(self, value: datetime | None) -> None:
+            del value
+            return None
+
+        def dst(self, value: datetime | None) -> None:
+            del value
+            return None
+
+        def tzname(self, value: datetime | None) -> str:
+            del value
+            return "indeterminate"
+
+    with pytest.raises(ValueError) as indeterminate_start:
+        decision_module._calendar_anniversary(
+            datetime(2024, 1, 1, tzinfo=_IndeterminateTimezone()),
+            1,
+        )
+    assert str(indeterminate_start.value) == "cohort start_timestamp must be timezone-aware"
 
     for months in (cast(int, True), -1, cast(int, Decimal("1"))):
         with pytest.raises(ValueError) as invalid_months:
@@ -599,7 +623,8 @@ def test_bootstrap_mean_bounds_pins_decimal_arithmetic_and_quantiles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fixed_bootstrap(*args: object, **kwargs: object) -> np.ndarray:
-        del args, kwargs
+        assert args == (range(0, 2), 1)
+        assert kwargs == {"replications": 2, "seed": 91}
         return np.array([[0, 1], [1, 1]], dtype=np.int64)
 
     monkeypatch.setattr(decision_module, "stationary_bootstrap", fixed_bootstrap)
