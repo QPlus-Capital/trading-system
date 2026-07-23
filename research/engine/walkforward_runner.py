@@ -109,7 +109,12 @@ def run_walkforward(
                     # training run sizes off compounding equity, so parameters are selected under
                     # the scale-dependent behaviour the OOS run rejects, and WFE then compares a
                     # compounded in-sample return with a flat out-of-sample one.
-                    scoring_params(recipe, params),
+                    {
+                        **scoring_params(recipe, params),
+                        # The engine boundary is not a strategy exit. Leave the final position
+                        # open so extract_trade_pnls excludes it from the training score.
+                        "flatten_on_stop": False,
+                    },
                     start=(train_start - PREROLL).isoformat(),
                     end=train_end.isoformat(),
                     trade_from=train_start.isoformat(),
