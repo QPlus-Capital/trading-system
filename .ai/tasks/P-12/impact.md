@@ -14,7 +14,9 @@ integrity.
 Initial `just impact` reported R0/no changes because changed-path discovery is commit based and the
 red-first files were uncommitted. Explicit intended-path impact reported R3, selected
 `tests/test_research_forward_test_registry.py` and `tests/test_quality_properties.py`, and found no
-transitive or dynamic consumer. The final committed-range report is recorded before readiness.
+transitive or dynamic consumer. Final `just impact` against `origin/main` reported R3, the same two
+direct tests, the registry as a critical-path escalation, and no transitive, dynamic, or possibly
+affected tests.
 
 ## Transitive impact
 
