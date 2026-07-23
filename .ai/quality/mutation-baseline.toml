@@ -15,6 +15,7 @@ targets = [
     "continuous-attribution",
     "result-regression",
     "forward-cohort-identity",
+    "forward-decision",
 ]
 
 [summary]
