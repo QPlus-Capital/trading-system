@@ -196,6 +196,8 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/montecarlo.py` | Monte-Carlo robustness from per-trade PnLs (profit probability, drawdown) |
 | `research/engine/overfitting.py` | Selection-bias statistics: deflated Sharpe, PBO, the multiple-testing budget |
 | `research/regression.py` | Compares a candidate run against a reference against stated expectations |
+| `research/forward_test_registry.py` | Immutable content-hashed forward cohorts + append-only daily net-R observations |
+| `research/forward_decision.py` | Fixed, suppression-safe bootstrap decisions for registered forward cohorts |
 | `research/engine/continuous.py` | Executes the out-of-sample span as ONE run under a schedule |
 | `research/engine/schedule_builder.py` | Turns windows + their selected parameters into that schedule |
 | `research/engine/walkforward.py` | Walk-forward window scheme (train/test splits, purge/embargo) |
@@ -208,6 +210,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 |---|---|
 | `research/portfolio/trades.py` | The timestamped OOS trade stream + the stage-3 extractor factory |
 | `research/portfolio/stats.py` | Shared metric helpers: edge/risk stats, R-multiples, daily equity |
+| `research/portfolio/resample.py` | Corrected Politis-White block length + stationary bootstrap for daily net returns |
 | `research/portfolio/curves.py` | Daily realized + mark-to-market equity curves (swap realized-only) |
 | `research/portfolio/sizing.py` | Position-sizing simulation: per-trade risk + the daily path |
 | `research/portfolio/risk.py` | The risk system: account context + pluggable tail-capped sizing policies |
