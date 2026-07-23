@@ -212,14 +212,15 @@ def test_live_and_paper_observations_cannot_mix(tmp_path: Path) -> None:
 def test_credentials_and_account_numbers_never_reach_disk(tmp_path: Path) -> None:
     root = tmp_path / "registry"
     registry = ForwardTestRegistry(root)
-    registry.register(_plan(_inputs(tmp_path / "valid")))
+    valid_inputs = _inputs(tmp_path / "valid")
+    registry.register(_plan(valid_inputs))
     synthetic_credential = "sk-" + "synthetic_" + ("x" * 32)
     fake_account_number = "812345678"
 
     for forbidden in (synthetic_credential, fake_account_number):
         with pytest.raises(OpaqueIdentifierError, match="UUID"):
             registry.register(
-                _plan(_inputs(tmp_path / forbidden), participant_id=forbidden)
+                _plan(valid_inputs, participant_id=forbidden)
             )
 
     written = "\n".join(
@@ -288,6 +289,8 @@ def test_schema_and_decimal_observation_round_trip_exactly(tmp_path: Path) -> No
     assert definition["minimum_trade_count"] == "450"
     assert isinstance(definition["minimum_trade_count"], str)
     assert UUID(definition["participant_id"]) == UUID(_PARTICIPANT_ID)
+    assert set(definition["input_hashes"]) == set(HashedInputPaths.__dataclass_fields__)
+    assert str(tmp_path) not in definition_path.read_text(encoding="utf-8")
 
     observation_path = definition_path.with_name("observations.jsonl")
     written_observation = json.loads(observation_path.read_text(encoding="utf-8"))

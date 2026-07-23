@@ -215,8 +215,7 @@ class ForwardTestRegistry:
         cohort = self.cohort(cohort_id)
         if not isinstance(source, ObservationSource) or source is not cohort.observation_source:
             raise CohortMismatchError(
-                f"observation source {source!s} does not match cohort source "
-                f"{cohort.observation_source.value}"
+                "observation source does not match the cohort's registered source"
             )
         _validate_loss_day(loss_day)
         value = _finite_decimal(daily_net_portfolio_r, "daily_net_portfolio_r")
