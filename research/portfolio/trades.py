@@ -44,7 +44,15 @@ from research.engine.walkforward_runner import _data_span
 # took, so re-booking ``r * risk_amount`` sizes at any flat risk regardless of which stream it came
 # from.
 _COLUMNS = [
-    "market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "is_long", "r"
+    "market",
+    "ts_opened",
+    "ts_closed",
+    "pnl_base",
+    "entry",
+    "exit",
+    "sl_pct",
+    "is_long",
+    "r",
 ]
 
 
@@ -211,9 +219,7 @@ def extract_market_trades(
     pos = run_continuous_oos(
         recipe, segments, span_start=span_start, span_end=span_end, params=pinned
     )
-    rows = timed_trades_from_report(
-        pos, market, stop_loss_lookup(segments), closed_from=span_start
-    )
+    rows = timed_trades_from_report(pos, market, stop_loss_lookup(segments), closed_from=span_start)
     # Positions were sized off the constant basis, so every trade's risk is the same
     # base_risk_frac * start_balance -- R divides by that, not by a walked compounding equity that
     # the flat-sized trades never traded against.
