@@ -150,7 +150,7 @@ def _stat_row(label: str, live: float, ref: float, fmt: str, higher_better: bool
     st.metric(
         label,
         format(live, fmt),
-        delta=f"{'+' if delta >= 0 else ''}{format(delta, fmt)} vs BT",
+        delta=f"{'+' if delta >= 0 else ''}{format(delta, fmt)} gegenüber BT",
         delta_color="normal" if ok else "inverse",
     )
 
@@ -165,7 +165,8 @@ def _live_view() -> None:
         if st.button("Refresh now"):
             st.cache_data.clear()
         st.caption(
-            "Live data from MT5 (60s cache). Backtest reference: the latest reports/research/ run."
+            "Live-Daten aus MT5 (60-Sekunden-Cache). Backtest-Referenz: der neueste Lauf unter "
+            "reports/research/."
         )
 
     profile = ACCOUNTS[account_name]
@@ -173,7 +174,10 @@ def _live_view() -> None:
     try:
         live = _load_live(account_name)
     except Exception as exc:  # noqa: BLE001 -- surface connection issues in the UI
-        st.error(f"Could not read from the MT5 terminal: {exc}\n\nIs it open and logged in?")
+        st.error(
+            f"Das MT5-Terminal konnte nicht gelesen werden: {exc}\n\n"
+            "Ist es geöffnet und angemeldet?"
+        )
         return
     # Newest framework run that actually carries the reference stream (a run dir may be partial).
     runs = [
@@ -182,7 +186,10 @@ def _live_view() -> None:
         if (d / "full_history_trades.csv").is_file()
     ]
     if not runs:
-        st.warning("No backtest reference yet — run the backtest pipeline (`just backtest`) first.")
+        st.warning(
+            "Noch keine Backtest-Referenz vorhanden — zuerst die Backtest-Pipeline ausführen "
+            "(`just backtest`)."
+        )
         return
     ref = load_reference(max(runs, key=lambda d: d.stat().st_mtime) / "full_history_trades.csv")
 
@@ -215,9 +222,9 @@ def _live_view() -> None:
         # funded balance itself. Anything else means booked events are missing from between.
         if min(abs(before), abs(before - ledger_anchor)) > Decimal("1"):
             st.caption(
-                f"Deal history looks incomplete: replaying it implies {before:,.0f} before its "
-                f"first entry, which is neither zero nor the recorded start balance of "
-                f"{ledger_anchor:,.0f}. Historical R is approximate."
+                f"Die Handelshistorie scheint unvollständig: Ihre Wiedergabe ergibt "
+                f"{before:,.0f} vor dem ersten Eintrag; das ist weder null noch der gespeicherte "
+                f"Startsaldo von {ledger_anchor:,.0f}. Historische R-Werte sind nur Näherungen."
             )
 
     window_start = pd.Timestamp(datetime.now(tz=UTC) - timedelta(days=days))
@@ -231,42 +238,46 @@ def _live_view() -> None:
     trades, trade_risk, start_balance = view.trades, view.risk, view.start_balance
     if view.hidden:
         st.caption(
-            f"Per-trade risk basis computed over the full history "
-            f"({view.hidden} older trades outside this window)."
+            f"Die Risikobasis je Trade wurde über die vollständige Historie berechnet "
+            f"({view.hidden} ältere Trades außerhalb dieses Zeitfensters)."
         )
 
     # -- account / risk header --
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Equity", f"{live['equity']:,.0f} {live['currency']}")
-    c2.metric("Balance", f"{live['balance']:,.0f} {live['currency']}")
-    c3.metric("Floating", f"{live['equity'] - live['balance']:+,.0f} {live['currency']}")
+    c1.metric("Eigenkapital", f"{live['equity']:,.0f} {live['currency']}")
+    c2.metric("Kontostand", f"{live['balance']:,.0f} {live['currency']}")
+    c3.metric(
+        "Unrealisierter P&L",
+        f"{live['equity'] - live['balance']:+,.0f} {live['currency']}",
+    )
     cap = 0.020 * live["equity"]
     risk = live["open_risk"]
     if risk.determinate:
         c4.metric(
-            "Open risk",
+            "Offenes Risiko",
             f"{risk.total:,.0f} / {cap:,.0f}",
-            help="Total open stop-risk vs the 2.0% cap",
+            help="Gesamtes offenes Stop-Risiko im Verhältnis zur Obergrenze von 2,0 %",
         )
     else:
         # Match the runner exactly: it treats unpriceable exposure as infinite and opens nothing.
         # A number here would invite acting on headroom the account does not have.
         c4.metric(
-            "Open risk",
-            "indeterminate",
-            help="At least one open position cannot be priced — the runner counts this as "
-            "unlimited risk and blocks new entries.",
+            "Offenes Risiko",
+            "nicht bestimmbar",
+            help="Mindestens eine offene Position kann nicht bewertet werden — der Runner "
+            "rechnet sie als unbegrenztes Risiko und blockiert neue Einstiege.",
         )
         st.error(
-            "Open risk cannot be established: "
-            f"{', '.join(risk.unpriceable)} cannot be priced. "
-            "The runner treats this as unlimited risk and will not open anything new, so this "
-            "page shows no available headroom."
+            "Offenes Risiko kann nicht bestimmt werden: Für folgende Märkte ist keine Bewertung "
+            f"möglich: {', '.join(risk.unpriceable)}. Der Runner behandelt dies als unbegrenztes "
+            "Risiko und eröffnet keine neuen Positionen; deshalb zeigt diese Seite keinen "
+            "verfügbaren Risikospielraum."
         )
 
     if trades.empty:
         st.info(
-            "No closed trades yet — waiting for the first. The comparison fills in as trades close."
+            "Noch keine geschlossenen Trades — der erste wird abgewartet. Der Vergleich füllt "
+            "sich, sobald Trades geschlossen werden."
         )
     else:
         net = trades["net_pnl"].to_numpy(dtype=object)
@@ -278,14 +289,14 @@ def _live_view() -> None:
         st.subheader("Edge — live vs. backtest expectation")
         k1, k2, k3, k4 = st.columns(4)
         with k1:
-            st.metric("Live trades", f"{len(trades):,}")
+            st.metric("Live-Trades", f"{len(trades):,}")
         with k2:
-            _stat_row("Hit rate", ls["hit_rate"], ro["hit_rate"], ".1%")
+            _stat_row("Trefferquote", ls["hit_rate"], ro["hit_rate"], ".1%")
         with k3:
-            _stat_row("Profit factor", ls["profit_factor"], ro["profit_factor"], ".2f")
+            _stat_row("Profitfaktor", ls["profit_factor"], ro["profit_factor"], ".2f")
         with k4:
             _stat_row(
-                "Expectancy / trade (R)",
+                "Erwartungswert je Trade (R)",
                 float(sum(r_values, start=Decimal("0")) / len(r_values)) if len(r_values) else 0.0,
                 ro["expectancy"],
                 "+.2f",
@@ -315,7 +326,8 @@ def _live_view() -> None:
         # -- live cumulative R vs backtest Monte-Carlo band --
         st.subheader("Cumulative R — live vs. backtest expectation band")
         st.caption(
-            "Live in the grey 5–95% band = tracking the backtest. Below it = under-performing."
+            "Live innerhalb des grauen 5–95-%-Bands = im Einklang mit dem Backtest. Darunter = "
+            "schwächere Entwicklung."
         )
         band = mc_band(ref["r_multiples"], len(trades))
         running_r = Decimal("0")
@@ -368,7 +380,7 @@ def _live_view() -> None:
     if live["positions"]:
         st.dataframe(pd.DataFrame(live["positions"]), use_container_width=True, hide_index=True)
     else:
-        st.caption("No open positions.")
+        st.caption("Keine offenen Positionen.")
     if state:
         hwm, day_start = float(state["hwm_balance"]), float(state["day_start_balance"])
         # The prop-firm floor is anchored to the ACCOUNT's start balance as the runner recorded
@@ -379,12 +391,14 @@ def _live_view() -> None:
         daily = day_start - 0.025 * day_start
         f1, f2 = st.columns(2)
         f1.metric(
-            "Trailing floor (5%)",
+            "Nachlaufende Untergrenze (5 %)",
             f"{trailing:,.0f}",
-            delta=f"{live['equity'] - trailing:+,.0f} headroom",
+            delta=f"{live['equity'] - trailing:+,.0f} Spielraum",
         )
         f2.metric(
-            "Daily floor (2.5%)", f"{daily:,.0f}", delta=f"{live['equity'] - daily:+,.0f} headroom"
+            "Tagesuntergrenze (2,5 %)",
+            f"{daily:,.0f}",
+            delta=f"{live['equity'] - daily:+,.0f} Spielraum",
         )
 
 
@@ -392,7 +406,10 @@ def _research_view() -> None:
     st.title("QPlus — Research Explorer")
     csv = latest_study_csv(_REPO / "reports")
     if csv is None:
-        st.warning("No study found under reports/research/. Run `research.engine.characterize`.")
+        st.warning(
+            "Keine Studie unter reports/research/ gefunden. `research.engine.characterize` "
+            "ausführen."
+        )
         return
     df = load_study(csv)
 
@@ -406,11 +423,11 @@ def _research_view() -> None:
     col, mid, higher = METRICS[metric_label]
     sub = df[(df["train_months"] == train) & (df["instrument"].isin(picked))]
     st.caption(
-        f"Study: {csv.parent.name} · {len(df)} rows · frozen live config = no_bb_wpr @ 36m. "
-        "Colour: blue = better, red = worse."
+        f"Studie: {csv.parent.name} · {len(df)} Zeilen · eingefrorene Live-Konfiguration = "
+        "no_bb_wpr @ 36m. Farbe: Blau = besser, Rot = schlechter."
     )
     if sub.empty:
-        st.info("Select at least one instrument.")
+        st.info("Mindestens ein Instrument auswählen.")
         return
 
     # -- heatmap: variation x instrument --
