@@ -218,9 +218,14 @@ def test_same_second_opening_cost_is_excluded_from_its_own_basis() -> None:
             "fee": Decimal("-2.0"),
         },
         {
+            **_deal(opened, "", 30.0),
+            "position_id": 0,
+            "ticket": 11,
+        },
+        {
             **_deal(closed, "EURUSD", 100.0),
             "position_id": 17,
-            "ticket": 11,
+            "ticket": 12,
             "entry": 1,
             "type": 1,
             "fee": Decimal("0"),
@@ -231,7 +236,7 @@ def test_same_second_opening_cost_is_excluded_from_its_own_basis() -> None:
 
     risk = per_trade_risk(
         trades,
-        Decimal("100145"),
+        Decimal("100175"),
         Decimal("0.01"),
         ledger=ledger,
     )
