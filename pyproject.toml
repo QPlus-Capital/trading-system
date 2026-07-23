@@ -61,13 +61,14 @@ addopts = "-ra"
 pythonpath = ["."]
 
 [tool.mutmut]
-# Mutmut needs import-complete package copies, but only these eight pure critical files are mutated.
+# Mutmut needs import-complete package copies, but only these nine pure critical files are mutated.
 paths_to_mutate = [
     "live/risk_control.py",
     "research/portfolio/sizing.py",
     "research/portfolio/drawdown.py",
     "research/portfolio/risk.py",
     "research/portfolio/stats.py",
+    "research/portfolio/resample.py",
     "core/strategies/param_schedule.py",
     "research/engine/continuous.py",
     "research/regression.py",
@@ -81,6 +82,8 @@ pytest_add_cli_args_test_selection = [
     "tests/test_research_portfolio_dd.py",
     "tests/test_research_risk.py",
     "tests/test_research_stats.py",
+    "tests/test_research_resample.py",
+    "tests/test_research_resample_properties.py",
     "tests/test_research_param_schedule.py",
     "tests/test_research_continuous_windows.py",
     "tests/test_research_regression.py",
