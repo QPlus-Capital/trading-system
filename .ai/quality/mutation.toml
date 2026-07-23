@@ -97,3 +97,16 @@ mutant_patterns = [
     "research.forward_test_registry.x__digest_canonical__mutmut_*",
     "research.forward_test_registry.x__identity_from_cohort__mutmut_*",
 ]
+
+[[targets]]
+id = "forward-decision"
+path = "research/forward_decision.py"
+mutant_patterns = [
+    "research.forward_decision.x_daily_threshold__mutmut_*",
+    "research.forward_decision.x__calendar_anniversary__mutmut_*",
+    "research.forward_decision.x_endpoint_reached__mutmut_*",
+    "research.forward_decision.x__nearest_rank__mutmut_*",
+    "research.forward_decision.x_bootstrap_mean_bounds__mutmut_*",
+    "research.forward_decision.x__block_analyses__mutmut_*",
+    "research.forward_decision.x_evaluate_forward_test__mutmut_*",
+]

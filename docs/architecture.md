@@ -197,6 +197,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/overfitting.py` | Selection-bias statistics: deflated Sharpe, PBO, the multiple-testing budget |
 | `research/regression.py` | Compares a candidate run against a reference against stated expectations |
 | `research/forward_test_registry.py` | Immutable content-hashed forward cohorts + append-only daily net-R observations |
+| `research/forward_decision.py` | Fixed, suppression-safe bootstrap decisions for registered forward cohorts |
 | `research/engine/continuous.py` | Executes the out-of-sample span as ONE run under a schedule |
 | `research/engine/schedule_builder.py` | Turns windows + their selected parameters into that schedule |
 | `research/engine/walkforward.py` | Walk-forward window scheme (train/test splits, purge/embargo) |

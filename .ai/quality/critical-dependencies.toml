@@ -47,3 +47,13 @@ tests = [
 ]
 possibly_affected = []
 reason = "content identity and source isolation govern the integrity of forward-test evidence"
+
+[[edges]]
+source = "research/forward_decision.py"
+tests = [
+  "tests/test_research_forward_decision.py",
+  "tests/test_research_forward_decision_power.py",
+  "tests/test_quality_properties.py",
+]
+possibly_affected = []
+reason = "fixed endpoints, suppression, and bootstrap bounds govern forward-test efficacy"

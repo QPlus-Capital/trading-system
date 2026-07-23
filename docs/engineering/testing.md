@@ -100,8 +100,8 @@ property and a named regression example, and adds its generalized class to
 ## Mutation tests
 
 `mutation-fast` mutates only configured critical modules changed relative to its base; it obtains
-the changed paths and R3 result from `scripts/quality/classify.py`. `mutation-critical` runs all eight
-focused scopes and checks `.ai/quality/mutation-baseline.toml`. Each scope names its pure functions;
+the changed paths and R3 result from `scripts/quality/classify.py`. `mutation-critical` runs every
+configured focused scope and checks `.ai/quality/mutation-baseline.toml`. Each scope names its pure functions;
 module-wide wildcards and command/orchestration entry points are excluded. The current TOML result is written
 under `.ai/mutation/` and uploaded by CI; it is intentionally unversioned. A new survivor, an
 unchecked/no-test/timeout/suspicious outcome, a score decrease, or a changed mutant total blocks.
@@ -116,8 +116,8 @@ on Windows CI. The Ubuntu setup omits the Windows-only MetaTrader5 wheel and mut
 modules that do not import it. The tool is a pinned ephemeral `uv --with` dependency, so it does not
 add Mutmut's transitive packages (including YAML tooling) to the project dependency lock.
 `mutate_only_covered_lines` is disabled: Mutmut's in-process coverage prepass followed by its stats
-pass attempts to load NumPy's native extension twice under Python 3.13. Focus remains bounded by the
-eight explicit module targets and their dedicated test selection.
+pass attempts to load NumPy's native extension twice under Python 3.13. Focus remains bounded by
+the explicit configured module targets and their dedicated test selection.
 The mutant tree copies `.ai/` because the reused classifier loads its authoritative risk model
 from `.ai/quality/risk-classes.toml`. CI explicitly includes hidden files when uploading the
 unversioned `.ai/mutation/critical.toml` report.

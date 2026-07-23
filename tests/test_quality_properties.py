@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -17,6 +18,7 @@ from hypothesis import strategies as st
 from live.risk_control import RiskController, RiskLimits, position_volume
 from research.engine.continuous import window_returns
 from research.engine.walkforward import WalkForwardWindow
+from research.forward_decision import EFFICACY_TRADES, daily_threshold, endpoint_reached
 from research.forward_test_registry import (
     CohortPlan,
     CohortStatus,
@@ -277,3 +279,37 @@ def test_every_hashed_input_participates_in_forward_cohort_identity(changed: str
     hashes = dict.fromkeys(HashedInputPaths.__dataclass_fields__, "sha256:" + ("0" * 64))
     changed_hashes = {**hashes, changed: "sha256:" + ("1" * 64)}
     assert cohort_identity(plan, hashes) != cohort_identity(plan, changed_hashes)
+
+
+@given(
+    trades=st.integers(min_value=0, max_value=10_000),
+    days=st.integers(min_value=1, max_value=5_000),
+)
+def test_forward_daily_threshold_is_exact_and_monotone(trades: int, days: int) -> None:
+    count = Decimal(trades)
+    observed_days = Decimal(days)
+    threshold = daily_threshold(count, observed_days)
+    assert threshold == Decimal("0.10") * count / observed_days
+    assert daily_threshold(count + Decimal("1"), observed_days) >= threshold
+
+
+@given(
+    months_short=st.integers(min_value=0, max_value=29),
+    trade_shortfall=st.integers(min_value=1, max_value=2_400),
+)
+def test_forward_endpoint_requires_both_fixed_conditions(
+    months_short: int,
+    trade_shortfall: int,
+) -> None:
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    year = start.year + months_short // 12
+    month = months_short % 12 + 1
+    before_calendar_endpoint = date(year, month, 1)
+    calendar_endpoint = date(2026, 7, 1)
+
+    assert not endpoint_reached(start, before_calendar_endpoint, EFFICACY_TRADES)
+    assert not endpoint_reached(
+        start,
+        calendar_endpoint,
+        EFFICACY_TRADES - Decimal(trade_shortfall),
+    )
