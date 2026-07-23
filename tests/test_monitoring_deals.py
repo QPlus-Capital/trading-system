@@ -1,5 +1,7 @@
 """Tests for the pure monitoring logic (deals -> trades, equity, live stats)."""
 
+from decimal import Decimal
+
 import numpy as np
 from monitoring.deals import deal_ledger, deals_to_trades, equity_curve, live_stats
 
@@ -14,8 +16,10 @@ def _deal(
     profit: float = 0.0,
     swap: float = 0.0,
     commission: float = 0.0,
+    fee: float = 0.0,
+    ticket: int | None = None,
 ) -> dict[str, object]:
-    return {
+    deal: dict[str, object] = {
         "position_id": pid,
         "symbol": symbol,
         "type": dtype,
@@ -26,7 +30,11 @@ def _deal(
         "profit": profit,
         "swap": swap,
         "commission": commission,
+        "fee": fee,
     }
+    if ticket is not None:
+        deal["ticket"] = ticket
+    return deal
 
 
 def test_deals_to_trades_pairs_in_and_out() -> None:
@@ -43,7 +51,7 @@ def test_deals_to_trades_pairs_in_and_out() -> None:
     assert len(t) == 1
     row = t.iloc[0]
     assert row["symbol"] == "XAUUSD" and row["direction"] == "BUY"
-    assert abs(row["net_pnl"] - 97.0) < 1e-9  # 100 - 2 - 1
+    assert row["net_pnl"] == Decimal("97.0")  # 100 - 2 - 1
 
 
 def test_deals_to_trades_empty() -> None:
@@ -59,6 +67,23 @@ def test_equity_curve_accumulates_from_start() -> None:
     ]
     eq = equity_curve(100_000.0, deal_ledger(deals))
     assert list(eq["equity"]) == [100_000.0, 100_050.0, 100_050.0, 100_020.0]
+
+
+def test_fee_moves_ledger_equity_and_trade_net_pnl() -> None:
+    deals = [
+        _deal(1, "EURUSD", 0, 0, 10, fee=-2.0, ticket=100),
+        _deal(1, "EURUSD", 1, 1, 20, profit=20.0, fee=-3.0, ticket=101),
+    ]
+
+    ledger = deal_ledger(deals)
+    trades = deals_to_trades(deals)
+    equity = equity_curve(Decimal("100000"), ledger)
+
+    assert list(ledger["amount"]) == [Decimal("-2.0"), Decimal("17.0")]
+    assert trades.iloc[0]["net_pnl"] == Decimal("15.0")
+    assert list(equity["equity"]) == [Decimal("99998.0"), Decimal("100015.0")]
+    assert all(isinstance(value, Decimal) for value in ledger["amount"])
+    assert isinstance(trades.iloc[0]["net_pnl"], Decimal)
 
 
 def test_live_stats() -> None:
