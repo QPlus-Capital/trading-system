@@ -11,6 +11,9 @@
 Initial `just impact` is expected to report no committed changes because the command compares
 commits. The explicit intended-path classifier is R3 due to `pyproject.toml` and `.ai/quality/**`;
 the new research module alone is R2 and is manually upgraded to R3 for methodology/result integrity.
+Final `just impact` against `origin/main` reports R3, selects the two focused decision test modules
+plus deterministic properties, applies the configured forward-decision critical escalation, and
+finds no transitive, dynamic, or possibly affected tests.
 
 ## Transitive impact
 
