@@ -1,24 +1,30 @@
-# Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor is conservatively classified
-# as a meaningful test-strength gap; the exact-name ratchet rejects any additional survivor.
+# Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor has an exact-name
+# classification; the ratchet rejects any additional survivor.
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "Initial measured pure-function critical baseline for issue 65: 774 selected mutants, 585 killed, 189 meaningful survivors, and zero unhealthy outcomes."
+change_explanation = "The merged P-04/P-12/P-13/P-14 scope retains every package target and measured survivor: 1,914 selected mutants, 1,624 killed, 288 meaningful survivors, two equivalent survivors, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
     "portfolio-drawdown",
     "portfolio-risk",
     "portfolio-accounting",
+    "portfolio-resample",
     "parameter-schedule",
     "continuous-attribution",
     "result-regression",
+    "mt5-deal-export",
+    "monitoring-deal-reconstruction",
+    "monitoring-stable-snapshot",
+    "forward-cohort-identity",
+    "forward-decision",
 ]
 
 [summary]
-total = 774
-killed = 585
-survived = 189
+total = 1914
+killed = 1624
+survived = 290
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -27,6 +33,11 @@ not_checked = 0
 interrupted = 0
 segfault = 0
 caught_by_type_check = 0
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Removing ensure_ascii=True is equivalent because json.dumps defaults ensure_ascii to True."
+names = ["research.forward_test_registry.x__digest_canonical__mutmut_7"]
 
 [[survivor_groups]]
 classification = "meaningful"
@@ -318,3 +329,141 @@ names = [
     "research.regression.x_compare__mutmut_98",
     "research.regression.x_compare__mutmut_99",
 ]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Focused bridge tests do not distinguish these remaining history-deal export mutations; retained as measured test-strength gaps."
+names = [
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_3",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_4",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_51",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_54",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_57",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_7",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "NumPy infers the same integer or float dtype, and omitting integers(low=0) preserves the exact generator call."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_109",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_112",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_53",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_55",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_25",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_44",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_62",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_64",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "These mutations change unused allocation capacity or a value that is overwritten before any read."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_57",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_58",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_59",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Focused monitoring tests do not distinguish these remaining Decimal reconstruction mutations; retained as measured test-strength gaps."
+names = [
+    "monitoring.deals.x__deal_amount__mutmut_4",
+    "monitoring.deals.x_balance_at__mutmut_10",
+    "monitoring.deals.x_balance_at__mutmut_14",
+    "monitoring.deals.x_balance_at__mutmut_24",
+    "monitoring.deals.x_balance_at__mutmut_37",
+    "monitoring.deals.x_balance_at__mutmut_40",
+    "monitoring.deals.x_balance_at__mutmut_42",
+    "monitoring.deals.x_balance_at__mutmut_52",
+    "monitoring.deals.x_balance_at__mutmut_63",
+    "monitoring.deals.x_balance_at__mutmut_66",
+    "monitoring.deals.x_balance_at__mutmut_67",
+    "monitoring.deals.x_balance_at__mutmut_69",
+    "monitoring.deals.x_balance_at__mutmut_71",
+    "monitoring.deals.x_balance_at__mutmut_8",
+    "monitoring.deals.x_deal_ledger__mutmut_22",
+    "monitoring.deals.x_deal_ledger__mutmut_25",
+    "monitoring.deals.x_deal_ledger__mutmut_31",
+    "monitoring.deals.x_deal_ledger__mutmut_51",
+    "monitoring.deals.x_deal_ledger__mutmut_53",
+    "monitoring.deals.x_deal_ledger__mutmut_6",
+    "monitoring.deals.x_deal_ledger__mutmut_60",
+    "monitoring.deals.x_deal_ledger__mutmut_61",
+    "monitoring.deals.x_deals_to_trades__mutmut_134",
+    "monitoring.deals.x_deals_to_trades__mutmut_136",
+    "monitoring.deals.x_deals_to_trades__mutmut_137",
+    "monitoring.deals.x_deals_to_trades__mutmut_141",
+    "monitoring.deals.x_deals_to_trades__mutmut_142",
+    "monitoring.deals.x_deals_to_trades__mutmut_22",
+    "monitoring.deals.x_deals_to_trades__mutmut_37",
+    "monitoring.deals.x_deals_to_trades__mutmut_39",
+    "monitoring.deals.x_deals_to_trades__mutmut_4",
+    "monitoring.deals.x_deals_to_trades__mutmut_46",
+    "monitoring.deals.x_deals_to_trades__mutmut_47",
+    "monitoring.deals.x_deals_to_trades__mutmut_5",
+    "monitoring.deals.x_deals_to_trades__mutmut_58",
+    "monitoring.deals.x_deals_to_trades__mutmut_6",
+    "monitoring.deals.x_deals_to_trades__mutmut_67",
+    "monitoring.deals.x_deals_to_trades__mutmut_7",
+    "monitoring.deals.x_deals_to_trades__mutmut_71",
+    "monitoring.deals.x_equity_curve__mutmut_17",
+    "monitoring.deals.x_equity_curve__mutmut_18",
+    "monitoring.deals.x_equity_curve__mutmut_19",
+    "monitoring.deals.x_equity_curve__mutmut_20",
+    "monitoring.deals.x_equity_curve__mutmut_22",
+    "monitoring.deals.x_equity_curve__mutmut_23",
+    "monitoring.deals.x_equity_curve__mutmut_4",
+    "monitoring.deals.x_equity_curve__mutmut_5",
+    "monitoring.deals.x_equity_curve__mutmut_6",
+    "monitoring.deals.x_equity_curve__mutmut_7",
+    "monitoring.deals.x_equity_curve__mutmut_8",
+    "monitoring.deals.x_equity_curve__mutmut_9",
+    "monitoring.deals.x_money_events__mutmut_10",
+    "monitoring.deals.x_money_events__mutmut_12",
+    "monitoring.deals.x_money_events__mutmut_15",
+    "monitoring.deals.x_money_events__mutmut_16",
+    "monitoring.deals.x_money_events__mutmut_18",
+    "monitoring.deals.x_money_events__mutmut_24",
+    "monitoring.deals.x_money_events__mutmut_33",
+    "monitoring.deals.x_money_events__mutmut_35",
+    "monitoring.deals.x_money_events__mutmut_39",
+    "monitoring.deals.x_money_events__mutmut_4",
+    "monitoring.deals.x_money_events__mutmut_44",
+    "monitoring.deals.x_money_events__mutmut_45",
+    "monitoring.deals.x_money_events__mutmut_48",
+    "monitoring.deals.x_money_events__mutmut_50",
+    "monitoring.deals.x_money_events__mutmut_55",
+    "monitoring.deals.x_money_events__mutmut_57",
+    "monitoring.deals.x_money_events__mutmut_6",
+    "monitoring.deals.x_per_trade_risk__mutmut_1",
+    "monitoring.deals.x_per_trade_risk__mutmut_10",
+    "monitoring.deals.x_per_trade_risk__mutmut_2",
+    "monitoring.deals.x_per_trade_risk__mutmut_3",
+    "monitoring.deals.x_per_trade_risk__mutmut_30",
+    "monitoring.deals.x_per_trade_risk__mutmut_32",
+    "monitoring.deals.x_per_trade_risk__mutmut_4",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "These estimator mutations only differ at exact floating-point tolerance or bandwidth boundaries; retained as measured boundary-test gaps."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_137",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_140",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_23",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_24",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_79",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_88",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "The restart comparison differs only when a generated uniform draw equals the restart threshold exactly; retained as a measured boundary-test gap."
+names = ["research.portfolio.resample.x_stationary_bootstrap__mutmut_39"]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The function rejects empty input and validates every element as Decimal, so omitting the explicit Decimal zero start from sum preserves the exact mean."
+names = ["research.forward_decision.x_bootstrap_mean_bounds__mutmut_76"]

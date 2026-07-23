@@ -59,6 +59,15 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "portfolio-resample"
+path = "research/portfolio/resample.py"
+mutant_patterns = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_*",
+    "research.portfolio.resample.x_select_block_length__mutmut_*",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_*",
+]
+
+[[targets]]
 id = "parameter-schedule"
 path = "core/strategies/param_schedule.py"
 mutant_patterns = [
@@ -77,4 +86,53 @@ path = "research/regression.py"
 mutant_patterns = [
     "research.regression.x__delta__mutmut_*",
     "research.regression.x_compare__mutmut_*",
+]
+
+[[targets]]
+id = "mt5-deal-export"
+path = "live/mt5_bridge.py"
+mutant_patterns = ["live.mt5_bridge.x*Mt5Bridge*history_deals__mutmut_*"]
+
+[[targets]]
+id = "monitoring-deal-reconstruction"
+path = "monitoring/deals.py"
+mutant_patterns = [
+    "monitoring.deals.x__deal_amount__mutmut_*",
+    "monitoring.deals.x_deals_to_trades__mutmut_*",
+    "monitoring.deals.x_deal_ledger__mutmut_*",
+    "monitoring.deals.x_money_events__mutmut_*",
+    "monitoring.deals.x_balance_at__mutmut_*",
+    "monitoring.deals.x_equity_curve__mutmut_*",
+    "monitoring.deals.x_per_trade_risk__mutmut_*",
+]
+
+[[targets]]
+id = "monitoring-stable-snapshot"
+path = "monitoring/dashboard.py"
+mutant_patterns = [
+    "monitoring.dashboard.x_snapshot_identity__mutmut_*",
+    "monitoring.dashboard.x_stable_history_account__mutmut_*",
+]
+
+[[targets]]
+id = "forward-cohort-identity"
+path = "research/forward_test_registry.py"
+mutant_patterns = [
+    "research.forward_test_registry.x_hash_cohort_inputs__mutmut_*",
+    "research.forward_test_registry.x_cohort_identity__mutmut_*",
+    "research.forward_test_registry.x__digest_canonical__mutmut_*",
+    "research.forward_test_registry.x__identity_from_cohort__mutmut_*",
+]
+
+[[targets]]
+id = "forward-decision"
+path = "research/forward_decision.py"
+mutant_patterns = [
+    "research.forward_decision.x_daily_threshold__mutmut_*",
+    "research.forward_decision.x__calendar_anniversary__mutmut_*",
+    "research.forward_decision.x_endpoint_reached__mutmut_*",
+    "research.forward_decision.x__nearest_rank__mutmut_*",
+    "research.forward_decision.x_bootstrap_mean_bounds__mutmut_*",
+    "research.forward_decision.x__block_analyses__mutmut_*",
+    "research.forward_decision.x_evaluate_forward_test__mutmut_*",
 ]
