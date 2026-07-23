@@ -312,9 +312,10 @@ def test_live_dashboard_renders_key_operator_guidance_in_german(
         "Nachlaufende Untergrenze (5 %)",
         "Tagesuntergrenze (2,5 %)",
     }
-    assert {
-        metric["delta"] for metric in rendered.metrics if metric["delta"] is not None
-    } == {"+90 Spielraum", "-5 Spielraum"}
+    assert {metric["delta"] for metric in rendered.metrics if metric["delta"] is not None} == {
+        "+90 Spielraum",
+        "-5 Spielraum",
+    }
     risk_metric = next(metric for metric in rendered.metrics if metric["label"] == "Offenes Risiko")
     assert risk_metric["value"] == "nicht bestimmbar"
     assert "unbegrenztes Risiko" in str(risk_metric["help"])
