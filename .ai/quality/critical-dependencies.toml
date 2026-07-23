@@ -38,3 +38,12 @@ possibly_affected = [
   "tests/test_research_continuous_integration.py",
 ]
 reason = "the pure signal engine must remain identical across backtest and live adapters"
+
+[[edges]]
+source = "research/forward_test_registry.py"
+tests = [
+  "tests/test_research_forward_test_registry.py",
+  "tests/test_quality_properties.py",
+]
+possibly_affected = []
+reason = "content identity and source isolation govern the integrity of forward-test evidence"

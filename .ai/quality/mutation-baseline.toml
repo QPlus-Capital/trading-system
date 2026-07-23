@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-04 adds the estimator and stationary resampler target: 1049 selected mutants, 842 killed, 207 reviewed survivors, and zero unhealthy outcomes."
+change_explanation = "P-04 and P-12 union the measured stationary-resampling and forward-cohort targets: 1,082 selected mutants, 874 killed, 207 meaningful survivors, one equivalent survivor, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -14,12 +14,13 @@ targets = [
     "parameter-schedule",
     "continuous-attribution",
     "result-regression",
+    "forward-cohort-identity",
 ]
 
 [summary]
-total = 1049
-killed = 842
-survived = 207
+total = 1082
+killed = 874
+survived = 208
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -28,6 +29,11 @@ not_checked = 0
 interrupted = 0
 segfault = 0
 caught_by_type_check = 0
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Removing ensure_ascii=True is equivalent because json.dumps defaults ensure_ascii to True."
+names = ["research.forward_test_registry.x__digest_canonical__mutmut_7"]
 
 [[survivor_groups]]
 classification = "meaningful"
