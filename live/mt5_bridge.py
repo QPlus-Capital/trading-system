@@ -20,6 +20,7 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any, Literal
 
 try:  # pragma: no cover - Windows-only dependency; pure helpers stay importable without it
@@ -327,9 +328,9 @@ class Mt5Bridge:
         """
         return [p for p in self.positions(name) if p.magic == MAGIC]
 
-    def loss_for_order(self, name: str, side: Side, entry: float, sl: float, volume: float) -> (
-        float | None
-    ):
+    def loss_for_order(
+        self, name: str, side: Side, entry: float, sl: float, volume: float
+    ) -> float | None:
         """What ``volume`` lots of ``name`` would lose going from ``entry`` to ``sl``, in account
         currency, priced by the terminal (#19).
 
@@ -379,8 +380,9 @@ class Mt5Bridge:
         """Raw closed deals since ``since`` (for monitoring); empty list if none.
 
         Returns the fields needed to reconstruct round-trip trades + the realized equity curve:
-        time (epoch s), type (0=buy,1=sell,2=balance), entry (0=in,1=out), position_id, symbol,
-        volume, price, and the money legs profit / swap / commission.
+        ticket, time (epoch s), type (0=buy,1=sell,2=balance), entry (0=in,1=out),
+        position_id, symbol, volume, price, and every Decimal money leg: profit, swap, commission,
+        and fee.
         """
         m = self._require()
         raw = m.history_deals_get(since, datetime.now(tz=UTC))
@@ -388,6 +390,7 @@ class Mt5Bridge:
             return []
         return [
             {
+                "ticket": int(d.ticket),
                 "time": int(d.time),
                 "type": int(d.type),
                 "entry": int(d.entry),
@@ -395,9 +398,10 @@ class Mt5Bridge:
                 "symbol": str(d.symbol),
                 "volume": float(d.volume),
                 "price": float(d.price),
-                "profit": float(d.profit),
-                "swap": float(d.swap),
-                "commission": float(d.commission),
+                "profit": Decimal(str(d.profit)),
+                "swap": Decimal(str(d.swap)),
+                "commission": Decimal(str(d.commission)),
+                "fee": Decimal(str(getattr(d, "fee", 0))),
             }
             for d in raw
         ]

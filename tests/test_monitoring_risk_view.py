@@ -11,9 +11,19 @@ ledger is inherited into every reconstructed balance before it.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import numpy as np
 import pandas as pd
-from monitoring.deals import deal_ledger, equity_curve, per_trade_risk, to_ns
+import pytest
+from monitoring.deals import (
+    balance_at,
+    deal_ledger,
+    deals_to_trades,
+    equity_curve,
+    per_trade_risk,
+    to_ns,
+)
 from monitoring.risk_view import summarize_open_risk, window_history
 
 
@@ -27,7 +37,7 @@ def _trades(opens: list[str], closes: list[str], pnl: list[float]) -> pd.DataFra
     )
 
 
-def _ledger(times: list[str], amounts: list[float]) -> pd.DataFrame:
+def _ledger(times: list[str], amounts: list[float | Decimal]) -> pd.DataFrame:
     return pd.DataFrame({"time": pd.to_datetime(times, utc=True), "amount": amounts})
 
 
@@ -92,9 +102,7 @@ def test_an_overlapping_trade_is_not_credited_with_pnl_that_came_later() -> None
     Crediting B's win to A would attribute money that did not exist when A was sized -- exactly
     the multi-market overlap this monitor exists to diagnose.
     """
-    trades = _trades(
-        ["2026-01-01", "2026-01-02"], ["2026-01-10", "2026-01-03"], [500.0, 5_000.0]
-    )
+    trades = _trades(["2026-01-01", "2026-01-02"], ["2026-01-10", "2026-01-03"], [500.0, 5_000.0])
     ledger = _ledger(["2026-01-10", "2026-01-03"], [500.0, 5_000.0])
     risk = per_trade_risk(trades, 105_500.0, 0.01, ledger=ledger)
     assert list(risk) == [1_000.0, 1_000.0]  # both sized against the untouched 100k
@@ -136,9 +144,7 @@ def test_a_payout_moves_the_basis_of_every_later_trade() -> None:
     Two +1000 trades on 100k at 1%. Withdraw 50k between them and the second was sized against
     51k, not 101k -- a basis wrong by a factor of two.
     """
-    trades = _trades(
-        ["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0]
-    )
+    trades = _trades(["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0])
     ledger = _ledger(["2026-01-02", "2026-01-03", "2026-01-06"], [1_000.0, -50_000.0, 1_000.0])
     risk = per_trade_risk(trades, 52_000.0, 0.01, ledger=ledger)
     assert list(risk) == [1_000.0, 510.0]
@@ -186,7 +192,64 @@ def test_the_ledger_carries_every_deal_not_just_completed_trades() -> None:
 
 def test_an_empty_ledger_leaves_the_balance_where_it_is() -> None:
     trades = _trades(["2026-01-01"], ["2026-01-02"], [0.0])
-    assert list(per_trade_risk(trades, 100_000.0, 0.01)) == [1_000.0]
+    risk = per_trade_risk(trades, 100_000.0, 0.01)
+    assert list(risk) == [Decimal("1000.000")]
+    assert isinstance(risk[0], Decimal)
+
+
+def test_same_second_opening_cost_is_excluded_from_its_own_basis() -> None:
+    """Earlier same-second money is real; the opening deal itself was booked after sizing."""
+    opened = int(pd.Timestamp("2026-01-01", tz="UTC").timestamp())
+    closed = int(pd.Timestamp("2026-01-02", tz="UTC").timestamp())
+    deals = [
+        {
+            **_deal(opened, "", 50.0),
+            "position_id": 0,
+            "ticket": 9,
+        },
+        {
+            **_deal(opened, "EURUSD", 0.0, -3.0),
+            "position_id": 17,
+            "ticket": 10,
+            "fee": Decimal("-2.0"),
+        },
+        {
+            **_deal(opened, "", 30.0),
+            "position_id": 0,
+            "ticket": 11,
+        },
+        {
+            **_deal(closed, "EURUSD", 100.0),
+            "position_id": 17,
+            "ticket": 12,
+            "entry": 1,
+            "type": 1,
+            "fee": Decimal("0"),
+        },
+    ]
+    trades = deals_to_trades(deals)
+    ledger = deal_ledger(deals)
+
+    risk = per_trade_risk(
+        trades,
+        Decimal("100175"),
+        Decimal("0.01"),
+        ledger=ledger,
+    )
+
+    assert list(risk) == [Decimal("1000.50")]
+    assert trades.iloc[0]["open_ticket"] == 10
+    assert isinstance(risk[0], Decimal)
+
+
+def test_ticket_cutoffs_must_align_with_trade_open_times() -> None:
+    with pytest.raises(ValueError, match="one-for-one"):
+        balance_at(
+            np.array([1, 2], dtype="int64"),
+            Decimal("100"),
+            _ledger(["1970-01-01"], [Decimal("1")]),
+            before_ticket=np.array([1], dtype="int64"),
+        )
 
 
 # --------------------------------------------------------------------- timestamp units

@@ -141,6 +141,7 @@ def test_dashboard_exception_is_limited_to_direct_operator_literals() -> None:
         operator_only
         + "# Märkte remain English in source comments\n"
         + 'log.warning("nicht bestimmbar")\n'
+        + 'raise RuntimeError("Märkte nicht bestimmbar")\n'
     )
     hits = {
         marker

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import Any
 
 import altair as alt
@@ -22,7 +23,7 @@ import pandas as pd
 import streamlit as st
 from core.paths import REPO_ROOT
 from live.accounts import ACCOUNTS
-from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
+from live.mt5_bridge import SYMBOL_MAP, AccountState, Mt5Bridge
 from live.runner import position_risk, risk_per_trade_from_live_config
 
 from monitoring.deals import (
@@ -46,6 +47,43 @@ _LIVE_RISK_PCT = risk_per_trade_from_live_config()
 # Validated data-viz palette (see the dataviz skill's reference palette).
 _BLUE, _MUTED, _GRID = "#2a78d6", "#898781", "#e1e0d9"
 _GOOD, _WARN, _CRIT = "#0ca30c", "#fab219", "#d03b3b"
+_SNAPSHOT_ATTEMPTS = 3
+
+
+def _snapshot_identity(deals: list[dict[str, Any]]) -> tuple[tuple[object, ...], ...]:
+    """Identity and money content of an ordered MT5 deal snapshot."""
+    fields = (
+        "ticket",
+        "time",
+        "type",
+        "entry",
+        "position_id",
+        "symbol",
+        "volume",
+        "price",
+        "profit",
+        "swap",
+        "commission",
+        "fee",
+    )
+    return tuple(tuple(deal.get(field) for field in fields) for deal in deals)
+
+
+def _stable_history_account(bridge: Mt5Bridge) -> tuple[list[dict[str, Any]], AccountState]:
+    """Read an account snapshot bracketed by identical deal histories, or fail closed."""
+    for _attempt in range(_SNAPSHOT_ATTEMPTS):
+        before = bridge.history_deals(_ACCOUNT_INCEPTION)
+        before_account = bridge.account()
+        after = bridge.history_deals(_ACCOUNT_INCEPTION)
+        after_account = bridge.account()
+        if (
+            _snapshot_identity(before) == _snapshot_identity(after)
+            and before_account.balance == after_account.balance
+        ):
+            return after, after_account
+    raise RuntimeError(
+        f"could not obtain a stable MT5 deal/account snapshot after {_SNAPSHOT_ATTEMPTS} attempts"
+    )
 
 
 @st.cache_data(ttl=60)
@@ -62,8 +100,7 @@ def _load_live(account_name: str) -> dict[str, Any]:
         # #29: the FULL history, always. Each trade's risk basis is the balance as it stood at
         # that trade's open, reconstructed backwards from the current balance -- so the ledger
         # has to reach back past the display window, whose only job is what gets drawn.
-        deals = bridge.history_deals(_ACCOUNT_INCEPTION)
-        acct = bridge.account()
+        deals, acct = _stable_history_account(bridge)
         term_to_research = {v: k for k, v in bridge._resolved.items()}
         pricing: list[tuple[str, float | None]] = []
         positions = []
@@ -113,7 +150,7 @@ def _stat_row(label: str, live: float, ref: float, fmt: str, higher_better: bool
     st.metric(
         label,
         format(live, fmt),
-        delta=f"{'+' if delta >= 0 else ''}{format(delta, fmt)} vs BT",
+        delta=f"{'+' if delta >= 0 else ''}{format(delta, fmt)} gegenüber BT",
         delta_color="normal" if ok else "inverse",
     )
 
@@ -137,7 +174,10 @@ def _live_view() -> None:
     try:
         live = _load_live(account_name)
     except Exception as exc:  # noqa: BLE001 -- surface connection issues in the UI
-        st.error(f"Could not read from the MT5 terminal: {exc}\n\nIs it open and logged in?")
+        st.error(
+            f"Das MT5-Terminal konnte nicht gelesen werden: {exc}\n\n"
+            "Ist es geöffnet und angemeldet?"
+        )
         return
     # Newest framework run that actually carries the reference stream (a run dir may be partial).
     runs = [
@@ -158,10 +198,10 @@ def _live_view() -> None:
         all_trades["symbol"].map(live["term_to_research"]).fillna(all_trades["symbol"])
     )
     state = _risk_state(profile.name)
-    # Every booked movement, not just completed trades: an open position's entry commission is
+    # Every booked movement, not just completed trades: an open position's entry commission/fee is
     # already in the broker's balance and would otherwise be inherited into every earlier basis.
     ledger = deal_ledger(live["deals"])
-    current_balance = float(live["balance"])
+    current_balance = Decimal(str(live["balance"]))
     # #20: normalise EACH trade off the balance it was actually sized against, not off today's.
     # Sizing compounds, so one risk figure from current balance shrinks the early trades' R as the
     # account grows -- which would read as performance drift that never happened.
@@ -174,17 +214,17 @@ def _live_view() -> None:
     # broker returned does not land on the balance it reports, history is missing and every basis
     # before the gap is approximate -- say so rather than presenting exact-looking numbers.
     if "start_balance" in state:
-        anchor = float(state["start_balance"])
-        moved = float(ledger["amount"].sum()) if not ledger.empty else 0.0
+        ledger_anchor = Decimal(str(state["start_balance"]))
+        moved = sum(ledger["amount"], start=Decimal("0")) if not ledger.empty else Decimal("0")
         before = current_balance - moved  # the balance the ledger implies before its first entry
         # Exactly two outcomes are legitimate. A ledger that reaches back past the account being
         # funded implies a pre-funding balance of zero; one that starts after funding implies the
         # funded balance itself. Anything else means booked events are missing from between.
-        if min(abs(before), abs(before - anchor)) > 1.0:
+        if min(abs(before), abs(before - ledger_anchor)) > Decimal("1"):
             st.caption(
                 f"Die Handelshistorie scheint unvollständig: Ihre Wiedergabe ergibt "
                 f"{before:,.0f} vor dem ersten Eintrag; das ist weder null noch der gespeicherte "
-                f"Startsaldo von {anchor:,.0f}. Historische R-Werte sind nur Näherungen."
+                f"Startsaldo von {ledger_anchor:,.0f}. Historische R-Werte sind nur Näherungen."
             )
 
     window_start = pd.Timestamp(datetime.now(tz=UTC) - timedelta(days=days))
@@ -204,9 +244,12 @@ def _live_view() -> None:
 
     # -- account / risk header --
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Equity", f"{live['equity']:,.0f} {live['currency']}")
-    c2.metric("Balance", f"{live['balance']:,.0f} {live['currency']}")
-    c3.metric("Floating", f"{live['equity'] - live['balance']:+,.0f} {live['currency']}")
+    c1.metric("Eigenkapital", f"{live['equity']:,.0f} {live['currency']}")
+    c2.metric("Kontostand", f"{live['balance']:,.0f} {live['currency']}")
+    c3.metric(
+        "Unrealisierter P&L",
+        f"{live['equity'] - live['balance']:+,.0f} {live['currency']}",
+    )
     cap = 0.020 * live["equity"]
     risk = live["open_risk"]
     if risk.determinate:
@@ -237,20 +280,24 @@ def _live_view() -> None:
             "sich, sobald Trades geschlossen werden."
         )
     else:
-        net = trades["net_pnl"].to_numpy()
+        net = trades["net_pnl"].to_numpy(dtype=object)
+        r_values = np.array(
+            [pnl / risk_amount for pnl, risk_amount in zip(net, trade_risk, strict=True)],
+            dtype=object,
+        )
         ls, ro = live_stats(net), ref["overall"]
         st.subheader("Edge — live vs. backtest expectation")
         k1, k2, k3, k4 = st.columns(4)
         with k1:
-            st.metric("Live trades", f"{len(trades):,}")
+            st.metric("Live-Trades", f"{len(trades):,}")
         with k2:
-            _stat_row("Hit rate", ls["hit_rate"], ro["hit_rate"], ".1%")
+            _stat_row("Trefferquote", ls["hit_rate"], ro["hit_rate"], ".1%")
         with k3:
-            _stat_row("Profit factor", ls["profit_factor"], ro["profit_factor"], ".2f")
+            _stat_row("Profitfaktor", ls["profit_factor"], ro["profit_factor"], ".2f")
         with k4:
             _stat_row(
-                "Expectancy / trade (R)",
-                float(np.mean(net / trade_risk)) if len(net) else 0.0,
+                "Erwartungswert je Trade (R)",
+                float(sum(r_values, start=Decimal("0")) / len(r_values)) if len(r_values) else 0.0,
                 ro["expectancy"],
                 "+.2f",
             )
@@ -261,8 +308,9 @@ def _live_view() -> None:
         # between belongs to the window's balance path, and start_balance is measured there.
         window_ledger = ledger[ledger["time"] >= window_start] if not ledger.empty else ledger
         eq = equity_curve(start_balance, window_ledger)
+        chart_eq = eq.assign(equity=eq["equity"].map(float))
         st.altair_chart(
-            alt.Chart(eq)
+            alt.Chart(chart_eq)
             .mark_line(color=_BLUE, strokeWidth=2)
             .encode(
                 x=alt.X("close_time:T", title="date"),
@@ -282,9 +330,12 @@ def _live_view() -> None:
             "schwächere Entwicklung."
         )
         band = mc_band(ref["r_multiples"], len(trades))
-        live_r = pd.DataFrame(
-            {"trade": np.arange(1, len(trades) + 1), "cum_r": np.cumsum(net / trade_risk)}
-        )
+        running_r = Decimal("0")
+        cumulative_r: list[float] = []
+        for value in r_values:
+            running_r += value
+            cumulative_r.append(float(running_r))
+        live_r = pd.DataFrame({"trade": np.arange(1, len(trades) + 1), "cum_r": cumulative_r})
         area = (
             alt.Chart(band)
             .mark_area(color=_MUTED, opacity=0.18)
@@ -308,7 +359,7 @@ def _live_view() -> None:
         st.subheader("Per market — live vs. backtest")
         rows = []
         for m, g in trades.groupby("market"):
-            n = g["net_pnl"].to_numpy()
+            n = g["net_pnl"].to_numpy(dtype=object)
             s = live_stats(n)
             bt = ref["per_market"].get(m, {})
             rows.append(
@@ -319,7 +370,7 @@ def _live_view() -> None:
                     "BT hit": f"{bt.get('hit_rate', float('nan')):.0%}",
                     "live PF": f"{s['profit_factor']:.2f}",
                     "BT PF": f"{bt.get('profit_factor', float('nan')):.2f}",
-                    "live net": f"{n.sum():+,.0f}",
+                    "live net": f"{sum(n, start=Decimal('0')):+,.0f}",
                 }
             )
         st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
@@ -340,12 +391,14 @@ def _live_view() -> None:
         daily = day_start - 0.025 * day_start
         f1, f2 = st.columns(2)
         f1.metric(
-            "Trailing floor (5%)",
+            "Nachlaufende Untergrenze (5 %)",
             f"{trailing:,.0f}",
-            delta=f"{live['equity'] - trailing:+,.0f} headroom",
+            delta=f"{live['equity'] - trailing:+,.0f} Spielraum",
         )
         f2.metric(
-            "Daily floor (2.5%)", f"{daily:,.0f}", delta=f"{live['equity'] - daily:+,.0f} headroom"
+            "Tagesuntergrenze (2,5 %)",
+            f"{daily:,.0f}",
+            delta=f"{live['equity'] - daily:+,.0f} Spielraum",
         )
 
 
@@ -428,4 +481,5 @@ def main() -> None:
         _research_view()
 
 
-main()  # Streamlit executes the module top-to-bottom
+if __name__ == "__main__":
+    main()  # Streamlit executes the module top-to-bottom
