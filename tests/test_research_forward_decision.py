@@ -475,6 +475,45 @@ def test_invalid_temporal_and_series_inputs_fail_closed(
             _at_month(EFFICACY_MONTHS),
         )
 
+    wrong_cohort = _Registry(_cohort(), _observations())
+    wrong_cohort._series = replace(
+        wrong_cohort._series,
+        cohort_id=UUID("3c203d4d-e505-46c2-a740-ed74f957dd58"),
+    )
+    with pytest.raises(ValueError, match="different cohort"):
+        evaluate_forward_test(
+            cast(ForwardTestRegistry, wrong_cohort),
+            _COHORT_ID,
+            EFFICACY_TRADES,
+            _at_month(EFFICACY_MONTHS),
+        )
+
+    repeated = (_observations()[0], _observations()[0])
+    with pytest.raises(ValueError, match="repeats"):
+        evaluate_forward_test(
+            cast(ForwardTestRegistry, _Registry(_cohort(), repeated)),
+            _COHORT_ID,
+            EFFICACY_TRADES,
+            _at_month(EFFICACY_MONTHS),
+        )
+
+    non_finite = (Observation(_START.date(), Decimal("NaN")),)
+    with pytest.raises(TypeError, match="finite Decimal"):
+        evaluate_forward_test(
+            cast(ForwardTestRegistry, _Registry(_cohort(), non_finite)),
+            _COHORT_ID,
+            EFFICACY_TRADES,
+            _at_month(EFFICACY_MONTHS),
+        )
+
+    with pytest.raises(ValueError, match="observation_day_count"):
+        evaluate_forward_test(
+            cast(ForwardTestRegistry, _Registry(_cohort(), ())),
+            _COHORT_ID,
+            EFFICACY_TRADES,
+            _at_month(EFFICACY_MONTHS),
+        )
+
 
 def test_evaluation_validates_external_inputs_with_exact_diagnostics() -> None:
     with pytest.raises(ValueError) as invalid_trades:
