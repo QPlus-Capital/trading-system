@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "Initial measured pure-function critical baseline for issue 65: 774 selected mutants, 585 killed, 189 meaningful survivors, and zero unhealthy outcomes."
+change_explanation = "P-12 adds the measured forward-cohort identity target: 807 selected mutants, 617 killed, 189 existing meaningful survivors, one equivalent survivor, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -13,12 +13,13 @@ targets = [
     "parameter-schedule",
     "continuous-attribution",
     "result-regression",
+    "forward-cohort-identity",
 ]
 
 [summary]
-total = 774
-killed = 585
-survived = 189
+total = 807
+killed = 617
+survived = 190
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -27,6 +28,11 @@ not_checked = 0
 interrupted = 0
 segfault = 0
 caught_by_type_check = 0
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Removing ensure_ascii=True is equivalent because json.dumps defaults ensure_ascii to True."
+names = ["research.forward_test_registry.x__digest_canonical__mutmut_7"]
 
 [[survivor_groups]]
 classification = "meaningful"
