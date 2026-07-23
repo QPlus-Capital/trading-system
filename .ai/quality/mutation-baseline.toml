@@ -1,15 +1,16 @@
-# Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor is conservatively classified
-# as a meaningful test-strength gap; the exact-name ratchet rejects any additional survivor.
+# Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor has an exact-name
+# classification; the ratchet rejects any additional survivor.
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-12 adds the measured forward-cohort identity target: 807 selected mutants, 617 killed, 189 existing meaningful survivors, one equivalent survivor, and zero unhealthy outcomes."
+change_explanation = "P-04 and P-12 union the measured stationary-resampling and forward-cohort targets: 1,082 selected mutants, 874 killed, 207 meaningful survivors, one equivalent survivor, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
     "portfolio-drawdown",
     "portfolio-risk",
     "portfolio-accounting",
+    "portfolio-resample",
     "parameter-schedule",
     "continuous-attribution",
     "result-regression",
@@ -17,9 +18,9 @@ targets = [
 ]
 
 [summary]
-total = 807
-killed = 617
-survived = 190
+total = 1082
+killed = 874
+survived = 208
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -324,3 +325,43 @@ names = [
     "research.regression.x_compare__mutmut_98",
     "research.regression.x_compare__mutmut_99",
 ]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "NumPy infers the same integer or float dtype, and omitting integers(low=0) preserves the exact generator call."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_109",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_112",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_53",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_55",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_25",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_44",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_62",
+    "research.portfolio.resample.x_stationary_bootstrap__mutmut_64",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "These mutations change unused allocation capacity or a value that is overwritten before any read."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_57",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_58",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_59",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "These estimator mutations only differ at exact floating-point tolerance or bandwidth boundaries; retained as measured boundary-test gaps."
+names = [
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_137",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_140",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_23",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_24",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_79",
+    "research.portfolio.resample.x_politis_white_block_length__mutmut_88",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "The restart comparison differs only when a generated uniform draw equals the restart threshold exactly; retained as a measured boundary-test gap."
+names = ["research.portfolio.resample.x_stationary_bootstrap__mutmut_39"]
