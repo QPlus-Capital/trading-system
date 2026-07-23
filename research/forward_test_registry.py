@@ -186,9 +186,7 @@ class ForwardTestRegistry:
         try:
             raw = json.loads(definition.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
-            raise CohortIntegrityError(
-                f"cohort {cohort_id} has no readable definition"
-            ) from exc
+            raise CohortIntegrityError(f"cohort {cohort_id} has no readable definition") from exc
         try:
             cohort = _parse_cohort(raw)
         except (KeyError, TypeError, ValueError, InvalidOperation) as exc:
@@ -247,9 +245,7 @@ class ForwardTestRegistry:
         try:
             lines = path.read_text(encoding="utf-8").splitlines()
         except OSError as exc:
-            raise CohortIntegrityError(
-                f"cohort {cohort_id} observations are not readable"
-            ) from exc
+            raise CohortIntegrityError(f"cohort {cohort_id} observations are not readable") from exc
         for line_number, line in enumerate(lines, start=1):
             try:
                 raw = json.loads(line)
@@ -415,9 +411,7 @@ def _canonical_plan(plan: CohortPlan, input_hashes: Mapping[str, str]) -> dict[s
         "minimum_trade_count": str(
             _positive_integral_decimal(plan.minimum_trade_count, "minimum_trade_count")
         ),
-        "allowed_safety_stop_reasons": _validated_reasons(
-            plan.allowed_safety_stop_reasons
-        ),
+        "allowed_safety_stop_reasons": _validated_reasons(plan.allowed_safety_stop_reasons),
         "status": plan.status.value,
         "loss_day_axis": LOSS_DAY_AXIS,
     }
@@ -435,8 +429,7 @@ def _cohort_from_canonical(cohort_id: UUID, canonical: Mapping[str, Any]) -> Coh
         observation_source=ObservationSource(str(canonical["observation_source"])),
         primary_hypothesis=str(canonical["primary_hypothesis"]),
         thresholds={
-            str(name): Decimal(str(value))
-            for name, value in dict(canonical["thresholds"]).items()
+            str(name): Decimal(str(value)) for name, value in dict(canonical["thresholds"]).items()
         },
         minimum_calendar_days=Decimal(str(canonical["minimum_calendar_days"])),
         minimum_trade_count=Decimal(str(canonical["minimum_trade_count"])),
@@ -461,9 +454,7 @@ def _canonical_from_cohort(cohort: Cohort) -> dict[str, Any]:
         "participant_id": str(cohort.participant_id),
         "observation_source": cohort.observation_source.value,
         "primary_hypothesis": cohort.primary_hypothesis,
-        "thresholds": {
-            name: str(value) for name, value in sorted(cohort.thresholds.items())
-        },
+        "thresholds": {name: str(value) for name, value in sorted(cohort.thresholds.items())},
         "minimum_calendar_days": str(cohort.minimum_calendar_days),
         "minimum_trade_count": str(cohort.minimum_trade_count),
         "allowed_safety_stop_reasons": list(cohort.allowed_safety_stop_reasons),
@@ -483,9 +474,7 @@ def _parse_cohort(raw: object) -> Cohort:
         raise ValueError("unsupported loss-day axis")
     cohort = Cohort(
         cohort_id=UUID(str(raw["cohort_id"])),
-        start_timestamp=datetime.fromisoformat(
-            str(raw["start_timestamp"]).replace("Z", "+00:00")
-        ),
+        start_timestamp=datetime.fromisoformat(str(raw["start_timestamp"]).replace("Z", "+00:00")),
         strategy_code_git_sha=str(raw["strategy_code_git_sha"]),
         input_hashes=_validated_hashes(dict(raw["input_hashes"])),
         participant_id=_opaque_uuid(str(raw["participant_id"])),
