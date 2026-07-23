@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
+import numpy as np
 import pytest
 import research.forward_decision as decision_module
 from research.forward_decision import (
@@ -293,6 +294,15 @@ def test_daily_threshold_is_exact_decimal_and_rejects_invalid_counts() -> None:
     with pytest.raises(TypeError, match="finite Decimal"):
         daily_threshold(cast(Decimal, 1), Decimal("1"))
 
+    with pytest.raises(ValueError) as invalid_trades:
+        daily_threshold(Decimal("-1"), Decimal("1"))
+    assert str(invalid_trades.value) == (
+        "realized_trade_count must be a non-negative integral Decimal"
+    )
+    with pytest.raises(ValueError) as invalid_days:
+        daily_threshold(Decimal("1"), Decimal("0"))
+    assert str(invalid_days.value) == ("observation_day_count must be a positive integral Decimal")
+
 
 def test_selected_block_and_all_sensitivity_lengths_are_reported(
     monkeypatch: pytest.MonkeyPatch,
@@ -324,6 +334,61 @@ def test_public_defaults_match_p04() -> None:
     assert DEFAULT_SEED == 20260719
     assert Decimal("2400") == EFFICACY_TRADES
     assert Decimal("1400") == FUTILITY_TRADES
+
+
+def test_calendar_and_endpoint_validation_fail_closed_with_exact_diagnostics() -> None:
+    with pytest.raises(ValueError) as invalid_start:
+        decision_module._calendar_anniversary(cast(datetime, date(2024, 1, 1)), 1)
+    assert str(invalid_start.value) == "cohort start_timestamp must be timezone-aware"
+
+    with pytest.raises(ValueError) as naive_start:
+        decision_module._calendar_anniversary(datetime(2024, 1, 1), 1)
+    assert str(naive_start.value) == "cohort start_timestamp must be timezone-aware"
+
+    for months in (cast(int, True), -1, cast(int, Decimal("1"))):
+        with pytest.raises(ValueError) as invalid_months:
+            decision_module._calendar_anniversary(_START, months)
+        assert str(invalid_months.value) == "months must be a non-negative integer"
+
+    assert decision_module._calendar_anniversary(_START, 12) == date(2025, 1, 31)
+
+    with pytest.raises(TypeError) as invalid_as_of:
+        endpoint_reached(
+            _START,
+            cast(date, datetime(2026, 7, 31, tzinfo=UTC)),
+            EFFICACY_TRADES,
+        )
+    assert str(invalid_as_of.value) == "as_of_date must be a date"
+
+    with pytest.raises(ValueError) as invalid_endpoint_trades:
+        endpoint_reached(_START, date(2026, 7, 31), Decimal("-1"))
+    assert str(invalid_endpoint_trades.value) == (
+        "realized_trade_count must be a non-negative integral Decimal"
+    )
+
+
+def test_nearest_rank_pins_boundaries_and_ceiling_rule() -> None:
+    values = tuple(Decimal(index) for index in range(1, 11))
+    assert decision_module._nearest_rank(values, Decimal("0.01")) == Decimal("1")
+    assert decision_module._nearest_rank(values, Decimal("0.21")) == Decimal("3")
+
+    with pytest.raises(ValueError) as empty:
+        decision_module._nearest_rank((), Decimal("0.5"))
+    assert str(empty.value) == "quantile values must be non-empty"
+
+    for probability in (
+        Decimal("-0.1"),
+        Decimal("0"),
+        Decimal("1"),
+        Decimal("1.1"),
+    ):
+        with pytest.raises(ValueError) as invalid:
+            decision_module._nearest_rank(values, probability)
+        assert str(invalid.value) == "probability must be strictly between zero and one"
+
+    with pytest.raises(TypeError) as non_decimal:
+        decision_module._nearest_rank(values, cast(Decimal, 1))
+    assert str(non_decimal.value) == "probability must be a finite Decimal"
 
 
 def test_as_of_cutoff_excludes_later_observations(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -385,6 +450,47 @@ def test_invalid_temporal_and_series_inputs_fail_closed(
             EFFICACY_TRADES,
             _at_month(EFFICACY_MONTHS),
         )
+
+
+def test_evaluation_validates_external_inputs_with_exact_diagnostics() -> None:
+    with pytest.raises(ValueError) as invalid_trades:
+        evaluate_forward_test(
+            _registry(),
+            _COHORT_ID,
+            Decimal("-1"),
+            _START.date(),
+        )
+    assert str(invalid_trades.value) == (
+        "realized_trade_count must be a non-negative integral Decimal"
+    )
+
+    with pytest.raises(ValueError) as invalid_replications:
+        evaluate_forward_test(
+            _registry(),
+            _COHORT_ID,
+            Decimal("0"),
+            _START.date(),
+            replications=0,
+        )
+    assert str(invalid_replications.value) == "replications must be a positive integer"
+
+    with pytest.raises(TypeError) as invalid_as_of:
+        evaluate_forward_test(
+            _registry(),
+            _COHORT_ID,
+            Decimal("0"),
+            cast(date, _START),
+        )
+    assert str(invalid_as_of.value) == "as_of_date must be a date"
+
+    with pytest.raises(ValueError) as before_start:
+        evaluate_forward_test(
+            _registry(),
+            _COHORT_ID,
+            Decimal("0"),
+            _START.date() - timedelta(days=1),
+        )
+    assert str(before_start.value) == "as_of_date is before cohort start"
 
 
 def test_operational_stop_does_not_change_statistics_or_registry_bytes(
@@ -489,6 +595,82 @@ def test_decision_statistics_are_decimal_and_source_has_no_float_statistics() ->
     )
 
 
+def test_bootstrap_mean_bounds_pins_decimal_arithmetic_and_quantiles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fixed_bootstrap(*args: object, **kwargs: object) -> np.ndarray:
+        del args, kwargs
+        return np.array([[0, 1], [1, 1]], dtype=np.int64)
+
+    monkeypatch.setattr(decision_module, "stationary_bootstrap", fixed_bootstrap)
+    bounds = bootstrap_mean_bounds(
+        (Decimal("1"), Decimal("3")),
+        1,
+        Decimal("0.75"),
+        replications=2,
+        seed=91,
+    )
+    assert bounds == MeanBounds(
+        mean_daily_net_r=Decimal("2"),
+        lower=Decimal("2"),
+        upper=Decimal("3"),
+    )
+
+
+@pytest.mark.parametrize(
+    "indices",
+    [
+        np.array([[Decimal("-1"), Decimal("0")]], dtype=object),
+        np.array([[Decimal("2"), Decimal("0")]], dtype=object),
+        np.array([[Decimal("0.5"), Decimal("0")]], dtype=object),
+    ],
+)
+def test_bootstrap_mean_bounds_rejects_invalid_resample_indices(
+    monkeypatch: pytest.MonkeyPatch,
+    indices: np.ndarray,
+) -> None:
+    monkeypatch.setattr(
+        decision_module,
+        "stationary_bootstrap",
+        lambda *args, **kwargs: indices,
+    )
+    with pytest.raises(RuntimeError) as invalid:
+        bootstrap_mean_bounds(
+            (Decimal("1"), Decimal("3")),
+            1,
+            Decimal("0.95"),
+            replications=1,
+        )
+    assert str(invalid.value) == "stationary bootstrap returned a non-integral index"
+
+
+def test_bootstrap_mean_bounds_validates_public_inputs_exactly() -> None:
+    values = (Decimal("0"), Decimal("1"))
+    for block_length in (0, -1, cast(int, True)):
+        with pytest.raises(ValueError) as invalid_block:
+            bootstrap_mean_bounds(values, block_length, Decimal("0.95"), replications=1)
+        assert str(invalid_block.value) == "mean_block_length must be a positive integer"
+
+    for replications in (0, -1, cast(int, True)):
+        with pytest.raises(ValueError) as invalid_replications:
+            bootstrap_mean_bounds(values, 1, Decimal("0.95"), replications=replications)
+        assert str(invalid_replications.value) == "replications must be a positive integer"
+
+    for confidence in (
+        Decimal("-0.1"),
+        Decimal("0"),
+        Decimal("1"),
+        Decimal("1.1"),
+    ):
+        with pytest.raises(ValueError) as invalid_confidence:
+            bootstrap_mean_bounds(values, 1, confidence, replications=1)
+        assert str(invalid_confidence.value) == ("confidence must be strictly between zero and one")
+
+    with pytest.raises(TypeError) as non_decimal:
+        bootstrap_mean_bounds(values, 1, cast(Decimal, 1), replications=1)
+    assert str(non_decimal.value) == "confidence must be a finite Decimal"
+
+
 def test_bootstrap_bounds_are_seeded_and_input_is_not_mutated() -> None:
     values = (Decimal("0.10"), Decimal("-0.20"), Decimal("0.30"), Decimal("0"))
     first = bootstrap_mean_bounds(
@@ -507,6 +689,108 @@ def test_bootstrap_bounds_are_seeded_and_input_is_not_mutated() -> None:
     )
     assert first == second
     assert values == (Decimal("0.10"), Decimal("-0.20"), Decimal("0.30"), Decimal("0"))
+
+
+def test_block_analysis_forwards_values_replications_seed_and_cohort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    selected_inputs: list[object] = []
+    calls: list[tuple[int, int, int]] = []
+
+    def fake_select(candidate_returns: object) -> int:
+        selected_inputs.append(candidate_returns)
+        return 7
+
+    def fake_bounds(
+        values: tuple[Decimal, ...],
+        mean_block_length: int,
+        confidence: Decimal,
+        *,
+        replications: int = DEFAULT_REPLICATIONS,
+        seed: int = DEFAULT_SEED,
+    ) -> MeanBounds:
+        del values, confidence
+        calls.append((mean_block_length, replications, seed))
+        return _fixed_bounds("61", "70")
+
+    monkeypatch.setattr(decision_module, "select_block_length", fake_select)
+    monkeypatch.setattr(decision_module, "bootstrap_mean_bounds", fake_bounds)
+
+    result = evaluate_forward_test(
+        _registry(),
+        _COHORT_ID,
+        EFFICACY_TRADES,
+        _at_month(EFFICACY_MONTHS),
+        replications=31,
+        seed=91,
+    )
+
+    assert selected_inputs == [
+        {
+            f"cohort:{_COHORT_ID}": (
+                "0.20",
+                "-0.10",
+                "0.30",
+                "0",
+            )
+        }
+    ]
+    assert {block for block, _, _ in calls} == {7, *SENSITIVITY_BLOCK_LENGTHS}
+    assert all(replications == 31 and seed == 91 for _, replications, seed in calls)
+    assert result.efficacy is not None
+    assert result.efficacy.replications == 31
+    assert result.efficacy.seed == 91
+
+
+def test_every_decision_state_preserves_its_evaluation_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_bounds(monkeypatch, lower="61", upper="70")
+    efficacy_as_of = _at_month(EFFICACY_MONTHS)
+    efficacy = evaluate_forward_test(
+        _registry(),
+        _COHORT_ID,
+        EFFICACY_TRADES,
+        efficacy_as_of,
+    )
+    assert efficacy.as_of_date == efficacy_as_of
+    assert efficacy.realized_trade_count == EFFICACY_TRADES
+    assert efficacy.observation_day_count == Decimal("4")
+    assert efficacy.efficacy is not None
+    assert efficacy.efficacy.replications == DEFAULT_REPLICATIONS
+    assert efficacy.efficacy.seed == DEFAULT_SEED
+
+    _patch_bounds(monkeypatch, lower="-2", upper="-1")
+    futility_as_of = _at_month(FUTILITY_MONTHS)
+    futility = evaluate_forward_test(
+        _registry(),
+        _COHORT_ID,
+        FUTILITY_TRADES,
+        futility_as_of,
+    )
+    assert futility.as_of_date == futility_as_of
+    assert futility.realized_trade_count == FUTILITY_TRADES
+    assert futility.observation_day_count == Decimal("4")
+    assert futility.futility is not None
+    assert futility.futility.production.block_length == 7
+    assert tuple(item.block_length for item in futility.futility.sensitivity) == (
+        SENSITIVITY_BLOCK_LENGTHS
+    )
+    assert futility.futility.replications == DEFAULT_REPLICATIONS
+    assert futility.futility.seed == DEFAULT_SEED
+
+    no_decision_as_of = _at_month(1)
+    no_decision = evaluate_forward_test(
+        _registry(),
+        _COHORT_ID,
+        Decimal("0"),
+        no_decision_as_of,
+    )
+    assert no_decision.as_of_date == no_decision_as_of
+    assert no_decision.realized_trade_count == Decimal("0")
+    assert no_decision.observation_day_count == Decimal("4")
+    assert no_decision.efficacy is None
+    assert no_decision.futility is None
 
 
 def test_sensitivity_cannot_change_the_production_verdict(
