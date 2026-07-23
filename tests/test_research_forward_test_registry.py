@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
+from typing import cast
 from uuid import UUID
 
 import pytest
@@ -105,6 +107,42 @@ def test_cohort_identity_matches_the_canonical_known_vector(tmp_path: Path) -> N
     )
 
     assert cohort_identity(_plan(_inputs(tmp_path / "inputs")), hashes) == expected
+
+
+def test_cohort_identity_pins_unicode_canonicalization(tmp_path: Path) -> None:
+    hashes = {
+        name: "sha256:" + str(index) * 64
+        for index, name in enumerate(HashedInputPaths.__dataclass_fields__, start=1)
+    }
+    plan = replace(
+        _plan(_inputs(tmp_path / "inputs")),
+        primary_hypothesis="Positive daily net portfolio R. \N{SNOWMAN}",
+    )
+    expected = "sha256:" + "".join(
+        (
+            "b8f6b2ca",
+            "23988e37",
+            "e5725858",
+            "7d435f17",
+            "7d0ac7df",
+            "5fc6fe4c",
+            "c7e243c3",
+            "b16ad5af",
+        )
+    )
+
+    assert cohort_identity(plan, hashes) == expected
+
+
+def test_non_path_input_fails_closed_and_names_the_input(tmp_path: Path) -> None:
+    paths = _inputs(tmp_path / "inputs")
+    invalid = replace(paths, strategy_config=cast(Path, "not-a-path"))
+
+    with pytest.raises(
+        FileNotFoundError,
+        match=r"strategy_config.*not-a-path",
+    ):
+        hash_cohort_inputs(invalid)
 
 
 def test_identical_contents_at_different_paths_keep_the_cohort(tmp_path: Path) -> None:
