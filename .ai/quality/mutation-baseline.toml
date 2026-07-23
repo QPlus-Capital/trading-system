@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-13 adds the measured forward-decision target: 1,451 selected mutants, 1,242 killed, 207 meaningful survivors, two equivalent survivors, and zero unhealthy outcomes."
+change_explanation = "The merged P-04/P-12/P-13/P-14 scope retains every package target and measured survivor: 1,914 selected mutants, 1,624 killed, 288 meaningful survivors, two equivalent survivors, and zero unhealthy outcomes."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -14,14 +14,17 @@ targets = [
     "parameter-schedule",
     "continuous-attribution",
     "result-regression",
+    "mt5-deal-export",
+    "monitoring-deal-reconstruction",
+    "monitoring-stable-snapshot",
     "forward-cohort-identity",
     "forward-decision",
 ]
 
 [summary]
-total = 1451
-killed = 1242
-survived = 209
+total = 1914
+killed = 1624
+survived = 290
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -328,6 +331,18 @@ names = [
 ]
 
 [[survivor_groups]]
+classification = "meaningful"
+reason = "Focused bridge tests do not distinguish these remaining history-deal export mutations; retained as measured test-strength gaps."
+names = [
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_3",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_4",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_51",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_54",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_57",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_7",
+]
+
+[[survivor_groups]]
 classification = "equivalent"
 reason = "NumPy infers the same integer or float dtype, and omitting integers(low=0) preserves the exact generator call."
 names = [
@@ -348,6 +363,87 @@ names = [
     "research.portfolio.resample.x_politis_white_block_length__mutmut_57",
     "research.portfolio.resample.x_politis_white_block_length__mutmut_58",
     "research.portfolio.resample.x_politis_white_block_length__mutmut_59",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Focused monitoring tests do not distinguish these remaining Decimal reconstruction mutations; retained as measured test-strength gaps."
+names = [
+    "monitoring.deals.x__deal_amount__mutmut_4",
+    "monitoring.deals.x_balance_at__mutmut_10",
+    "monitoring.deals.x_balance_at__mutmut_14",
+    "monitoring.deals.x_balance_at__mutmut_24",
+    "monitoring.deals.x_balance_at__mutmut_37",
+    "monitoring.deals.x_balance_at__mutmut_40",
+    "monitoring.deals.x_balance_at__mutmut_42",
+    "monitoring.deals.x_balance_at__mutmut_52",
+    "monitoring.deals.x_balance_at__mutmut_63",
+    "monitoring.deals.x_balance_at__mutmut_66",
+    "monitoring.deals.x_balance_at__mutmut_67",
+    "monitoring.deals.x_balance_at__mutmut_69",
+    "monitoring.deals.x_balance_at__mutmut_71",
+    "monitoring.deals.x_balance_at__mutmut_8",
+    "monitoring.deals.x_deal_ledger__mutmut_22",
+    "monitoring.deals.x_deal_ledger__mutmut_25",
+    "monitoring.deals.x_deal_ledger__mutmut_31",
+    "monitoring.deals.x_deal_ledger__mutmut_51",
+    "monitoring.deals.x_deal_ledger__mutmut_53",
+    "monitoring.deals.x_deal_ledger__mutmut_6",
+    "monitoring.deals.x_deal_ledger__mutmut_60",
+    "monitoring.deals.x_deal_ledger__mutmut_61",
+    "monitoring.deals.x_deals_to_trades__mutmut_134",
+    "monitoring.deals.x_deals_to_trades__mutmut_136",
+    "monitoring.deals.x_deals_to_trades__mutmut_137",
+    "monitoring.deals.x_deals_to_trades__mutmut_141",
+    "monitoring.deals.x_deals_to_trades__mutmut_142",
+    "monitoring.deals.x_deals_to_trades__mutmut_22",
+    "monitoring.deals.x_deals_to_trades__mutmut_37",
+    "monitoring.deals.x_deals_to_trades__mutmut_39",
+    "monitoring.deals.x_deals_to_trades__mutmut_4",
+    "monitoring.deals.x_deals_to_trades__mutmut_46",
+    "monitoring.deals.x_deals_to_trades__mutmut_47",
+    "monitoring.deals.x_deals_to_trades__mutmut_5",
+    "monitoring.deals.x_deals_to_trades__mutmut_58",
+    "monitoring.deals.x_deals_to_trades__mutmut_6",
+    "monitoring.deals.x_deals_to_trades__mutmut_67",
+    "monitoring.deals.x_deals_to_trades__mutmut_7",
+    "monitoring.deals.x_deals_to_trades__mutmut_71",
+    "monitoring.deals.x_equity_curve__mutmut_17",
+    "monitoring.deals.x_equity_curve__mutmut_18",
+    "monitoring.deals.x_equity_curve__mutmut_19",
+    "monitoring.deals.x_equity_curve__mutmut_20",
+    "monitoring.deals.x_equity_curve__mutmut_22",
+    "monitoring.deals.x_equity_curve__mutmut_23",
+    "monitoring.deals.x_equity_curve__mutmut_4",
+    "monitoring.deals.x_equity_curve__mutmut_5",
+    "monitoring.deals.x_equity_curve__mutmut_6",
+    "monitoring.deals.x_equity_curve__mutmut_7",
+    "monitoring.deals.x_equity_curve__mutmut_8",
+    "monitoring.deals.x_equity_curve__mutmut_9",
+    "monitoring.deals.x_money_events__mutmut_10",
+    "monitoring.deals.x_money_events__mutmut_12",
+    "monitoring.deals.x_money_events__mutmut_15",
+    "monitoring.deals.x_money_events__mutmut_16",
+    "monitoring.deals.x_money_events__mutmut_18",
+    "monitoring.deals.x_money_events__mutmut_24",
+    "monitoring.deals.x_money_events__mutmut_33",
+    "monitoring.deals.x_money_events__mutmut_35",
+    "monitoring.deals.x_money_events__mutmut_39",
+    "monitoring.deals.x_money_events__mutmut_4",
+    "monitoring.deals.x_money_events__mutmut_44",
+    "monitoring.deals.x_money_events__mutmut_45",
+    "monitoring.deals.x_money_events__mutmut_48",
+    "monitoring.deals.x_money_events__mutmut_50",
+    "monitoring.deals.x_money_events__mutmut_55",
+    "monitoring.deals.x_money_events__mutmut_57",
+    "monitoring.deals.x_money_events__mutmut_6",
+    "monitoring.deals.x_per_trade_risk__mutmut_1",
+    "monitoring.deals.x_per_trade_risk__mutmut_10",
+    "monitoring.deals.x_per_trade_risk__mutmut_2",
+    "monitoring.deals.x_per_trade_risk__mutmut_3",
+    "monitoring.deals.x_per_trade_risk__mutmut_30",
+    "monitoring.deals.x_per_trade_risk__mutmut_32",
+    "monitoring.deals.x_per_trade_risk__mutmut_4",
 ]
 
 [[survivor_groups]]

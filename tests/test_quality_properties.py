@@ -16,6 +16,7 @@ from core.strategies.param_schedule import ParamSegment, entry_params_at, segmen
 from hypothesis import given
 from hypothesis import strategies as st
 from live.risk_control import RiskController, RiskLimits, position_volume
+from monitoring.deals import deal_ledger, deals_to_trades, per_trade_risk
 from research.engine.continuous import window_returns
 from research.engine.walkforward import WalkForwardWindow
 from research.forward_decision import EFFICACY_TRADES, daily_threshold, endpoint_reached
@@ -42,6 +43,80 @@ from tests.support.strategies import (
     trade_streams,
     valid_windows,
 )
+
+
+@given(
+    start_cents=st.integers(min_value=1_000_000, max_value=100_000_000),
+    prior_cents=st.integers(min_value=-100_000, max_value=100_000),
+    opening_cost_cents=st.integers(min_value=0, max_value=10_000),
+    close_cents=st.integers(min_value=-100_000, max_value=100_000),
+)
+def test_ticket_ordered_basis_excludes_the_opening_deal(
+    start_cents: int,
+    prior_cents: int,
+    opening_cost_cents: int,
+    close_cents: int,
+) -> None:
+    """Same-second events before the order count; the order's own costs do not."""
+
+    def money(cents: int) -> Decimal:
+        return Decimal(cents) / Decimal(100)
+
+    start = money(start_cents)
+    prior = money(prior_cents)
+    opening_cost = money(opening_cost_cents)
+    close = money(close_cents)
+    deals = [
+        {
+            "ticket": 1,
+            "time": 1_700_000_000,
+            "type": 2,
+            "entry": 0,
+            "position_id": 0,
+            "symbol": "",
+            "volume": 0.0,
+            "profit": prior,
+            "swap": Decimal("0"),
+            "commission": Decimal("0"),
+            "fee": Decimal("0"),
+        },
+        {
+            "ticket": 2,
+            "time": 1_700_000_000,
+            "type": 0,
+            "entry": 0,
+            "position_id": 7,
+            "symbol": "EURUSD",
+            "volume": 0.1,
+            "profit": Decimal("0"),
+            "swap": Decimal("0"),
+            "commission": Decimal("0"),
+            "fee": -opening_cost,
+        },
+        {
+            "ticket": 3,
+            "time": 1_700_000_100,
+            "type": 1,
+            "entry": 1,
+            "position_id": 7,
+            "symbol": "EURUSD",
+            "volume": 0.1,
+            "profit": close,
+            "swap": Decimal("0"),
+            "commission": Decimal("0"),
+            "fee": Decimal("0"),
+        },
+    ]
+    current = start + prior - opening_cost + close
+    trades = deals_to_trades(deals)
+    risk = per_trade_risk(
+        trades,
+        current,
+        Decimal("0.0018"),
+        ledger=deal_ledger(deals),
+    )
+
+    assert list(risk) == [(start + prior) * Decimal("0.0018")]
 
 
 @given(

@@ -89,6 +89,32 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "mt5-deal-export"
+path = "live/mt5_bridge.py"
+mutant_patterns = ["live.mt5_bridge.x*Mt5Bridge*history_deals__mutmut_*"]
+
+[[targets]]
+id = "monitoring-deal-reconstruction"
+path = "monitoring/deals.py"
+mutant_patterns = [
+    "monitoring.deals.x__deal_amount__mutmut_*",
+    "monitoring.deals.x_deals_to_trades__mutmut_*",
+    "monitoring.deals.x_deal_ledger__mutmut_*",
+    "monitoring.deals.x_money_events__mutmut_*",
+    "monitoring.deals.x_balance_at__mutmut_*",
+    "monitoring.deals.x_equity_curve__mutmut_*",
+    "monitoring.deals.x_per_trade_risk__mutmut_*",
+]
+
+[[targets]]
+id = "monitoring-stable-snapshot"
+path = "monitoring/dashboard.py"
+mutant_patterns = [
+    "monitoring.dashboard.x_snapshot_identity__mutmut_*",
+    "monitoring.dashboard.x_stable_history_account__mutmut_*",
+]
+
+[[targets]]
 id = "forward-cohort-identity"
 path = "research/forward_test_registry.py"
 mutant_patterns = [
