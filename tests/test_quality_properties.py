@@ -274,8 +274,6 @@ def test_every_hashed_input_participates_in_forward_cohort_identity(changed: str
         allowed_safety_stop_reasons=("lineage drift",),
         status=CohortStatus.REGISTERED,
     )
-    hashes = dict.fromkeys(
-        HashedInputPaths.__dataclass_fields__, "sha256:" + ("0" * 64)
-    )
+    hashes = dict.fromkeys(HashedInputPaths.__dataclass_fields__, "sha256:" + ("0" * 64))
     changed_hashes = {**hashes, changed: "sha256:" + ("1" * 64)}
     assert cohort_identity(plan, hashes) != cohort_identity(plan, changed_hashes)

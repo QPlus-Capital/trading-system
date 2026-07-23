@@ -52,9 +52,7 @@ def _inputs(root: Path, *, suffix: str = "", stop: str = "0.5") -> HashedInputPa
     return HashedInputPaths(**paths)
 
 
-def _plan(
-    paths: HashedInputPaths, *, participant_id: str = _PARTICIPANT_ID
-) -> CohortPlan:
+def _plan(paths: HashedInputPaths, *, participant_id: str = _PARTICIPANT_ID) -> CohortPlan:
     return CohortPlan(
         start_timestamp=datetime(2026, 7, 16, 21, 15, tzinfo=UTC),
         strategy_code_git_sha=_GIT_SHA,
@@ -160,9 +158,10 @@ def test_changing_signal_code_creates_a_new_cohort(tmp_path: Path) -> None:
     second_paths.signal_logic.write_text("def signal(): return False", encoding="utf-8")
     registry = ForwardTestRegistry(tmp_path / "registry")
 
-    assert registry.register(_plan(first_paths)).cohort_id != registry.register(
-        _plan(second_paths)
-    ).cohort_id
+    assert (
+        registry.register(_plan(first_paths)).cohort_id
+        != registry.register(_plan(second_paths)).cohort_id
+    )
 
 
 def test_two_cohort_result_sets_cannot_be_pooled(tmp_path: Path) -> None:
@@ -219,9 +218,7 @@ def test_credentials_and_account_numbers_never_reach_disk(tmp_path: Path) -> Non
 
     for forbidden in (synthetic_credential, fake_account_number):
         with pytest.raises(OpaqueIdentifierError, match="UUID"):
-            registry.register(
-                _plan(valid_inputs, participant_id=forbidden)
-            )
+            registry.register(_plan(valid_inputs, participant_id=forbidden))
 
     written = "\n".join(
         path.read_text(encoding="utf-8") for path in root.rglob("*") if path.is_file()
@@ -263,9 +260,7 @@ def test_schema_and_decimal_observation_round_trip_exactly(tmp_path: Path) -> No
     registry = ForwardTestRegistry(root)
     cohort = registry.register(_plan(_inputs(tmp_path / "inputs")))
     value = Decimal("-0.123456789012345678901")
-    registry.append_daily_r(
-        cohort.cohort_id, ObservationSource.LIVE, date(2026, 7, 17), value
-    )
+    registry.append_daily_r(cohort.cohort_id, ObservationSource.LIVE, date(2026, 7, 17), value)
 
     definition_path = root / "cohorts" / str(cohort.cohort_id) / "definition.json"
     definition = json.loads(definition_path.read_text(encoding="utf-8"))
@@ -312,9 +307,7 @@ def test_json_number_observation_is_rejected_as_non_decimal_storage(
         date(2026, 7, 17),
         Decimal("-0.125"),
     )
-    observation_path = (
-        root / "cohorts" / str(cohort.cohort_id) / "observations.jsonl"
-    )
+    observation_path = root / "cohorts" / str(cohort.cohort_id) / "observations.jsonl"
     payload = json.loads(observation_path.read_text(encoding="utf-8"))
     payload["daily_net_portfolio_r"] = -0.125
     observation_path.write_text(json.dumps(payload), encoding="utf-8")
