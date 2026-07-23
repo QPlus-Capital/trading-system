@@ -6,6 +6,7 @@ import ast
 import importlib
 import sys
 from collections.abc import Sequence
+from decimal import Decimal
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Self
@@ -143,7 +144,9 @@ def _visible_literal_parts(node: ast.AST) -> tuple[str, ...]:
 
 def _scoped_operator_literal_parts(dashboard: ModuleType) -> set[str]:
     """Collect every literal rendered by the copy surface governed by P-15."""
-    source = Path(dashboard.__file__).read_text(encoding="utf-8")
+    module_path = dashboard.__file__
+    assert module_path is not None
+    source = Path(module_path).read_text(encoding="utf-8")
     tree = ast.parse(source)
     parts: set[str] = set()
     for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
@@ -294,7 +297,7 @@ def test_live_dashboard_renders_key_operator_guidance_in_german(
         lambda *_args, **_kwargs: HistoryWindow(
             trades=trades.copy(),
             risk=np.array([], dtype=np.float64),
-            start_balance=100.0,
+            start_balance=Decimal("100"),
             hidden=3,
         ),
     )
