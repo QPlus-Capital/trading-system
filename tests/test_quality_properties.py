@@ -17,6 +17,14 @@ from hypothesis import strategies as st
 from live.risk_control import RiskController, RiskLimits, position_volume
 from research.engine.continuous import window_returns
 from research.engine.walkforward import WalkForwardWindow
+from research.forward_test_registry import (
+    CohortPlan,
+    CohortStatus,
+    HashedInputPaths,
+    ObservationSource,
+    cohort_identity,
+    hash_cohort_inputs,
+)
 from research.portfolio.drawdown import evaluate, trailing_floor
 from research.portfolio.sizing import flat, simulate
 from research.regression import Thresholds, compare
@@ -225,3 +233,47 @@ def test_classification_is_spelling_invariant_and_change_sets_take_the_maximum(p
         classify_paths(["README.md", path], model).risk_class
         == classify_paths([path], model).risk_class
     )
+
+
+@given(st.binary(max_size=128))
+def test_forward_cohort_hashing_is_path_invariant(content: bytes) -> None:
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        left = root / "left"
+        right = root / "right"
+        left.mkdir()
+        right.mkdir()
+        names = tuple(HashedInputPaths.__dataclass_fields__)
+        left_paths: dict[str, Path] = {}
+        right_paths: dict[str, Path] = {}
+        for name in names:
+            left_path = left / name
+            right_path = right / f"moved-{name}"
+            left_path.write_bytes(content + name.encode())
+            right_path.write_bytes(content + name.encode())
+            left_paths[name] = left_path
+            right_paths[name] = right_path
+        assert hash_cohort_inputs(HashedInputPaths(**left_paths)) == hash_cohort_inputs(
+            HashedInputPaths(**right_paths)
+        )
+
+
+@given(st.sampled_from(tuple(HashedInputPaths.__dataclass_fields__)))
+def test_every_hashed_input_participates_in_forward_cohort_identity(changed: str) -> None:
+    paths = HashedInputPaths(*(Path(name) for name in HashedInputPaths.__dataclass_fields__))
+    plan = CohortPlan(
+        start_timestamp=pd.Timestamp("2026-07-16T21:15:00Z").to_pydatetime(),
+        strategy_code_git_sha="01234567" * 5,
+        inputs=paths,
+        participant_id="7f506d66-68e0-4a65-a76d-0d31eb174d98",
+        observation_source=ObservationSource.PAPER,
+        primary_hypothesis="Positive daily net portfolio R.",
+        thresholds={"mean_net_r_gt": Decimal("0")},
+        minimum_calendar_days=Decimal("180"),
+        minimum_trade_count=Decimal("450"),
+        allowed_safety_stop_reasons=("lineage drift",),
+        status=CohortStatus.REGISTERED,
+    )
+    hashes = dict.fromkeys(HashedInputPaths.__dataclass_fields__, "sha256:" + ("0" * 64))
+    changed_hashes = {**hashes, changed: "sha256:" + ("1" * 64)}
+    assert cohort_identity(plan, hashes) != cohort_identity(plan, changed_hashes)

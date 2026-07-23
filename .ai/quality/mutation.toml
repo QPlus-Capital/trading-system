@@ -87,3 +87,13 @@ mutant_patterns = [
     "research.regression.x__delta__mutmut_*",
     "research.regression.x_compare__mutmut_*",
 ]
+
+[[targets]]
+id = "forward-cohort-identity"
+path = "research/forward_test_registry.py"
+mutant_patterns = [
+    "research.forward_test_registry.x_hash_cohort_inputs__mutmut_*",
+    "research.forward_test_registry.x_cohort_identity__mutmut_*",
+    "research.forward_test_registry.x__digest_canonical__mutmut_*",
+    "research.forward_test_registry.x__identity_from_cohort__mutmut_*",
+]
