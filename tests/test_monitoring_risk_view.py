@@ -11,9 +11,11 @@ ledger is inherited into every reconstructed balance before it.
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 import numpy as np
 import pandas as pd
-from monitoring.deals import deal_ledger, equity_curve, per_trade_risk, to_ns
+from monitoring.deals import deal_ledger, deals_to_trades, equity_curve, per_trade_risk, to_ns
 from monitoring.risk_view import summarize_open_risk, window_history
 
 
@@ -187,6 +189,46 @@ def test_the_ledger_carries_every_deal_not_just_completed_trades() -> None:
 def test_an_empty_ledger_leaves_the_balance_where_it_is() -> None:
     trades = _trades(["2026-01-01"], ["2026-01-02"], [0.0])
     assert list(per_trade_risk(trades, 100_000.0, 0.01)) == [1_000.0]
+
+
+def test_same_second_opening_cost_is_excluded_from_its_own_basis() -> None:
+    """Earlier same-second money is real; the opening deal itself was booked after sizing."""
+    opened = int(pd.Timestamp("2026-01-01", tz="UTC").timestamp())
+    closed = int(pd.Timestamp("2026-01-02", tz="UTC").timestamp())
+    deals = [
+        {
+            **_deal(opened, "", 50.0),
+            "position_id": 0,
+            "ticket": 9,
+        },
+        {
+            **_deal(opened, "EURUSD", 0.0, -3.0),
+            "position_id": 17,
+            "ticket": 10,
+            "fee": Decimal("-2.0"),
+        },
+        {
+            **_deal(closed, "EURUSD", 100.0),
+            "position_id": 17,
+            "ticket": 11,
+            "entry": 1,
+            "type": 1,
+            "fee": Decimal("0"),
+        },
+    ]
+    trades = deals_to_trades(deals)
+    ledger = deal_ledger(deals)
+
+    risk = per_trade_risk(
+        trades,
+        Decimal("100145"),
+        Decimal("0.01"),
+        ledger=ledger,
+    )
+
+    assert list(risk) == [Decimal("1000.50")]
+    assert trades.iloc[0]["open_ticket"] == 10
+    assert isinstance(risk[0], Decimal)
 
 
 # --------------------------------------------------------------------- timestamp units

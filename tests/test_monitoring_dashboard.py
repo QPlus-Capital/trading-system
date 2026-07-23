@@ -1,0 +1,134 @@
+"""The dashboard must consume one coherent broker snapshot without touching a terminal."""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from decimal import Decimal
+from typing import Any
+
+import pytest
+from live.mt5_bridge import AccountState
+from monitoring import dashboard
+
+
+def _deal(ticket: int, profit: str) -> dict[str, Any]:
+    return {
+        "ticket": ticket,
+        "time": 1_700_000_000 + ticket,
+        "type": 1,
+        "entry": 1,
+        "position_id": ticket,
+        "symbol": "EURUSD",
+        "volume": 0.1,
+        "price": 1.1,
+        "profit": Decimal(profit),
+        "swap": Decimal("0"),
+        "commission": Decimal("0"),
+        "fee": Decimal("0"),
+    }
+
+
+class _SnapshotBridge:
+    histories: list[list[dict[str, Any]]] = []
+    accounts: list[AccountState] = []
+    instances: list[_SnapshotBridge] = []
+
+    def __init__(self, symbol_map: dict[str, str]) -> None:
+        self._resolved = {"EURUSD": "EURUSD"}
+        self._histories: Iterator[list[dict[str, Any]]] = iter(self.histories)
+        self._accounts: Iterator[AccountState] = iter(self.accounts)
+        self.shutdown_called = False
+        self.instances.append(self)
+
+    def connect(self, *, path: str | None = None) -> None:
+        del path
+
+    def history_deals(self, _since: object) -> list[dict[str, Any]]:
+        return next(self._histories)
+
+    def account(self) -> AccountState:
+        return next(self._accounts)
+
+    def positions(self) -> list[object]:
+        return []
+
+    def shutdown(self) -> None:
+        self.shutdown_called = True
+
+
+def _account(balance: float) -> AccountState:
+    return AccountState(balance=balance, equity=balance, currency="USD", login=123)
+
+
+def test_load_live_retries_an_interleaved_deal_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    old = [_deal(1, "10")]
+    updated = [*old, _deal(2, "5")]
+    _SnapshotBridge.histories = [old, updated, updated, updated]
+    _SnapshotBridge.accounts = [
+        _account(110.0),
+        _account(115.0),
+        _account(115.0),
+        _account(115.0),
+    ]
+    _SnapshotBridge.instances = []
+    monkeypatch.setattr(dashboard, "Mt5Bridge", _SnapshotBridge)
+    dashboard._load_live.clear()
+
+    live = dashboard._load_live("ttp")
+
+    assert [deal["ticket"] for deal in live["deals"]] == [1, 2]
+    assert live["balance"] == 115.0
+    assert len(_SnapshotBridge.instances) == 1
+    assert _SnapshotBridge.instances[0].shutdown_called
+
+
+def test_load_live_fails_closed_when_history_never_stabilises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _SnapshotBridge.histories = [
+        [_deal(1, "1")],
+        [_deal(2, "2")],
+        [_deal(3, "3")],
+        [_deal(4, "4")],
+        [_deal(5, "5")],
+        [_deal(6, "6")],
+    ]
+    _SnapshotBridge.accounts = [
+        _account(101.0),
+        _account(102.0),
+        _account(103.0),
+        _account(104.0),
+        _account(105.0),
+        _account(106.0),
+    ]
+    _SnapshotBridge.instances = []
+    monkeypatch.setattr(dashboard, "Mt5Bridge", _SnapshotBridge)
+    dashboard._load_live.clear()
+
+    with pytest.raises(RuntimeError, match="stable MT5 deal/account snapshot"):
+        dashboard._load_live("ttp")
+
+    assert len(_SnapshotBridge.instances) == 1
+    assert _SnapshotBridge.instances[0].shutdown_called
+
+
+def test_load_live_retries_when_balance_changes_with_the_same_newest_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = [_deal(1, "1")]
+    _SnapshotBridge.histories = [history, history, history, history]
+    _SnapshotBridge.accounts = [
+        _account(100.0),
+        _account(101.0),
+        _account(101.0),
+        _account(101.0),
+    ]
+    _SnapshotBridge.instances = []
+    monkeypatch.setattr(dashboard, "Mt5Bridge", _SnapshotBridge)
+    dashboard._load_live.clear()
+
+    live = dashboard._load_live("ttp")
+
+    assert live["balance"] == 101.0

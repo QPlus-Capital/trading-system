@@ -61,9 +61,12 @@ addopts = "-ra"
 pythonpath = ["."]
 
 [tool.mutmut]
-# Mutmut needs import-complete package copies, but only these eight pure critical files are mutated.
+# Mutmut needs import-complete package copies; execution remains bounded by mutation.toml patterns.
 paths_to_mutate = [
     "live/risk_control.py",
+    "live/mt5_bridge.py",
+    "monitoring/deals.py",
+    "monitoring/dashboard.py",
     "research/portfolio/sizing.py",
     "research/portfolio/drawdown.py",
     "research/portfolio/risk.py",
@@ -77,6 +80,10 @@ mutate_only_covered_lines = false
 pytest_add_cli_args = ["--disable-warnings"]
 pytest_add_cli_args_test_selection = [
     "tests/test_live_risk_control.py",
+    "tests/test_live_mt5_bridge.py",
+    "tests/test_monitoring_dashboard.py",
+    "tests/test_monitoring_deals.py",
+    "tests/test_monitoring_risk_view.py",
     "tests/test_research_sizing.py",
     "tests/test_research_portfolio_dd.py",
     "tests/test_research_risk.py",

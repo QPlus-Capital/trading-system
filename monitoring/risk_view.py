@@ -8,6 +8,7 @@ other decides the basis every displayed R is measured against.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 import numpy as np
 import pandas as pd
@@ -50,7 +51,7 @@ class HistoryWindow:
 
     trades: pd.DataFrame
     risk: np.ndarray
-    start_balance: float
+    start_balance: Decimal
     hidden: int
 
 
@@ -59,7 +60,7 @@ def window_history(
     all_risk: np.ndarray,
     *,
     window_start: pd.Timestamp,
-    current_balance: float,
+    current_balance: Decimal | int | float | str,
     ledger: pd.DataFrame | None = None,
 ) -> HistoryWindow:
     """Restrict a full history to the display window WITHOUT changing any trade's risk basis.
@@ -75,9 +76,7 @@ def window_history(
     window as well as trades. Deriving it from hidden trade PnL alone would offset the equity
     curve by every earlier payout.
     """
-    entering = float(
-        balance_at(to_ns(pd.Series([window_start])), current_balance, ledger)[0]
-    )
+    entering = balance_at(to_ns(pd.Series([window_start])), current_balance, ledger)[0]
     if all_trades.empty:
         return HistoryWindow(all_trades, all_risk, entering, 0)
 
