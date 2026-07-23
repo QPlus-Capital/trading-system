@@ -31,3 +31,12 @@ The pre-implementation run saw only this task artifact and therefore reported R0
 files, and the full suite as its conservative recommendation. The specification manually upgrades
 the package to R3 because the declared scope includes `live/mt5_bridge.py`; impact analysis will be
 rerun after implementation so the executable report sees the complete change set.
+
+## Implemented `just impact`
+
+After the implementation commit, `just impact origin/main` reports R3 and identifies
+`live/mt5_bridge.py`, `monitoring/dashboard.py`, `monitoring/deals.py`, and
+`monitoring/risk_view.py` as changed production files. It selects the live accounts, bridge,
+parity, CLI, runner and runner-cycle tests; all monitoring tests and deterministic properties; and
+the transitive research sizing/swap-analysis tests. It reports no unknown/dynamic edge, while the
+full suite remains mandatory.

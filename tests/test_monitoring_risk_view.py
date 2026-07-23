@@ -15,7 +15,15 @@ from decimal import Decimal
 
 import numpy as np
 import pandas as pd
-from monitoring.deals import deal_ledger, deals_to_trades, equity_curve, per_trade_risk, to_ns
+import pytest
+from monitoring.deals import (
+    balance_at,
+    deal_ledger,
+    deals_to_trades,
+    equity_curve,
+    per_trade_risk,
+    to_ns,
+)
 from monitoring.risk_view import summarize_open_risk, window_history
 
 
@@ -29,7 +37,7 @@ def _trades(opens: list[str], closes: list[str], pnl: list[float]) -> pd.DataFra
     )
 
 
-def _ledger(times: list[str], amounts: list[float]) -> pd.DataFrame:
+def _ledger(times: list[str], amounts: list[float | Decimal]) -> pd.DataFrame:
     return pd.DataFrame({"time": pd.to_datetime(times, utc=True), "amount": amounts})
 
 
@@ -188,7 +196,9 @@ def test_the_ledger_carries_every_deal_not_just_completed_trades() -> None:
 
 def test_an_empty_ledger_leaves_the_balance_where_it_is() -> None:
     trades = _trades(["2026-01-01"], ["2026-01-02"], [0.0])
-    assert list(per_trade_risk(trades, 100_000.0, 0.01)) == [1_000.0]
+    risk = per_trade_risk(trades, 100_000.0, 0.01)
+    assert list(risk) == [Decimal("1000.000")]
+    assert isinstance(risk[0], Decimal)
 
 
 def test_same_second_opening_cost_is_excluded_from_its_own_basis() -> None:
@@ -229,6 +239,16 @@ def test_same_second_opening_cost_is_excluded_from_its_own_basis() -> None:
     assert list(risk) == [Decimal("1000.50")]
     assert trades.iloc[0]["open_ticket"] == 10
     assert isinstance(risk[0], Decimal)
+
+
+def test_ticket_cutoffs_must_align_with_trade_open_times() -> None:
+    with pytest.raises(ValueError, match="one-for-one"):
+        balance_at(
+            np.array([1, 2], dtype="int64"),
+            Decimal("100"),
+            _ledger(["1970-01-01"], [Decimal("1")]),
+            before_ticket=np.array([1], dtype="int64"),
+        )
 
 
 # --------------------------------------------------------------------- timestamp units
