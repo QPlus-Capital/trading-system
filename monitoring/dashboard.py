@@ -271,10 +271,7 @@ def _live_view() -> None:
     else:
         net = trades["net_pnl"].to_numpy(dtype=object)
         r_values = np.array(
-            [
-                pnl / risk_amount
-                for pnl, risk_amount in zip(net, trade_risk, strict=True)
-            ],
+            [pnl / risk_amount for pnl, risk_amount in zip(net, trade_risk, strict=True)],
             dtype=object,
         )
         ls, ro = live_stats(net), ref["overall"]
@@ -289,9 +286,7 @@ def _live_view() -> None:
         with k4:
             _stat_row(
                 "Expectancy / trade (R)",
-                float(sum(r_values, start=Decimal("0")) / len(r_values))
-                if len(r_values)
-                else 0.0,
+                float(sum(r_values, start=Decimal("0")) / len(r_values)) if len(r_values) else 0.0,
                 ro["expectancy"],
                 "+.2f",
             )
@@ -328,9 +323,7 @@ def _live_view() -> None:
         for value in r_values:
             running_r += value
             cumulative_r.append(float(running_r))
-        live_r = pd.DataFrame(
-            {"trade": np.arange(1, len(trades) + 1), "cum_r": cumulative_r}
-        )
+        live_r = pd.DataFrame({"trade": np.arange(1, len(trades) + 1), "cum_r": cumulative_r})
         area = (
             alt.Chart(band)
             .mark_area(color=_MUTED, opacity=0.18)

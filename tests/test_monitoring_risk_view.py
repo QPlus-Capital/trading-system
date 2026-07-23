@@ -102,9 +102,7 @@ def test_an_overlapping_trade_is_not_credited_with_pnl_that_came_later() -> None
     Crediting B's win to A would attribute money that did not exist when A was sized -- exactly
     the multi-market overlap this monitor exists to diagnose.
     """
-    trades = _trades(
-        ["2026-01-01", "2026-01-02"], ["2026-01-10", "2026-01-03"], [500.0, 5_000.0]
-    )
+    trades = _trades(["2026-01-01", "2026-01-02"], ["2026-01-10", "2026-01-03"], [500.0, 5_000.0])
     ledger = _ledger(["2026-01-10", "2026-01-03"], [500.0, 5_000.0])
     risk = per_trade_risk(trades, 105_500.0, 0.01, ledger=ledger)
     assert list(risk) == [1_000.0, 1_000.0]  # both sized against the untouched 100k
@@ -146,9 +144,7 @@ def test_a_payout_moves_the_basis_of_every_later_trade() -> None:
     Two +1000 trades on 100k at 1%. Withdraw 50k between them and the second was sized against
     51k, not 101k -- a basis wrong by a factor of two.
     """
-    trades = _trades(
-        ["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0]
-    )
+    trades = _trades(["2026-01-01", "2026-01-05"], ["2026-01-02", "2026-01-06"], [1_000.0, 1_000.0])
     ledger = _ledger(["2026-01-02", "2026-01-03", "2026-01-06"], [1_000.0, -50_000.0, 1_000.0])
     risk = per_trade_risk(trades, 52_000.0, 0.01, ledger=ledger)
     assert list(risk) == [1_000.0, 510.0]

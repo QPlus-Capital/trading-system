@@ -328,9 +328,9 @@ class Mt5Bridge:
         """
         return [p for p in self.positions(name) if p.magic == MAGIC]
 
-    def loss_for_order(self, name: str, side: Side, entry: float, sl: float, volume: float) -> (
-        float | None
-    ):
+    def loss_for_order(
+        self, name: str, side: Side, entry: float, sl: float, volume: float
+    ) -> float | None:
         """What ``volume`` lots of ``name`` would lose going from ``entry`` to ``sl``, in account
         currency, priced by the terminal (#19).
 
