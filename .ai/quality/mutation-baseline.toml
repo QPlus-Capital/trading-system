@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "Initial measured pure-function critical baseline for issue 65: 774 selected mutants, 585 killed, 189 meaningful survivors, and zero unhealthy outcomes."
+change_explanation = "P-14 extends the measured critical scope to MT5 deal export, Decimal monitoring reconstruction, and stable dashboard snapshots: 1,237 selected mutants, 967 killed, 270 conservatively meaningful survivors, zero unhealthy outcomes, and a score increase from 75.6% to 78.2%."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -13,12 +13,15 @@ targets = [
     "parameter-schedule",
     "continuous-attribution",
     "result-regression",
+    "mt5-deal-export",
+    "monitoring-deal-reconstruction",
+    "monitoring-stable-snapshot",
 ]
 
 [summary]
-total = 774
-killed = 585
-survived = 189
+total = 1237
+killed = 967
+survived = 270
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -317,4 +320,97 @@ names = [
     "research.regression.x_compare__mutmut_97",
     "research.regression.x_compare__mutmut_98",
     "research.regression.x_compare__mutmut_99",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Focused bridge tests do not distinguish these remaining history-deal export mutations; retained as measured test-strength gaps."
+names = [
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_3",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_4",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_51",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_54",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_57",
+    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_7",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Focused monitoring tests do not distinguish these remaining Decimal reconstruction mutations; retained as measured test-strength gaps."
+names = [
+    "monitoring.deals.x__deal_amount__mutmut_4",
+    "monitoring.deals.x_balance_at__mutmut_10",
+    "monitoring.deals.x_balance_at__mutmut_14",
+    "monitoring.deals.x_balance_at__mutmut_24",
+    "monitoring.deals.x_balance_at__mutmut_37",
+    "monitoring.deals.x_balance_at__mutmut_40",
+    "monitoring.deals.x_balance_at__mutmut_42",
+    "monitoring.deals.x_balance_at__mutmut_52",
+    "monitoring.deals.x_balance_at__mutmut_63",
+    "monitoring.deals.x_balance_at__mutmut_66",
+    "monitoring.deals.x_balance_at__mutmut_67",
+    "monitoring.deals.x_balance_at__mutmut_69",
+    "monitoring.deals.x_balance_at__mutmut_71",
+    "monitoring.deals.x_balance_at__mutmut_8",
+    "monitoring.deals.x_deal_ledger__mutmut_22",
+    "monitoring.deals.x_deal_ledger__mutmut_25",
+    "monitoring.deals.x_deal_ledger__mutmut_31",
+    "monitoring.deals.x_deal_ledger__mutmut_51",
+    "monitoring.deals.x_deal_ledger__mutmut_53",
+    "monitoring.deals.x_deal_ledger__mutmut_6",
+    "monitoring.deals.x_deal_ledger__mutmut_60",
+    "monitoring.deals.x_deal_ledger__mutmut_61",
+    "monitoring.deals.x_deals_to_trades__mutmut_134",
+    "monitoring.deals.x_deals_to_trades__mutmut_136",
+    "monitoring.deals.x_deals_to_trades__mutmut_137",
+    "monitoring.deals.x_deals_to_trades__mutmut_141",
+    "monitoring.deals.x_deals_to_trades__mutmut_142",
+    "monitoring.deals.x_deals_to_trades__mutmut_22",
+    "monitoring.deals.x_deals_to_trades__mutmut_37",
+    "monitoring.deals.x_deals_to_trades__mutmut_39",
+    "monitoring.deals.x_deals_to_trades__mutmut_4",
+    "monitoring.deals.x_deals_to_trades__mutmut_46",
+    "monitoring.deals.x_deals_to_trades__mutmut_47",
+    "monitoring.deals.x_deals_to_trades__mutmut_5",
+    "monitoring.deals.x_deals_to_trades__mutmut_58",
+    "monitoring.deals.x_deals_to_trades__mutmut_6",
+    "monitoring.deals.x_deals_to_trades__mutmut_67",
+    "monitoring.deals.x_deals_to_trades__mutmut_7",
+    "monitoring.deals.x_deals_to_trades__mutmut_71",
+    "monitoring.deals.x_equity_curve__mutmut_17",
+    "monitoring.deals.x_equity_curve__mutmut_18",
+    "monitoring.deals.x_equity_curve__mutmut_19",
+    "monitoring.deals.x_equity_curve__mutmut_20",
+    "monitoring.deals.x_equity_curve__mutmut_22",
+    "monitoring.deals.x_equity_curve__mutmut_23",
+    "monitoring.deals.x_equity_curve__mutmut_4",
+    "monitoring.deals.x_equity_curve__mutmut_5",
+    "monitoring.deals.x_equity_curve__mutmut_6",
+    "monitoring.deals.x_equity_curve__mutmut_7",
+    "monitoring.deals.x_equity_curve__mutmut_8",
+    "monitoring.deals.x_equity_curve__mutmut_9",
+    "monitoring.deals.x_money_events__mutmut_10",
+    "monitoring.deals.x_money_events__mutmut_12",
+    "monitoring.deals.x_money_events__mutmut_15",
+    "monitoring.deals.x_money_events__mutmut_16",
+    "monitoring.deals.x_money_events__mutmut_18",
+    "monitoring.deals.x_money_events__mutmut_24",
+    "monitoring.deals.x_money_events__mutmut_33",
+    "monitoring.deals.x_money_events__mutmut_35",
+    "monitoring.deals.x_money_events__mutmut_39",
+    "monitoring.deals.x_money_events__mutmut_4",
+    "monitoring.deals.x_money_events__mutmut_44",
+    "monitoring.deals.x_money_events__mutmut_45",
+    "monitoring.deals.x_money_events__mutmut_48",
+    "monitoring.deals.x_money_events__mutmut_50",
+    "monitoring.deals.x_money_events__mutmut_55",
+    "monitoring.deals.x_money_events__mutmut_57",
+    "monitoring.deals.x_money_events__mutmut_6",
+    "monitoring.deals.x_per_trade_risk__mutmut_1",
+    "monitoring.deals.x_per_trade_risk__mutmut_10",
+    "monitoring.deals.x_per_trade_risk__mutmut_2",
+    "monitoring.deals.x_per_trade_risk__mutmut_3",
+    "monitoring.deals.x_per_trade_risk__mutmut_30",
+    "monitoring.deals.x_per_trade_risk__mutmut_32",
+    "monitoring.deals.x_per_trade_risk__mutmut_4",
 ]
