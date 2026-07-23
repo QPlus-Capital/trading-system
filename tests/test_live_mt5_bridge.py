@@ -58,8 +58,32 @@ def test_history_deals_exports_ticket_and_fee(monkeypatch: pytest.MonkeyPatch) -
 
     result = bridge.history_deals(datetime(2026, 1, 1, tzinfo=UTC))
 
-    assert result[0]["ticket"] == 42
-    assert result[0]["profit"] == Decimal("12.34")
-    assert result[0]["swap"] == Decimal("-0.5")
-    assert result[0]["commission"] == Decimal("-1.25")
-    assert result[0]["fee"] == Decimal("-2.75")
+    assert result == [
+        {
+            "ticket": 42,
+            "time": 1_700_000_000,
+            "type": 0,
+            "entry": 0,
+            "position_id": 7,
+            "symbol": "EURUSD",
+            "volume": 0.1,
+            "price": 1.1,
+            "profit": Decimal("12.34"),
+            "swap": Decimal("-0.5"),
+            "commission": Decimal("-1.25"),
+            "fee": Decimal("-2.75"),
+        }
+    ]
+
+
+@pytest.mark.parametrize("raw", [None, []])
+def test_history_deals_handles_no_records(
+    monkeypatch: pytest.MonkeyPatch,
+    raw: object,
+) -> None:
+    fake_mt5 = SimpleNamespace(history_deals_get=lambda _since, _until: raw)
+    monkeypatch.setattr(bridge_module, "mt5", fake_mt5)
+    bridge = Mt5Bridge()
+    bridge._connected = True
+
+    assert bridge.history_deals(datetime(2026, 1, 1, tzinfo=UTC)) == []

@@ -60,6 +60,30 @@ def _account(balance: float) -> AccountState:
     return AccountState(balance=balance, equity=balance, currency="USD", login=123)
 
 
+@pytest.mark.parametrize(
+    ("field", "changed"),
+    [
+        ("ticket", 2),
+        ("time", 1_800_000_000),
+        ("type", 0),
+        ("entry", 0),
+        ("position_id", 99),
+        ("symbol", "GBPUSD"),
+        ("volume", 0.2),
+        ("price", 1.2),
+        ("profit", Decimal("2")),
+        ("swap", Decimal("-1")),
+        ("commission", Decimal("-2")),
+        ("fee", Decimal("-3")),
+    ],
+)
+def test_snapshot_identity_detects_any_deal_change(field: str, changed: object) -> None:
+    before = _deal(1, "1")
+    after = {**before, field: changed}
+
+    assert dashboard._snapshot_identity([before]) != dashboard._snapshot_identity([after])
+
+
 def test_load_live_retries_an_interleaved_deal_snapshot(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
