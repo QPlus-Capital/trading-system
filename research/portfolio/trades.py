@@ -242,7 +242,12 @@ def _optimize(
                 # The same constant basis the OOS run uses, so selection and execution model one
                 # strategy. A compounding training run here would rank candidates by a scale the
                 # graded run does not share.
-                scoring_params(recipe, params),
+                {
+                    **scoring_params(recipe, params),
+                    # The engine boundary is not a strategy exit. Leave the final position open so
+                    # extract_trade_pnls excludes it from the training score.
+                    "flatten_on_stop": False,
+                },
                 start=(window.train_start - PREROLL).isoformat(),
                 end=window.train_end.isoformat(),
                 trade_from=window.train_start.isoformat(),
