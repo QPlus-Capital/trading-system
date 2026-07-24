@@ -2,8 +2,8 @@
 
 Runs the walk-forward for every (instrument x variation). Ranked by variation averaged across
 instruments, so a change only wins if it helps out-of-sample across many markets. Backtests run
-NET of costs (spread + commission + slippage via the broker profile). Add more instruments to
-the list as their data + specs arrive.
+NET of costs (spread + commission + slippage in-engine, realized overnight swap at close via the
+standard broker snapshot). Add more instruments to the list as their data + specs arrive.
 
     uv run python -m research.engine.characterize research/config/robustness.py
 """

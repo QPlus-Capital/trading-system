@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from core.broker import standard_broker
 from core.data.mt5_csv import write_mt5_catalog
 from core.instruments import us30
 from research.engine import characterize, recipe
@@ -43,7 +44,13 @@ def market(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def _recipe() -> SweepRecipe:
-    return SweepRecipe(us30(), "data/SYN_H4.csv", leverage=15.0, param_grid=_GRID)
+    return SweepRecipe(
+        us30(),
+        "data/SYN_H4.csv",
+        leverage=15.0,
+        param_grid=_GRID,
+        broker=standard_broker(),
+    )
 
 
 # ------------------------------------------------------------------ Stage 3's real entrypoint

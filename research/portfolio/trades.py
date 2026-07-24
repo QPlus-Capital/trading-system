@@ -15,14 +15,17 @@ from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
-from core.broker import TTP_MARKETS
+from core.broker import BrokerProfile, standard_broker
 
-from research.engine.config import extract_trade_pnls
+from research.engine.config import extract_closed_positions
 from research.engine.continuous import (
     base_config_of,
     run_continuous_oos,
     scoring_params,
+    stage1_account_returns,
+    stage1_trade_returns,
     stop_loss_lookup,
+    stop_loss_pct_of,
 )
 from research.engine.grid import expand_grid
 from research.engine.recipe import SweepRecipe
@@ -243,7 +246,7 @@ def _optimize(
         # Warm this pass the same way as the walk-forward runner's: a cold train window here
         # would pick different params than Stage 1 did, so the portfolio numbers would no longer
         # describe the methodology that was selected.
-        pnls, equity = extract_trade_pnls(
+        positions, _start_equity = extract_closed_positions(
             recipe.build_run_config(
                 # The same constant basis the OOS run uses, so selection and execution model one
                 # strategy. A compounding training run here would rank candidates by a scale the
@@ -251,7 +254,7 @@ def _optimize(
                 {
                     **scoring_params(recipe, params),
                     # The engine boundary is not a strategy exit. Leave the final position open so
-                    # extract_trade_pnls excludes it from the training score.
+                    # the closed-position extractor excludes it from the training score.
                     "flatten_on_stop": False,
                 },
                 start=(window.train_start - PREROLL).isoformat(),
@@ -260,7 +263,13 @@ def _optimize(
             ),
             closed_from=window.train_start,
         )
-        score = calmar_score(pnls, equity)
+        frame = stage1_trade_returns(
+            positions,
+            recipe,
+            stop_loss_pct_of(recipe, params),
+            closed_from=window.train_start,
+        )
+        score = calmar_score(stage1_account_returns(frame, recipe), 1.0)
         if score > best_score:
             best_score, best = score, params
     return best
@@ -283,6 +292,7 @@ def make_extract_fn(
     start_balance: float = 200_000.0,
     risk_per_trade_pct: float = 1.0,
     fixed_stops: dict[str, dict[str, Any]] | None = None,
+    broker: BrokerProfile | None = None,
 ) -> ExtractFn:
     """Default extractor for the portfolio stream.
 
@@ -301,6 +311,8 @@ def make_extract_fn(
     the tightest stop on the grid and is tail-capped to an untradeable one.
     """
 
+    active_broker = broker if broker is not None else standard_broker()
+
     def extract(market: str, overrides: dict[str, Any], train_months: int) -> pd.DataFrame:
         factory, csv, leverage = instrument_specs[market]
         # Net-of-cost portfolio: the broker profile applies slippage in-engine (spread +
@@ -312,7 +324,7 @@ def make_extract_fn(
             leverage=leverage,
             param_grid=param_grid,
             config_overrides=overrides,
-            broker=TTP_MARKETS,
+            broker=active_broker,
             start_balance=start_balance,
             risk_per_trade_pct=risk_per_trade_pct,
         )

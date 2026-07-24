@@ -3,7 +3,9 @@
 Strategy-agnostic library used across the research pipeline:
 
 - ``run_backtest(run_config)`` executes a ``BacktestRunConfig`` with a ``BacktestNode``;
-- ``extract_trade_pnls(run_config)`` runs it and returns the per-trade realized PnLs;
+- ``extract_closed_positions(run_config)`` runs it and retains the closed-position fields needed
+  to price realized costs such as swap;
+- ``extract_trade_pnls(run_config)`` is the gross-PnL compatibility view of that report;
 - ``load_config_module(path)`` loads a config module by path (it defines
   ``build_run_config(...) -> BacktestRunConfig`` and, for the synthetic demo, ``seed_catalog``).
 
@@ -60,12 +62,30 @@ def _parse_money(value: object) -> float:
 def extract_trade_pnls(
     run_config: BacktestRunConfig, *, closed_from: pd.Timestamp | None = None
 ) -> tuple[list[float], float]:
-    """Run the config and return (realized PnL per trade, starting equity).
+    """Run the config and return gross ``(realized PnL per trade, starting equity)``.
+
+    Use :func:`extract_closed_positions` when a caller needs timestamps, direction, prices, or
+    stop distance to apply a post-engine realized cost. Reducing the report to money here is
+    intentionally only the compatibility view.
+    """
+    closed, start_equity = extract_closed_positions(run_config, closed_from=closed_from)
+    pnls = (
+        [_parse_money(value) for value in closed["realized_pnl"]]
+        if "realized_pnl" in closed.columns
+        else []
+    )
+    return pnls, start_equity
+
+
+def extract_closed_positions(
+    run_config: BacktestRunConfig, *, closed_from: pd.Timestamp | None = None
+) -> tuple[pd.DataFrame, float]:
+    """Run the config and return ``(closed positions report, starting equity)``.
 
     A window can legitimately produce ZERO trades -- a variation with fewer signals (longer EMA),
     long-only skipping every short, or simply a quiet stretch on one market. NautilusTrader then
-    returns an empty positions report with no ``realized_pnl`` column, so guard for it: no trades is
-    an empty PnL list (a flat, zero-return window), never a crashed task.
+    returns an empty positions report with no ``realized_pnl`` column, so an empty report is a
+    flat, zero-return window, never a crashed task.
 
     ``closed_from`` keeps only positions that CLOSED at or after that moment (#14) -- a safety net
     for the READ-ONLY pre-roll, which warms the indicators without placing orders.
@@ -80,16 +100,13 @@ def extract_trade_pnls(
         node.run()
         engine = node.get_engines()[0]
         positions = engine.trader.generate_positions_report()
-        if "realized_pnl" in positions.columns:
-            closed = positions
-            if "ts_closed" in positions.columns:  # absent only when nothing ever closed
-                closed = closed[closed["ts_closed"].notna()]
-                if closed_from is not None:
-                    closed = closed[pd.to_datetime(closed["ts_closed"], utc=True) >= closed_from]
-            pnls = [_parse_money(v) for v in closed["realized_pnl"]]
-        else:
-            pnls = []
+        closed = positions
+        if "ts_closed" in positions.columns:  # absent only when nothing ever closed
+            closed = closed[closed["ts_closed"].notna()]
+            if closed_from is not None:
+                closed = closed[pd.to_datetime(closed["ts_closed"], utc=True) >= closed_from]
+        closed = closed.copy()
     finally:
         node.dispose()  # type: ignore[no-untyped-call]
     start_equity = _parse_money(run_config.venues[0].starting_balances[0])
-    return pnls, start_equity
+    return closed, start_equity
