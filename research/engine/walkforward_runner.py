@@ -28,8 +28,14 @@ import pandas as pd
 from core.data.mt5_csv import parse_mt5_timestamps, seeded_instruments
 from core.paths import REPO_ROOT
 
-from research.engine.config import extract_trade_pnls, load_config_module
-from research.engine.continuous import continuous_walk_forward, scoring_params
+from research.engine.config import extract_closed_positions, load_config_module
+from research.engine.continuous import (
+    continuous_walk_forward,
+    scoring_params,
+    stage1_account_returns,
+    stage1_trade_returns,
+    stop_loss_pct_of,
+)
 from research.engine.grid import expand_grid
 from research.engine.montecarlo import equity_curve, monte_carlo_paths, summarize
 from research.engine.walkforward import (
@@ -102,7 +108,7 @@ def run_walkforward(
         best_score = float("-inf")
         best_return = 0.0
         for params in combos:
-            pnls, start_equity = extract_trade_pnls(
+            positions, _start_equity = extract_closed_positions(
                 recipe.build_run_config(
                     # Same constant basis as the OOS run that grades these choices. Without it the
                     # training run sizes off compounding equity, so parameters are selected under
@@ -111,7 +117,7 @@ def run_walkforward(
                     {
                         **scoring_params(recipe, params),
                         # The engine boundary is not a strategy exit. Leave the final position
-                        # open so extract_trade_pnls excludes it from the training score.
+                        # open so the closed-position extractor excludes it from the score.
                         "flatten_on_stop": False,
                     },
                     start=(train_start - PREROLL).isoformat(),
@@ -120,12 +126,19 @@ def run_walkforward(
                 ),
                 closed_from=train_start,
             )
-            score = calmar_score(pnls, start_equity)
+            frame = stage1_trade_returns(
+                positions,
+                recipe,
+                stop_loss_pct_of(recipe, params),
+                closed_from=train_start,
+            )
+            net_returns = stage1_account_returns(frame, recipe)
+            score = calmar_score(net_returns, 1.0)
             if score > best_score:
                 best_score = score
                 best_params = params
-                curve = equity_curve(pnls, start_equity)
-                best_return = (float(curve[-1]) - start_equity) / start_equity
+                curve = equity_curve(net_returns, 1.0)
+                best_return = float(curve[-1]) - 1.0
         return best_params, best_return
 
     # #32: execution is ONE continuous run across the out-of-sample span, not one engine per
