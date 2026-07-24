@@ -44,7 +44,15 @@ from research.engine.walkforward_runner import _data_span
 # took, so re-booking ``r * risk_amount`` sizes at any flat risk regardless of which stream it came
 # from.
 _COLUMNS = [
-    "market", "ts_opened", "ts_closed", "pnl_base", "entry", "exit", "sl_pct", "is_long", "r"
+    "market",
+    "ts_opened",
+    "ts_closed",
+    "pnl_base",
+    "entry",
+    "exit",
+    "sl_pct",
+    "is_long",
+    "r",
 ]
 
 
@@ -211,9 +219,7 @@ def extract_market_trades(
     pos = run_continuous_oos(
         recipe, segments, span_start=span_start, span_end=span_end, params=pinned
     )
-    rows = timed_trades_from_report(
-        pos, market, stop_loss_lookup(segments), closed_from=span_start
-    )
+    rows = timed_trades_from_report(pos, market, stop_loss_lookup(segments), closed_from=span_start)
     # Positions were sized off the constant basis, so every trade's risk is the same
     # base_risk_frac * start_balance -- R divides by that, not by a walked compounding equity that
     # the flat-sized trades never traded against.
@@ -242,7 +248,12 @@ def _optimize(
                 # The same constant basis the OOS run uses, so selection and execution model one
                 # strategy. A compounding training run here would rank candidates by a scale the
                 # graded run does not share.
-                scoring_params(recipe, params),
+                {
+                    **scoring_params(recipe, params),
+                    # The engine boundary is not a strategy exit. Leave the final position open so
+                    # extract_trade_pnls excludes it from the training score.
+                    "flatten_on_stop": False,
+                },
                 start=(window.train_start - PREROLL).isoformat(),
                 end=window.train_end.isoformat(),
                 trade_from=window.train_start.isoformat(),
