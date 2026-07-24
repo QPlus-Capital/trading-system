@@ -20,7 +20,6 @@ Usage (optionally limit the number of windows for a quick check)::
     uv run python -m research.engine.walkforward_runner config/backtest/sweep_rsi_wpr_bb_xauusd.py 2
 """
 
-
 import sys
 from pathlib import Path
 from typing import Any
@@ -44,6 +43,7 @@ from research.engine.walkforward import (
 
 _REPO_ROOT = REPO_ROOT
 _TRAIN_MONTHS, _TEST_MONTHS, _STEP_MONTHS = 24, 6, 6
+
 
 def _data_span(csv_path: str | Path) -> tuple[pd.Timestamp, pd.Timestamp]:
     """Return (first, last) bar timestamp from an MT5 CSV (fast date-only read)."""
@@ -95,7 +95,6 @@ def run_walkforward(
         windows = windows[:max_windows]
     combos = expand_grid(recipe.PARAM_GRID)
 
-
     def optimize(
         train_start: pd.Timestamp, train_end: pd.Timestamp
     ) -> tuple[dict[str, Any], float]:
@@ -109,7 +108,12 @@ def run_walkforward(
                     # training run sizes off compounding equity, so parameters are selected under
                     # the scale-dependent behaviour the OOS run rejects, and WFE then compares a
                     # compounded in-sample return with a flat out-of-sample one.
-                    scoring_params(recipe, params),
+                    {
+                        **scoring_params(recipe, params),
+                        # The engine boundary is not a strategy exit. Leave the final position
+                        # open so extract_trade_pnls excludes it from the training score.
+                        "flatten_on_stop": False,
+                    },
                     start=(train_start - PREROLL).isoformat(),
                     end=train_end.isoformat(),
                     trade_from=train_start.isoformat(),
