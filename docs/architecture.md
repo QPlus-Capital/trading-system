@@ -66,7 +66,7 @@ flowchart TD
     CAT --> SWEEP["research/engine/characterize.py — net-of-swap walk-forward sweep<br/>every instrument × variation × training length<br/>(research/config/robustness.py; hours)"]
     SWEEP --> STUDY[/"study.csv + canonical pre-filter<br/>candidate daily/window streams"/]
 
-    STUDY --> S1["STAGE 1 — EDGE (stages/edge.py)<br/>Is the edge real and robust?<br/>Decision table + SPA/MCS evidence"]
+    STUDY --> S1["STAGE 1 — EDGE (stages/edge.py)<br/>Is the edge real and robust?<br/>Decision table + SPA/Romano-Wolf/MCS evidence"]
     S1 --> S2["STAGE 2 — SELECT (stages/select.py)<br/>Which variation, training length, markets?"]
     S2 --> SEL[/"selection.json"/]
 
