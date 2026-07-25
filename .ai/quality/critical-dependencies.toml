@@ -62,6 +62,7 @@ reason = "fixed endpoints, suppression, and bootstrap bounds govern forward-test
 source = "research/engine/spa.py"
 tests = [
   "tests/test_research_spa.py",
+  "tests/test_research_spa_calibration.py",
   "tests/test_research_stage_lineage.py",
 ]
 possibly_affected = [
