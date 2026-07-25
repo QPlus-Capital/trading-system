@@ -302,9 +302,7 @@ def test_pairwise_variance_tolerance_has_the_documented_scale(
     )
 
     exact_threshold_losses = np.asarray([[0.0, 0.0], [1.0, 0.0], [-1.0, 0.0]])
-    exact_scale = np.max(
-        (exact_threshold_losses[:, 0] - exact_threshold_losses[:, 1]) ** 2
-    )
+    exact_scale = np.max((exact_threshold_losses[:, 0] - exact_threshold_losses[:, 1]) ** 2)
     monkeypatch.setattr(
         mcs_module,
         "stationary_bootstrap_variances",
