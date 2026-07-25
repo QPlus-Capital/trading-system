@@ -143,6 +143,7 @@ def test_spa_analysis_uses_p04_selector_and_reports_all_sensitivities(
     returns = _noise_family(501, days=700, candidates=3)
     selected: list[Mapping[str, np.ndarray]] = []
     spa_calls: list[tuple[int, int, int]] = []
+    spa_inputs: list[Mapping[str, np.ndarray]] = []
 
     def fake_select(candidate_returns: Mapping[str, np.ndarray]) -> int:
         selected.append(candidate_returns)
@@ -155,6 +156,7 @@ def test_spa_analysis_uses_p04_selector_and_reports_all_sensitivities(
         replications: int,
         seed: int,
     ) -> SpaResult:
+        spa_inputs.append(_candidate_returns)
         spa_calls.append((mean_block_length, replications, seed))
         return SpaResult(block_length=mean_block_length, statistic=1.0, p_value=0.01)
 
@@ -164,6 +166,8 @@ def test_spa_analysis_uses_p04_selector_and_reports_all_sensitivities(
 
     assert len(selected) == 1
     assert set(selected[0]) == set(returns)
+    assert len(spa_inputs) == 5
+    assert all(set(candidate_returns) == set(returns) for candidate_returns in spa_inputs)
     assert analysis.selected_block_length == 7
     assert set(analysis.sensitivity) == set(SENSITIVITY_BLOCK_LENGTHS)
     assert analysis.replications == 99
@@ -269,13 +273,15 @@ def test_stationary_bootstrap_variance_matches_the_kernel_oracle() -> None:
 
 
 def test_consistent_recentering_uses_hansens_exact_threshold() -> None:
-    means = np.asarray([-0.2, -0.01, 0.1])
-    variances = np.ones(3)
+    sample_size = 100
+    boundary = -math.sqrt(2.0 * math.log(math.log(sample_size))) / math.sqrt(sample_size)
+    means = np.asarray([-0.2, boundary, -0.15, -0.01, 0.1])
+    variances = np.ones(5)
 
-    recentered, retained = _consistent_recentering(means, variances, 100)
+    recentered, retained = _consistent_recentering(means, variances, sample_size)
 
-    np.testing.assert_array_equal(retained, [True, False, False])
-    np.testing.assert_array_equal(recentered, [-0.2, 0.0, 0.0])
+    np.testing.assert_array_equal(retained, [True, True, False, False, False])
+    np.testing.assert_array_equal(recentered, [-0.2, boundary, 0.0, 0.0, 0.0])
 
 
 def test_studentized_spa_statistic_uses_the_recentered_family_maximum() -> None:
