@@ -24,6 +24,7 @@ import pytest
 from core.data.mt5_csv import SOURCE_MARKER
 from core.paths import REPO_ROOT
 from research.engine.candidate_returns import CANDIDATE_ARTIFACTS, candidate_definitions
+from research.engine.mcs import McsInputError, McsResult
 from research.engine.romano_wolf import RomanoWolfAnalysis, romano_wolf_test
 from research.engine.spa import SpaAnalysis, SpaResult
 from research.portfolio.resample import SENSITIVITY_BLOCK_LENGTHS
@@ -182,6 +183,64 @@ def test_a_clean_run_completes_stage_1_and_2(study: tuple[Path, Path, Path]) -> 
     sel = lineage.read_manifest(run_dir, "select")
     assert sel is not None
     assert sel.upstream["study.csv"] == lineage.sha256_file(run_dir / "study.csv")
+
+
+def test_edge_publishes_lineage_bound_mcs_evidence(
+    study: tuple[Path, Path, Path],
+) -> None:
+    _cfg, _src, run_dir = study
+
+    _run_edge(study)
+
+    assert (run_dir / "mcs.json").is_file()
+    manifest = lineage.read_manifest(run_dir, "edge")
+    assert manifest is not None
+    assert "mcs.json" in manifest.outputs
+    assert manifest.verify_outputs(run_dir) == []
+    result = McsResult.from_dict(json.loads((run_dir / "mcs.json").read_text(encoding="utf-8")))
+    assert result.candidate_count == 4
+    assert result.observation_count == 120
+    assert result.block_length == 1
+    assert result.replications == 99
+    assert result.seed == 20260719
+
+
+def test_edge_reports_mcs_failure_as_mcs_not_spa(
+    study: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        edge,
+        "mcs_test",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(McsInputError("pair variance")),
+    )
+
+    with pytest.raises(SystemExit, match="MCS.*pair variance"):
+        _run_edge(study)
+
+
+def test_stage_2_does_not_consume_mcs_membership_before_p08(
+    study: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _cfg, _src, run_dir = study
+
+    class NoEligibleMcs:
+        candidate_count = 4
+        surviving_candidates: tuple[str, ...] = ()
+        block_length = 1
+
+        @staticmethod
+        def to_dict() -> dict[str, object]:
+            return {"p07_boundary_fixture": "no candidate eligible"}
+
+    monkeypatch.setattr(edge, "mcs_test", lambda *_args, **_kwargs: NoEligibleMcs())
+
+    _run_edge(study)
+    select.main(["--run", str(run_dir)])
+
+    selection = json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))
+    assert selection["variation"] == "v_alpha"
 
 
 def test_candidate_streams_are_copied_byte_exactly_and_selection_cannot_rewrite_them(
