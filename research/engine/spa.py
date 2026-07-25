@@ -294,15 +294,12 @@ def _bootstrap_indices(
     seed: int,
 ) -> npt.NDArray[np.int64]:
     sampled = stationary_bootstrap(
-        np.arange(sample_size, dtype=np.float64),
+        np.arange(sample_size),
         mean_block_length,
         replications=replications,
         seed=seed,
     )
-    indices = sampled.astype(np.int64)
-    if not np.array_equal(sampled, indices):
-        raise RuntimeError("stationary bootstrap corrupted its integer row-index input")
-    return indices
+    return sampled.astype(np.int64)
 
 
 def _stationary_bootstrap_variances(
@@ -320,7 +317,50 @@ def _stationary_bootstrap_variances(
         weight += (lag / sample_size) * continuation_probability ** (sample_size - lag)
         covariance = np.sum(demeaned[:-lag] * demeaned[lag:], axis=0) / sample_size
         variances += 2.0 * weight * covariance
-    return np.asarray(variances, dtype=np.float64)
+    return variances
+
+
+def _consistent_recentering(
+    means: FloatArray,
+    variances: FloatArray,
+    sample_size: int,
+) -> tuple[FloatArray, npt.NDArray[np.bool_]]:
+    """Return Hansen's sample-dependent null means and inferior-candidate mask."""
+    cutoff_scale = math.sqrt(2.0 * math.log(math.log(sample_size)))
+    raw_cutoffs = -(np.sqrt(variances) / math.sqrt(sample_size)) * cutoff_scale
+    retain_negative = means <= raw_cutoffs
+    return np.where(retain_negative, means, 0.0), retain_negative
+
+
+def _studentized_spa_statistics(
+    means: FloatArray,
+    bootstrap_means: FloatArray,
+    variances: FloatArray,
+    sample_size: int,
+) -> tuple[FloatArray, float, FloatArray, npt.NDArray[np.bool_]]:
+    """Return candidate scores, observed maximum, bootstrap maxima, and recentering mask."""
+    root_n = math.sqrt(sample_size)
+    standard_errors = np.sqrt(variances)
+    observed_scores = root_n * means / standard_errors
+    observed_statistic = max(0.0, float(observed_scores.max()))
+    recentered_means, retain_negative = _consistent_recentering(
+        means,
+        variances,
+        sample_size,
+    )
+    bootstrap_null_means = bootstrap_means - means + recentered_means
+    bootstrap_scores = root_n * bootstrap_null_means / standard_errors
+    bootstrap_statistics = np.maximum(0.0, bootstrap_scores.max(axis=1))
+    return observed_scores, observed_statistic, bootstrap_statistics, retain_negative
+
+
+def _monte_carlo_p_value(
+    bootstrap_statistics: FloatArray,
+    observed_statistic: float,
+) -> float:
+    """Return the conservative finite Monte Carlo p-value, including ties."""
+    exceedances = int(np.count_nonzero(bootstrap_statistics >= observed_statistic))
+    return (exceedances + 1) / (len(bootstrap_statistics) + 1)
 
 
 def spa_test(
@@ -348,7 +388,6 @@ def spa_test(
     bootstrap_means = np.column_stack(
         tuple(matrix[indices, index].mean(axis=1) for index in range(matrix.shape[1]))
     )
-    root_n = math.sqrt(sample_size)
     variances = _stationary_bootstrap_variances(matrix, block_length)
     centered = matrix - means
     variance_scale = np.maximum(1.0, np.max(centered * centered, axis=0))
@@ -357,21 +396,15 @@ def spa_test(
         names_text = ", ".join(names[index] for index in np.flatnonzero(degenerate))
         raise SpaInputError(f"SPA long-run variance is zero for candidate(s): {names_text}")
 
-    standard_errors = np.sqrt(variances)
-    observed_scores = root_n * means / standard_errors
-    observed_statistic = max(0.0, float(observed_scores.max()))
-
-    cutoff_scale = math.sqrt(2.0 * math.log(math.log(sample_size)))
-    raw_cutoffs = -(standard_errors / root_n) * cutoff_scale
-    retain_negative = means <= raw_cutoffs
-    recentered_means = np.where(retain_negative, means, 0.0)
-    bootstrap_null_means = bootstrap_means - means + recentered_means
-    bootstrap_scores = root_n * bootstrap_null_means / standard_errors
-    bootstrap_statistics = np.maximum(0.0, bootstrap_scores.max(axis=1))
-    exceedances = int(np.count_nonzero(bootstrap_statistics >= observed_statistic))
-    # The add-one correction is the finite Monte Carlo test: it avoids an impossible reported
-    # zero probability and keeps the nominal gate conservative at limited replication counts.
-    p_value = (exceedances + 1) / (repetitions + 1)
+    observed_scores, observed_statistic, bootstrap_statistics, retain_negative = (
+        _studentized_spa_statistics(
+            means,
+            bootstrap_means,
+            variances,
+            sample_size,
+        )
+    )
+    p_value = _monte_carlo_p_value(bootstrap_statistics, observed_statistic)
 
     return SpaResult(
         block_length=block_length,

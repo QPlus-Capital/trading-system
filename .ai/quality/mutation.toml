@@ -88,7 +88,9 @@ mutant_patterns = [
     "research.engine.spa.x*SpaAnalysis*passes__mutmut_*",
     "research.engine.spa.x__bootstrap_indices__mutmut_*",
     "research.engine.spa.x__stationary_bootstrap_variances__mutmut_*",
-    "research.engine.spa.x_spa_test__mutmut_*",
+    "research.engine.spa.x__consistent_recentering__mutmut_*",
+    "research.engine.spa.x__studentized_spa_statistics__mutmut_*",
+    "research.engine.spa.x__monte_carlo_p_value__mutmut_*",
     "research.engine.spa.x_analyze_spa__mutmut_*",
 ]
 

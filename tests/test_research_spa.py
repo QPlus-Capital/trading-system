@@ -16,6 +16,11 @@ from research.engine.spa import (
     SpaAnalysis,
     SpaInputError,
     SpaResult,
+    _bootstrap_indices,
+    _consistent_recentering,
+    _monte_carlo_p_value,
+    _stationary_bootstrap_variances,
+    _studentized_spa_statistics,
     analyze_spa,
     load_candidate_family,
     spa_test,
@@ -137,12 +142,24 @@ def test_spa_analysis_uses_p04_selector_and_reports_all_sensitivities(
 ) -> None:
     returns = _noise_family(501, days=700, candidates=3)
     selected: list[Mapping[str, np.ndarray]] = []
+    spa_calls: list[tuple[int, int, int]] = []
 
     def fake_select(candidate_returns: Mapping[str, np.ndarray]) -> int:
         selected.append(candidate_returns)
         return 7
 
+    def fake_spa(
+        _candidate_returns: Mapping[str, np.ndarray],
+        *,
+        mean_block_length: int,
+        replications: int,
+        seed: int,
+    ) -> SpaResult:
+        spa_calls.append((mean_block_length, replications, seed))
+        return SpaResult(block_length=mean_block_length, statistic=1.0, p_value=0.01)
+
     monkeypatch.setattr("research.engine.spa.select_block_length", fake_select)
+    monkeypatch.setattr("research.engine.spa.spa_test", fake_spa)
     analysis = analyze_spa(returns, replications=99, seed=502)
 
     assert len(selected) == 1
@@ -151,6 +168,13 @@ def test_spa_analysis_uses_p04_selector_and_reports_all_sensitivities(
     assert set(analysis.sensitivity) == set(SENSITIVITY_BLOCK_LENGTHS)
     assert analysis.replications == 99
     assert analysis.seed == 502
+    assert spa_calls == [
+        (7, 99, 502),
+        (5, 99, 502),
+        (10, 99, 502),
+        (20, 99, 502),
+        (60, 99, 502),
+    ]
     assert DEFAULT_REPLICATIONS == 10_000
     assert DEFAULT_SEED == 20260719
 
@@ -191,6 +215,84 @@ def test_paired_stationary_bootstrap_preserves_identical_candidate_paths() -> No
     assert result.candidate_statistics is not None
     assert result.candidate_statistics["first"] == result.candidate_statistics["second"]
     assert result.recentered_candidates == ()
+
+
+def test_bootstrap_indices_forward_all_p04_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[np.ndarray, int, int, int]] = []
+
+    def fake_bootstrap(
+        values: np.ndarray,
+        mean_block_length: int,
+        *,
+        replications: int,
+        seed: int,
+    ) -> np.ndarray:
+        calls.append((values, mean_block_length, replications, seed))
+        return np.asarray([[2.0, 1.0, 0.0], [1.0, 2.0, 0.0]])
+
+    monkeypatch.setattr("research.engine.spa.stationary_bootstrap", fake_bootstrap)
+
+    indices = _bootstrap_indices(3, 7, replications=2, seed=11)
+
+    assert len(calls) == 1
+    np.testing.assert_array_equal(calls[0][0], np.arange(3))
+    assert calls[0][1:] == (7, 2, 11)
+    np.testing.assert_array_equal(indices, [[2, 1, 0], [1, 2, 0]])
+
+
+def test_stationary_bootstrap_variance_matches_the_kernel_oracle() -> None:
+    matrix = np.asarray(
+        [
+            [1.0, 2.0],
+            [2.0, -1.0],
+            [4.0, 3.0],
+            [0.0, -2.0],
+            [3.0, 1.0],
+        ]
+    )
+
+    np.testing.assert_allclose(
+        _stationary_bootstrap_variances(matrix, 2),
+        [1.005, 1.6640000000000004],
+        rtol=0.0,
+        atol=1e-14,
+    )
+    np.testing.assert_allclose(
+        _stationary_bootstrap_variances(matrix, 3),
+        [0.7041975308641972, 1.1541728395061734],
+        rtol=0.0,
+        atol=1e-14,
+    )
+
+
+def test_consistent_recentering_uses_hansens_exact_threshold() -> None:
+    means = np.asarray([-0.2, -0.01, 0.1])
+    variances = np.ones(3)
+
+    recentered, retained = _consistent_recentering(means, variances, 100)
+
+    np.testing.assert_array_equal(retained, [True, False, False])
+    np.testing.assert_array_equal(recentered, [-0.2, 0.0, 0.0])
+
+
+def test_studentized_spa_statistic_uses_the_recentered_family_maximum() -> None:
+    candidate_scores, observed, bootstrap, retained = _studentized_spa_statistics(
+        np.asarray([0.1, -0.5]),
+        np.asarray([[0.2, -0.1], [0.0, -0.3]]),
+        np.asarray([1.0, 4.0]),
+        100,
+    )
+
+    np.testing.assert_allclose(candidate_scores, [1.0, -2.5])
+    assert observed == 1.0
+    np.testing.assert_allclose(bootstrap, [1.0, 0.0])
+    np.testing.assert_array_equal(retained, [False, True])
+
+
+def test_monte_carlo_p_value_counts_ties_and_adds_one() -> None:
+    assert _monte_carlo_p_value(np.asarray([0.0, 1.0, 2.0]), 1.0) == 0.75
 
 
 def test_negative_only_family_cannot_pass_positive_edge_gate() -> None:
