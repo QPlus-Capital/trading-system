@@ -84,14 +84,12 @@ mutant_patterns = ["research.engine.continuous.x_window_returns__mutmut_*"]
 id = "spa-family-gate"
 path = "research/engine/spa.py"
 mutant_patterns = [
-    "research.engine.spa.x*SpaResult*__mutmut_*",
-    "research.engine.spa.x*SpaAnalysis*__mutmut_*",
-    "research.engine.spa.x__validated_matrix__mutmut_*",
+    "research.engine.spa.x*SpaResult*passes__mutmut_*",
+    "research.engine.spa.x*SpaAnalysis*passes__mutmut_*",
     "research.engine.spa.x__bootstrap_indices__mutmut_*",
     "research.engine.spa.x__stationary_bootstrap_variances__mutmut_*",
     "research.engine.spa.x_spa_test__mutmut_*",
     "research.engine.spa.x_analyze_spa__mutmut_*",
-    "research.engine.spa.x_load_candidate_family__mutmut_*",
 ]
 
 [[targets]]
