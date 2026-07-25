@@ -20,10 +20,14 @@ import json
 import shutil
 from pathlib import Path
 
+import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
-from research.engine.candidate_returns import CANDIDATE_ARTIFACTS
+from research.engine.candidate_returns import CANDIDATE_ARTIFACTS, candidate_definitions
 from research.engine.config import load_config_module
+from research.engine.spa import SpaAnalysis, SpaInputError, analyze_spa, load_candidate_family
+from research.portfolio.resample import DEFAULT_REPLICATIONS
 from research.stages import _runbook as rb
 from research.stages import lineage, universe
 
@@ -34,6 +38,7 @@ _RPD_TOLERANCE = 0.85  # structure gate: risk-adjusted return within 85% of the 
 # for the trial budget, and the study-level PBO must stay below its ceiling.
 _DSR_MIN = 0.90
 PBO_MAX = 0.20
+SPA_REPLICATIONS = DEFAULT_REPLICATIONS
 
 
 def candidate_sidecars(source_dir: Path) -> tuple[str, ...]:
@@ -46,6 +51,48 @@ def candidate_sidecars(source_dir: Path) -> tuple[str, ...]:
             f"{', '.join(missing)} -- re-run Stage 1"
         )
     return present
+
+
+def _spa_family(
+    source_dir: Path,
+    variations: object,
+    train_months: object,
+) -> dict[str, npt.NDArray[np.float64]]:
+    """Load the complete formal family that the study table declares."""
+    sidecars = candidate_sidecars(source_dir)
+    if not sidecars:
+        raise SystemExit(
+            "ABBRUCH: candidate_daily_returns.csv fehlt; P-05 kann nicht fail-closed pruefen. "
+            "Stage 1 mit P-03-Artefakten neu ausfuehren."
+        )
+    if not isinstance(variations, dict) or not isinstance(train_months, (list, tuple)):
+        raise SystemExit("ABBRUCH: Studienkonfiguration deklariert keine formale SPA-Familie.")
+    expected = {
+        definition.candidate_id for definition in candidate_definitions(variations, train_months)
+    }
+    try:
+        family = load_candidate_family(
+            source_dir,
+            expected_candidates=expected,
+            hash_paths=lineage.hash_paths,
+        )
+    except SpaInputError as exc:
+        raise SystemExit(f"ABBRUCH: ungueltige SPA-Kandidatenmatrix: {exc}") from exc
+    return dict(family.returns)
+
+
+def _print_spa(analysis: SpaAnalysis) -> None:
+    selected = analysis.selected
+    verdict = "ok" if analysis.passes else "NICHT BESTANDEN"
+    print(
+        f"  SPA Familien-Gate: p={selected.p_value:.4f} bei L={selected.block_length}; "
+        f"gesamt {verdict}"
+    )
+    sensitivity = ", ".join(
+        f"L={block_length}: {result.p_value:.4f}"
+        for block_length, result in sorted(analysis.sensitivity.items())
+    )
+    print(f"  SPA Abhaengigkeits-Sensitivitaet: {sensitivity}")
 
 
 def _study_csv_from(source: Path) -> Path:
@@ -222,6 +269,17 @@ def main(argv: list[str] | None = None) -> None:
     # PBO; carry those artifacts into the run and surface them. Older studies may lack them.
     source_dir = study_csv.parent
     dsr_by_variation, pbo = load_overfitting(source_dir)
+    try:
+        spa_analysis = analyze_spa(
+            _spa_family(
+                source_dir,
+                getattr(cfg, "VARIATIONS", None),
+                getattr(cfg, "TRAIN_MONTHS", None),
+            ),
+            replications=SPA_REPLICATIONS,
+        )
+    except (SpaInputError, ValueError) as exc:
+        raise SystemExit(f"ABBRUCH: SPA konnte nicht berechnet werden: {exc}") from exc
 
     min_pos = float(getattr(cfg, "SELECT_MIN_FRAC_POSITIVE", _MIN_FRAC_POSITIVE))
     rpd_tol = float(getattr(cfg, "SELECT_RPD_TOLERANCE", _RPD_TOLERANCE))
@@ -244,6 +302,7 @@ def main(argv: list[str] | None = None) -> None:
             if (source_dir / artifact).exists():
                 shutil.copyfile(source_dir / artifact, st.file(artifact))
         top.to_csv(st.file("edge_ranking.csv"), index=False)
+        st.save_json("spa.json", spa_analysis.to_dict())
     auto = _print_table(top)
     print(f"\n  Struktur-Gate: %pos>={min_pos:.0%} und Rend/DD>={rpd_tol:.0%} vom Besten.")
     if dsr_by_variation:
@@ -256,6 +315,7 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  PBO (Overfitting-Wahrsch. der Auswahl): {pbo:.2f} <= {PBO_MAX:.2f}? {verdict}")
     else:
         print("  PBO: n/a - Studie neu laufen lassen.")
+    _print_spa(spa_analysis)
     print(f"  Auto-Auswahl (hoechste Rendite unter eligible): {auto or '- (keine eligible)'}")
 
     select_auto = rb.cmd("select", "--run", str(run.path))

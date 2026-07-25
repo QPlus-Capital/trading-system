@@ -20,8 +20,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -53,15 +55,30 @@ _STAT_ROWS = [
 ]
 
 
+def selection_is_gated(selection: Mapping[str, Any]) -> bool:
+    """Re-check every cumulative selection gate before a deployable verdict."""
+    gates = selection.get("gates")
+    return bool(
+        isinstance(gates, Mapping)
+        and gates.get("eligible")
+        and gates.get("dsr_ok")
+        and gates.get("spa_ok")
+        and not selection.get("forced")
+    )
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 4 (VERDICT): accept/reject + full report.")
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument(
-        "--config", type=Path, default=None,
-        help="study config (default: the one Stage 1 recorded in the run)"
+        "--config",
+        type=Path,
+        default=None,
+        help="study config (default: the one Stage 1 recorded in the run)",
     )
     parser.add_argument(
-        "--allow-legacy-unverified", action="store_true",
+        "--allow-legacy-unverified",
+        action="store_true",
         help="read a run that predates artifact hashing. Such a run can be inspected but can "
         "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
     )
@@ -140,9 +157,7 @@ def main(argv: list[str] | None = None) -> None:
     # (--variation) pick bypassed them by definition and can never be a deployable PASS.
     sel_manifest = json.loads(sel_path.read_text(encoding="utf-8"))
     gates = sel_manifest.get("gates", {})
-    gated_pick = (
-        bool(gates.get("eligible")) and bool(gates.get("dsr_ok")) and not sel_manifest.get("forced")
-    )
+    gated_pick = selection_is_gated(sel_manifest)
     dsr_txt = "n/a" if gates.get("dsr") is None else f"{gates['dsr']:.2f}"
     # PBO is a STUDY-level verdict: a high value says the search itself is overfit, which no
     # single candidate's DSR can rescue. Selection now refuses such a study, and the verdict
@@ -170,7 +185,10 @@ def main(argv: list[str] | None = None) -> None:
         (pbo is not None and pbo <= PBO_MAX, f"PBO {pbo_txt} <= {PBO_MAX:.2f} (gemessen)"),
         (gates.get("dsr") is not None, f"DSR gemessen ({dsr_txt})"),
         (not contaminated, "Holdout ist echtes Out-of-Sample (nicht kontaminiert)"),
-        (gated_pick, f"Auswahl gegated (eligible + DSR {dsr_txt}, nicht erzwungen)"),
+        (
+            gated_pick,
+            f"Auswahl gegated (eligible + DSR {dsr_txt} + SPA, nicht erzwungen)",
+        ),
         (fixed_config is not None, "gegen die eingefrorene Live-Config geprueft (--fixed)"),
         (result.n_trades >= 30, f"genug Trades ({result.n_trades} >= 30)"),
         (not result.breached, "haelt die harten Konto-Limits (3%/Tag, 6% trailing)"),

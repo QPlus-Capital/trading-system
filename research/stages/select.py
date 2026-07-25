@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from research.engine.spa import SpaAnalysis, SpaInputError
 from research.stages import _runbook as rb
 from research.stages import lineage, universe
 from research.stages.edge import PBO_MAX
@@ -37,7 +38,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument("--variation", default=None, help="force this variation (default: auto)")
     parser.add_argument(
-        "--allow-legacy-unverified", action="store_true",
+        "--allow-legacy-unverified",
+        action="store_true",
         help="read a run that predates artifact hashing. Such a run can be inspected but can "
         "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
     )
@@ -65,6 +67,13 @@ def main(argv: list[str] | None = None) -> None:
         if run.file("overfitting.json").exists()
         else None
     )
+    try:
+        spa_payload = json.loads(run.require("spa.json", "edge").read_text(encoding="utf-8"))
+        if not isinstance(spa_payload, dict):
+            raise SpaInputError("SPA evidence must be an object")
+        spa = SpaAnalysis.from_dict(spa_payload)
+    except (OSError, UnicodeError, json.JSONDecodeError, SpaInputError) as exc:
+        raise SystemExit(f"\n  ABBRUCH: SPA-Evidenz ist ungueltig: {exc}") from exc
 
     if args.variation:
         variation = args.variation
@@ -72,6 +81,16 @@ def main(argv: list[str] | None = None) -> None:
         instruments = universe.select_universe(df, variation, train_months)
         how = f"erzwungen (--variation {variation})"
     else:
+        if not spa.passes:
+            sensitivity = ", ".join(
+                f"L={block_length}: p={result.p_value:.4f}"
+                for block_length, result in sorted(spa.sensitivity.items())
+            )
+            raise SystemExit(
+                f"\n  ABBRUCH: SPA Familien-Gate nicht bestanden "
+                f"(L={spa.selected.block_length}: p={spa.selected.p_value:.4f}; {sensitivity})."
+                "\n  Kein Kandidat ist nach Korrektur der gesamten Suche handelbar."
+            )
         # Study-level gate first (#2 / Codex P1): PBO measures whether the SEARCH ITSELF is
         # overfit. A high PBO invalidates every candidate at once, so no per-variation DSR can
         # rescue it -- checking only eligible+dsr_ok let an explicitly overfit study through.
@@ -91,14 +110,13 @@ def main(argv: list[str] | None = None) -> None:
         top = gated.sort_values("mean_ret", ascending=False).iloc[0]
         variation, train_months = str(top["variation"]), int(top["train_months"])
         instruments = universe.select_universe(df, variation, train_months)
-        how = "Auto (Rendite-first, Risiko- + DSR-Gate)"
+        how = "Auto (Rendite-first, Risiko- + DSR- + SPA-Gate)"
 
     # Manifest (#2): carry the gate evidence for the pick forward so the verdict can require it
     # rather than trusting that selection was gated at all. The ranking now holds one row per
     # (variation, train_months), so the manifest must cite the row actually picked.
-    row = ranking[
-        (ranking["variation"] == variation) & (ranking["train_months"] == train_months)
-    ]
+    row = ranking[(ranking["variation"] == variation) & (ranking["train_months"] == train_months)]
+    gates: dict[str, object]
     gates = (
         {
             "eligible": bool(row.iloc[0]["eligible"]),
@@ -109,6 +127,17 @@ def main(argv: list[str] | None = None) -> None:
         }
         if not row.empty
         else {"eligible": False, "dsr_ok": False, "dsr": None}
+    )
+    gates.update(
+        {
+            "spa_ok": spa.passes,
+            "spa_p_value": spa.selected.p_value,
+            "spa_block_length": spa.selected.block_length,
+            "spa_sensitivity": {
+                str(block_length): result.p_value
+                for block_length, result in sorted(spa.sensitivity.items())
+            },
+        }
     )
 
     with run.stage(
