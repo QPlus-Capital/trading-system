@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: f04ab09af2464575f7af509e32d9bf7900353ca0
+HEAD: eb5c5b17b49d74892c8d279f4822930f925d7a9d
 
 ## Commands
 
@@ -25,7 +25,7 @@ HEAD: f04ab09af2464575f7af509e32d9bf7900353ca0
 | `live-money-review` | `git diff --quiet origin/main -- core live monitoring` | 0 | GREEN: no live/order/account/signal/monitoring path changed and no live system was invoked |
 | `human-decision-escalation` | issue #44 pre-run decision audit | 0 | GREEN: Claude and Jan agreed `--trade-count-pct 3.0 --annual-return-pp 2.5` before the validation run |
 | `no-autonomous-merge` | branch/PR workflow audit | 0 | GREEN: ready-for-review PR only; Jan retains merge authority and merge/auto-merge remain prohibited |
-| `security` | exact `check-security` commands | 0 | GREEN: secret scan, dependency audit, and high-signal Ruff security checks passed |
+| `security` | `uvx --from rust-just just check-security` after GitPython 3.1.54 -> 3.1.56 | 0 | GREEN: secret scan clean, pip-audit reports no known vulnerabilities, and high-signal Ruff security checks passed |
 | `impact` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | GREEN: seven production files, fifteen direct tests, continuous-OOS critical escalation, and no unknown/dynamic edge |
 | `forbidden-artifacts` | `git diff --quiet origin/main -- research/regression.py reports` | 0 | GREEN: no validation report or regression artifact changed |
 | `methodology-validation` | regression of `run_20260724_1146` against `run_20260723_1540` with `--trade-count-pct 3.0 --annual-return-pp 2.5` | 0 | GREEN: every change is inside the pre-announced range; 1,348->1,348 deployed trades, 40.6%->40.6% annual return, and byte-identical full-history trades |
