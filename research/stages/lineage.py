@@ -158,9 +158,7 @@ def drifted_inputs(inputs: dict[str, Any]) -> list[str]:
         for name, was in sorted(recorded_catalog.items()):
             now = current.get(name, "absent")
             if now != was:
-                out.append(
-                    f"catalog bars for {name}\n      recorded {was}\n      actual   {now}"
-                )
+                out.append(f"catalog bars for {name}\n      recorded {was}\n      actual   {now}")
     return out
 
 
@@ -242,10 +240,7 @@ def read_provenance(study_dir: Path) -> tuple[dict[str, Any], dict[str, str]] | 
         name
         for name in CANDIDATE_ARTIFACTS
         if (study_dir / name).is_file()
-        and (
-            not isinstance(recorded.get(name), dict)
-            or "sha256" not in recorded.get(name, {})
-        )
+        and (not isinstance(recorded.get(name), dict) or "sha256" not in recorded.get(name, {}))
     ]
     if unbound_sidecars:
         raise ProvenanceMismatch(
@@ -290,6 +285,7 @@ def git_state() -> dict[str, str]:
     ``git diff`` is recorded: two runs from the same commit but different edits get different
     lineage, which is the honest answer.
     """
+
     def _run(*args: str) -> str:
         try:
             r = subprocess.run(
@@ -391,9 +387,7 @@ class StageManifest:
         return drifted_inputs(self.inputs)
 
 
-def _walk_inputs(
-    inputs: dict[str, Any], prefix: str = ""
-) -> list[tuple[str, dict[str, str]]]:
+def _walk_inputs(inputs: dict[str, Any], prefix: str = "") -> list[tuple[str, dict[str, str]]]:
     """Flatten a manifest's ``inputs`` into ``(label, entry)`` pairs.
 
     Handles the one level of nesting ``external_inputs`` produces (``raw_data``) and silently
@@ -746,9 +740,7 @@ def verify_run(run_path: Path, *, ignore: str | None = None) -> None:
         raise LineageError(f"the stages do not form one coherent run:\n    - {detail}")
 
 
-def verify_artifact(
-    run_path: Path, artifact: str, produced_by: str, *, allow_legacy: bool
-) -> str:
+def verify_artifact(run_path: Path, artifact: str, produced_by: str, *, allow_legacy: bool) -> str:
     """Hash of ``artifact``, after checking it is what its producing stage actually wrote.
 
     Fails closed when the producing stage never completed, when the file changed since, or when
@@ -881,7 +873,6 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool, ignore: str | None 
                 "  -> the hashes describe the files at ingestion time, not the ones that\n"
                 "     produced the study. Re-run the study, or ingest one that recorded its own."
             )
-
 
     # --config is a supported override, so nothing stopped Stage 3 from being finished with a
     # different study config than Stage 1 selected under. Each manifest then verifies perfectly on

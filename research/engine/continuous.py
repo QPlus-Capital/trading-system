@@ -386,9 +386,7 @@ def window_returns(
                 "-- post-ruin windows have no meaningful return and must not be averaged in"
             )
         inside = [
-            pnl
-            for ts, pnl in ordered
-            if start_ns <= ts and (ts <= end_ns if last else ts < end_ns)
+            pnl for ts, pnl in ordered if start_ns <= ts and (ts <= end_ns if last else ts < end_ns)
         ]
         out.append((sum(inside) / basis, [pnl / basis for pnl in inside]))
     return out
