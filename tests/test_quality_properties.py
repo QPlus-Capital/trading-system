@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 from live.risk_control import RiskController, RiskLimits, position_volume
 from monitoring.deals import deal_ledger, deals_to_trades, per_trade_risk
 from research.engine.continuous import window_returns
+from research.engine.spa import spa_test
 from research.engine.walkforward import WalkForwardWindow
 from research.forward_decision import EFFICACY_TRADES, daily_threshold, endpoint_reached
 from research.forward_test_registry import (
@@ -388,3 +389,25 @@ def test_forward_endpoint_requires_both_fixed_conditions(
         calendar_endpoint,
         EFFICACY_TRADES - Decimal(trade_shortfall),
     )
+
+
+@given(st.floats(min_value=0.1, max_value=100.0, allow_nan=False, allow_infinity=False))
+def test_spa_studentization_is_invariant_to_positive_units(scale: float) -> None:
+    generator = np.random.default_rng(20260725)
+    first = generator.normal(0.15, 1.0, 180)
+    second = generator.normal(0.0, 1.0, 180)
+    original = spa_test(
+        {"first": first, "second": second},
+        mean_block_length=5,
+        replications=99,
+        seed=20260719,
+    )
+    transformed = spa_test(
+        {"first": first * scale, "second": second},
+        mean_block_length=5,
+        replications=99,
+        seed=20260719,
+    )
+
+    assert transformed.statistic == pytest.approx(original.statistic, rel=1e-12, abs=1e-12)
+    assert transformed.p_value == original.p_value

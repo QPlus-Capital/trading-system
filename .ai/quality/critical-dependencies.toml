@@ -57,3 +57,32 @@ tests = [
 ]
 possibly_affected = []
 reason = "fixed endpoints, suppression, and bootstrap bounds govern forward-test efficacy"
+
+[[edges]]
+source = "research/engine/spa.py"
+tests = [
+  "tests/test_research_spa.py",
+  "tests/test_research_stage_lineage.py",
+]
+possibly_affected = [
+  "tests/test_research_stages.py",
+]
+reason = "the SPA family statistic and evidence gate govern whether Stage 2 may auto-select"
+
+[[edges]]
+source = "research/stages/edge.py"
+tests = [
+  "tests/test_research_stage_lineage.py",
+  "tests/test_research_stages.py",
+]
+possibly_affected = []
+reason = "the edge stage must execute SPA and lineage-bind its evidence before selection"
+
+[[edges]]
+source = "research/stages/select.py"
+tests = [
+  "tests/test_research_stage_lineage.py",
+  "tests/test_research_stages.py",
+]
+possibly_affected = []
+reason = "Stage 2 must fail closed on missing, invalid, or non-significant SPA evidence"

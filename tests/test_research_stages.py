@@ -2,6 +2,7 @@
 
 import importlib
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -129,3 +130,21 @@ def test_load_overfitting_missing_artifacts_returns_empty(tmp_path: Path) -> Non
 
     dsr, pbo = load_overfitting(tmp_path)
     assert dsr == {} and pbo is None
+
+
+def test_verdict_selection_gate_requires_spa_and_prior_candidate_gates() -> None:
+    from research.stages.verdict import selection_is_gated
+
+    clean: dict[str, Any] = {
+        "forced": False,
+        "gates": {"eligible": True, "dsr_ok": True, "spa_ok": True},
+    }
+    assert selection_is_gated(clean)
+    for field in ("eligible", "dsr_ok", "spa_ok"):
+        damaged = {
+            **clean,
+            "gates": {**clean["gates"], field: False},
+        }
+        assert not selection_is_gated(damaged)
+    assert not selection_is_gated({**clean, "forced": True})
+    assert not selection_is_gated({"forced": False, "gates": {}})

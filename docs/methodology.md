@@ -19,9 +19,9 @@ A backtest answers two independent questions. Conflating them is the root of mos
 | **A** | *Is the edge real, or did we overfit?* | López de Prado, Bailey; Harvey & Liu | Stages 0–4 (find & validate) |
 | **B** | *How large do we trade it, given a hard loss limit?* | Kelly; fractional Kelly; risk-constrained Kelly (Busseti–Ryu–Boyd); drawdown control | Stages 5–7 (size & decide) |
 
-Half of literature **A** is already implemented in this repo (deflated Sharpe, PBO, purged/embargoed
-CV, a trial-count budget). Literature **B** is where earlier work improvised (a hand-rolled tail cap
-and stress multiplier); this document puts it on the theory it approximates.
+Literature **A** is implemented with deflated Sharpe, PBO, Hansen's SPA, purged/embargoed CV, and a
+trial-count budget. Literature **B** is where earlier work improvised (a hand-rolled tail cap and
+stress multiplier); this document puts it on the theory it approximates.
 
 ---
 
@@ -73,7 +73,8 @@ by a drawdown-adjusted score (Calmar), scored on the unseen test window. Run for
 the component ablation (a 2ⁿ factorial of the confirmation filters) across **many instruments** and
 **several train-window lengths**.
 - **Metrics:** OOS return per window, OOS max drawdown, **return-per-drawdown** (ranking key),
-  % profitable windows, length-normalized WFE, **Deflated Sharpe Ratio (DSR)**, **PBO**.
+  % profitable windows, length-normalized WFE, **Deflated Sharpe Ratio (DSR)**, **PBO**, and
+  Hansen's one-sided studentized **Superior Predictive Ability (SPA)** family test.
 - **Literature:**
   - Purged & embargoed CV: López de Prado, *Advances in Financial Machine Learning* (2018) — prevents
     train/test leakage across the boundary.
@@ -81,11 +82,18 @@ the component ablation (a 2ⁿ factorial of the confirmation filters) across **m
     sample length. A high raw Sharpe is only lightly penalized; a marginal one heavily.
   - PBO via CSCV: Bailey, Borwein, López de Prado, Zhu (2015) — probability the in-sample winner
     underperforms the median out-of-sample.
+  - SPA: Hansen (2005) — tests whether any formal candidate has positive expected daily net R
+    against zero while accounting for the correlated search family. Consistent recentering keeps
+    clearly inferior candidates from diluting a genuine winner.
   - Multiple-testing haircut: Harvey & Liu (2015).
 - **Criterion:** a positive, generalizing edge — normalized WFE ≳ 0.5, **DSR significant after
   deflation by the full trial budget** (variations × train-lengths × per-window param-combos), PBO
-  low. Rank variants by return-per-drawdown across instruments; a component that lifts return but
-  wrecks drawdown does not win.
+  low, and the consistent SPA p-value at most 0.05. SPA uses the 36 formal
+  `(variation, train_months)` daily net-R streams, a zero benchmark, P-04's selected stationary
+  bootstrap length, 10,000 replications, and seed 20260719. The selected length and every fixed
+  5/10/20/60-day sensitivity must pass; missing or unreadable evidence fails closed. Rank variants
+  by return-per-drawdown across instruments; a component that lifts return but wrecks drawdown does
+  not win.
 
 ### Stage 3 — Selection: global structure + universe
 Pick the single **global** structure (variation + train length) that is most robust across markets
@@ -243,14 +251,14 @@ now guarded by tests — check these first when a number looks too good:
 |---|---|---|
 | 0 Hypothesis | *(doc / config)* | ⚠️ make explicit per strategy |
 | 1 Signal + costs | `core/strategies`, `core/broker`, `engine/recipe`, `core/data` | ✅ |
-| 2 Edge & robustness | `engine/` walk-forward, `engine/overfitting` (DSR/PBO + trial budget) | ✅ DSR/PBO computed and surfaced in Stage 1 (`stages/edge`) |
+| 2 Edge & robustness | `engine/` walk-forward, `engine/overfitting`, `engine/spa` | ✅ DSR/PBO plus SPA are computed and surfaced in Stage 1 (`stages/edge`) |
 | 3 Selection | `stages/universe`, `stages/edge`, `stages/select` | ✅ |
 | 4 Holdout | `portfolio/trades` (phase="holdout"), `stages/portfolio` | ✅ |
 | 5 Sizing | `portfolio/risk` (tail cap, `rck_fraction`/`KellyRisk`, policies), `portfolio/tail`, `portfolio/stress` | ✅ gap tail cap + risk-constrained Kelly (`kelly:beta`), sized on the full-history stream; the drawdown bound is Monte-Carlo-verified |
 | 6 Robustness | `engine/montecarlo`, per-year analysis, `portfolio/stress` | ✅ |
 | 7 Decision | *(the stress/return frontier)* | ⚠️ produced ad-hoc; to formalize into Stage-4 report output |
 
-**Done since:** Stage 0 hypothesis written; DSR + PBO surfaced in the staged CLI (Stage 2);
+**Done since:** Stage 0 hypothesis written; DSR, PBO, and SPA surfaced in the staged CLI (Stage 2);
 risk-constrained Kelly wired as the `kelly:beta` policy (Stage 5), sized on the full-history stream.
 **Nearest gap:** the efficient frontier (return vs risk-aversion β) as the formal Stage-7 report
 output -- currently produced ad-hoc; on real data the gap tail cap binds below RCK for every β, so
@@ -264,6 +272,8 @@ the sizing decision reduces to the tail cap with RCK confirming the trade-sequen
   Backtest Overfitting and Non-Normality* (2014). SSRN 2460551.
 - D. H. Bailey, J. Borwein, M. López de Prado, Q. J. Zhu, *The Probability of Backtest Overfitting*
   (2015). SSRN 2326253.
+- P. R. Hansen, *A Test for Superior Predictive Ability*, Journal of Business & Economic
+  Statistics 23(4), 365–380 (2005).
 - C. R. Harvey & Y. Liu, *Backtesting* (2015) and *Evaluating Trading Strategies* (2014). SSRN
   2345489 / 2474755.
 - M. López de Prado, *Advances in Financial Machine Learning* (Wiley, 2018) — the front-to-back

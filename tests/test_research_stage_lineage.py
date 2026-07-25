@@ -14,13 +14,17 @@ from __future__ import annotations
 
 import json
 import shutil
+from datetime import date, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 from core.data.mt5_csv import SOURCE_MARKER
 from core.paths import REPO_ROOT
-from research.engine.candidate_returns import CANDIDATE_ARTIFACTS
+from research.engine.candidate_returns import CANDIDATE_ARTIFACTS, candidate_definitions
+from research.engine.spa import SpaAnalysis, SpaResult
+from research.portfolio.resample import SENSITIVITY_BLOCK_LENGTHS
 from research.stages import _runbook as rb
 from research.stages import edge, lineage, portfolio, select, verdict
 
@@ -43,6 +47,7 @@ def _gbpusd() -> _Inst:
 
 INSTRUMENTS = [(_eurusd, "data/eurusd.csv", 1), (_gbpusd, "data/gbpusd.csv", 1)]
 VARIATIONS = {"v_alpha": {}, "v_beta": {}}
+TRAIN_MONTHS = [24, 36]
 PARAM_GRID: dict[str, list[float]] = {}
 """
 
@@ -74,7 +79,72 @@ def _write_study(study_dir: Path) -> Path:
         study_dir / "ranking.csv", index=False
     )
     (study_dir / "overfitting.json").write_text('{"pbo": 0.05, "n_trials": 4}', encoding="utf-8")
+    _write_candidate_artifacts(study_dir)
     return study_dir
+
+
+def _write_candidate_artifacts(study_dir: Path) -> None:
+    definitions = candidate_definitions(("v_alpha", "v_beta"), (24, 36))
+    names = [definition.candidate_id for definition in definitions]
+    generator = np.random.default_rng(20260725)
+    common = generator.normal(0.35, 0.1, 120)
+    frame: dict[str, object] = {
+        "loss_day": [
+            (date(2026, 1, 1) + timedelta(days=index)).isoformat() for index in range(120)
+        ]
+    }
+    for index, name in enumerate(names):
+        frame[name] = common + generator.normal(0.0, 0.01 + index * 0.001, 120)
+    pd.DataFrame(frame).to_csv(study_dir / CANDIDATE_ARTIFACTS[0], index=False)
+    (study_dir / CANDIDATE_ARTIFACTS[1]).write_text("window\nw1\n", encoding="utf-8")
+    (study_dir / CANDIDATE_ARTIFACTS[2]).write_text(
+        "candidate,market,window\n",
+        encoding="utf-8",
+    )
+    artifacts = lineage.hash_paths(
+        {name: study_dir / name for name in CANDIDATE_ARTIFACTS[:-1]}
+    )
+    (study_dir / CANDIDATE_ARTIFACTS[3]).write_text(
+        json.dumps(
+            {
+                "persisted_candidates": names,
+                "persisted_candidate_count": len(names),
+                "trial_counts": {"formal": len(names), "manual": 5, "total": len(names) + 5},
+                "artifacts": artifacts,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _fast_spa(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(edge, "SPA_REPLICATIONS", 99, raising=False)
+    monkeypatch.setattr(
+        edge,
+        "analyze_spa",
+        lambda *_args, **_kwargs: _spa_analysis(0.01),
+        raising=False,
+    )
+
+
+def _spa_analysis(p_value: float, *, failing_block: int | None = None) -> SpaAnalysis:
+    sensitivity = {
+        block_length: SpaResult(
+            block_length=block_length,
+            statistic=2.0,
+            p_value=0.2 if block_length == failing_block else p_value,
+        )
+        for block_length in SENSITIVITY_BLOCK_LENGTHS
+    }
+    return SpaAnalysis(
+        selected=SpaResult(block_length=1, statistic=2.0, p_value=p_value),
+        sensitivity=sensitivity,
+        replications=99,
+        seed=20260719,
+        candidate_count=4,
+        observation_count=120,
+    )
 
 
 @pytest.fixture
@@ -108,6 +178,8 @@ def test_a_clean_run_completes_stage_1_and_2(study: tuple[Path, Path, Path]) -> 
     assert lineage.read_manifest(run_dir, "edge").run_id == (  # type: ignore[union-attr]
         lineage.read_manifest(run_dir, "select").run_id  # type: ignore[union-attr]
     )
+    assert (run_dir / "spa.json").is_file()
+    assert json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))["gates"]["spa_ok"]
     # Stage 2 recorded the hash Stage 1's study.csv had when it READ it.
     sel = lineage.read_manifest(run_dir, "select")
     assert sel is not None
@@ -119,11 +191,7 @@ def test_candidate_streams_are_copied_byte_exactly_and_selection_cannot_rewrite_
 ) -> None:
     """The streams are pre-filter evidence, not an output the universe screen may improve."""
     _cfg, source, run_dir = study
-    expected: dict[str, bytes] = {}
-    for index, name in enumerate(CANDIDATE_ARTIFACTS):
-        payload = f"artifact-{index}\n".encode()
-        (source / name).write_bytes(payload)
-        expected[name] = payload
+    expected = {name: (source / name).read_bytes() for name in CANDIDATE_ARTIFACTS}
 
     _run_edge(study)
     assert {name: (run_dir / name).read_bytes() for name in CANDIDATE_ARTIFACTS} == expected
@@ -134,6 +202,58 @@ def test_candidate_streams_are_copied_byte_exactly_and_selection_cannot_rewrite_
     manifest = lineage.read_manifest(run_dir, "edge")
     assert manifest is not None
     assert set(CANDIDATE_ARTIFACTS) <= set(manifest.outputs)
+
+
+def test_edge_fails_closed_when_candidate_daily_matrix_is_missing(
+    study: tuple[Path, Path, Path],
+) -> None:
+    _cfg, source, _run_dir = study
+    for name in CANDIDATE_ARTIFACTS:
+        (source / name).unlink()
+
+    with pytest.raises(SystemExit, match="candidate_daily_returns"):
+        _run_edge(study)
+
+
+def test_auto_selection_fails_when_any_spa_length_fails(
+    study: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _cfg, _source, run_dir = study
+    monkeypatch.setattr(
+        edge,
+        "analyze_spa",
+        lambda *_args, **_kwargs: _spa_analysis(0.01, failing_block=20),
+    )
+    _run_edge(study)
+
+    with pytest.raises(SystemExit, match="SPA"):
+        select.main(["--run", str(run_dir)])
+
+
+def test_forced_selection_records_failed_spa_as_exploratory(
+    study: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _cfg, _source, run_dir = study
+    monkeypatch.setattr(edge, "analyze_spa", lambda *_args, **_kwargs: _spa_analysis(0.2))
+    _run_edge(study)
+
+    select.main(["--run", str(run_dir), "--variation", "v_alpha"])
+
+    selection = json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))
+    assert selection["forced"]
+    assert not selection["gates"]["spa_ok"]
+    assert "erzwungen" in selection["how"]
+
+
+def test_selection_requires_verified_spa_evidence(study: tuple[Path, Path, Path]) -> None:
+    _cfg, _source, run_dir = study
+    _run_edge(study)
+    (run_dir / "spa.json").unlink()
+
+    with pytest.raises(SystemExit, match="spa.json"):
+        select.main(["--run", str(run_dir)])
 
 
 # ------------------------------------------------------------------ tampering with artifacts
