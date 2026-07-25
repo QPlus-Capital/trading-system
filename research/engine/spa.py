@@ -361,6 +361,20 @@ def stationary_bootstrap_variances(
     return _stationary_bootstrap_variances(matrix, mean_block_length)
 
 
+def studentized_candidate_scores(
+    means: FloatArray,
+    bootstrap_means: FloatArray,
+    variances: FloatArray,
+    sample_size: int,
+) -> tuple[FloatArray, FloatArray]:
+    """Return observed and zero-centered bootstrap scores under the shared variance."""
+    root_n = math.sqrt(sample_size)
+    standard_errors = np.sqrt(variances)
+    observed_scores = root_n * means / standard_errors
+    bootstrap_scores = root_n * (bootstrap_means - means) / standard_errors
+    return observed_scores, bootstrap_scores
+
+
 def studentized_bootstrap_sample(
     candidate_returns: Mapping[str, npt.ArrayLike],
     *,
@@ -394,10 +408,12 @@ def studentized_bootstrap_sample(
         names_text = ", ".join(names[index] for index in np.flatnonzero(degenerate))
         raise SpaInputError(f"SPA long-run variance is zero for candidate(s): {names_text}")
 
-    root_n = math.sqrt(sample_size)
-    standard_errors = np.sqrt(variances)
-    observed_scores = root_n * means / standard_errors
-    bootstrap_scores = root_n * (bootstrap_means - means) / standard_errors
+    observed_scores, bootstrap_scores = studentized_candidate_scores(
+        means,
+        bootstrap_means,
+        variances,
+        sample_size,
+    )
     return StudentizedBootstrapSample(
         names=names,
         means=means,

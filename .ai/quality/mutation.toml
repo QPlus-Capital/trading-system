@@ -90,7 +90,7 @@ mutant_patterns = [
     "research.engine.spa.x__stationary_bootstrap_variances__mutmut_*",
     "research.engine.spa.x_stationary_bootstrap_indices__mutmut_*",
     "research.engine.spa.x_stationary_bootstrap_variances__mutmut_*",
-    "research.engine.spa.x_studentized_bootstrap_sample__mutmut_*",
+    "research.engine.spa.x_studentized_candidate_scores__mutmut_*",
     "research.engine.spa.x__consistent_recentering__mutmut_*",
     "research.engine.spa.x__studentized_spa_statistics__mutmut_*",
     "research.engine.spa.x__monte_carlo_p_value__mutmut_*",
@@ -103,7 +103,7 @@ path = "research/engine/romano_wolf.py"
 mutant_patterns = [
     "research.engine.romano_wolf.x*RomanoWolfCandidate*eligible__mutmut_*",
     "research.engine.romano_wolf.x*RomanoWolfAnalysis*eligible_candidates__mutmut_*",
-    "research.engine.romano_wolf.x__stepdown_adjusted_p_values__mutmut_*",
+    "research.engine.romano_wolf.x__stepdown_p_values_from_ordered_scores__mutmut_*",
     "research.engine.romano_wolf.x_romano_wolf_test__mutmut_*",
 ]
 
