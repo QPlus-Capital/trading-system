@@ -239,6 +239,7 @@ def test_bootstrap_indices_forward_all_p04_parameters(
     assert len(calls) == 1
     np.testing.assert_array_equal(calls[0][0], np.arange(3))
     assert calls[0][1:] == (7, 2, 11)
+    assert indices.dtype == np.int64
     np.testing.assert_array_equal(indices, [[2, 1, 0], [1, 2, 0]])
 
 
