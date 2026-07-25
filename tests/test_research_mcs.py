@@ -8,6 +8,7 @@ from decimal import Decimal
 
 import numpy as np
 import pytest
+import research.engine.mcs as mcs_module
 import research.engine.spa as spa_module
 from research.engine.mcs import (
     MCS_ALPHA,
@@ -16,6 +17,7 @@ from research.engine.mcs import (
     McsCandidate,
     McsInputError,
     McsResult,
+    _pairwise_scores,
     _range_decision,
     mcs_test,
 )
@@ -103,6 +105,201 @@ def test_range_elimination_breaks_exact_ties_by_candidate_identifier() -> None:
     )
 
     assert decision.eliminated == "alpha"
+
+
+def test_range_decision_validates_every_boundary_fail_closed() -> None:
+    names = ("first", "second")
+    observed = np.zeros((2, 2), dtype=np.float64)
+    bootstrap = np.zeros((2, 2, 2), dtype=np.float64)
+
+    invalid_cases = [
+        (
+            names,
+            np.zeros((2, 3), dtype=np.float64),
+            bootstrap,
+            (0, 1),
+            "MCS observed pair scores have the wrong shape",
+        ),
+        (
+            names,
+            observed,
+            np.zeros((2, 2), dtype=np.float64),
+            (0, 1),
+            "MCS bootstrap pair scores have the wrong shape",
+        ),
+        (
+            names,
+            observed,
+            np.zeros((2, 2, 3), dtype=np.float64),
+            (0, 1),
+            "MCS bootstrap pair scores have the wrong shape",
+        ),
+        (
+            names,
+            observed,
+            np.zeros((1, 2, 2), dtype=np.float64),
+            (0, 1),
+            "MCS bootstrap pair scores have the wrong shape",
+        ),
+        (
+            names,
+            observed,
+            bootstrap,
+            (0,),
+            "MCS range decision requires at least two unique candidates",
+        ),
+        (
+            names,
+            observed,
+            bootstrap,
+            (0, 0),
+            "MCS range decision requires at least two unique candidates",
+        ),
+        (
+            names,
+            observed,
+            bootstrap,
+            (-1, 0),
+            "MCS active candidate index is out of range",
+        ),
+        (
+            names,
+            observed,
+            bootstrap,
+            (0, 2),
+            "MCS active candidate index is out of range",
+        ),
+    ]
+    for case_names, case_observed, case_bootstrap, active, message in invalid_cases:
+        with pytest.raises(McsInputError) as caught:
+            _range_decision(
+                case_names,
+                case_observed,
+                case_bootstrap,
+                active=active,
+            )
+        assert str(caught.value) == message
+
+    nonfinite_observed = observed.copy()
+    nonfinite_observed[0, 1] = np.nan
+    with pytest.raises(McsInputError) as observed_error:
+        _range_decision(names, nonfinite_observed, bootstrap, active=(0, 1))
+    assert str(observed_error.value) == "MCS pair scores must be finite"
+
+    nonfinite_bootstrap = bootstrap.copy()
+    nonfinite_bootstrap[0, 0, 1] = np.inf
+    with pytest.raises(McsInputError) as bootstrap_error:
+        _range_decision(names, observed, nonfinite_bootstrap, active=(0, 1))
+    assert str(bootstrap_error.value) == "MCS pair scores must be finite"
+
+    two_replication_result = _range_decision(names, observed, bootstrap, active=(0, 1))
+    assert two_replication_result.p_value == 1.0
+
+
+def test_pairwise_scores_match_an_independent_studentization_oracle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    losses = np.asarray(
+        [
+            [0.0, 0.0, 3.0],
+            [1.0, 0.0, 2.0],
+            [2.0, 0.0, 1.0],
+            [3.0, 0.0, 0.0],
+        ]
+    )
+    bootstrap_means = np.asarray([[2.0, 1.0, 4.0], [1.0, 2.0, 0.0]])
+    monkeypatch.setattr(
+        mcs_module,
+        "stationary_bootstrap_variances",
+        lambda values, block_length: np.full(values.shape[1], 4.0),
+    )
+
+    observed, bootstrap = _pairwise_scores(
+        ("a", "b", "c"),
+        losses,
+        bootstrap_means,
+        5,
+    )
+
+    np.testing.assert_array_equal(
+        observed,
+        np.asarray(
+            [
+                [0.0, 1.5, 0.0],
+                [-1.5, 0.0, -1.5],
+                [0.0, 1.5, 0.0],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(
+        bootstrap,
+        np.asarray(
+            [
+                [[0.0, -0.5, -2.0], [0.5, 0.0, -1.5], [2.0, 1.5, 0.0]],
+                [[0.0, -2.5, 1.0], [2.5, 0.0, 3.5], [-1.0, -3.5, 0.0]],
+            ]
+        ),
+    )
+
+
+def test_identical_first_pair_does_not_skip_later_pairs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    losses = np.asarray(
+        [
+            [0.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [2.0, 2.0, 0.0],
+            [3.0, 3.0, 0.0],
+        ]
+    )
+    bootstrap_means = np.asarray([[2.0, 2.0, 1.0], [1.0, 1.0, 2.0]])
+    monkeypatch.setattr(
+        mcs_module,
+        "stationary_bootstrap_variances",
+        lambda values, block_length: np.asarray([0.0, 4.0, 4.0]),
+    )
+
+    observed, bootstrap = _pairwise_scores(
+        ("identical_a", "identical_b", "different"),
+        losses,
+        bootstrap_means,
+        5,
+    )
+
+    assert observed[0, 1] == 0.0
+    assert observed[0, 2] == 1.5
+    assert observed[1, 2] == 1.5
+    np.testing.assert_array_equal(bootstrap[:, 0, 2], np.asarray([-0.5, -2.5]))
+    np.testing.assert_array_equal(bootstrap[:, 1, 2], np.asarray([-0.5, -2.5]))
+
+
+def test_pairwise_variance_tolerance_has_the_documented_scale(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    epsilon = np.finfo(np.float64).eps
+    losses = np.asarray([[0.0, 0.0], [1.0, 0.0], [0.0, 0.0]])
+    bootstrap_means = np.asarray([[0.0, 0.0], [0.0, 0.0]])
+
+    monkeypatch.setattr(
+        mcs_module,
+        "stationary_bootstrap_variances",
+        lambda values, block_length: np.asarray([1.5 * epsilon]),
+    )
+    observed, _ = _pairwise_scores(("left", "right"), losses, bootstrap_means, 5)
+    assert observed[0, 1] > 0.0
+
+    scaled_losses = losses * 4.0
+    monkeypatch.setattr(
+        mcs_module,
+        "stationary_bootstrap_variances",
+        lambda values, block_length: np.asarray([2.0 * epsilon]),
+    )
+    with pytest.raises(McsInputError) as caught:
+        _pairwise_scores(("left", "right"), scaled_losses, bootstrap_means, 5)
+    assert str(caught.value) == (
+        "MCS long-run variance is zero for unequal candidate pair 'left', 'right'"
+    )
 
 
 def test_one_dominant_candidate_reduces_to_a_singleton() -> None:
@@ -245,6 +442,32 @@ def test_mcs_uses_production_defaults_and_exact_membership_boundary() -> None:
 
     assert at_boundary.in_mcs
     assert not below_boundary.in_mcs
+
+
+def test_mcs_api_validation_is_exact_and_two_replications_are_valid() -> None:
+    valid = {
+        "first": np.asarray([0.1, -0.2, 0.3]),
+        "second": np.asarray([0.0, -0.1, 0.2]),
+    }
+    invalid_cases = [
+        ({}, 1, 2, 1, "MCS requires at least one candidate"),
+        (valid, 0, 2, 1, "MCS mean_block_length must be an integer of at least 1"),
+        (valid, 1, 1, 1, "MCS replications must be an integer of at least 2"),
+        (valid, 1, 2, True, "MCS seed must be an integer"),
+        (valid, 1, 2, "1", "MCS seed must be an integer"),
+    ]
+    for returns, block_length, replications, seed, message in invalid_cases:
+        with pytest.raises(McsInputError) as caught:
+            mcs_test(
+                returns,
+                mean_block_length=block_length,
+                replications=replications,
+                seed=seed,  # type: ignore[arg-type]
+            )
+        assert str(caught.value) == message
+
+    result = mcs_test(valid, mean_block_length=1, replications=2, seed=1)
+    assert result.replications == 2
 
 
 def _valid_payload() -> dict[str, object]:
