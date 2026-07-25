@@ -123,6 +123,10 @@ def main(argv: list[str] | None = None) -> None:
         if dropped:
             print(f"\n  [fixed] ohne feste Stops im Live-Config, ausgelassen: {', '.join(dropped)}")
 
+    # Freeze one standard profile for both any training re-optimization and the realized swap
+    # attached below. Loading the snapshot twice could split one Stage-3 run across two files if
+    # an operator refreshed rates during the hours-long extraction.
+    broker = standard_broker()
     extract_fn = make_extract_fn(
         specs,
         test_months=int(getattr(cfg, "TEST_MONTHS", 6)),
@@ -133,6 +137,7 @@ def main(argv: list[str] | None = None) -> None:
         start_balance=account.start_balance,  # size the backtests against the REAL account
         risk_per_trade_pct=account.base_risk_frac * 100.0,
         fixed_stops=fixed_stops,
+        broker=broker,
     )
     overrides = cfg.VARIATIONS[sel["variation"]]
 
@@ -157,7 +162,6 @@ def main(argv: list[str] | None = None) -> None:
         )
     # Carry the real TTP swap as a SEPARATE column (not netted into r): a realized cost booked at
     # close, so downstream returns/drawdown net it while the mark-to-market stays on gross price R.
-    broker = standard_broker()
     trades["swap_r"] = 0.0
     for market, grp in trades.groupby("market"):
         if (spec := broker.swap_spec(str(market))) is not None:

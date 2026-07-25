@@ -16,7 +16,7 @@ from research.portfolio import trades
 
 class _CapturingRecipe:
     CSV_PATH = "unused.csv"
-    PARAM_GRID = {"candidate": [1, 2]}
+    PARAM_GRID = {"stop_loss_pct": [1.0, 2.0]}
     start_balance = Decimal("100000")
 
     def __init__(self) -> None:
@@ -46,24 +46,24 @@ def _window() -> WalkForwardWindow:
     )
 
 
-def _successful_training_run(
+def _empty_training_report(
     _config: object,
     *,
     closed_from: pd.Timestamp | None = None,
-) -> tuple[list[float], float]:
+) -> tuple[pd.DataFrame, float]:
     assert closed_from == _window().train_start
-    return [100.0], 100_000.0
+    return pd.DataFrame(), 100_000.0
 
 
 def test_portfolio_training_configs_do_not_flatten_on_stop(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     recipe = _CapturingRecipe()
-    monkeypatch.setattr(trades, "extract_trade_pnls", _successful_training_run)
+    monkeypatch.setattr(trades, "extract_closed_positions", _empty_training_report)
 
     trades._optimize(
         cast(SweepRecipe, recipe),
-        [{"candidate": 1}, {"candidate": 2}],
+        [{"stop_loss_pct": 1.0}, {"stop_loss_pct": 2.0}],
         _window(),
     )
 
@@ -91,7 +91,11 @@ def test_walkforward_training_configs_do_not_flatten_on_stop(
         "split_windows",
         lambda windows, _end, _holdout_months: (windows, []),
     )
-    monkeypatch.setattr(walkforward_runner, "extract_trade_pnls", _successful_training_run)
+    monkeypatch.setattr(
+        walkforward_runner,
+        "extract_closed_positions",
+        _empty_training_report,
+    )
 
     def exercise_training_optimizer(
         _recipe: Any,

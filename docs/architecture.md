@@ -63,7 +63,7 @@ flowchart TD
     CSV["MT5 CSV export<br/>(H4 bars per market)"] --> INGEST["core/data/mt5_csv.py"]
     INGEST --> CAT[("data/ Parquet catalog<br/>(never committed)")]
 
-    CAT --> SWEEP["research/engine/characterize.py — walk-forward sweep<br/>every instrument × variation × training length<br/>(research/config/robustness.py; hours)"]
+    CAT --> SWEEP["research/engine/characterize.py — net-of-swap walk-forward sweep<br/>every instrument × variation × training length<br/>(research/config/robustness.py; hours)"]
     SWEEP --> STUDY[/"study.csv"/]
 
     STUDY --> S1["STAGE 1 — EDGE (stages/edge.py)<br/>Is the edge real and robust?<br/>Decision table + eligibility gates"]
@@ -81,14 +81,14 @@ Cost model in research (matches the live TTP account):
 
 - **In-engine** (during every backtest): spread, commission, slippage from the
   broker profile — `broker.standard_broker()` = TTP Markets.
-- **After extraction**: overnight **swap** from the pulled snapshot
-  (`core/config/broker/ttp_markets_swaps.json`) as a separate `swap_r` column per trade.
-  `r` stays gross; swap is booked as a **realized** cost at close and never
-  marked to market (see `portfolio/curves.py` — this split keeps the
-  mark-to-market drawdown stable).
-- The **study sweep is deliberately swap-free**: swap is near-uniform across
-  variations, so it cannot change the selection — the money-true numbers come
-  from stages 3–4.
+- **After each Stage-1 and Stage-3 trade extraction**: overnight **swap** from the pulled snapshot
+  (`core/config/broker/ttp_markets_swaps.json`) is attached as a separate `swap_r` value per trade.
+  `r` stays gross; `net_r = r + swap_r` is the sole statistical selection stream. Swap is booked
+  as a **realized** cost at close and never marked to market (see `portfolio/curves.py` — this split
+  keeps the mark-to-market drawdown stable).
+- The study loads one `standard_broker()` snapshot before dispatching workers and binds its content
+  hash into study provenance. Training scores, OOS returns, drawdown ranking, WFE, Sharpe, DSR, and
+  PBO therefore all see the same net trade stream.
 
 ### How a backtest actually executes (the nesting)
 

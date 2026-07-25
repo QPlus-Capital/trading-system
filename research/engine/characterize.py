@@ -43,7 +43,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from core.broker import TTP_MARKETS
+from core.broker import BrokerProfile, standard_broker
 from core.data.mt5_csv import seeded_instruments
 from core.paths import REPO_ROOT
 
@@ -87,11 +87,11 @@ def _run_task(
     holdout_months: int,
     embargo_days: int,
     start_balance: float,
+    broker: BrokerProfile | None = None,
 ) -> dict[str, Any]:
     """Walk-forward one (instrument, variation) and return its OOS metrics + return series."""
-    # Net-of-cost selection: the TTP profile applies slippage in-engine (spread + commission are
-    # already in via the bid/ask bars + fees), so the variation ranking + DSR reflect what live
-    # nets. Swap (~uniform across variations) is validated net separately in the equity report.
+    # Net-of-cost selection: spread, commission, and slippage are in-engine; every closed trade
+    # receives the standard broker snapshot's realized swap before any score is calculated.
     #
     # ``start_balance`` is the account the whole pipeline runs on, not the recipe's 200k default.
     # Scoring sizes off this constant (:func:`research.engine.continuous.scoring_params`) and it is
@@ -103,7 +103,7 @@ def _run_task(
         leverage=leverage,
         param_grid=param_grid,
         config_overrides=overrides,
-        broker=TTP_MARKETS,
+        broker=broker if broker is not None else standard_broker(),
         start_balance=start_balance,
     )
     # Selection runs on the pre-holdout data only, so the reserved slice stays untouched (F2).
@@ -427,6 +427,13 @@ def main(argv: list[str] | None = None) -> None:
             "usage: python -m research.engine.characterize <study_config.py> [max_windows]"
         )
     cfg = load_config_module(Path(args[0]))
+    # Freeze and hash the cost input before any worker starts. Every task receives this same
+    # in-memory profile, so a snapshot refresh during the long study cannot split candidates
+    # across different rates.
+    from research.stages import lineage
+
+    study_inputs = lineage.external_inputs(Path(args[0]), cfg, catalog=False)
+    broker = standard_broker()
     max_windows = int(args[1]) if len(args) > 1 else None
     workers = int(getattr(cfg, "MAX_WORKERS", 4))
     train_cfg = getattr(cfg, "TRAIN_MONTHS", 24)
@@ -459,10 +466,11 @@ def main(argv: list[str] | None = None) -> None:
     # The catalog is complete and the backtests are about to read it. Record its state HERE, not
     # after the sweep: another seeder touching the shared catalog during these hours would make a
     # post-sweep snapshot describe bars this study's tasks never saw.
-    from research.stages import lineage
+    catalog_at_seed = lineage.catalog_inputs(sorted(sources))
     (out_dir / "_catalog_at_seed.json").write_text(
-        json.dumps(lineage.catalog_inputs(sorted(sources)), indent=2), encoding="utf-8"
+        json.dumps(catalog_at_seed, indent=2), encoding="utf-8"
     )
+    study_inputs = {**study_inputs, **catalog_at_seed}
 
     account_balance = account_balance_of(cfg)
     tasks = [
@@ -481,6 +489,7 @@ def main(argv: list[str] | None = None) -> None:
             holdout_m,
             embargo_d,
             account_balance,
+            broker,
         )
         for factory, csv, leverage in cfg.INSTRUMENTS
         for name, overrides in cfg.VARIATIONS.items()
@@ -526,6 +535,9 @@ def main(argv: list[str] | None = None) -> None:
     budget = study_trial_budget(cfg)
     print(f"\nmultiple-testing budget: {budget.summary()}")
     _write_reports(rows, out_dir, budget.total)
+    # Publish provenance only after every study artifact is final. A partial/interrupted study
+    # deliberately has no record that could be mistaken for completed, attributable evidence.
+    lineage.write_provenance(out_dir, study_inputs)
     print(f"Done in {(time.time() - started) / 60:.1f} min. Full results: {out_dir}")
 
 
