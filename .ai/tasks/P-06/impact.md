@@ -66,6 +66,15 @@ unchanged. A later P-08 change will make candidate eligibility load-bearing.
 - `docs/architecture.md`, `docs/methodology.md`: module map and method.
 - Tests, mutation TOML, critical dependencies, mutmut selection, and P-06 task evidence.
 
+## Critical dependencies
+
+- `research.engine.spa.load_candidate_family` owns the strict P-03 trust boundary.
+- `research.engine.spa.studentized_bootstrap_sample` owns the shared paired draw, variance, and
+  studentization used by both family procedures.
+- `research.portfolio.resample.stationary_bootstrap` remains the only resampler.
+- `research.stages.lineage.StageWriter` remains the only publication path.
+- `research.stages.select` is deliberately unchanged and cannot consume eligibility before P-08.
+
 ## Numerical impact
 
 Expected effect on every existing historical, selection, portfolio, and live number: exactly none.
