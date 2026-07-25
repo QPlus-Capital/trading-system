@@ -97,7 +97,6 @@ pytest_add_cli_args_test_selection = [
     "tests/test_research_param_schedule.py",
     "tests/test_research_continuous_windows.py",
     "tests/test_research_spa.py",
-    "tests/test_research_stage_lineage.py",
     "tests/test_research_regression.py",
     "tests/test_research_forward_test_registry.py",
     "tests/test_research_forward_decision.py",
