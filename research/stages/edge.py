@@ -26,6 +26,7 @@ import pandas as pd
 
 from research.engine.candidate_returns import CANDIDATE_ARTIFACTS, candidate_definitions
 from research.engine.config import load_config_module
+from research.engine.mcs import McsInputError, McsResult, mcs_test
 from research.engine.romano_wolf import (
     ROMANO_WOLF_ARTIFACT,
     RomanoWolfAnalysis,
@@ -106,6 +107,13 @@ def _print_romano_wolf(analysis: RomanoWolfAnalysis) -> None:
     print(
         f"  Romano-Wolf Stepdown: {len(eligible)}/{len(analysis.candidates)} Kandidaten "
         f"bei adj. p<=0.05 eligible (L={analysis.block_length})"
+    )
+
+
+def _print_mcs(result: McsResult) -> None:
+    print(
+        f"  MCS 90%-Menge: {len(result.surviving_candidates)}/{result.candidate_count} "
+        f"Kandidaten bei L={result.block_length}"
     )
 
 
@@ -303,6 +311,15 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(
             f"ABBRUCH: Familien-Signifikanz konnte nicht berechnet werden: {exc}"
         ) from exc
+    try:
+        mcs_result = mcs_test(
+            family,
+            mean_block_length=spa_analysis.selected_block_length,
+            replications=spa_analysis.replications,
+            seed=spa_analysis.seed,
+        )
+    except McsInputError as exc:
+        raise SystemExit(f"ABBRUCH: MCS konnte nicht berechnet werden: {exc}") from exc
 
     min_pos = float(getattr(cfg, "SELECT_MIN_FRAC_POSITIVE", _MIN_FRAC_POSITIVE))
     rpd_tol = float(getattr(cfg, "SELECT_RPD_TOLERANCE", _RPD_TOLERANCE))
@@ -327,6 +344,7 @@ def main(argv: list[str] | None = None) -> None:
         top.to_csv(st.file("edge_ranking.csv"), index=False)
         st.save_json("spa.json", spa_analysis.to_dict())
         st.save_json(ROMANO_WOLF_ARTIFACT, romano_wolf_analysis.to_dict())
+        st.save_json("mcs.json", mcs_result.to_dict())
     auto = _print_table(top)
     print(f"\n  Struktur-Gate: %pos>={min_pos:.0%} und Rend/DD>={rpd_tol:.0%} vom Besten.")
     if dsr_by_variation:
@@ -341,6 +359,7 @@ def main(argv: list[str] | None = None) -> None:
         print("  PBO: n/a - Studie neu laufen lassen.")
     _print_spa(spa_analysis)
     _print_romano_wolf(romano_wolf_analysis)
+    _print_mcs(mcs_result)
     print(f"  Auto-Auswahl (hoechste Rendite unter eligible): {auto or '- (keine eligible)'}")
 
     select_auto = rb.cmd("select", "--run", str(run.path))

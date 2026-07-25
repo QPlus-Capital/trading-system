@@ -66,7 +66,7 @@ flowchart TD
     CAT --> SWEEP["research/engine/characterize.py — net-of-swap walk-forward sweep<br/>every instrument × variation × training length<br/>(research/config/robustness.py; hours)"]
     SWEEP --> STUDY[/"study.csv + canonical pre-filter<br/>candidate daily/window streams"/]
 
-    STUDY --> S1["STAGE 1 — EDGE (stages/edge.py)<br/>Is the edge real and robust?<br/>Decision table + eligibility gates"]
+    STUDY --> S1["STAGE 1 — EDGE (stages/edge.py)<br/>Is the edge real and robust?<br/>Decision table + SPA/Romano-Wolf/MCS evidence"]
     S1 --> S2["STAGE 2 — SELECT (stages/select.py)<br/>Which variation, training length, markets?"]
     S2 --> SEL[/"selection.json"/]
 
@@ -198,6 +198,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/candidate_returns.py` | Persists aligned pre-filter daily/window net-R streams for formal Stage-1 candidates |
 | `research/engine/spa.py` | Shared studentized bootstrap kernels + Hansen SPA family test over aligned daily candidate returns |
 | `research/engine/romano_wolf.py` | Romano-Wolf max-t stepdown: familywise adjusted candidate p-values and eligibility |
+| `research/engine/mcs.py` | Hansen-Lunde-Nason range-statistic Model Confidence Set over candidate losses |
 | `research/regression.py` | Compares a candidate run against a reference against stated expectations |
 | `research/forward_test_registry.py` | Immutable content-hashed forward cohorts + append-only daily net-R observations |
 | `research/forward_decision.py` | Fixed, suppression-safe bootstrap decisions for registered forward cohorts |
@@ -232,7 +233,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/stages/_runbook.py` | Run directory + terminal UX (banner, next command) |
 | `research/stages/lineage.py` | Content-addressed lineage: stage manifests, atomic publication, the read gate |
 | `research/stages/open_report.py` | Opens a run's report only while its lineage still verifies |
-| `research/stages/edge.py` | Stage 1 — edge ranking plus SPA family and Romano-Wolf candidate evidence |
+| `research/stages/edge.py` | Stage 1 — edge ranking plus SPA family, Romano-Wolf, and MCS candidate evidence |
 | `research/stages/select.py` | Stage 2 — structure and markets; auto-selection requires the SPA family gate |
 | `research/stages/universe.py` | Stage-2 selection logic (structure + market universe) |
 | `research/stages/portfolio.py` | Stage 3 — combine + size under a risk policy |
@@ -314,7 +315,7 @@ flowchart TD
 | Path | Contents | Versioned? |
 |---|---|---|
 | `data/` | Parquet catalog + raw CSV exports | no |
-| `reports/research/run_*/` | one research run: study + candidate streams + SPA/Romano-Wolf evidence, selection, trades, verdict, report | no |
+| `reports/research/run_*/` | one research run: study + candidate streams + SPA/Romano-Wolf/MCS evidence, selection, trades, verdict, report | no |
 | `reports/live/<account>/` | per-account live state: risk_state.json, logs | no |
 | `research/config/` | study definition: variations, grid, instruments, account | yes |
 | `live/config/` | frozen live configs (promotion == adding one) | yes |

@@ -108,6 +108,16 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "mcs-range-set"
+path = "research/engine/mcs.py"
+mutant_patterns = [
+    "research.engine.mcs.x*McsCandidate*in_mcs__mutmut_*",
+    "research.engine.mcs.x__range_decision__mutmut_*",
+    "research.engine.mcs.x__pairwise_scores__mutmut_*",
+    "research.engine.mcs.x_mcs_test__mutmut_*",
+]
+
+[[targets]]
 id = "result-regression"
 path = "research/regression.py"
 mutant_patterns = [
