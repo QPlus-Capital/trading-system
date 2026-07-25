@@ -105,6 +105,22 @@ and result-integrity artifact under `research/engine/**` and `research/stages/**
 - Update architecture and methodology documentation, quality configuration, and this task
   artifact.
 
+## Assumptions
+
+- P-03 has already enforced the common daily grid, candidate identity, and net-R semantics; P-06
+  reuses P-05's strict loader at the stage trust boundary.
+- P-04's selected mean block length and deterministic stationary bootstrap are valid inputs to
+  both P-05 and P-06 under the fixed package design.
+- P-08 will verify the lineage-bound artifact through `RomanoWolfAnalysis.from_dict` before using
+  candidate eligibility.
+
+## Expected artifacts
+
+- `research/engine/romano_wolf.py`.
+- A generated, lineage-bound `romano_wolf.json` in each new complete edge-stage run.
+- Shared P-05 bootstrap-kernel API, focused statistical and stage guards, mutation coverage,
+  updated methodology/architecture documentation, and this five-file task artifact.
+
 ## Human decisions
 
 Issue #48 and Jan's build instruction fix the family, null, tail, statistic, resampling convention,
