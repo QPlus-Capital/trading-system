@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-03 refactored continuous.py window attribution, reducing the measured total from 1,914 to 1,911 mutants; targeted boundary/exhaustion guards kill the three newly exposed window_returns survivors and all five previously allowed survivors."
+change_explanation = "P-05 adds the SPA family gate as a critical target: exact kernel, recentering, studentization, Monte Carlo, paired-index, sensitivity, and gate guards kill all 155 new mutants; the prior 285 classified survivors are unchanged."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -13,6 +13,7 @@ targets = [
     "portfolio-resample",
     "parameter-schedule",
     "continuous-attribution",
+    "spa-family-gate",
     "result-regression",
     "mt5-deal-export",
     "monitoring-deal-reconstruction",
@@ -22,8 +23,8 @@ targets = [
 ]
 
 [summary]
-total = 1911
-killed = 1626
+total = 2066
+killed = 1781
 survived = 285
 no_tests = 0
 skipped = 0
