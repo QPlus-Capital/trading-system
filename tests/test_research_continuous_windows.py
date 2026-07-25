@@ -76,6 +76,30 @@ def test_an_exhausted_account_is_not_reported_as_a_flat_window() -> None:
         window_returns(closed, windows, basis=100_000.0)
 
 
+def test_positive_fractional_equity_is_not_treated_as_exhausted() -> None:
+    """Only zero or negative opening equity ends the run, not a positive small balance."""
+    windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
+    closed = [(_ns("2020-03-01"), -99.5)]
+
+    first, second = window_returns(closed, windows, basis=100.0)
+
+    assert first[0] == pytest.approx(-0.995)
+    assert second == (0.0, [])
+
+
+def test_exhaustion_error_preserves_the_window_and_post_ruin_reason() -> None:
+    """A hard failure must identify both the affected window and why averaging is invalid."""
+    windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
+    closed = [(_ns("2020-03-01"), -100.0)]
+    expected = (
+        f"account exhausted before window {windows[1].label}: equity 0 "
+        "-- post-ruin windows have no meaningful return and must not be averaged in"
+    )
+
+    with pytest.raises(RuntimeError, match=f"^{expected}$"):
+        window_returns(closed, windows, basis=100.0)
+
+
 def test_overlapping_windows_are_refused_before_any_run() -> None:
     """Two segments claiming the same instant leave the schedule unable to say which governs."""
     from research.engine.continuous import continuous_walk_forward
@@ -204,3 +228,14 @@ def test_a_close_on_an_inner_boundary_belongs_to_the_later_window() -> None:
     first, second = window_returns(closed, windows, basis=100_000.0)
     assert first[1] == []
     assert len(second[1]) == 1
+
+
+def test_a_losing_close_on_an_inner_boundary_does_not_reduce_opening_equity() -> None:
+    """The boundary close belongs to the later window and cannot bankrupt it before attribution."""
+    windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
+    closed = [(_ns("2020-07-01"), -100.0)]
+
+    first, second = window_returns(closed, windows, basis=100.0)
+
+    assert first == (0.0, [])
+    assert second == (-1.0, [-1.0])
