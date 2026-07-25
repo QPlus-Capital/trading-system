@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-06 adds Romano-Wolf stepdown and shared P-05 studentization helpers as critical targets: all 112 added mutants are killed, and the prior 285 classified survivors are unchanged."
+change_explanation = "P-06 and P-07 add Romano-Wolf and MCS as independent critical targets: all 112 Romano-Wolf mutants and 326 of 332 MCS mutants are killed; six exact NumPy dtype equivalences join the prior 285 classified survivors."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -15,6 +15,7 @@ targets = [
     "continuous-attribution",
     "spa-family-gate",
     "romano-wolf-stepdown",
+    "mcs-range-set",
     "result-regression",
     "mt5-deal-export",
     "monitoring-deal-reconstruction",
@@ -24,9 +25,9 @@ targets = [
 ]
 
 [summary]
-total = 2178
-killed = 1893
-survived = 285
+total = 2510
+killed = 2219
+survived = 291
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -35,6 +36,24 @@ not_checked = 0
 interrupted = 0
 segfault = 0
 caught_by_type_check = 0
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "np.zeros defaults to float64, so removing or replacing the explicit float64 dtype produces byte-identical score matrices."
+names = [
+    "research.engine.mcs.x__pairwise_scores__mutmut_5",
+    "research.engine.mcs.x__pairwise_scores__mutmut_7",
+    "research.engine.mcs.x__pairwise_scores__mutmut_10",
+    "research.engine.mcs.x__pairwise_scores__mutmut_12",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Every active candidate index is validated as an int before np.asarray; inferred dtype is therefore the same integer index dtype as explicit int64 on the Linux gate."
+names = [
+    "research.engine.mcs.x__range_decision__mutmut_47",
+    "research.engine.mcs.x__range_decision__mutmut_49",
+]
 
 [[survivor_groups]]
 classification = "equivalent"
