@@ -441,8 +441,7 @@ def analyze_spa(
     return SpaAnalysis(
         selected=by_length[selected_block_length],
         sensitivity={
-            block_length: by_length[block_length]
-            for block_length in SENSITIVITY_BLOCK_LENGTHS
+            block_length: by_length[block_length] for block_length in SENSITIVITY_BLOCK_LENGTHS
         },
         replications=replications,
         seed=seed,
@@ -475,9 +474,9 @@ def _verify_daily_hash(
     recorded = artifacts.get(CANDIDATE_DAILY_RETURNS)
     if not isinstance(recorded, Mapping) or not isinstance(recorded.get("sha256"), str):
         raise SpaInputError("candidate metadata has no daily-return content hash")
-    actual = hash_paths(
-        {CANDIDATE_DAILY_RETURNS: directory / CANDIDATE_DAILY_RETURNS}
-    )[CANDIDATE_DAILY_RETURNS]["sha256"]
+    actual = hash_paths({CANDIDATE_DAILY_RETURNS: directory / CANDIDATE_DAILY_RETURNS})[
+        CANDIDATE_DAILY_RETURNS
+    ]["sha256"]
     if recorded["sha256"] != actual:
         raise SpaInputError("candidate daily-return content hash does not match metadata")
 
@@ -540,9 +539,7 @@ def load_candidate_family(
                     f"candidate {name!r} row {row_number} has an invalid return"
                 ) from exc
             if not value.is_finite():
-                raise SpaInputError(
-                    f"candidate {name!r} row {row_number} has a non-finite return"
-                )
+                raise SpaInputError(f"candidate {name!r} row {row_number} has a non-finite return")
             values[name].append(float(value))
     if len(dates) < MIN_OBSERVATIONS:
         raise SpaInputError(f"SPA requires at least {MIN_OBSERVATIONS} daily observations")

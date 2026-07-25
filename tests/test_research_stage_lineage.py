@@ -89,9 +89,7 @@ def _write_candidate_artifacts(study_dir: Path) -> None:
     generator = np.random.default_rng(20260725)
     common = generator.normal(0.35, 0.1, 120)
     frame: dict[str, object] = {
-        "loss_day": [
-            (date(2026, 1, 1) + timedelta(days=index)).isoformat() for index in range(120)
-        ]
+        "loss_day": [(date(2026, 1, 1) + timedelta(days=index)).isoformat() for index in range(120)]
     }
     for index, name in enumerate(names):
         frame[name] = common + generator.normal(0.0, 0.01 + index * 0.001, 120)
@@ -101,9 +99,7 @@ def _write_candidate_artifacts(study_dir: Path) -> None:
         "candidate,market,window\n",
         encoding="utf-8",
     )
-    artifacts = lineage.hash_paths(
-        {name: study_dir / name for name in CANDIDATE_ARTIFACTS[:-1]}
-    )
+    artifacts = lineage.hash_paths({name: study_dir / name for name in CANDIDATE_ARTIFACTS[:-1]})
     (study_dir / CANDIDATE_ARTIFACTS[3]).write_text(
         json.dumps(
             {
