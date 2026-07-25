@@ -74,7 +74,8 @@ the component ablation (a 2ⁿ factorial of the confirmation filters) across **m
 **several train-window lengths**.
 - **Metrics:** OOS return per window, OOS max drawdown, **return-per-drawdown** (ranking key),
   % profitable windows, length-normalized WFE, **Deflated Sharpe Ratio (DSR)**, **PBO**, and
-  Hansen's one-sided studentized **Superior Predictive Ability (SPA)** family test.
+  Hansen's one-sided studentized **Superior Predictive Ability (SPA)** family test and
+  Romano-Wolf one-sided studentized max-t stepdown.
 - **Literature:**
   - Purged & embargoed CV: López de Prado, *Advances in Financial Machine Learning* (2018) — prevents
     train/test leakage across the boundary.
@@ -85,6 +86,9 @@ the component ablation (a 2ⁿ factorial of the confirmation filters) across **m
   - SPA: Hansen (2005) — tests whether any formal candidate has positive expected daily net R
     against zero while accounting for the correlated search family. Consistent recentering keeps
     clearly inferior candidates from diluting a genuine winner.
+  - Romano-Wolf (2005) — controls familywise error while identifying which individual candidates
+    have positive mean daily net R. Ordered hypotheses are stepped down against the bootstrap
+    maximum over only the not-yet-rejected family.
   - Multiple-testing haircut: Harvey & Liu (2015).
 - **Criterion:** a positive, generalizing edge — normalized WFE ≳ 0.5, **DSR significant after
   deflation by the full trial budget** (variations × train-lengths × per-window param-combos), PBO
@@ -93,7 +97,10 @@ the component ablation (a 2ⁿ factorial of the confirmation filters) across **m
   bootstrap length, 10,000 replications, and seed 20260719. The selected length and every fixed
   5/10/20/60-day sensitivity must pass; missing or unreadable evidence fails closed. Rank variants
   by return-per-drawdown across instruments; a component that lifts return but wrecks drawdown does
-  not win.
+  not win. Stage 1 also persists Romano-Wolf adjusted p-values and the exact `p <= 0.05`
+  per-candidate eligibility label using SPA's selected block length, seed, replications, paired
+  stationary-bootstrap draw, long-run variance, and studentization. P-06 only publishes this
+  evidence; P-08 owns its use in selection.
 
 ### Stage 3 — Selection: global structure + universe
 Pick the single **global** structure (variation + train length) that is most robust across markets
@@ -251,14 +258,15 @@ now guarded by tests — check these first when a number looks too good:
 |---|---|---|
 | 0 Hypothesis | *(doc / config)* | ⚠️ make explicit per strategy |
 | 1 Signal + costs | `core/strategies`, `core/broker`, `engine/recipe`, `core/data` | ✅ |
-| 2 Edge & robustness | `engine/` walk-forward, `engine/overfitting`, `engine/spa` | ✅ DSR/PBO plus SPA are computed and surfaced in Stage 1 (`stages/edge`) |
+| 2 Edge & robustness | `engine/` walk-forward, `engine/overfitting`, `engine/spa`, `engine/romano_wolf` | ✅ DSR/PBO, SPA, and Romano-Wolf candidate evidence are surfaced in Stage 1 (`stages/edge`) |
 | 3 Selection | `stages/universe`, `stages/edge`, `stages/select` | ✅ |
 | 4 Holdout | `portfolio/trades` (phase="holdout"), `stages/portfolio` | ✅ |
 | 5 Sizing | `portfolio/risk` (tail cap, `rck_fraction`/`KellyRisk`, policies), `portfolio/tail`, `portfolio/stress` | ✅ gap tail cap + risk-constrained Kelly (`kelly:beta`), sized on the full-history stream; the drawdown bound is Monte-Carlo-verified |
 | 6 Robustness | `engine/montecarlo`, per-year analysis, `portfolio/stress` | ✅ |
 | 7 Decision | *(the stress/return frontier)* | ⚠️ produced ad-hoc; to formalize into Stage-4 report output |
 
-**Done since:** Stage 0 hypothesis written; DSR, PBO, and SPA surfaced in the staged CLI (Stage 2);
+**Done since:** Stage 0 hypothesis written; DSR, PBO, SPA, and Romano-Wolf candidate evidence
+surfaced in the staged CLI (Stage 2);
 risk-constrained Kelly wired as the `kelly:beta` policy (Stage 5), sized on the full-history stream.
 **Nearest gap:** the efficient frontier (return vs risk-aversion β) as the formal Stage-7 report
 output -- currently produced ad-hoc; on real data the gap tail cap binds below RCK for every β, so
@@ -274,6 +282,8 @@ the sizing decision reduces to the tail cap with RCK confirming the trade-sequen
   (2015). SSRN 2326253.
 - P. R. Hansen, *A Test for Superior Predictive Ability*, Journal of Business & Economic
   Statistics 23(4), 365–380 (2005).
+- J. P. Romano & M. Wolf, *Stepwise Multiple Testing as Formalized Data Snooping*,
+  Econometrica 73(4), 1237–1282 (2005).
 - C. R. Harvey & Y. Liu, *Backtesting* (2015) and *Evaluating Trading Strategies* (2014). SSRN
   2345489 / 2474755.
 - M. López de Prado, *Advances in Financial Machine Learning* (Wiley, 2018) — the front-to-back

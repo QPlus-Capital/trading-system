@@ -63,6 +63,8 @@ source = "research/engine/spa.py"
 tests = [
   "tests/test_research_spa.py",
   "tests/test_research_spa_calibration.py",
+  "tests/test_research_romano_wolf.py",
+  "tests/test_research_romano_wolf_calibration.py",
   "tests/test_research_stage_lineage.py",
 ]
 possibly_affected = [
@@ -71,13 +73,25 @@ possibly_affected = [
 reason = "the SPA family statistic and evidence gate govern whether Stage 2 may auto-select"
 
 [[edges]]
+source = "research/engine/romano_wolf.py"
+tests = [
+  "tests/test_research_romano_wolf.py",
+  "tests/test_research_romano_wolf_calibration.py",
+  "tests/test_research_stage_lineage.py",
+  "tests/test_quality_properties.py",
+]
+possibly_affected = []
+reason = "the Romano-Wolf stepdown artifact supplies familywise candidate eligibility to P-08"
+
+[[edges]]
 source = "research/stages/edge.py"
 tests = [
   "tests/test_research_stage_lineage.py",
   "tests/test_research_stages.py",
+  "tests/test_research_romano_wolf.py",
 ]
 possibly_affected = []
-reason = "the edge stage must execute SPA and lineage-bind its evidence before selection"
+reason = "the edge stage must execute SPA and Romano-Wolf and lineage-bind both evidence artifacts"
 
 [[edges]]
 source = "research/stages/select.py"
