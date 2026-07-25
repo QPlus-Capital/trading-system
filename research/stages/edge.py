@@ -68,8 +68,7 @@ def _spa_family(
     if not isinstance(variations, dict) or not isinstance(train_months, (list, tuple)):
         raise SystemExit("ABBRUCH: Studienkonfiguration deklariert keine formale SPA-Familie.")
     expected = {
-        definition.candidate_id
-        for definition in candidate_definitions(variations, train_months)
+        definition.candidate_id for definition in candidate_definitions(variations, train_months)
     }
     try:
         family = load_candidate_family(

@@ -35,10 +35,7 @@ from research.portfolio.resample import (
 
 def _noise_family(seed: int, *, days: int = 180, candidates: int = 8) -> dict[str, np.ndarray]:
     generator = np.random.default_rng(seed)
-    return {
-        f"candidate_{index}": generator.normal(0.0, 1.0, days)
-        for index in range(candidates)
-    }
+    return {f"candidate_{index}": generator.normal(0.0, 1.0, days) for index in range(candidates)}
 
 
 def _least_favourable_reality_check_p_value(

@@ -38,7 +38,8 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument("--variation", default=None, help="force this variation (default: auto)")
     parser.add_argument(
-        "--allow-legacy-unverified", action="store_true",
+        "--allow-legacy-unverified",
+        action="store_true",
         help="read a run that predates artifact hashing. Such a run can be inspected but can "
         "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
     )
@@ -67,9 +68,7 @@ def main(argv: list[str] | None = None) -> None:
         else None
     )
     try:
-        spa_payload = json.loads(
-            run.require("spa.json", "edge").read_text(encoding="utf-8")
-        )
+        spa_payload = json.loads(run.require("spa.json", "edge").read_text(encoding="utf-8"))
         if not isinstance(spa_payload, dict):
             raise SpaInputError("SPA evidence must be an object")
         spa = SpaAnalysis.from_dict(spa_payload)
@@ -116,9 +115,7 @@ def main(argv: list[str] | None = None) -> None:
     # Manifest (#2): carry the gate evidence for the pick forward so the verdict can require it
     # rather than trusting that selection was gated at all. The ranking now holds one row per
     # (variation, train_months), so the manifest must cite the row actually picked.
-    row = ranking[
-        (ranking["variation"] == variation) & (ranking["train_months"] == train_months)
-    ]
+    row = ranking[(ranking["variation"] == variation) & (ranking["train_months"] == train_months)]
     gates: dict[str, object]
     gates = (
         {

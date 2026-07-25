@@ -48,8 +48,7 @@ def test_spa_independent_null_calibration_is_not_anti_conservative() -> None:
     for index in range(400):
         generator = np.random.default_rng(10_000 + index)
         family = {
-            f"candidate_{candidate}": generator.normal(0.0, 1.0, 500)
-            for candidate in range(8)
+            f"candidate_{candidate}": generator.normal(0.0, 1.0, 500) for candidate in range(8)
         }
         p_values.append(
             spa_test(
