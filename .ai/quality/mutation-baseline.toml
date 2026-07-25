@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-06 and P-07 add Romano-Wolf and MCS as independent critical targets: all 112 Romano-Wolf mutants and 326 of 332 MCS mutants are killed; six exact NumPy dtype equivalences join the prior 285 classified survivors."
+change_explanation = "P-06 and P-07 add Romano-Wolf and MCS as critical targets: the merged Linux run measures 2,498 unique mutants because 12 shared SPA-helper mutants overlap across the packages; 2,207 are killed and the six MCS dtype equivalences join the prior 285 classified survivors."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -25,8 +25,8 @@ targets = [
 ]
 
 [summary]
-total = 2510
-killed = 2219
+total = 2498
+killed = 2207
 survived = 291
 no_tests = 0
 skipped = 0
