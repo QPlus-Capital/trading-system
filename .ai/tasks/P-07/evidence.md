@@ -2,44 +2,60 @@
 
 ## HEAD
 
-HEAD: pending
+HEAD: aba52b7c0addb1776aed212ae1e8c0330f13291d
 
 ## Commands
 
 | Gate | Command | Exit status | Result |
 |---|---|---:|---|
-| `risk-classification` | explicit planned-path `scripts.quality.classify` invocation | 0 | R3: methodology and result-integrity paths |
-| `red-first` | focused MCS and stage-path tests before implementation | pending | Pending |
-| `format` | `uvx --from rust-just just check-fast origin/main` | pending | Pending |
-| `docs-consistency` | focused documentation and gate-consistency tests | pending | Pending |
-| `check` | `uvx --from rust-just just check` | pending | Pending |
-| `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | pending | Pending |
-| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | pending | Pending |
-| `integration-tests` | full pytest within `just check` | pending | Pending |
-| `artifact-schema` | `uv run python -m scripts.quality.validate_task P-07` | pending | Pending |
-| `adversarial-review` | `.ai/tasks/P-07/review.md` | pending | Pending |
-| `invariants` | `uvx --from rust-just just check-invariants` | pending | Pending |
-| `mutation-on-touched-critical` | Linux Critical mutation workflow | pending | Pending |
-| `parity-where-applicable` | no-drift suite and scope audit | pending | Pending |
-| `live-money-review` | live/signal/risk scope diff audit | pending | Pending |
-| `human-decision-escalation` | task-spec decision audit | pending | Pending |
-| `no-autonomous-merge` | branch and publication audit | pending | Pending |
-| `security` | `uvx --from rust-just just check-security` | pending | Pending |
-| `impact` | `uvx --from rust-just just impact origin/main` | pending | Pending |
-| `pr-ready` | `uvx --from rust-just just pr-ready P-07 origin/main` | pending | Pending |
+| `risk-classification` | `uvx --from rust-just just impact origin/main` | 0 | GREEN: classified R3 because MCS and the edge stage govern methodology and result integrity |
+| `red-first` | focused MCS and stage-path tests before implementation | 1 | RED: two suites failed collection because `research.engine.mcs` did not exist; the independent edge-path test then failed because no `mcs.json` was published |
+| `format` | `uvx --from rust-just just check-fast origin/main` | 0 | GREEN: all seven changed Python files are Ruff-formatted |
+| `docs-consistency` | `uv run pytest -q tests/test_docs_architecture_map.py tests/test_engineering_docs.py tests/test_gate_consistency.py` | 0 | GREEN: all 67 architecture, engineering-document, and gate-consistency tests passed |
+| `check` | `uvx --from rust-just just check` | 0 | GREEN: Ruff, strict mypy over 171 source files, Vulture, and full pytest passed |
+| `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | GREEN: all 141 conservative impact-selected tests passed |
+| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | GREEN: all 15 deterministic properties passed twice with Hypothesis seed 20260721 |
+| `integration-tests` | full pytest within `uvx --from rust-just just check` | 0 | GREEN: 944 passed; the sole local skip is the repository's Linux-only Mutmut execution on Windows |
+| `artifact-schema` | `uv run python -m scripts.quality.validate_task P-07` | 0 | GREEN: valid five-file task artifact with 11 acceptance criteria and 8 invariants |
+| `adversarial-review` | `.ai/tasks/P-07/review.md` | 0 | GREEN: 18 counterexamples attempted; three builder-review findings fixed; no unresolved finding |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | GREEN: all 181 critical live, parity, sizing, research-integrity, registry, decision, and workflow tests passed |
+| `mutation-on-touched-critical` | Linux Critical mutation workflow run `30169795669` | 0 | GREEN: weakened-test probe and ratchet passed; 326/332 new MCS mutants killed, six exact NumPy dtype equivalences classified, repository total 2,107/2,398 killed |
+| `parity-where-applicable` | no-drift suite and artifact-nonconsumption test | 0 | GREEN: P-07 writes only derived MCS evidence; Stage 2 selection remains unchanged even when every fake membership flag is false |
+| `live-money-review` | `git diff --quiet origin/main -- live core/strategies core/broker.py core/instruments.py` | 0 | GREEN: no live, account, order, sizing, risk, broker, instrument, or signal path changed and no live system was invoked |
+| `human-decision-escalation` | task-spec decision and open-question audit | 0 | GREEN: issue #49 fixes loss, statistic, resampling, confidence, elimination, persistence, and nonconsumption; Jan retains methodology and merge authority |
+| `no-autonomous-merge` | branch and publication workflow audit | 0 | GREEN: ready pull request only; no merge or auto-merge action is permitted |
+| `security` | `uvx --from rust-just just check-security` | 0 | GREEN: secret scan clean, dependency audit reports no known vulnerabilities, and high-signal Ruff security checks pass |
+| `impact` | `uvx --from rust-just just impact origin/main` | 0 | GREEN: R3; three production modules, eight directly related test modules, three critical escalations, and no discovered unknown/dynamic edge |
+| `pr-ready` | `uvx --from rust-just just pr-ready P-07 origin/main` | 0 | READY: valid task, declared/classified R3, every mandatory gate exits 0, and evidence covers the code HEAD |
 
 ## Red-first proof
 
-Pending.
+Before production implementation, the focused MCS and calibration suites failed collection twice
+because `research.engine.mcs` did not exist. An independently collected edge-stage test then ran
+through the existing SPA path and failed because `mcs.json` was absent. Those failures were
+observed before the pure MCS engine, edge publication, and shared bootstrap helpers made the same
+guards green.
 
 ## Numerical regression
 
-P-07 is additive evidence only. No existing number may move.
+P-07 is additive evidence only. It consumes the immutable P-03 daily net-R matrix and writes the
+new lineage-bound `mcs.json`; it does not change Stage-1 scoring, SPA, DSR, PBO, ranking, selection,
+portfolio construction, reporting, or live execution. The explicit nonconsumption test supplies an
+MCS artifact with no eligible candidates and proves the existing Stage-2 choice is unchanged.
 
 ## Coverage and mutation
 
-Pending.
+The focused impact suite passed 141 tests. MCS-specific tests cover the independent pairwise
+studentization oracle, current-family range statistic, coherent signed elimination, deterministic
+ties and bootstrap draws, singleton and identical streams, exact 90% membership, monotone model
+p-values, dominant-candidate power, true-best coverage, common-return-shift invariance, strict
+serialization, lineage-bound publication, fail-closed stage errors, and P-08 nonconsumption.
+
+Linux Critical workflow run `30169795669` executed on the covered code HEAD. Its weakened-test probe
+and ratchet passed. Behavioural tests kill 326 of 332 new MCS mutants; the six survivors are
+individually classified exact NumPy dtype-default equivalences. The complete baseline is 2,398
+mutants, 2,107 killed, 291 fully classified survivors, and no unhealthy result.
 
 ## Deferred checks
 
-Implementation, Linux mutation, and publication readiness remain pending.
+None.
