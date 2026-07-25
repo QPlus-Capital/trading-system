@@ -231,6 +231,14 @@ def stage1_close_events(trades: pd.DataFrame, recipe: Any) -> list[tuple[int, fl
     ]
 
 
+def stage1_net_r_events(trades: pd.DataFrame) -> list[tuple[int, float]]:
+    """``(close timestamp, net_r)`` from the same canonical rows Stage 1 scores."""
+    return [
+        (int(timestamp), float(net_r))
+        for timestamp, net_r in zip(trades["ts_closed"], trades["net_r"], strict=True)
+    ]
+
+
 def run_continuous_oos(
     recipe: SweepRecipe,
     segments: tuple[ParamSegment, ...],
@@ -271,6 +279,25 @@ def run_continuous_oos(
         node.dispose()  # type: ignore[no-untyped-call]
 
 
+def closed_stage1_trade_returns(
+    recipe: SweepRecipe,
+    segments: tuple[ParamSegment, ...],
+    span_start: pd.Timestamp,
+    span_end: pd.Timestamp,
+    params: Mapping[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Canonical chosen-path trade rows used by both scoring and artifact persistence."""
+    pos = run_continuous_oos(
+        recipe, segments, span_start=span_start, span_end=span_end, params=params
+    )
+    return stage1_trade_returns(
+        pos,
+        recipe,
+        stop_loss_lookup(segments),
+        closed_from=span_start,
+    )
+
+
 def closed_stage1_returns(
     recipe: SweepRecipe,
     segments: tuple[ParamSegment, ...],
@@ -279,16 +306,41 @@ def closed_stage1_returns(
     params: Mapping[str, Any] | None = None,
 ) -> list[tuple[int, float]]:
     """``(close timestamp ns, net account return)`` for one continuous scoring run."""
-    pos = run_continuous_oos(
-        recipe, segments, span_start=span_start, span_end=span_end, params=params
-    )
-    frame = stage1_trade_returns(
-        pos,
+    return stage1_close_events(
+        closed_stage1_trade_returns(recipe, segments, span_start, span_end, params),
         recipe,
-        stop_loss_lookup(segments),
-        closed_from=span_start,
     )
-    return stage1_close_events(frame, recipe)
+
+
+def _window_interval(
+    starts: Sequence[int],
+    index: int,
+    window: WalkForwardWindow,
+) -> tuple[int, int, bool]:
+    start_ns = starts[index]
+    last = index + 1 == len(starts)
+    end_ns = int(pd.Timestamp(window.test_end).value) if last else starts[index + 1]
+    return start_ns, end_ns, last
+
+
+def window_event_values(
+    closed: Sequence[tuple[int, float]],
+    windows: Sequence[WalkForwardWindow],
+) -> list[list[tuple[int, float]]]:
+    """Attribute close-time values through the same half-open intervals as window scoring."""
+    ordered = sorted(closed)
+    starts = [int(pd.Timestamp(window.test_start).value) for window in windows]
+    out: list[list[tuple[int, float]]] = []
+    for index, window in enumerate(windows):
+        start_ns, end_ns, last = _window_interval(starts, index, window)
+        out.append(
+            [
+                (timestamp, value)
+                for timestamp, value in ordered
+                if start_ns <= timestamp and (timestamp <= end_ns if last else timestamp < end_ns)
+            ]
+        )
+    return out
 
 
 def window_returns(
@@ -318,13 +370,11 @@ def window_returns(
     starts = [int(pd.Timestamp(w.test_start).value) for w in windows]
     out: list[tuple[float, list[float]]] = []
     for i, window in enumerate(windows):
-        start_ns = starts[i]
-        last = i + 1 == len(starts)
+        start_ns, end_ns, last = _window_interval(starts, i, window)
         # Half-open everywhere except at the very end. Between windows the next one's start owns
         # the instant, so it must not be counted twice; at the final boundary there is no next
         # window, and an exclusive bound would drop a position closing exactly on test_end from
         # every result while its PnL still sat in the account.
-        end_ns = int(pd.Timestamp(window.test_end).value) if last else starts[i + 1]
         equity = basis + sum(pnl for ts, pnl in ordered if ts < start_ns)
         if equity <= 0:
             # The account is gone. Reporting a flat window would let every later window average
@@ -336,9 +386,7 @@ def window_returns(
                 "-- post-ruin windows have no meaningful return and must not be averaged in"
             )
         inside = [
-            pnl
-            for ts, pnl in ordered
-            if start_ns <= ts and (ts <= end_ns if last else ts < end_ns)
+            pnl for ts, pnl in ordered if start_ns <= ts and (ts <= end_ns if last else ts < end_ns)
         ]
         out.append((sum(inside) / basis, [pnl / basis for pnl in inside]))
     return out
@@ -385,11 +433,13 @@ def continuous_walk_forward(
     pinned = pinned_params(selected)
     base = base_config_of(recipe)
     schedule = build_schedule(windows, selected, defaults=base)
+    chosen_trades = closed_stage1_trade_returns(recipe, schedule, span_start, span_end, pinned)
     per_window = window_returns(
-        closed_stage1_returns(recipe, schedule, span_start, span_end, pinned),
+        stage1_close_events(chosen_trades, recipe),
         windows,
         1.0,
     )
+    net_r_by_window = window_event_values(stage1_net_r_events(chosen_trades), windows)
 
     by_combo: list[dict[str, float]] = [{} for _ in windows]
     if collect_matrix:
@@ -415,8 +465,8 @@ def continuous_walk_forward(
                 slot[key] = window_return
 
     results: list[WalkForwardResult] = []
-    for window, (params, is_return), (oos_return, trade_returns), combo_scores in zip(
-        windows, chosen, per_window, by_combo, strict=True
+    for window, (params, is_return), (oos_return, trade_returns), combo_scores, net_r_events in zip(
+        windows, chosen, per_window, by_combo, net_r_by_window, strict=True
     ):
         results.append(
             WalkForwardResult(
@@ -428,6 +478,9 @@ def continuous_walk_forward(
                 oos_max_dd=max_drawdown(equity_curve(trade_returns, 1.0)),
                 oos_returns=trade_returns,
                 oos_by_combo=combo_scores,
+                oos_net_r_events=net_r_events,
+                test_start_ns=int(pd.Timestamp(window.test_start).value),
+                test_end_ns=int(pd.Timestamp(window.test_end).value),
             )
         )
     return results
