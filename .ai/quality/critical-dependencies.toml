@@ -65,6 +65,7 @@ tests = [
   "tests/test_research_spa_calibration.py",
   "tests/test_research_romano_wolf.py",
   "tests/test_research_romano_wolf_calibration.py",
+  "tests/test_research_mcs.py",
   "tests/test_research_stage_lineage.py",
 ]
 possibly_affected = [
@@ -84,14 +85,28 @@ possibly_affected = []
 reason = "the Romano-Wolf stepdown artifact supplies familywise candidate eligibility to P-08"
 
 [[edges]]
+source = "research/engine/mcs.py"
+tests = [
+  "tests/test_research_mcs.py",
+  "tests/test_research_mcs_calibration.py",
+  "tests/test_quality_properties.py",
+  "tests/test_research_stage_lineage.py",
+]
+possibly_affected = [
+  "tests/test_research_stages.py",
+]
+reason = "the MCS range elimination and membership artifact constrain relative candidate selection in P-08"
+
+[[edges]]
 source = "research/stages/edge.py"
 tests = [
+  "tests/test_research_mcs.py",
   "tests/test_research_stage_lineage.py",
   "tests/test_research_stages.py",
   "tests/test_research_romano_wolf.py",
 ]
 possibly_affected = []
-reason = "the edge stage must execute SPA and Romano-Wolf and lineage-bind both evidence artifacts"
+reason = "the edge stage must execute SPA, Romano-Wolf, and MCS and lineage-bind every evidence artifact"
 
 [[edges]]
 source = "research/stages/select.py"

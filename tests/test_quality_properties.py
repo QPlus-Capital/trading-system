@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 from live.risk_control import RiskController, RiskLimits, position_volume
 from monitoring.deals import deal_ledger, deals_to_trades, per_trade_risk
 from research.engine.continuous import window_returns
+from research.engine.mcs import mcs_test
 from research.engine.romano_wolf import _stepdown_adjusted_p_values
 from research.engine.spa import spa_test
 from research.engine.walkforward import WalkForwardWindow
@@ -437,3 +438,33 @@ def test_romano_wolf_stepdown_p_values_are_monotone_by_construction(
 
     assert np.all(adjusted[1:] >= adjusted[:-1])
     assert np.all(adjusted >= raw)
+
+
+@given(st.floats(min_value=-100.0, max_value=100.0, allow_nan=False, allow_infinity=False))
+def test_mcs_is_invariant_to_a_common_daily_return_offset(offset: float) -> None:
+    generator = np.random.default_rng(20260725)
+    returns = {
+        "first": generator.normal(0.15, 1.0, 120),
+        "second": generator.normal(0.05, 1.0, 120),
+        "third": generator.normal(0.0, 1.0, 120),
+    }
+    shifted = {name: values + offset for name, values in returns.items()}
+
+    original = mcs_test(
+        returns,
+        mean_block_length=5,
+        replications=49,
+        seed=20260719,
+    )
+    transformed = mcs_test(
+        shifted,
+        mean_block_length=5,
+        replications=49,
+        seed=20260719,
+    )
+
+    assert transformed.elimination_order == original.elimination_order
+    assert transformed.surviving_candidates == original.surviving_candidates
+    assert [candidate.mcs_p_value for candidate in transformed.candidates] == [
+        candidate.mcs_p_value for candidate in original.candidates
+    ]

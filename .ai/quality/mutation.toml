@@ -87,8 +87,8 @@ mutant_patterns = [
     "research.engine.spa.x*SpaResult*passes__mutmut_*",
     "research.engine.spa.x*SpaAnalysis*passes__mutmut_*",
     "research.engine.spa.x__bootstrap_indices__mutmut_*",
-    "research.engine.spa.x__stationary_bootstrap_variances__mutmut_*",
     "research.engine.spa.x_stationary_bootstrap_indices__mutmut_*",
+    "research.engine.spa.x__stationary_bootstrap_variances__mutmut_*",
     "research.engine.spa.x_stationary_bootstrap_variances__mutmut_*",
     "research.engine.spa.x_studentized_candidate_scores__mutmut_*",
     "research.engine.spa.x__consistent_recentering__mutmut_*",
@@ -105,6 +105,16 @@ mutant_patterns = [
     "research.engine.romano_wolf.x*RomanoWolfAnalysis*eligible_candidates__mutmut_*",
     "research.engine.romano_wolf.x__stepdown_p_values_from_ordered_scores__mutmut_*",
     "research.engine.romano_wolf.x_romano_wolf_test__mutmut_*",
+]
+
+[[targets]]
+id = "mcs-range-set"
+path = "research/engine/mcs.py"
+mutant_patterns = [
+    "research.engine.mcs.x*McsCandidate*in_mcs__mutmut_*",
+    "research.engine.mcs.x__range_decision__mutmut_*",
+    "research.engine.mcs.x__pairwise_scores__mutmut_*",
+    "research.engine.mcs.x_mcs_test__mutmut_*",
 ]
 
 [[targets]]
