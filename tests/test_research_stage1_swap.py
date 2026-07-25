@@ -386,11 +386,24 @@ def test_generated_study_lineage_hash_changes_with_swap_snapshot(
             "pct_profitable": 100.0,
             "wfe": 1.0,
             "wfe_norm": 2.0,
-            "oos_trades": 10,
-            "window_oos": [0.01],
-            "combo_oos": {},
-        },
-    )
+                "oos_trades": 10,
+                "window_oos": [0.01],
+                "combo_oos": {},
+                "candidate_windows": [
+                    {
+                        "window": "2025-01..2025-07",
+                        "test_start_ns": int(pd.Timestamp("2025-01-01", tz="UTC").value),
+                        "test_end_ns": int(pd.Timestamp("2025-07-01", tz="UTC").value),
+                        "net_r_events": [
+                            (
+                                int(pd.Timestamp("2025-03-01", tz="UTC").value),
+                                1.0,
+                            )
+                        ],
+                    }
+                ],
+            },
+        )
     _Clock.values = iter((datetime(2026, 1, 2, 0, 0), datetime(2026, 1, 2, 0, 1)))
     monkeypatch.setattr(characterize, "datetime", _Clock)
 

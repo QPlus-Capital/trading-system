@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from research.engine.candidate_returns import CANDIDATE_ARTIFACTS
 from research.engine.config import load_config_module
 from research.stages import _runbook as rb
 from research.stages import lineage, universe
@@ -33,6 +34,18 @@ _RPD_TOLERANCE = 0.85  # structure gate: risk-adjusted return within 85% of the 
 # for the trial budget, and the study-level PBO must stay below its ceiling.
 _DSR_MIN = 0.90
 PBO_MAX = 0.20
+
+
+def candidate_sidecars(source_dir: Path) -> tuple[str, ...]:
+    """Return a complete candidate-artifact set, or fail on a partial publication."""
+    present = tuple(name for name in CANDIDATE_ARTIFACTS if (source_dir / name).is_file())
+    if present and len(present) != len(CANDIDATE_ARTIFACTS):
+        missing = [name for name in CANDIDATE_ARTIFACTS if name not in present]
+        raise SystemExit(
+            "study has a partial candidate-return publication; missing "
+            f"{', '.join(missing)} -- re-run Stage 1"
+        )
+    return present
 
 
 def _study_csv_from(source: Path) -> Path:
@@ -223,7 +236,7 @@ def main(argv: list[str] | None = None) -> None:
     ) as st:
         st.save_json("run_manifest.json", {"config": str(args.config)})
         shutil.copyfile(study_csv, st.file("study.csv"))
-        for artifact in ("ranking.csv", "overfitting.json"):
+        for artifact in ("ranking.csv", "overfitting.json", *candidate_sidecars(source_dir)):
             if (source_dir / artifact).exists():
                 shutil.copyfile(source_dir / artifact, st.file(artifact))
         top.to_csv(st.file("edge_ranking.csv"), index=False)
