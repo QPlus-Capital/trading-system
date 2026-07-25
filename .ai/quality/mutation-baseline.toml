@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-05 adds the SPA family gate as a critical target: exact kernel, recentering, studentization, Monte Carlo, paired-index, sensitivity, and gate guards kill all 155 new mutants; the prior 285 classified survivors are unchanged."
+change_explanation = "P-06 adds Romano-Wolf stepdown and shared P-05 studentization helpers as critical targets: all 112 added mutants are killed, and the prior 285 classified survivors are unchanged."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -14,6 +14,7 @@ targets = [
     "parameter-schedule",
     "continuous-attribution",
     "spa-family-gate",
+    "romano-wolf-stepdown",
     "result-regression",
     "mt5-deal-export",
     "monitoring-deal-reconstruction",
@@ -23,8 +24,8 @@ targets = [
 ]
 
 [summary]
-total = 2066
-killed = 1781
+total = 2178
+killed = 1893
 survived = 285
 no_tests = 0
 skipped = 0
