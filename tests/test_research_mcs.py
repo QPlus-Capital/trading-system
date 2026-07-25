@@ -301,6 +301,23 @@ def test_pairwise_variance_tolerance_has_the_documented_scale(
         "MCS long-run variance is zero for unequal candidate pair 'left', 'right'"
     )
 
+    exact_threshold_losses = np.asarray([[0.0, 0.0], [1.0, 0.0], [-1.0, 0.0]])
+    exact_scale = np.max(
+        (exact_threshold_losses[:, 0] - exact_threshold_losses[:, 1]) ** 2
+    )
+    monkeypatch.setattr(
+        mcs_module,
+        "stationary_bootstrap_variances",
+        lambda values, block_length: np.asarray([epsilon * exact_scale]),
+    )
+    with pytest.raises(McsInputError):
+        _pairwise_scores(
+            ("left", "right"),
+            exact_threshold_losses,
+            bootstrap_means,
+            5,
+        )
+
 
 def test_one_dominant_candidate_reduces_to_a_singleton() -> None:
     returns = _correlated_family(101, days=500, candidates=8)
