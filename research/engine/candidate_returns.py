@@ -270,12 +270,10 @@ def write_candidate_artifacts(
     days = tuple(range(first_day, last_day + 1))
 
     daily: dict[str, dict[int, Decimal]] = {
-        definition.candidate_id: {day: Decimal(0) for day in days}
-        for definition in complete
+        definition.candidate_id: {day: Decimal(0) for day in days} for definition in complete
     }
     window_returns: dict[str, dict[str, Decimal]] = {
-        definition.candidate_id: {label: Decimal(0) for label in labels}
-        for definition in complete
+        definition.candidate_id: {label: Decimal(0) for label in labels} for definition in complete
     }
     market_rows: list[dict[str, object]] = []
     trade_counts: dict[str, int] = {definition.candidate_id: 0 for definition in complete}
@@ -295,9 +293,7 @@ def write_candidate_artifacts(
                 window_returns[candidate][label] += flat_return
                 trade_counts[candidate] += len(selected)
                 for event in selected:
-                    daily[candidate][to_day(event.timestamp_ns)] += (
-                        event.net_r * STAT_RISK_FRAC
-                    )
+                    daily[candidate][to_day(event.timestamp_ns)] += event.net_r * STAT_RISK_FRAC
                 market_rows.append(
                     {
                         "candidate": candidate,
@@ -343,8 +339,7 @@ def write_candidate_artifacts(
             {
                 "loss_day": _loss_day_iso(day),
                 **{
-                    candidate: _format_decimal(daily[candidate][day])
-                    for candidate in candidate_ids
+                    candidate: _format_decimal(daily[candidate][day]) for candidate in candidate_ids
                 },
             }
             for day in days
@@ -380,9 +375,7 @@ def write_candidate_artifacts(
     )
 
     manual = tuple(str(item) for item in manual_trials)
-    artifacts = hash_paths(
-        {name: out_dir / name for name in _STREAM_ARTIFACTS}
-    )
+    artifacts = hash_paths({name: out_dir / name for name in _STREAM_ARTIFACTS})
     metadata: dict[str, Any] = {
         "schema": SCHEMA_VERSION,
         "candidate_definition": ["variation", "train_months"],

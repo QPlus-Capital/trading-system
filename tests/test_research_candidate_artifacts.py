@@ -132,10 +132,7 @@ def _wide_decimal(path: Path, index: str) -> tuple[list[str], dict[str, list[Dec
     with path.open(newline="", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
     columns = [name for name in rows[0] if name != index]
-    return columns, {
-        column: [Decimal(row[column]) for row in rows]
-        for column in columns
-    }
+    return columns, {column: [Decimal(row[column]) for row in rows] for column in columns}
 
 
 def test_production_config_defines_36_unique_formal_candidates_and_five_manual_trials() -> None:
@@ -198,17 +195,16 @@ def test_daily_window_and_market_window_aggregates_are_exact(tmp_path: Path) -> 
             pd.read_csv(tmp_path / "candidate_window_returns.csv", dtype=str)["window"]
         ):
             selected = [
-                row
-                for row in market
-                if row["candidate"] == candidate and row["window"] == label
+                row for row in market if row["candidate"] == candidate and row["window"] == label
             ]
             assert {row["market"] for row in selected} == {"M1", "M2"}
-            assert sum(Decimal(row["return"]) for row in selected) == windows[candidate][
-                window_index
-            ]
-            assert sum(Decimal(row["net_r"]) for row in selected) * Decimal(
-                "0.0018"
-            ) == windows[candidate][window_index]
+            assert (
+                sum(Decimal(row["return"]) for row in selected) == windows[candidate][window_index]
+            )
+            assert (
+                sum(Decimal(row["net_r"]) for row in selected) * Decimal("0.0018")
+                == windows[candidate][window_index]
+            )
             assert sum(int(row["trades"]) for row in selected) > 0
 
 
@@ -313,10 +309,7 @@ def test_persistence_cannot_rewrite_existing_study_metrics(tmp_path: Path) -> No
 
     _write(tmp_path, rows)
 
-    assert {
-        name: (tmp_path / name).read_bytes()
-        for name in existing
-    } == existing
+    assert {name: (tmp_path / name).read_bytes() for name in existing} == existing
 
 
 def test_new_study_provenance_binds_candidate_artifacts_and_old_records_remain_readable(

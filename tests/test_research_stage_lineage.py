@@ -24,7 +24,7 @@ from research.engine.candidate_returns import CANDIDATE_ARTIFACTS
 from research.stages import _runbook as rb
 from research.stages import edge, lineage, portfolio, select, verdict
 
-_CONFIG_SRC = '''
+_CONFIG_SRC = """
 from dataclasses import dataclass
 
 
@@ -44,7 +44,7 @@ def _gbpusd() -> _Inst:
 INSTRUMENTS = [(_eurusd, "data/eurusd.csv", 1), (_gbpusd, "data/gbpusd.csv", 1)]
 VARIATIONS = {"v_alpha": {}, "v_beta": {}}
 PARAM_GRID: dict[str, list[float]] = {}
-'''
+"""
 
 
 def _write_config(path: Path, marker: str = "original") -> Path:
@@ -847,9 +847,7 @@ def test_a_study_computed_under_other_code_is_not_deployable(
 ) -> None:
     """An ingested study belongs to the code that COMPUTED it, not to the ingesting checkout."""
     cfg, src, run_dir = study
-    monkeypatch.setattr(
-        lineage, "git_state", lambda: {"commit": "aaaaaaaa", "dirty": "clean"}
-    )
+    monkeypatch.setattr(lineage, "git_state", lambda: {"commit": "aaaaaaaa", "dirty": "clean"})
     lineage.write_provenance(src, lineage.external_inputs(cfg, _load(cfg)))
     monkeypatch.undo()  # ingest, and run everything downstream, under the real checkout
 

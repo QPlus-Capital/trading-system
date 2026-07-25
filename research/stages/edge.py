@@ -153,14 +153,18 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 1 (EDGE): robustness ranking.")
     parser.add_argument("config", type=Path, help="study config module (strategy + variations)")
     parser.add_argument(
-        "--from", dest="source", type=Path, default=None,
+        "--from",
+        dest="source",
+        type=Path,
+        default=None,
         help="ingest an existing study.csv / run dir instead of running the sweep",
     )
     parser.add_argument(
         "--run", type=Path, default=None, help="write into this framework run dir (default: fresh)"
     )
     parser.add_argument(
-        "--allow-legacy-unverified", action="store_true",
+        "--allow-legacy-unverified",
+        action="store_true",
         help="read a run that predates artifact hashing. Such a run can be inspected but can "
         "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
     )

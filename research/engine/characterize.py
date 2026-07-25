@@ -32,7 +32,6 @@ Usage (append a number to limit windows for a quick test)::
     uv run python -m research.engine.characterize research/config/robustness.py 1
 """
 
-
 import json
 import sys
 import time
@@ -229,15 +228,12 @@ def candidate_streams(good: list[dict[str, Any]]) -> dict[int, dict[tuple[str, s
             continue
         insts = sorted(common)
         # Only the windows every instrument actually has, in chronological label order.
-        labels = set.intersection(
-            *(set(cands[c][i].keys()) for c in cands for i in insts)
-        )
+        labels = set.intersection(*(set(cands[c][i].keys()) for c in cands for i in insts))
         if len(labels) < 2:
             continue
         ordered = sorted(labels)
         out[tm] = {
-            c: [sum(cands[c][i][w] for i in insts) / len(insts) for w in ordered]
-            for c in cands
+            c: [sum(cands[c][i][w] for i in insts) / len(insts) for w in ordered] for c in cands
         }
     return out
 
@@ -366,9 +362,7 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         ),
         encoding="utf-8",
     )
-    print(
-        f"\nPBO (CSCV over {n_candidates} {pbo_source}): {pbo_value:.3f} | trials: {n_trials}"
-    )
+    print(f"\nPBO (CSCV over {n_candidates} {pbo_source}): {pbo_value:.3f} | trials: {n_trials}")
 
     agg = (
         df.dropna(subset=["mean_oos_pct"])
@@ -396,11 +390,13 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
     )
     agg["train_months"] = agg.index.map(lambda v: int(best_tm[v][1]) if v in best_tm else 0)
     agg["dsr"] = agg.index.map(
-        lambda v: deflated_sharpe_ratio(
-            win_by_cand.get((v, int(best_tm[v][1])), win_by_var[v]), n_trials, sharpe_variance
+        lambda v: (
+            deflated_sharpe_ratio(
+                win_by_cand.get((v, int(best_tm[v][1])), win_by_var[v]), n_trials, sharpe_variance
+            )
+            if v in best_tm
+            else float("nan")
         )
-        if v in best_tm
-        else float("nan")
     )
     # Risk lens: rank by risk-adjusted return-per-drawdown, NOT raw return.
     agg = agg.sort_values("return_per_dd", ascending=False)
