@@ -20,6 +20,10 @@ All ten focused tests were observed failing before production implementation.
 
 Pending zero-threshold comparison of unchanged `run_20260724_1146`.
 
+## Coverage and mutation
+
+Pending final focused-coverage and critical-mutation evidence.
+
 ## Deferred checks
 
 Implementation and all R3 gates are pending.

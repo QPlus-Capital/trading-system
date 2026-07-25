@@ -106,6 +106,14 @@ walk-forward attribution, lineage, and result integrity.
 None. Candidate identity, risk fraction, trial counts, common-intersection policy, loss-day axis,
 and the requirement of no numerical movement are fixed by issue #45.
 
+## Expected artifacts
+
+- `research/engine/candidate_returns.py`.
+- `candidate_daily_returns.csv`, `candidate_window_returns.csv`,
+  `candidate_market_window_returns.csv`, and `candidate_metadata.json` in each new Stage-1 run.
+- Focused behavioural and lineage tests, the architecture-map update, and this five-file task
+  artifact.
+
 ## Human decisions required
 
 Jan retains merge authority. Claude performs the independent doubly rigorous review. No
