@@ -276,8 +276,19 @@ def _stepdown_adjusted_p_values(
     if not np.isfinite(ordered_statistics).all() or not np.isfinite(ordered_bootstrap_scores).all():
         raise RomanoWolfInputError("Romano-Wolf stepdown input must be finite")
 
-    raw = np.empty(len(ordered_statistics), dtype=np.float64)
-    adjusted = np.empty(len(ordered_statistics), dtype=np.float64)
+    return _stepdown_p_values_from_ordered_scores(
+        ordered_statistics,
+        ordered_bootstrap_scores,
+    )
+
+
+def _stepdown_p_values_from_ordered_scores(
+    ordered_statistics: FloatArray,
+    ordered_bootstrap_scores: FloatArray,
+) -> tuple[FloatArray, FloatArray]:
+    """Calculate remaining-family raw p-values and their monotone stepdown envelope."""
+    raw = np.empty(len(ordered_statistics))
+    adjusted = np.empty(len(ordered_statistics))
     previous = 0.0
     for rank in range(len(ordered_statistics)):
         remaining_maximum = ordered_bootstrap_scores[:, rank:].max(axis=1)
@@ -322,8 +333,7 @@ def romano_wolf_test(
         [
             _monte_carlo_p_value(bootstrap_scores[:, rank], float(observed[rank]))
             for rank in range(len(order))
-        ],
-        dtype=np.float64,
+        ]
     )
     candidates = tuple(
         RomanoWolfCandidate(

@@ -15,7 +15,11 @@ from research.engine.romano_wolf import (
     _stepdown_adjusted_p_values,
     romano_wolf_test,
 )
-from research.engine.spa import _monte_carlo_p_value, studentized_bootstrap_sample
+from research.engine.spa import (
+    _monte_carlo_p_value,
+    studentized_bootstrap_sample,
+    studentized_candidate_scores,
+)
 
 
 def _symmetric_noise(days: int, candidates: int, *, seed: int) -> dict[str, np.ndarray]:
@@ -81,6 +85,52 @@ def test_stepdown_kernel_uses_only_the_remaining_candidates() -> None:
     # rank 3 sees only column 3 (one exceedance). The finite add-one p-value is 2/5.
     np.testing.assert_array_equal(raw, [0.4, 0.4, 0.4])
     np.testing.assert_array_equal(adjusted, [0.4, 0.4, 0.4])
+
+
+def test_shared_studentized_score_kernel_matches_the_exact_oracle() -> None:
+    observed, bootstrap = studentized_candidate_scores(
+        np.asarray([0.1, -0.2]),
+        np.asarray([[0.2, -0.1], [0.0, -0.4]]),
+        np.asarray([1.0, 4.0]),
+        100,
+    )
+
+    np.testing.assert_array_equal(observed, [1.0, -1.0])
+    np.testing.assert_array_equal(bootstrap, [[1.0, 0.5], [-1.0, -1.0]])
+
+
+@pytest.mark.parametrize(
+    ("observed", "bootstrap", "message"),
+    (
+        (
+            np.asarray([[1.0]]),
+            np.asarray([[1.0], [0.0]]),
+            "invalid dimensions",
+        ),
+        (
+            np.asarray([1.0, 0.0]),
+            np.asarray([[1.0], [0.0]]),
+            "candidate dimensions disagree",
+        ),
+        (
+            np.asarray([]),
+            np.empty((2, 0)),
+            "input is empty",
+        ),
+        (
+            np.asarray([math.nan]),
+            np.asarray([[1.0], [0.0]]),
+            "input must be finite",
+        ),
+    ),
+)
+def test_stepdown_kernel_fails_closed_on_invalid_shapes_and_values(
+    observed: np.ndarray,
+    bootstrap: np.ndarray,
+    message: str,
+) -> None:
+    with pytest.raises(RomanoWolfInputError, match=message):
+        _stepdown_adjusted_p_values(observed, bootstrap)
 
 
 def test_adjusted_p_values_dominate_unadjusted_p_values() -> None:
@@ -165,6 +215,16 @@ def test_romano_wolf_is_bit_for_bit_deterministic() -> None:
 
     assert first == second
     assert first.to_dict() == second.to_dict()
+
+
+def test_romano_wolf_translates_shared_input_failure_without_losing_detail() -> None:
+    with pytest.raises(RomanoWolfInputError, match="at least 3 daily observations"):
+        romano_wolf_test(
+            {"too_short": np.asarray([1.0, -1.0])},
+            mean_block_length=5,
+            replications=99,
+            seed=502,
+        )
 
 
 def test_spa_and_romano_wolf_share_the_selected_bootstrap_draw(
