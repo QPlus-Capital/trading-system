@@ -18,8 +18,8 @@ return is never the ranking key). It also reports, per variation:
   edge that is really just multiple-testing noise shows up as a low DSR.
 
 Everything lands in a single timestamped folder ``reports/research/study_<ts>/`` (which is
-git-ignored): ``study.csv`` (full table), ``ranking.csv``, and a variation x instrument
-heatmap of the OOS returns.
+git-ignored): the existing study/ranking reports, a variation x instrument heatmap, and the
+canonical pre-filter candidate daily/window streams copied into the later ``run_*`` directory.
 
 A study config module must define ``INSTRUMENTS`` (list of ``(factory, csv, leverage)``),
 ``VARIATIONS`` (``dict[name, config_overrides]``) and ``PARAM_GRID``; it may also set
@@ -31,7 +31,6 @@ Usage (append a number to limit windows for a quick test)::
     uv run python -m research.engine.characterize research/config/robustness.py
     uv run python -m research.engine.characterize research/config/robustness.py 1
 """
-
 
 import json
 import sys
@@ -47,6 +46,7 @@ from core.broker import BrokerProfile, standard_broker
 from core.data.mt5_csv import seeded_instruments
 from core.paths import REPO_ROOT
 
+from research.engine.candidate_returns import write_candidate_artifacts
 from research.engine.config import load_config_module
 from research.engine.overfitting import study_trial_budget
 from research.engine.recipe import SweepRecipe
@@ -56,8 +56,12 @@ from research.portfolio.risk import AccountProfile
 
 _REPO_ROOT = REPO_ROOT
 
-# Per-task list payload kept in memory for reporting but dropped from the CSV.
-_LIST_KEYS = ("window_oos", "combo_oos")  # in-memory payloads, never written to the CSV
+# Per-task payloads kept in memory for reporting but dropped from the scalar study table.
+_LIST_KEYS = (
+    "window_oos",
+    "combo_oos",
+    "candidate_windows",
+)
 
 
 def account_balance_of(cfg: Any) -> float:
@@ -150,6 +154,18 @@ def _run_task(
             key: {r.window: r.oos_by_combo[key] for r in results}
             for key in (results[0].oos_by_combo if results else {})
         },
+        # Additive P-03 evidence: these are the chosen outer walk-forward path's exact P-01 net-R
+        # events. Inner grid combinations remain solely in combo_oos and never become formal
+        # persisted candidates.
+        "candidate_windows": [
+            {
+                "window": result.window,
+                "test_start_ns": result.test_start_ns,
+                "test_end_ns": result.test_end_ns,
+                "net_r_events": result.oos_net_r_events,
+            }
+            for result in results
+        ],
     }
 
 
@@ -212,15 +228,12 @@ def candidate_streams(good: list[dict[str, Any]]) -> dict[int, dict[tuple[str, s
             continue
         insts = sorted(common)
         # Only the windows every instrument actually has, in chronological label order.
-        labels = set.intersection(
-            *(set(cands[c][i].keys()) for c in cands for i in insts)
-        )
+        labels = set.intersection(*(set(cands[c][i].keys()) for c in cands for i in insts))
         if len(labels) < 2:
             continue
         ordered = sorted(labels)
         out[tm] = {
-            c: [sum(cands[c][i][w] for i in insts) / len(insts) for w in ordered]
-            for c in cands
+            c: [sum(cands[c][i][w] for i in insts) / len(insts) for w in ordered] for c in cands
         }
     return out
 
@@ -349,9 +362,7 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         ),
         encoding="utf-8",
     )
-    print(
-        f"\nPBO (CSCV over {n_candidates} {pbo_source}): {pbo_value:.3f} | trials: {n_trials}"
-    )
+    print(f"\nPBO (CSCV over {n_candidates} {pbo_source}): {pbo_value:.3f} | trials: {n_trials}")
 
     agg = (
         df.dropna(subset=["mean_oos_pct"])
@@ -379,11 +390,13 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
     )
     agg["train_months"] = agg.index.map(lambda v: int(best_tm[v][1]) if v in best_tm else 0)
     agg["dsr"] = agg.index.map(
-        lambda v: deflated_sharpe_ratio(
-            win_by_cand.get((v, int(best_tm[v][1])), win_by_var[v]), n_trials, sharpe_variance
+        lambda v: (
+            deflated_sharpe_ratio(
+                win_by_cand.get((v, int(best_tm[v][1])), win_by_var[v]), n_trials, sharpe_variance
+            )
+            if v in best_tm
+            else float("nan")
         )
-        if v in best_tm
-        else float("nan")
     )
     # Risk lens: rank by risk-adjusted return-per-drawdown, NOT raw return.
     agg = agg.sort_values("return_per_dd", ascending=False)
@@ -535,6 +548,16 @@ def main(argv: list[str] | None = None) -> None:
     budget = study_trial_budget(cfg)
     print(f"\nmultiple-testing budget: {budget.summary()}")
     _write_reports(rows, out_dir, budget.total)
+    write_candidate_artifacts(
+        rows,
+        out_dir,
+        variations=cfg.VARIATIONS,
+        train_months=train_list,
+        markets=tuple(str(factory().raw_symbol) for factory, _csv, _lev in cfg.INSTRUMENTS),
+        manual_trials=getattr(cfg, "MANUAL_TRIALS", ()),
+        source_inputs=study_inputs,
+        hash_paths=lineage.hash_paths,
+    )
     # Publish provenance only after every study artifact is final. A partial/interrupted study
     # deliberately has no record that could be mistaken for completed, attributable evidence.
     lineage.write_provenance(out_dir, study_inputs)

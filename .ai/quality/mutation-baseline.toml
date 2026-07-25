@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "The merged P-04/P-12/P-13/P-14 scope retains every package target and measured survivor: 1,914 selected mutants, 1,624 killed, 288 meaningful survivors, two equivalent survivors, and zero unhealthy outcomes."
+change_explanation = "P-03 refactored continuous.py window attribution, reducing the measured total from 1,914 to 1,911 mutants; targeted boundary/exhaustion guards kill the three newly exposed window_returns survivors and all five previously allowed survivors."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -22,9 +22,9 @@ targets = [
 ]
 
 [summary]
-total = 1914
-killed = 1624
-survived = 290
+total = 1911
+killed = 1626
+survived = 285
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -89,17 +89,6 @@ names = [
     "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3",
     "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_7",
     "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_9",
-]
-
-[[survivor_groups]]
-classification = "meaningful"
-reason = "Existing focused tests do not distinguish these continuous-attribution mutations; retained as measured test-strength gaps."
-names = [
-    "research.engine.continuous.x_window_returns__mutmut_16",
-    "research.engine.continuous.x_window_returns__mutmut_21",
-    "research.engine.continuous.x_window_returns__mutmut_23",
-    "research.engine.continuous.x_window_returns__mutmut_25",
-    "research.engine.continuous.x_window_returns__mutmut_26",
 ]
 
 [[survivor_groups]]

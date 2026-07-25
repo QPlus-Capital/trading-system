@@ -50,6 +50,8 @@ from core.broker import TTP_MARKETS, swap_snapshot_path
 from core.data.mt5_csv import read_catalog_sources
 from core.paths import REPO_ROOT
 
+from research.engine.candidate_returns import CANDIDATE_ARTIFACTS
+
 #: Bumped whenever a manifest or provenance record gains a field the checks rely on. Adding one
 #: without bumping would let an older record pass every check by carrying nothing to check.
 SCHEMA_VERSION = 2
@@ -156,15 +158,19 @@ def drifted_inputs(inputs: dict[str, Any]) -> list[str]:
         for name, was in sorted(recorded_catalog.items()):
             now = current.get(name, "absent")
             if now != was:
-                out.append(
-                    f"catalog bars for {name}\n      recorded {was}\n      actual   {now}"
-                )
+                out.append(f"catalog bars for {name}\n      recorded {was}\n      actual   {now}")
     return out
 
 
-#: The study files a provenance record binds itself to. ``ranking.csv`` / ``overfitting.json``
-#: are optional (older studies lack them) and are recorded as ``absent`` when missing.
-STUDY_ARTIFACTS: tuple[str, ...] = ("study.csv", "ranking.csv", "overfitting.json")
+#: Core files every study provenance record must bind. Candidate-return sidecars are additive:
+#: new records bind them too, while records produced before that schema existed remain readable
+#: when no sidecar is present beside them.
+REQUIRED_STUDY_ARTIFACTS: tuple[str, ...] = (
+    "study.csv",
+    "ranking.csv",
+    "overfitting.json",
+)
+STUDY_ARTIFACTS: tuple[str, ...] = REQUIRED_STUDY_ARTIFACTS + CANDIDATE_ARTIFACTS
 
 
 def write_provenance(study_dir: Path, inputs: dict[str, Any]) -> Path:
@@ -217,18 +223,30 @@ def read_provenance(study_dir: Path) -> tuple[dict[str, Any], dict[str, str]] | 
     if not isinstance(inputs, dict):
         return None
 
-    # An absent or partial artifact record is not a weaker guarantee, it is NO guarantee: the
-    # loop below would find nothing to compare and report no drift. Every study artifact must
-    # carry a well-formed entry (``absent`` included) or the record does not count as one.
+    # An absent or partial core record is not a weaker guarantee, it is NO guarantee: the loop
+    # below would find nothing to compare and report no drift. Candidate sidecars are additive,
+    # but any one that exists beside the study must also be recorded.
     recorded = d.get("artifacts")
     if not isinstance(recorded, dict) or any(
         not isinstance(recorded.get(n), dict) or "sha256" not in recorded.get(n, {})
-        for n in STUDY_ARTIFACTS
+        for n in REQUIRED_STUDY_ARTIFACTS
     ):
         raise ProvenanceMismatch(
             f"study in {study_dir} carries a provenance record without hashes for every\n"
-            f"  study artifact ({', '.join(STUDY_ARTIFACTS)}).\n"
+            f"  core study artifact ({', '.join(REQUIRED_STUDY_ARTIFACTS)}).\n"
             "  -> it cannot bind those results to anything; re-run the study."
+        )
+    unbound_sidecars = [
+        name
+        for name in CANDIDATE_ARTIFACTS
+        if (study_dir / name).is_file()
+        and (not isinstance(recorded.get(name), dict) or "sha256" not in recorded.get(name, {}))
+    ]
+    if unbound_sidecars:
+        raise ProvenanceMismatch(
+            f"study in {study_dir} has unbound candidate artifacts "
+            f"({', '.join(unbound_sidecars)}).\n"
+            "  -> pre-filter evidence must carry content hashes; re-run the study."
         )
     drifted = []
     for name, entry in recorded.items():
@@ -267,6 +285,7 @@ def git_state() -> dict[str, str]:
     ``git diff`` is recorded: two runs from the same commit but different edits get different
     lineage, which is the honest answer.
     """
+
     def _run(*args: str) -> str:
         try:
             r = subprocess.run(
@@ -368,9 +387,7 @@ class StageManifest:
         return drifted_inputs(self.inputs)
 
 
-def _walk_inputs(
-    inputs: dict[str, Any], prefix: str = ""
-) -> list[tuple[str, dict[str, str]]]:
+def _walk_inputs(inputs: dict[str, Any], prefix: str = "") -> list[tuple[str, dict[str, str]]]:
     """Flatten a manifest's ``inputs`` into ``(label, entry)`` pairs.
 
     Handles the one level of nesting ``external_inputs`` produces (``raw_data``) and silently
@@ -723,9 +740,7 @@ def verify_run(run_path: Path, *, ignore: str | None = None) -> None:
         raise LineageError(f"the stages do not form one coherent run:\n    - {detail}")
 
 
-def verify_artifact(
-    run_path: Path, artifact: str, produced_by: str, *, allow_legacy: bool
-) -> str:
+def verify_artifact(run_path: Path, artifact: str, produced_by: str, *, allow_legacy: bool) -> str:
     """Hash of ``artifact``, after checking it is what its producing stage actually wrote.
 
     Fails closed when the producing stage never completed, when the file changed since, or when
@@ -858,7 +873,6 @@ def assert_deployable(run_path: Path, *, allow_legacy: bool, ignore: str | None 
                 "  -> the hashes describe the files at ingestion time, not the ones that\n"
                 "     produced the study. Re-run the study, or ingest one that recorded its own."
             )
-
 
     # --config is a supported override, so nothing stopped Stage 3 from being finished with a
     # different study config than Stage 1 selected under. Each manifest then verifies perfectly on

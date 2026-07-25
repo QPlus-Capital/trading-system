@@ -144,6 +144,11 @@ class WalkForwardResult:
     # unless the caller asked for the full matrix. Every candidate is scored on the same windows,
     # so these streams are chronologically aligned across candidates -- the matrix CSCV needs.
     oos_by_combo: dict[str, float] = field(default_factory=dict)
+    # Canonical P-01 net-R rows for additive persistence. These are the chosen outer-procedure
+    # path, not the inner grid candidates in ``oos_by_combo``.
+    oos_net_r_events: list[tuple[int, float]] = field(default_factory=list)
+    test_start_ns: int | None = None
+    test_end_ns: int | None = None
 
 
 def combo_key(params: Mapping[str, Any]) -> str:
