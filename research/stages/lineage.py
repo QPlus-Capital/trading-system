@@ -50,6 +50,8 @@ from core.broker import TTP_MARKETS, swap_snapshot_path
 from core.data.mt5_csv import read_catalog_sources
 from core.paths import REPO_ROOT
 
+from research.engine.candidate_returns import CANDIDATE_ARTIFACTS
+
 #: Bumped whenever a manifest or provenance record gains a field the checks rely on. Adding one
 #: without bumping would let an older record pass every check by carrying nothing to check.
 SCHEMA_VERSION = 2
@@ -162,9 +164,15 @@ def drifted_inputs(inputs: dict[str, Any]) -> list[str]:
     return out
 
 
-#: The study files a provenance record binds itself to. ``ranking.csv`` / ``overfitting.json``
-#: are optional (older studies lack them) and are recorded as ``absent`` when missing.
-STUDY_ARTIFACTS: tuple[str, ...] = ("study.csv", "ranking.csv", "overfitting.json")
+#: Core files every study provenance record must bind. Candidate-return sidecars are additive:
+#: new records bind them too, while records produced before that schema existed remain readable
+#: when no sidecar is present beside them.
+REQUIRED_STUDY_ARTIFACTS: tuple[str, ...] = (
+    "study.csv",
+    "ranking.csv",
+    "overfitting.json",
+)
+STUDY_ARTIFACTS: tuple[str, ...] = REQUIRED_STUDY_ARTIFACTS + CANDIDATE_ARTIFACTS
 
 
 def write_provenance(study_dir: Path, inputs: dict[str, Any]) -> Path:
@@ -217,18 +225,33 @@ def read_provenance(study_dir: Path) -> tuple[dict[str, Any], dict[str, str]] | 
     if not isinstance(inputs, dict):
         return None
 
-    # An absent or partial artifact record is not a weaker guarantee, it is NO guarantee: the
-    # loop below would find nothing to compare and report no drift. Every study artifact must
-    # carry a well-formed entry (``absent`` included) or the record does not count as one.
+    # An absent or partial core record is not a weaker guarantee, it is NO guarantee: the loop
+    # below would find nothing to compare and report no drift. Candidate sidecars are additive,
+    # but any one that exists beside the study must also be recorded.
     recorded = d.get("artifacts")
     if not isinstance(recorded, dict) or any(
         not isinstance(recorded.get(n), dict) or "sha256" not in recorded.get(n, {})
-        for n in STUDY_ARTIFACTS
+        for n in REQUIRED_STUDY_ARTIFACTS
     ):
         raise ProvenanceMismatch(
             f"study in {study_dir} carries a provenance record without hashes for every\n"
-            f"  study artifact ({', '.join(STUDY_ARTIFACTS)}).\n"
+            f"  core study artifact ({', '.join(REQUIRED_STUDY_ARTIFACTS)}).\n"
             "  -> it cannot bind those results to anything; re-run the study."
+        )
+    unbound_sidecars = [
+        name
+        for name in CANDIDATE_ARTIFACTS
+        if (study_dir / name).is_file()
+        and (
+            not isinstance(recorded.get(name), dict)
+            or "sha256" not in recorded.get(name, {})
+        )
+    ]
+    if unbound_sidecars:
+        raise ProvenanceMismatch(
+            f"study in {study_dir} has unbound candidate artifacts "
+            f"({', '.join(unbound_sidecars)}).\n"
+            "  -> pre-filter evidence must carry content hashes; re-run the study."
         )
     drifted = []
     for name, entry in recorded.items():

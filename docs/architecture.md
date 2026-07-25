@@ -64,7 +64,7 @@ flowchart TD
     INGEST --> CAT[("data/ Parquet catalog<br/>(never committed)")]
 
     CAT --> SWEEP["research/engine/characterize.py — net-of-swap walk-forward sweep<br/>every instrument × variation × training length<br/>(research/config/robustness.py; hours)"]
-    SWEEP --> STUDY[/"study.csv"/]
+    SWEEP --> STUDY[/"study.csv + canonical pre-filter<br/>candidate daily/window streams"/]
 
     STUDY --> S1["STAGE 1 — EDGE (stages/edge.py)<br/>Is the edge real and robust?<br/>Decision table + eligibility gates"]
     S1 --> S2["STAGE 2 — SELECT (stages/select.py)<br/>Which variation, training length, markets?"]
@@ -195,6 +195,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/grid.py` | Parameter sweep across combinations |
 | `research/engine/montecarlo.py` | Monte-Carlo robustness from per-trade PnLs (profit probability, drawdown) |
 | `research/engine/overfitting.py` | Selection-bias statistics: deflated Sharpe, PBO, the multiple-testing budget |
+| `research/engine/candidate_returns.py` | Persists aligned pre-filter daily/window net-R streams for formal Stage-1 candidates |
 | `research/regression.py` | Compares a candidate run against a reference against stated expectations |
 | `research/forward_test_registry.py` | Immutable content-hashed forward cohorts + append-only daily net-R observations |
 | `research/forward_decision.py` | Fixed, suppression-safe bootstrap decisions for registered forward cohorts |
@@ -311,7 +312,7 @@ flowchart TD
 | Path | Contents | Versioned? |
 |---|---|---|
 | `data/` | Parquet catalog + raw CSV exports | no |
-| `reports/research/run_*/` | one research run: study.csv, selection.json, trades, verdict, report.html | no |
+| `reports/research/run_*/` | one research run: study + canonical candidate streams, selection, trades, verdict, report | no |
 | `reports/live/<account>/` | per-account live state: risk_state.json, logs | no |
 | `research/config/` | study definition: variations, grid, instruments, account | yes |
 | `live/config/` | frozen live configs (promotion == adding one) | yes |

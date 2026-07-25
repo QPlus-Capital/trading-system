@@ -20,6 +20,7 @@ import pandas as pd
 import pytest
 from core.data.mt5_csv import SOURCE_MARKER
 from core.paths import REPO_ROOT
+from research.engine.candidate_returns import CANDIDATE_ARTIFACTS
 from research.stages import _runbook as rb
 from research.stages import edge, lineage, portfolio, select, verdict
 
@@ -111,6 +112,28 @@ def test_a_clean_run_completes_stage_1_and_2(study: tuple[Path, Path, Path]) -> 
     sel = lineage.read_manifest(run_dir, "select")
     assert sel is not None
     assert sel.upstream["study.csv"] == lineage.sha256_file(run_dir / "study.csv")
+
+
+def test_candidate_streams_are_copied_byte_exactly_and_selection_cannot_rewrite_them(
+    study: tuple[Path, Path, Path],
+) -> None:
+    """The streams are pre-filter evidence, not an output the universe screen may improve."""
+    _cfg, source, run_dir = study
+    expected: dict[str, bytes] = {}
+    for index, name in enumerate(CANDIDATE_ARTIFACTS):
+        payload = f"artifact-{index}\n".encode()
+        (source / name).write_bytes(payload)
+        expected[name] = payload
+
+    _run_edge(study)
+    assert {name: (run_dir / name).read_bytes() for name in CANDIDATE_ARTIFACTS} == expected
+
+    select.main(["--run", str(run_dir)])
+
+    assert {name: (run_dir / name).read_bytes() for name in CANDIDATE_ARTIFACTS} == expected
+    manifest = lineage.read_manifest(run_dir, "edge")
+    assert manifest is not None
+    assert set(CANDIDATE_ARTIFACTS) <= set(manifest.outputs)
 
 
 # ------------------------------------------------------------------ tampering with artifacts
