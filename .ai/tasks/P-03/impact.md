@@ -6,6 +6,13 @@ Planned-path classification is R3 because `research/engine/characterize.py`,
 `research/engine/continuous.py`, `research/engine/walkforward.py`, and
 `research/stages/lineage.py` govern Stage-1 selection evidence and result integrity.
 
+## Direct impact
+
+- Add deterministic construction and persistence of four canonical Stage-1 candidate sidecars.
+- Carry the already-computed chosen-path close events through the walk-forward result.
+- Bind the optional sidecars into study provenance and copy them byte-for-byte into the run.
+- Add focused behavioural, lineage, immutability, and no-drift guards plus the architecture entry.
+
 ## Canonical quantity path
 
 The persisted values must follow this existing P-01 path without a second calculation:
@@ -20,6 +27,12 @@ The persisted values must follow this existing P-01 path without a second calcul
    read PnL, entry/exit, swap inputs, or rounded Stage-1 aggregates.
 6. The new writer scales each event once by the fixed statistical risk fraction and derives all
    three CSV views from that event set.
+
+## Transitive impact
+
+The change extends Stage-1 study publication and the edge-stage atomic copy. No later selection,
+portfolio, monitoring, or live consumer reads the new artifacts. Existing result consumers remain
+on their prior paths and must remain byte- and value-identical.
 
 ## Existing consumers that must not move
 
@@ -64,6 +77,23 @@ the three CSVs with `lineage.hash_paths`, and the edge manifest hashes the copie
 - Day conversion is DST-aware through the existing public prop-loss-day function.
 - Old studies lacking optional P-03 artifacts remain readable; a new metadata record with a
   missing or changed hashed CSV fails provenance verification.
+
+## Critical dependencies
+
+- P-01 `stage1_trade_returns`, `stage1_account_returns`, and `closed_stage1_returns` remain the
+  sole net-return convention; P-03 may only carry their canonical event data.
+- `research.portfolio.curves.to_day` remains the authoritative 16:15 America/Chicago loss-day
+  conversion.
+- `research.stages.lineage.hash_paths` remains the sole artifact content-hash convention.
+- Edge-stage atomic publication must copy all four sidecars together or fail closed.
+
+## Unknown or dynamic edges
+
+- Generated `reports/research/run_*` directories are ignored and cannot be discovered completely
+  through static import analysis.
+- Older external study directories may lack all four optional sidecars and remain readable; partial
+  new sidecar sets are invalid.
+- No downstream statistical consumer is added in P-03; P-04 calibration wiring is a later package.
 
 ## Numerical impact
 
