@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 53ec7e24e0eaef2678e6edc7835d768d5380cbd1
+HEAD: 58d424db2a0cb7397eae23bbf4b653986d46b084
 
 ## Commands
 
@@ -15,11 +15,11 @@ HEAD: 53ec7e24e0eaef2678e6edc7835d768d5380cbd1
 | `check` | `uvx --from rust-just just check` | 0 | GREEN: Ruff, strict mypy over 165 files, vulture, and full pytest passed |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | GREEN: all 279 conservative direct and transitive impact-selected tests passed |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | GREEN: 13 deterministic properties passed twice with seed 20260721 |
-| `integration-tests` | full pytest within `uvx --from rust-just just check` | 0 | GREEN: 868 passed; the sole skip is the repository's Linux-only Mutmut execution on Windows |
+| `integration-tests` | full pytest within `uvx --from rust-just just check` | 0 | GREEN: 871 passed; the sole local skip is the repository's Linux-only Mutmut execution on Windows |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task P-03` | 0 | GREEN: valid P-03 task artifact with 12 acceptance criteria and 8 invariants |
 | `adversarial-review` | `.ai/tasks/P-03/review.md` | 0 | GREEN: 12 counterexamples attempted; no unresolved finding |
 | `invariants` | `uvx --from rust-just just check-invariants` | 0 | GREEN: all 178 critical live, parity, sizing, research-integrity, registry, decision, and workflow tests passed |
-| `mutation-on-touched-critical` | focused canonical-source, changed-hash, and no-drift mutation counterexamples in `tests/test_research_candidate_artifacts.py` | 0 | GREEN: all three targeted mutation-oriented guards passed; formal Mutmut remains enforced by the Linux Critical CI job because fork/WSL is unavailable on this Windows host |
+| `mutation-on-touched-critical` | Linux Critical mutation workflow run `30156890398` | 0 | GREEN: weakened-test probe and ratchet passed; 1,626/1,911 mutants killed, 285 allowed survivors, and no unhealthy outcome |
 | `parity-where-applicable` | zero-threshold `research.regression` self-comparison of `run_20260724_1146` | 0 | GREEN: 1348 to 1348 trades, 40.6% to 40.6% annual return, zero drift in every bounded metric, and byte-identical `full_history_trades.csv` |
 | `live-money-review` | `git diff --quiet origin/main -- live core/strategies core/broker.py core/instruments.py` | 0 | GREEN: no live, account, order, sizing, risk, broker, or signal path changed and no live system was invoked |
 | `human-decision-escalation` | task-spec human-decision and open-question audit | 0 | GREEN: all methodology choices were fixed by issue #45; Jan retains merge authority and no unresolved choice was guessed |
@@ -49,14 +49,13 @@ identity, the Chicago loss-day boundary, zero days, exact Decimal equality, miss
 omission, P-04 input shape, lineage drift, canonical P-01 event reuse, timestamp validation,
 existing-metric immutability, optional/partial provenance, and byte-exact edge publication.
 
-The local Windows host cannot execute Mutmut because it requires fork/WSL. Three explicit
-mutation-oriented counterexamples passed against the touched critical semantics: substituting a
-non-canonical chosen-path return source, changing a hashed artifact byte, and allowing persistence
-to rewrite an existing metric. The repository's unchanged Linux Critical mutation job remains
-mandatory after publication; no mutation policy or ratchet was weakened.
+Three new `window_returns` guards were run against the exact generated mutants before the baseline
+was changed: `_18` failed on a losing close at the inner boundary, `_20` failed on positive
+fractional opening equity, and `_22` failed on the corrupted post-ruin diagnostic. Linux Critical
+run `30156890398` then measured 1,911 mutants, killed 1,626, retained 285 classified survivors,
+reported zero unhealthy outcomes, and passed the tightened ratchet. The guards also killed all
+five previously allowed `window_returns` survivors, so that function now has no survivor allowlist.
 
 ## Deferred checks
 
-Only the platform-specific formal Mutmut execution awaits the mandatory Linux Critical CI job.
-No computational, regression, security, artifact-schema, or local R3 validation is otherwise
-deferred.
+None.
