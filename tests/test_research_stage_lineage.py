@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -23,6 +24,7 @@ import pytest
 from core.data.mt5_csv import SOURCE_MARKER
 from core.paths import REPO_ROOT
 from research.engine.candidate_returns import CANDIDATE_ARTIFACTS, candidate_definitions
+from research.engine.romano_wolf import RomanoWolfAnalysis, romano_wolf_test
 from research.engine.spa import SpaAnalysis, SpaResult
 from research.portfolio.resample import SENSITIVITY_BLOCK_LENGTHS
 from research.stages import _runbook as rb
@@ -198,6 +200,87 @@ def test_candidate_streams_are_copied_byte_exactly_and_selection_cannot_rewrite_
     manifest = lineage.read_manifest(run_dir, "edge")
     assert manifest is not None
     assert set(CANDIDATE_ARTIFACTS) <= set(manifest.outputs)
+
+
+def test_edge_publishes_lineage_bound_romano_wolf_evidence(
+    study: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _cfg, _source, run_dir = study
+    calls: list[tuple[int, int, int, set[str]]] = []
+
+    def capture_analysis(
+        family: dict[str, np.ndarray],
+        *,
+        mean_block_length: int,
+        replications: int,
+        seed: int,
+    ) -> RomanoWolfAnalysis:
+        calls.append((mean_block_length, replications, seed, set(family)))
+        return romano_wolf_test(
+            family,
+            mean_block_length=mean_block_length,
+            replications=replications,
+            seed=seed,
+        )
+
+    monkeypatch.setattr(edge, "romano_wolf_test", capture_analysis)
+
+    _run_edge(study)
+
+    artifact = run_dir / "romano_wolf.json"
+    analysis = RomanoWolfAnalysis.from_dict(json.loads(artifact.read_text(encoding="utf-8")))
+    manifest = lineage.read_manifest(run_dir, "edge")
+    assert manifest is not None
+    assert manifest.outputs["romano_wolf.json"] == lineage.sha256_file(artifact)
+    assert len(analysis.candidates) == 4
+    assert analysis.block_length == 1
+    assert analysis.replications == 99
+    assert analysis.seed == 20260719
+    assert calls == [(1, 99, 20260719, {candidate.name for candidate in analysis.candidates})]
+
+
+def test_p06_candidate_eligibility_is_not_consumed_before_p08(
+    study: tuple[Path, Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _cfg, _source, run_dir = study
+
+    def all_ineligible(
+        family: dict[str, np.ndarray],
+        *,
+        mean_block_length: int,
+        replications: int,
+        seed: int,
+    ) -> RomanoWolfAnalysis:
+        measured = romano_wolf_test(
+            family,
+            mean_block_length=mean_block_length,
+            replications=replications,
+            seed=seed,
+        )
+        return replace(
+            measured,
+            candidates=tuple(
+                replace(
+                    candidate,
+                    unadjusted_p_value=1.0,
+                    adjusted_p_value=1.0,
+                )
+                for candidate in measured.candidates
+            ),
+        )
+
+    monkeypatch.setattr(edge, "romano_wolf_test", all_ineligible)
+    _run_edge(study)
+
+    select.main(["--run", str(run_dir)])
+
+    evidence = RomanoWolfAnalysis.from_dict(
+        json.loads((run_dir / "romano_wolf.json").read_text(encoding="utf-8"))
+    )
+    assert evidence.eligible_candidates == ()
+    assert (run_dir / "selection.json").is_file()
 
 
 def test_edge_fails_closed_when_candidate_daily_matrix_is_missing(

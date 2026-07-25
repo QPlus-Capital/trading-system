@@ -26,6 +26,12 @@ import pandas as pd
 
 from research.engine.candidate_returns import CANDIDATE_ARTIFACTS, candidate_definitions
 from research.engine.config import load_config_module
+from research.engine.romano_wolf import (
+    ROMANO_WOLF_ARTIFACT,
+    RomanoWolfAnalysis,
+    RomanoWolfInputError,
+    romano_wolf_test,
+)
 from research.engine.spa import SpaAnalysis, SpaInputError, analyze_spa, load_candidate_family
 from research.portfolio.resample import DEFAULT_REPLICATIONS
 from research.stages import _runbook as rb
@@ -93,6 +99,14 @@ def _print_spa(analysis: SpaAnalysis) -> None:
         for block_length, result in sorted(analysis.sensitivity.items())
     )
     print(f"  SPA Abhaengigkeits-Sensitivitaet: {sensitivity}")
+
+
+def _print_romano_wolf(analysis: RomanoWolfAnalysis) -> None:
+    eligible = analysis.eligible_candidates
+    print(
+        f"  Romano-Wolf Stepdown: {len(eligible)}/{len(analysis.candidates)} Kandidaten "
+        f"bei adj. p<=0.05 eligible (L={analysis.block_length})"
+    )
 
 
 def _study_csv_from(source: Path) -> Path:
@@ -270,16 +284,25 @@ def main(argv: list[str] | None = None) -> None:
     source_dir = study_csv.parent
     dsr_by_variation, pbo = load_overfitting(source_dir)
     try:
+        family = _spa_family(
+            source_dir,
+            getattr(cfg, "VARIATIONS", None),
+            getattr(cfg, "TRAIN_MONTHS", None),
+        )
         spa_analysis = analyze_spa(
-            _spa_family(
-                source_dir,
-                getattr(cfg, "VARIATIONS", None),
-                getattr(cfg, "TRAIN_MONTHS", None),
-            ),
+            family,
             replications=SPA_REPLICATIONS,
         )
-    except (SpaInputError, ValueError) as exc:
-        raise SystemExit(f"ABBRUCH: SPA konnte nicht berechnet werden: {exc}") from exc
+        romano_wolf_analysis = romano_wolf_test(
+            family,
+            mean_block_length=spa_analysis.selected_block_length,
+            replications=spa_analysis.replications,
+            seed=spa_analysis.seed,
+        )
+    except (SpaInputError, RomanoWolfInputError, ValueError) as exc:
+        raise SystemExit(
+            f"ABBRUCH: Familien-Signifikanz konnte nicht berechnet werden: {exc}"
+        ) from exc
 
     min_pos = float(getattr(cfg, "SELECT_MIN_FRAC_POSITIVE", _MIN_FRAC_POSITIVE))
     rpd_tol = float(getattr(cfg, "SELECT_RPD_TOLERANCE", _RPD_TOLERANCE))
@@ -303,6 +326,7 @@ def main(argv: list[str] | None = None) -> None:
                 shutil.copyfile(source_dir / artifact, st.file(artifact))
         top.to_csv(st.file("edge_ranking.csv"), index=False)
         st.save_json("spa.json", spa_analysis.to_dict())
+        st.save_json(ROMANO_WOLF_ARTIFACT, romano_wolf_analysis.to_dict())
     auto = _print_table(top)
     print(f"\n  Struktur-Gate: %pos>={min_pos:.0%} und Rend/DD>={rpd_tol:.0%} vom Besten.")
     if dsr_by_variation:
@@ -316,6 +340,7 @@ def main(argv: list[str] | None = None) -> None:
     else:
         print("  PBO: n/a - Studie neu laufen lassen.")
     _print_spa(spa_analysis)
+    _print_romano_wolf(romano_wolf_analysis)
     print(f"  Auto-Auswahl (hoechste Rendite unter eligible): {auto or '- (keine eligible)'}")
 
     select_auto = rb.cmd("select", "--run", str(run.path))

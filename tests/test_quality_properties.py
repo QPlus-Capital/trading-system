@@ -18,6 +18,7 @@ from hypothesis import strategies as st
 from live.risk_control import RiskController, RiskLimits, position_volume
 from monitoring.deals import deal_ledger, deals_to_trades, per_trade_risk
 from research.engine.continuous import window_returns
+from research.engine.romano_wolf import _stepdown_adjusted_p_values
 from research.engine.spa import spa_test
 from research.engine.walkforward import WalkForwardWindow
 from research.forward_decision import EFFICACY_TRADES, daily_threshold, endpoint_reached
@@ -411,3 +412,28 @@ def test_spa_studentization_is_invariant_to_positive_units(scale: float) -> None
 
     assert transformed.statistic == pytest.approx(original.statistic, rel=1e-12, abs=1e-12)
     assert transformed.p_value == original.p_value
+
+
+@given(
+    statistics=st.lists(
+        st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+        min_size=5,
+        max_size=5,
+    ),
+    bootstrap=st.lists(
+        st.floats(min_value=-10.0, max_value=10.0, allow_nan=False, allow_infinity=False),
+        min_size=20,
+        max_size=20,
+    ),
+)
+def test_romano_wolf_stepdown_p_values_are_monotone_by_construction(
+    statistics: list[float],
+    bootstrap: list[float],
+) -> None:
+    observed = np.asarray(sorted(statistics, reverse=True), dtype=np.float64)
+    scores = np.asarray(bootstrap, dtype=np.float64).reshape(4, 5)
+
+    raw, adjusted = _stepdown_adjusted_p_values(observed, scores)
+
+    assert np.all(adjusted[1:] >= adjusted[:-1])
+    assert np.all(adjusted >= raw)

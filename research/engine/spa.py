@@ -54,6 +54,23 @@ class CandidateFamily:
     returns: dict[str, FloatArray]
 
 
+@dataclass(frozen=True)
+class StudentizedBootstrapSample:
+    """Shared paired resample and studentization inputs for family tests."""
+
+    names: tuple[str, ...]
+    means: FloatArray
+    bootstrap_means: FloatArray
+    variances: FloatArray
+    observed_scores: FloatArray
+    bootstrap_scores: FloatArray
+    indices: npt.NDArray[np.int64]
+    block_length: int
+    replications: int
+    seed: int
+    observation_count: int
+
+
 def _probability(value: object, *, label: str) -> float:
     if isinstance(value, bool):
         raise SpaInputError(f"{label} must be a finite probability")
@@ -302,6 +319,22 @@ def _bootstrap_indices(
     return sampled.astype(np.int64)
 
 
+def stationary_bootstrap_indices(
+    sample_size: int,
+    mean_block_length: int,
+    *,
+    replications: int,
+    seed: int,
+) -> npt.NDArray[np.int64]:
+    """Expose P-05's P-04-backed paired day-index draw for coherent family tests."""
+    return _bootstrap_indices(
+        sample_size,
+        mean_block_length,
+        replications=replications,
+        seed=seed,
+    )
+
+
 def _stationary_bootstrap_variances(
     matrix: FloatArray,
     mean_block_length: int,
@@ -318,6 +351,66 @@ def _stationary_bootstrap_variances(
         covariance = np.sum(demeaned[:-lag] * demeaned[lag:], axis=0) / sample_size
         variances += 2.0 * weight * covariance
     return variances
+
+
+def stationary_bootstrap_variances(
+    matrix: FloatArray,
+    mean_block_length: int,
+) -> FloatArray:
+    """Expose P-05's stationary-bootstrap long-run variance estimator."""
+    return _stationary_bootstrap_variances(matrix, mean_block_length)
+
+
+def studentized_bootstrap_sample(
+    candidate_returns: Mapping[str, npt.ArrayLike],
+    *,
+    mean_block_length: int,
+    replications: int = DEFAULT_REPLICATIONS,
+    seed: int = DEFAULT_SEED,
+) -> StudentizedBootstrapSample:
+    """Build the shared paired draw and zero-centered studentized candidate scores."""
+    names, matrix = _validated_matrix(candidate_returns)
+    block_length = _positive_integer(mean_block_length, label="SPA mean_block_length")
+    repetitions = _positive_integer(replications, label="SPA replications", minimum=2)
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise SpaInputError("SPA seed must be an integer")
+
+    sample_size = matrix.shape[0]
+    indices = stationary_bootstrap_indices(
+        sample_size,
+        block_length,
+        replications=repetitions,
+        seed=seed,
+    )
+    means = matrix.mean(axis=0)
+    bootstrap_means = np.column_stack(
+        tuple(matrix[indices, index].mean(axis=1) for index in range(matrix.shape[1]))
+    )
+    variances = stationary_bootstrap_variances(matrix, block_length)
+    centered = matrix - means
+    variance_scale = np.maximum(1.0, np.max(centered * centered, axis=0))
+    degenerate = variances <= np.finfo(np.float64).eps * variance_scale
+    if np.any(degenerate):
+        names_text = ", ".join(names[index] for index in np.flatnonzero(degenerate))
+        raise SpaInputError(f"SPA long-run variance is zero for candidate(s): {names_text}")
+
+    root_n = math.sqrt(sample_size)
+    standard_errors = np.sqrt(variances)
+    observed_scores = root_n * means / standard_errors
+    bootstrap_scores = root_n * (bootstrap_means - means) / standard_errors
+    return StudentizedBootstrapSample(
+        names=names,
+        means=means,
+        bootstrap_means=bootstrap_means,
+        variances=variances,
+        observed_scores=observed_scores,
+        bootstrap_scores=bootstrap_scores,
+        indices=indices,
+        block_length=block_length,
+        replications=repetitions,
+        seed=seed,
+        observation_count=sample_size,
+    )
 
 
 def _consistent_recentering(
@@ -371,50 +464,31 @@ def spa_test(
     seed: int = DEFAULT_SEED,
 ) -> SpaResult:
     """Compute the one-sided studentized SPA p-value for one dependence length."""
-    names, matrix = _validated_matrix(candidate_returns)
-    block_length = _positive_integer(mean_block_length, label="SPA mean_block_length")
-    repetitions = _positive_integer(replications, label="SPA replications", minimum=2)
-    if isinstance(seed, bool) or not isinstance(seed, int):
-        raise SpaInputError("SPA seed must be an integer")
-
-    sample_size = matrix.shape[0]
-    indices = _bootstrap_indices(
-        sample_size,
-        block_length,
-        replications=repetitions,
+    sample = studentized_bootstrap_sample(
+        candidate_returns,
+        mean_block_length=mean_block_length,
+        replications=replications,
         seed=seed,
     )
-    means = matrix.mean(axis=0)
-    bootstrap_means = np.column_stack(
-        tuple(matrix[indices, index].mean(axis=1) for index in range(matrix.shape[1]))
-    )
-    variances = _stationary_bootstrap_variances(matrix, block_length)
-    centered = matrix - means
-    variance_scale = np.maximum(1.0, np.max(centered * centered, axis=0))
-    degenerate = variances <= np.finfo(np.float64).eps * variance_scale
-    if np.any(degenerate):
-        names_text = ", ".join(names[index] for index in np.flatnonzero(degenerate))
-        raise SpaInputError(f"SPA long-run variance is zero for candidate(s): {names_text}")
-
     observed_scores, observed_statistic, bootstrap_statistics, retain_negative = (
         _studentized_spa_statistics(
-            means,
-            bootstrap_means,
-            variances,
-            sample_size,
+            sample.means,
+            sample.bootstrap_means,
+            sample.variances,
+            sample.observation_count,
         )
     )
     p_value = _monte_carlo_p_value(bootstrap_statistics, observed_statistic)
 
     return SpaResult(
-        block_length=block_length,
+        block_length=sample.block_length,
         statistic=observed_statistic,
         p_value=p_value,
         candidate_statistics={
-            name: float(observed_scores[index]) for index, name in enumerate(names)
+            name: float(observed_scores[index]) for index, name in enumerate(sample.names)
         },
         recentered_candidates=tuple(
-            name for index, name in enumerate(names) if retain_negative[index]
+            name for index, name in enumerate(sample.names) if retain_negative[index]
         ),
     )
 
