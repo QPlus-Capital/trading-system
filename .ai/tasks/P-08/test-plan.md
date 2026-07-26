@@ -14,7 +14,7 @@
 | AC-10 | invoke `research.stages.select.main` against a real lineage fixture | RED: entrypoint used old gates | GREEN: all required behavior runs on the real path |
 | AC-11 | forced variation with deliberately failing automatic evidence | RED: new automatic rule absent | GREEN: force bypasses it and stays exploratory |
 | AC-12 | forced-path, candidate-stream, and production-scope guards | RED: no P-08 no-drift guard existed | GREEN: no trade-return producer changes; forced path and stream bytes remain stable |
-| AC-13 | cumulative R3 commands | RED: implementation absent | BLOCKED: Linux Critical mutation run `30197181802` exited 1 on fluctuating equivalent P-07 mutants; every other R3 gate is green |
+| AC-13 | cumulative R3 commands | RED: implementation absent | GREEN: Linux Critical mutation run `30200431311` attempt 2 passed at 2,830/3,149 killed with 319 exactly classified survivors; all cumulative R3 gates pass |
 | INV-01 | synchronized-input provenance test | RED: obsolete pooled paths remained | GREEN: only P-03 window bytes feed DSR/PBO |
 | INV-02 | strict family-identity integration test | RED: all artifacts were not intersected | GREEN: all three families match exactly |
 | INV-03 | edge/select/verdict diagnostic-role tests | RED: DSR/PBO remained gates | GREEN: neither diagnostic blocks |
