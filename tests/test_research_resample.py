@@ -250,6 +250,32 @@ def test_seed_pins_independent_restart_draws_and_uniform_zero_starts() -> None:
     assert np.array_equal(samples, np.array([[1.0, 0.0], [1.0, 1.0], [1.0, 1.0]]))
 
 
+def test_restart_draw_equal_to_threshold_continues_the_current_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class BoundaryGenerator:
+        def integers(self, high: int, *, size: int) -> npt.NDArray[np.int64]:
+            assert high == 2
+            return np.zeros(size, dtype=np.int64)
+
+        def random(self, size: int) -> FloatArray:
+            return np.full(size, 0.5, dtype=np.float64)
+
+    monkeypatch.setattr(
+        "research.portfolio.resample.np.random.default_rng",
+        lambda _seed: BoundaryGenerator(),
+    )
+
+    samples = stationary_bootstrap(
+        np.array([10.0, 20.0]),
+        2,
+        replications=1,
+        seed=20260719,
+    )
+
+    assert np.array_equal(samples, np.array([[10.0, 20.0]]))
+
+
 def test_bootstrap_validation_names_its_input() -> None:
     with pytest.raises(ValueError) as raised:
         stationary_bootstrap(np.array([], dtype=np.float64), 2)
