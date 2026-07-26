@@ -17,10 +17,11 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from research.portfolio.curves import h4_loss_days
+from research.portfolio.curves import interval_loss_days
 from research.portfolio.drawdown import trailing_floor
 
 _OPEN, _CLOSE = 0, 1
+_H4_NS = 14_400_000_000_000
 _H4_UPPER_BOUND = (
     "H4 upper bound: contemporaneous positions may hit their direction-adverse "
     "extremes within the same H4 interval"
@@ -93,11 +94,10 @@ def _decimal(value: object) -> Decimal:
 
 def _validated_h4_prices(
     h4_prices: Mapping[str, pd.DataFrame],
-) -> tuple[dict[str, dict[int, tuple[Decimal, Decimal, Decimal]]], list[int]]:
+) -> dict[str, dict[int, tuple[Decimal, Decimal, Decimal]]]:
     """Validate and index H4 lows/highs by exact market timestamp."""
     required = {"timestamp_ns", "low", "high", "close"}
     indexed: dict[str, dict[int, tuple[Decimal, Decimal, Decimal]]] = {}
-    all_timestamps: set[int] = set()
     for market, frame in h4_prices.items():
         missing = required.difference(frame.columns)
         if missing:
@@ -115,9 +115,8 @@ def _validated_h4_prices(
             if low > high or not low <= close <= high:
                 raise ValueError(f"{market} has invalid H4 OHLC bounds at timestamp {timestamp}")
             rows[timestamp] = (low, high, close)
-            all_timestamps.add(timestamp)
         indexed[str(market)] = rows
-    return indexed, sorted(all_timestamps)
+    return indexed
 
 
 def _synchronized_h4_minima(
@@ -136,7 +135,7 @@ def _synchronized_h4_minima(
     if "ts_opened" not in trades or "ts_closed" not in trades:
         raise ValueError("synchronized H4 reconstruction requires ts_opened and ts_closed")
 
-    indexed, timestamps = _validated_h4_prices(h4_prices)
+    indexed = _validated_h4_prices(h4_prices)
     opened = trades["ts_opened"].to_numpy(dtype=np.int64)
     closed = trades["ts_closed"].to_numpy(dtype=np.int64)
     markets = trades["market"].astype(str).to_numpy()
@@ -154,42 +153,72 @@ def _synchronized_h4_minima(
         won = pnl > 0
         is_long = won == (exit_ > entry)
 
-    order_open = np.argsort(opened, kind="stable")
-    order_close = np.argsort(closed, kind="stable")
-    open_cursor = close_cursor = 0
+    opens_at: dict[int, list[int]] = defaultdict(list)
+    closes_at: dict[int, list[int]] = defaultdict(list)
+    bar_starts: dict[int, dict[str, tuple[Decimal, Decimal, Decimal]]] = defaultdict(dict)
+    bar_ends: dict[int, list[tuple[str, Decimal]]] = defaultdict(list)
+    timeline: set[int] = set()
+    for index in range(len(trades)):
+        opens_at[int(opened[index])].append(index)
+        closes_at[int(closed[index])].append(index)
+        timeline.update((int(opened[index]), int(closed[index])))
+    for market, rows in indexed.items():
+        for timestamp, row in rows.items():
+            bar_starts[timestamp][market] = row
+            bar_ends[timestamp + _H4_NS].append((market, row[2]))
+            timeline.update((timestamp, timestamp + _H4_NS))
+
     active: set[int] = set()
     observed = np.zeros(len(trades), dtype=bool)
-    current_price = {index: _decimal(entry[index]) for index in range(len(trades))}
+    active_bars: dict[str, tuple[int, Decimal, Decimal, Decimal]] = {}
+    last_close: dict[str, Decimal] = {}
     realized = Decimal("0")
     start = _decimal(start_balance)
     day_to_index = {int(day): index for index, day in enumerate(days)}
 
-    for timestamp in timestamps:
-        while open_cursor < len(order_open) and opened[order_open[open_cursor]] < timestamp:
-            active.add(int(order_open[open_cursor]))
-            open_cursor += 1
-        while close_cursor < len(order_close) and closed[order_close[close_cursor]] < timestamp:
-            index = int(order_close[close_cursor])
+    ordered_times = sorted(timeline)
+    for cursor, timestamp in enumerate(ordered_times):
+        # A bar's close becomes observable at its interval end. Expire it before selecting the
+        # mark for the next half-open interval.
+        for market, close_price in bar_ends.get(timestamp, ()):
+            active_bar = active_bars.get(market)
+            if active_bar is not None and active_bar[0] == timestamp:
+                last_close[market] = close_price
+                del active_bars[market]
+
+        # A position closing exactly on a boundary is absent from the following interval. Its
+        # realized PnL and swap are then available to every later mark.
+        for index in closes_at.get(timestamp, ()):
             realized += (_decimal(pnl[index]) + _decimal(swap[index])) * _decimal(sizes[index])
             active.discard(index)
-            close_cursor += 1
 
-        active_now = sorted(index for index in active if closed[index] >= timestamp)
-        if not active_now:
+        # A position opening exactly on a boundary participates in that bar, but a zero-duration
+        # position is only realized and never receives an H4 mark.
+        for index in opens_at.get(timestamp, ()):
+            if closed[index] > timestamp:
+                active.add(index)
+
+        for market, (low, high, close_price) in bar_starts.get(timestamp, {}).items():
+            active_bars[market] = (timestamp + _H4_NS, low, high, close_price)
+
+        if cursor + 1 >= len(ordered_times):
             continue
+        interval_end = ordered_times[cursor + 1]
+        if interval_end <= timestamp or not active:
+            continue
+
         adverse = Decimal("0")
-        for index in active_now:
+        for index in sorted(active):
             market = str(markets[index])
-            row = indexed.get(market, {}).get(timestamp)
-            if row is None:
+            active_row = active_bars.get(market)
+            if active_row is None or active_row[0] < interval_end:
                 # The market is closed while another market advances. Its observable equity mark
-                # is unchanged; carrying the last close/entry is not borrowing an adverse extreme
-                # from another interval.
-                price = current_price[index]
+                # is unchanged; carrying its last close (or entry before the first post-entry bar)
+                # never borrows an adverse extreme from another interval.
+                price = last_close.get(market, _decimal(entry[index]))
             else:
-                low, high, close = row
+                _bar_end, low, high, _close = active_row
                 price = low if is_long[index] else high
-                current_price[index] = close
                 observed[index] = True
             entry_price = _decimal(entry[index])
             exit_price = _decimal(exit_[index])
@@ -199,7 +228,7 @@ def _synchronized_h4_minima(
             fraction = (price - entry_price) / span
             adverse += _decimal(pnl[index]) * _decimal(sizes[index]) * fraction
         mark = float(start + realized + adverse)
-        for day in h4_loss_days(timestamp):
+        for day in interval_loss_days(timestamp, interval_end):
             day_index = day_to_index.get(day)
             if day_index is not None:
                 minimum[day_index] = min(minimum[day_index], mark)

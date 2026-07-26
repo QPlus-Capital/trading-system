@@ -27,8 +27,8 @@
 
 ## Statistical and temporal boundaries
 
-- Open strictly before the H4 observation; close at or after the observation.
-- Same timestamp open/close, one-observation, multi-observation, and no-observation lifetimes.
+- Entry at a bar start is included; exit at a bar start is excluded.
+- Same timestamp open/close, partial-bar, multi-bar, and no-overlap lifetimes.
 - Long/short adverse direction and positive/negative/zero price spans.
 - One market, simultaneous markets, disjoint markets, and missing bars.
 - Bar wholly before reset, wholly after reset, and straddling 16:15 Chicago under CST/CDT.

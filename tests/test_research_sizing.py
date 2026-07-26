@@ -130,7 +130,7 @@ def test_a_trade_that_dips_and_closes_the_same_day_still_counts_as_a_breach() ->
     closes = {"X": np.array([99.5])}
     h4 = {
         "X": pd.DataFrame(
-            {"timestamp_ns": [closed], "low": [94], "high": [100], "close": [99.5]}
+            {"timestamp_ns": [opened], "low": [94], "high": [100], "close": [99.5]}
         )
     }
 
@@ -201,7 +201,7 @@ def test_a_legacy_stream_infers_direction_from_the_outcome_too() -> None:
     closes = {"X": np.array([99.0])}
     h4 = {
         "X": pd.DataFrame(
-            {"timestamp_ns": [closed], "low": [90], "high": [101], "close": [99]}
+            {"timestamp_ns": [opened], "low": [90], "high": [101], "close": [99]}
         )
     }
     _r, eq, _s, diagnostics = simulate(
@@ -245,7 +245,7 @@ def test_a_reset_straddling_bar_charges_its_extremes_to_both_loss_days(
     minutes BEFORE the 16:15 CT reset -- and closes after it. Bucketing its low/high only by the
     close time hides a pre-reset dip from the day it happened in. A straddling bar's extremes
     belong to BOTH adjacent loss days; over-charging one bar is the conservative side."""
-    from research.portfolio.curves import h4_loss_days, load_h4_prices, to_day
+    from research.portfolio.curves import interval_loss_days, load_h4_prices, to_day
 
     csv = tmp_path / "X_H4.csv"
     csv.write_text(
@@ -259,4 +259,5 @@ def test_a_reset_straddling_bar_charges_its_extremes_to_both_loss_days(
     assert d_after == d_before + 1  # the bar really does straddle the reset
     assert list(bars["low"]) == [Decimal("93.0")]
     assert list(bars["high"]) == [Decimal("101.0")]
-    assert h4_loss_days(int(bars["timestamp_ns"].iloc[0])) == (d_before, d_after)
+    start = int(bars["timestamp_ns"].iloc[0])
+    assert interval_loss_days(start, start + 4 * 3_600_000_000_000) == (d_before, d_after)

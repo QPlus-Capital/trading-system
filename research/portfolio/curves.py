@@ -34,7 +34,6 @@ _CHICAGO = ZoneInfo("America/Chicago")
 _DAILY_RESET = time(16, 15)
 # H4 feed: a bar is stamped with its open, so its close is 4h later.
 _BAR_HOURS = 4.0
-_BAR_NS = 14_400_000_000_000
 
 
 def to_day(ts_ns: int) -> int:
@@ -85,15 +84,17 @@ def load_daily_close(csv_path: str) -> pd.Series:
     return pd.Series(df["<CLOSE>"].to_numpy(dtype=float), index=day).groupby(level=0).last()
 
 
-def h4_loss_days(timestamp_ns: int) -> tuple[int, ...]:
-    """Loss days overlapped by the H4 interval beginning at ``timestamp_ns``.
+def interval_loss_days(start_ns: int, end_ns: int) -> tuple[int, ...]:
+    """Loss days overlapped by the half-open interval ``[start_ns, end_ns)``.
 
-    The 16:15 America/Chicago reset can fall inside one H4 bar. Such a bar contributes to both
-    adjacent loss days, but position-lifetime filtering remains the caller's responsibility.
+    Splitting the replay at every position event means a reset-straddling H4 bar contributes to
+    both adjacent loss days only while the position actually overlaps each side of the reset.
     """
-    first = to_day(timestamp_ns)
-    last = to_day(timestamp_ns + _BAR_NS)
-    return (first,) if first == last else (first, last)
+    if end_ns <= start_ns:
+        return ()
+    first = to_day(start_ns)
+    last = to_day(end_ns - 1)
+    return tuple(range(first, last + 1))
 
 
 def load_h4_prices(csv_path: str) -> pd.DataFrame:
