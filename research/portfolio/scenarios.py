@@ -134,7 +134,7 @@ class ScenarioBootstrapSummary:
         }
 
 
-def _validated_diagnostics(diagnostics: DailyDiagnostics) -> int:
+def _validated_diagnostics(diagnostics: DailyDiagnostics) -> IntArray:
     arrays = (
         diagnostics.days,
         diagnostics.opening_balance,
@@ -149,13 +149,16 @@ def _validated_diagnostics(diagnostics: DailyDiagnostics) -> int:
     lengths = {len(values) for values in arrays}
     if len(lengths) != 1 or not lengths or 0 in lengths:
         raise ValueError("daily diagnostics must contain equal, non-empty arrays")
-    days = np.asarray(diagnostics.days, dtype=np.int64)
+    raw_days = np.asarray(diagnostics.days)
+    if not np.isfinite(raw_days).all() or not np.equal(raw_days, np.floor(raw_days)).all():
+        raise ValueError("daily diagnostic day identifiers must be finite integers")
+    days = raw_days.astype(np.int64)
     if np.any(np.diff(days) != 1):
         raise ValueError("daily diagnostics must use one contiguous loss-day grid")
     for values in arrays[1:6]:
         if not np.isfinite(np.asarray(values, dtype=np.float64)).all():
             raise ValueError("daily diagnostics contain non-finite values")
-    return len(days)
+    return days
 
 
 def build_loss_day_scenarios(
@@ -171,17 +174,17 @@ def build_loss_day_scenarios(
     second accumulation order.
     """
     diagnostics = result.daily_diagnostics
-    sample_size = _validated_diagnostics(diagnostics)
+    days = _validated_diagnostics(diagnostics)
+    sample_size = len(days)
     if "ts_closed" not in trades.columns:
         raise ValueError("scenario trades require ts_closed")
     if len(trades) != len(result.trade_pnl) or len(trades) != len(result.trade_swap):
         raise ValueError("trade rows, policy P&L, and policy swap must have equal lengths")
-    if not np.isfinite(np.asarray(result.trade_pnl, dtype=np.float64)).all():
+    if not np.isfinite(result.trade_pnl).all():
         raise ValueError("policy trade P&L must be finite")
-    if not np.isfinite(np.asarray(result.trade_swap, dtype=np.float64)).all():
+    if not np.isfinite(result.trade_swap).all():
         raise ValueError("policy trade swap must be finite")
 
-    days = np.asarray(diagnostics.days, dtype=np.int64)
     day_to_index = {int(day): index for index, day in enumerate(days)}
     expected_opening = start_balance
     for index, opening in enumerate(diagnostics.opening_balance):
@@ -300,7 +303,7 @@ def _stationary_source_indices(
     if sample_size <= 0:
         raise ValueError("loss-day scenarios must be non-empty")
     sampled = stationary_bootstrap(
-        np.arange(sample_size, dtype=np.float64),
+        np.arange(sample_size),
         mean_block_length,
         replications=replications,
         seed=seed,
@@ -358,9 +361,7 @@ def _probability_of_profit(
         replications=replications,
         seed=seed,
     )
-    profitable = sum(
-        sum((row.closing_balance_change for row in path), start=Decimal("0")) > 0 for path in paths
-    )
+    profitable = sum(sum(row.closing_balance_change for row in path) > 0 for path in paths)
     return Decimal(profitable) / Decimal(replications)
 
 
@@ -374,10 +375,7 @@ def summarize_scenario_bootstrap(
     source = tuple(scenarios)
     if not source:
         raise ValueError("loss-day scenarios must be non-empty")
-    returns = np.asarray(
-        [float(row.closing_balance_change) for row in source],
-        dtype=np.float64,
-    )
+    returns = np.asarray([float(row.closing_balance_change) for row in source])
     selected = select_block_length({"closing_balance_change": returns})
     choices = (("plugin", selected),) + tuple(
         (f"fixed_{block_length}", block_length) for block_length in SENSITIVITY_BLOCK_LENGTHS
