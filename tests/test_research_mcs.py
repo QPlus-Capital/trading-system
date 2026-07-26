@@ -131,13 +131,13 @@ def test_range_decision_inferred_integer_index_dtype_is_equivalent(
     original_asarray = np.asarray
     inferred_index_calls = 0
 
-    def inferred_integer_index(values: object, dtype: object = None) -> np.ndarray:
+    def explicit_integer_index(values: object, dtype: object = None) -> np.ndarray:
         nonlocal inferred_index_calls
-        assert dtype is np.int64
+        assert dtype is None
         inferred_index_calls += 1
-        return original_asarray(values)
+        return original_asarray(values, dtype=np.int64)
 
-    monkeypatch.setattr(np, "asarray", inferred_integer_index)
+    monkeypatch.setattr(np, "asarray", explicit_integer_index)
 
     actual = _range_decision(names, observed, bootstrap, active=active)
 

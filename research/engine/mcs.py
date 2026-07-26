@@ -403,7 +403,7 @@ def _range_decision(
     if not np.isfinite(observed_pair_scores).all() or not np.isfinite(bootstrap_pair_scores).all():
         raise McsInputError("MCS pair scores must be finite")
 
-    active_array = np.asarray(active, dtype=np.int64)
+    active_array = np.asarray(active)
     observed = observed_pair_scores[np.ix_(active_array, active_array)]
     bootstrap = bootstrap_pair_scores[:, active_array][:, :, active_array]
     statistic = float(np.max(np.abs(observed)))
@@ -435,11 +435,8 @@ def _pairwise_scores(
     """Studentize observed and centered-bootstrap loss differences for every pair."""
     sample_size, candidate_count = losses.shape
     replications = len(bootstrap_means)
-    observed_scores = np.zeros((candidate_count, candidate_count), dtype=np.float64)
-    bootstrap_scores = np.zeros(
-        (replications, candidate_count, candidate_count),
-        dtype=np.float64,
-    )
+    observed_scores = np.zeros((candidate_count, candidate_count))
+    bootstrap_scores = np.zeros((replications, candidate_count, candidate_count))
     pairs = tuple(
         (left, right)
         for left in range(candidate_count)
