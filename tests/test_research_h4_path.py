@@ -158,6 +158,10 @@ def test_h4_loader_accepts_one_complete_observation(tmp_path: Path) -> None:
             _h4((2, "99", "101", "100"), (1, "99", "101", "100")),
             "strictly increasing",
         ),
+        (
+            _h4((1, "99", "101", "100"), (1, "99", "101", "100")),
+            "strictly increasing",
+        ),
         (_h4((1, "nan", "101", "100")), "non-finite H4 prices"),
         (_h4((1, "99", "nan", "100")), "non-finite H4 prices"),
         (_h4((1, "99", "101", "nan")), "non-finite H4 prices"),
@@ -449,6 +453,7 @@ def test_daily_and_trailing_flags_share_the_minimum_equity_path() -> None:
     assert diagnostics.close_equity[0] == pytest.approx(101_000.0)
     assert diagnostics.minimum_equity[0] == pytest.approx(96_000.0)
     assert diagnostics.daily_loss[0] == pytest.approx(0.04)
+    assert diagnostics.days[0] == to_day(opened)
     assert diagnostics.trailing_floor[0] == pytest.approx(95_000.0)
     assert diagnostics.daily_breach[0]
     assert not diagnostics.trailing_breach[0]
@@ -563,10 +568,7 @@ def test_h4_replay_names_a_missing_trade_timestamp(missing: str) -> None:
     trades["cd"] = to_day(closed)
     bars = {"X": _h4((opened, "99", "100.2", "99"))}
 
-    with pytest.raises(
-        ValueError,
-        match="synchronized H4 reconstruction requires ts_opened and ts_closed",
-    ):
+    with pytest.raises(ValueError) as exc_info:
         simulate(
             trades,
             {"X": np.array([99.0])},
@@ -577,6 +579,9 @@ def test_h4_replay_names_a_missing_trade_timestamp(missing: str) -> None:
             flat(1.0),
             h4_prices=bars,
         )
+    assert str(exc_info.value) == (
+        "synchronized H4 reconstruction requires ts_opened and ts_closed"
+    )
 
 
 def test_wholly_missing_h4_lifetime_evidence_fails_closed() -> None:
