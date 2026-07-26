@@ -2,7 +2,7 @@
 
 ## Findings
 
-Builder adversarial review completed after implementation; 14 calendar, accounting, path-bundle,
+Builder adversarial review completed after implementation; 16 calendar, accounting, path-bundle,
 lineage, determinism, missing-artifact, and gate-isolation counterexamples were attempted.
 
 | ID | Severity | Finding | Counterexample | Status |
