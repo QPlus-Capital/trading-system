@@ -107,6 +107,44 @@ def test_range_elimination_breaks_exact_ties_by_candidate_identifier() -> None:
     assert decision.eliminated == "alpha"
 
 
+@pytest.mark.parametrize(
+    "active",
+    [
+        (0, 1),
+        (0, 2),
+        (2, 0),
+        (0, 1, 2),
+    ],
+)
+def test_range_decision_inferred_integer_index_dtype_is_equivalent(
+    active: tuple[int, ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    names = ("zeta", "alpha", "best")
+    observed = np.asarray([[0.0, 0.0, 3.0], [0.0, 0.0, 3.0], [-3.0, -3.0, 0.0]])
+    bootstrap = np.zeros((3, 3, 3), dtype=np.float64)
+    bootstrap[1, 0, 2] = 2.0
+    bootstrap[1, 2, 0] = -2.0
+    bootstrap[2, 0, 2] = 4.0
+    bootstrap[2, 2, 0] = -4.0
+    expected = _range_decision(names, observed, bootstrap, active=active)
+    original_asarray = np.asarray
+    inferred_index_calls = 0
+
+    def inferred_integer_index(values: object, dtype: object = None) -> np.ndarray:
+        nonlocal inferred_index_calls
+        assert dtype is np.int64
+        inferred_index_calls += 1
+        return original_asarray(values)
+
+    monkeypatch.setattr(np, "asarray", inferred_integer_index)
+
+    actual = _range_decision(names, observed, bootstrap, active=active)
+
+    assert inferred_index_calls == 1
+    assert actual == expected
+
+
 def test_range_decision_validates_every_boundary_fail_closed() -> None:
     names = ("first", "second")
     observed = np.zeros((2, 2), dtype=np.float64)
