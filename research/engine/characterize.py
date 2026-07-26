@@ -14,8 +14,8 @@ return is never the ranking key). It also reports, per variation:
 * ``worst_market_pct`` -- the weakest instrument (robustness floor),
 * ``wfe_norm`` -- length-normalized walk-forward efficiency (~0.5+ generalizes),
 * ``oos_sharpe`` -- Sharpe of the pooled per-window OOS returns,
-* ``dsr`` -- deflated Sharpe, correcting for how many variations were tried, so an
-  edge that is really just multiple-testing noise shows up as a low DSR.
+* ``dsr`` -- diagnostic deflated Sharpe at synchronized effective and nominal trial counts,
+* ``pbo`` -- diagnostic CSCV probability over the common 36-candidate window matrix.
 
 Everything lands in a single timestamped folder ``reports/research/study_<ts>/`` (which is
 git-ignored): the existing study/ranking reports, a variation x instrument heatmap, and the
@@ -38,6 +38,7 @@ import time
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +47,11 @@ from core.broker import BrokerProfile, standard_broker
 from core.data.mt5_csv import seeded_instruments
 from core.paths import REPO_ROOT
 
-from research.engine.candidate_returns import write_candidate_artifacts
+from research.engine.candidate_returns import (
+    CANDIDATE_METADATA,
+    CANDIDATE_WINDOW_RETURNS,
+    write_candidate_artifacts,
+)
 from research.engine.config import load_config_module
 from research.engine.overfitting import study_trial_budget
 from research.engine.recipe import SweepRecipe
@@ -62,6 +67,18 @@ _LIST_KEYS = (
     "combo_oos",
     "candidate_windows",
 )
+
+
+def effective_trial_count(rho_bar: Decimal) -> Decimal:
+    """Return the pre-registered effective trial count for 36 formal and five manual trials."""
+    if not isinstance(rho_bar, Decimal):
+        raise TypeError("rho_bar must be Decimal")
+    if not rho_bar.is_finite() or not Decimal(0) <= rho_bar <= Decimal(1):
+        raise ValueError("rho_bar must be finite and between zero and one")
+    return min(
+        Decimal(41),
+        Decimal(5) + rho_bar + (Decimal(1) - rho_bar) * Decimal(36),
+    )
 
 
 def account_balance_of(cfg: Any) -> float:
@@ -297,13 +314,126 @@ def variation_pbo(good: list[dict[str, Any]], n_splits: int = 10) -> float:
         return float("nan")
 
 
+def synchronized_overfitting_diagnostics(out_dir: Path) -> dict[str, Any]:
+    """Compute diagnostic-only DSR and PBO from P-03's synchronized window matrix."""
+    import numpy as np
+
+    from research.engine.overfitting import (
+        cscv_splits,
+        deflated_sharpe_ratio,
+        expected_max_sharpe,
+        pbo,
+        sharpe_ratio,
+    )
+
+    base: dict[str, Any] = {
+        "role": "diagnostic_only",
+        "status": "unavailable",
+        "dsr_threshold": 0.90,
+        "pbo_threshold": 0.20,
+        "source": CANDIDATE_WINDOW_RETURNS,
+    }
+    try:
+        metadata_raw = json.loads((out_dir / CANDIDATE_METADATA).read_text(encoding="utf-8"))
+        if not isinstance(metadata_raw, dict):
+            raise ValueError("candidate metadata must be an object")
+        formal = metadata_raw.get("formal_candidates")
+        persisted = metadata_raw.get("persisted_candidates")
+        trials = metadata_raw.get("trial_counts")
+        if (
+            not isinstance(formal, list)
+            or not isinstance(persisted, list)
+            or not isinstance(trials, dict)
+        ):
+            raise ValueError("candidate metadata is incomplete")
+        formal_names = [str(item["candidate"]) for item in formal if isinstance(item, dict)]
+        persisted_names = [str(name) for name in persisted]
+        if len(formal_names) != 36 or int(trials.get("manual", -1)) != 5:
+            raise ValueError("DSR/PBO diagnostics require 36 formal and five manual trials")
+        if persisted_names != formal_names:
+            raise ValueError("all 36 formal candidates must share the synchronized window grid")
+
+        frame = pd.read_csv(out_dir / CANDIDATE_WINDOW_RETURNS)
+        if list(frame.columns) != ["window", *formal_names]:
+            raise ValueError("candidate window columns disagree with the formal family")
+        if frame["window"].duplicated().any():
+            raise ValueError("candidate window labels must be unique")
+        matrix = frame[formal_names].to_numpy(dtype=float)
+        if matrix.ndim != 2 or matrix.shape[0] < 4 or not np.isfinite(matrix).all():
+            raise ValueError("candidate window matrix is too short or non-finite")
+
+        correlations = np.corrcoef(matrix, rowvar=False)
+        upper = correlations[np.triu_indices(len(formal_names), k=1)]
+        if not np.isfinite(upper).all():
+            raise ValueError("candidate correlations are undefined")
+        rho_bar = float(np.clip(upper.mean(), 0.0, 1.0))
+        n_eff_decimal = effective_trial_count(Decimal(str(rho_bar)))
+        n_eff = float(n_eff_decimal)
+        sharpes = np.asarray(
+            [sharpe_ratio(matrix[:, index]) for index in range(matrix.shape[1])],
+            dtype=float,
+        )
+        sharpe_variance = float(np.var(sharpes, ddof=1))
+        if not np.isfinite(sharpe_variance) or sharpe_variance <= 0.0:
+            raise ValueError("candidate Sharpe variance must be positive and finite")
+
+        benchmark_effective = expected_max_sharpe(n_eff, sharpe_variance)
+        benchmark_nominal = expected_max_sharpe(41.0, sharpe_variance)
+        candidates: dict[str, dict[str, float | int | bool]] = {}
+        for index, name in enumerate(formal_names):
+            values = matrix[:, index]
+            std = float(values.std(ddof=1))
+            if std <= 0.0:
+                raise ValueError(f"candidate {name} has zero window-return variance")
+            standardized = (values - values.mean()) / std
+            dsr_effective = deflated_sharpe_ratio(values, n_eff, sharpe_variance)
+            dsr_nominal = deflated_sharpe_ratio(values, 41.0, sharpe_variance)
+            candidates[name] = {
+                "sharpe": float(sharpes[index]),
+                "dsr_effective": dsr_effective,
+                "dsr_nominal": dsr_nominal,
+                "dsr_diagnostic_ok": Decimal(str(dsr_effective)) >= Decimal("0.90"),
+                "sample_count": len(values),
+                "skew": float((standardized**3).mean()),
+                "kurtosis": float((standardized**4).mean()),
+            }
+
+        splits = cscv_splits(len(matrix))
+        if splits < 2:
+            raise ValueError("candidate window matrix has too few windows for PBO")
+        pbo_value = pbo(matrix, n_splits=splits)
+        return {
+            **base,
+            "status": "available",
+            "candidate_count": len(formal_names),
+            "manual_trial_count": 5,
+            "nominal_trial_count": 41,
+            "effective_trial_count": n_eff,
+            "rho_bar": rho_bar,
+            "sharpe_variance": sharpe_variance,
+            "benchmark_effective": benchmark_effective,
+            "benchmark_nominal": benchmark_nominal,
+            "sample_count": len(matrix),
+            "pbo": pbo_value,
+            "pbo_split_count": splits,
+            "pbo_diagnostic_ok": Decimal(str(pbo_value)) <= Decimal("0.20"),
+            "candidates": candidates,
+            "dsr_by_candidate": {
+                name: values["dsr_effective"] for name, values in candidates.items()
+            },
+            "dsr_nominal_by_candidate": {
+                name: values["dsr_nominal"] for name, values in candidates.items()
+            },
+        }
+    except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return {**base, "reason": str(exc), "pbo": None, "candidates": {}}
+
+
 def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> None:
     """Build the ranking (with DSR + PBO), the heatmap and top-variation Monte-Carlo charts."""
     import json
 
-    import numpy as np
-
-    from research.engine.overfitting import deflated_sharpe_ratio, sharpe_ratio
+    from research.engine.overfitting import sharpe_ratio
 
     df = pd.DataFrame([{k: v for k, v in r.items() if k not in _LIST_KEYS} for r in rows])
     good = [r for r in rows if "mean_oos_pct" in r and "window_oos" in r]
@@ -311,58 +441,29 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         print("no successful tasks -> no ranking report")
         return
 
-    # Pool each variation's per-window return series across all instruments.
+    # Keep the pooled variation series only for the descriptive OOS Sharpe. Decision diagnostics
+    # come exclusively from P-03's synchronized candidate-window matrix below.
     win_by_var: dict[str, list[float]] = defaultdict(list)
-    # ...and, separately, per CANDIDATE -- a (variation, train_months) pair, which is the unit
-    # selection actually chooses among (#13).
-    win_by_cand: dict[tuple[str, int], list[float]] = defaultdict(list)
     for r in good:
         win_by_var[r["variation"]].extend(r["window_oos"])
-        win_by_cand[(r["variation"], int(r["train_months"]))].extend(r["window_oos"])
 
     variation_sharpe = {v: sharpe_ratio(s) for v, s in win_by_var.items()}
-    # #13: the deflation benchmark needs the Sharpe dispersion ACROSS THE TRIALS being selected
-    # among. Measuring it across pooled per-variation streams averaged the train-length dimension
-    # away, so the variance came from a handful of numbers while n_trials counted the whole grid.
-    # Too little dispersion -> too low an expected-max-Sharpe -> DSR too high: the optimistic
-    # direction. Candidate-level Sharpes are the honest population.
-    # Best available population: the real (variation x grid-combo) candidates when the matrix was
-    # collected, otherwise the coarser (variation, train_months) fallback.
-    streams = candidate_streams(good)
-    grid_sharpes = [sharpe_ratio(s) for cands in streams.values() for s in cands.values()]
-    if len(grid_sharpes) > 1:
-        sharpe_variance = float(np.var(grid_sharpes, ddof=1))
-        n_candidates = len(grid_sharpes)
-    else:
-        candidate_sharpe = {c: sharpe_ratio(s) for c, s in win_by_cand.items()}
-        sharpe_variance = (
-            float(np.var(list(candidate_sharpe.values()), ddof=1))
-            if len(candidate_sharpe) > 1
-            else 0.0
-        )
-        n_candidates = len(candidate_sharpe)
-    # Study-level overfitting gate. Prefer CSCV over the real candidate matrix; fall back to the
-    # variation-level estimate only when the matrix is unavailable (#13).
-    pbo_value = candidate_pbo(streams)
-    pbo_source = "candidates"
-    if np.isnan(pbo_value):
-        pbo_value = variation_pbo(good)
-        pbo_source = "variations"
+    diagnostics = synchronized_overfitting_diagnostics(out_dir)
+    diagnostics["searched_configurations"] = n_trials
     (out_dir / "overfitting.json").write_text(
-        json.dumps(
-            {
-                "pbo": None if np.isnan(pbo_value) else round(pbo_value, 4),
-                "pbo_source": pbo_source,  # "candidates" = the real matrix, "variations" = fallback
-                "n_trials": n_trials,
-                "n_variations": len(win_by_var),
-                "n_candidates": n_candidates,
-                "sharpe_variance": round(sharpe_variance, 6),
-            },
-            indent=2,
-        ),
+        json.dumps(diagnostics, indent=2, sort_keys=True, allow_nan=False) + "\n",
         encoding="utf-8",
     )
-    print(f"\nPBO (CSCV over {n_candidates} {pbo_source}): {pbo_value:.3f} | trials: {n_trials}")
+    if diagnostics["status"] == "available":
+        print(
+            "\nDSR/PBO diagnostics only: "
+            f"N_eff={diagnostics['effective_trial_count']:.2f}, "
+            f"rho={diagnostics['rho_bar']:.3f}, "
+            f"PBO={diagnostics['pbo']:.3f}, "
+            f"splits={diagnostics['pbo_split_count']}"
+        )
+    else:
+        print(f"\nDSR/PBO diagnostics unavailable: {diagnostics['reason']}")
 
     agg = (
         df.dropna(subset=["mean_oos_pct"])
@@ -378,9 +479,6 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         )
     )
     agg["oos_sharpe"] = agg.index.map(variation_sharpe)
-    # #13: deflate the SELECTED candidate's own sample, not a stream pooled over train lengths the
-    # deployment will never use. Each variation is represented by the training length that would
-    # actually be picked (its best mean OOS return) -- that is the strategy being judged.
     best_tm = (
         df.dropna(subset=["mean_oos_pct"])
         .groupby(["variation", "train_months"])["mean_oos_pct"]
@@ -389,12 +487,22 @@ def _write_reports(rows: list[dict[str, Any]], out_dir: Path, n_trials: int) -> 
         .idxmax()
     )
     agg["train_months"] = agg.index.map(lambda v: int(best_tm[v][1]) if v in best_tm else 0)
+    dsr_by_candidate = diagnostics.get("dsr_by_candidate", {})
+    dsr_nominal_by_candidate = diagnostics.get("dsr_nominal_by_candidate", {})
     agg["dsr"] = agg.index.map(
-        lambda v: (
-            deflated_sharpe_ratio(
-                win_by_cand.get((v, int(best_tm[v][1])), win_by_var[v]), n_trials, sharpe_variance
+        lambda variation: (
+            dsr_by_candidate.get(f"{variation}__train_{int(best_tm[variation][1])}m", float("nan"))
+            if variation in best_tm
+            else float("nan")
+        )
+    )
+    agg["dsr_nominal"] = agg.index.map(
+        lambda variation: (
+            dsr_nominal_by_candidate.get(
+                f"{variation}__train_{int(best_tm[variation][1])}m",
+                float("nan"),
             )
-            if v in best_tm
+            if variation in best_tm
             else float("nan")
         )
     )
@@ -547,7 +655,6 @@ def main(argv: list[str] | None = None) -> None:
     # is variations x training-lengths x per-window param-combos, not just one dimension.
     budget = study_trial_budget(cfg)
     print(f"\nmultiple-testing budget: {budget.summary()}")
-    _write_reports(rows, out_dir, budget.total)
     write_candidate_artifacts(
         rows,
         out_dir,
@@ -558,6 +665,7 @@ def main(argv: list[str] | None = None) -> None:
         source_inputs=study_inputs,
         hash_paths=lineage.hash_paths,
     )
+    _write_reports(rows, out_dir, budget.total)
     # Publish provenance only after every study artifact is final. A partial/interrupted study
     # deliberately has no record that could be mistaken for completed, attributable evidence.
     lineage.write_provenance(out_dir, study_inputs)

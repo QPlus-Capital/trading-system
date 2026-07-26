@@ -137,3 +137,20 @@ VARIATIONS: dict[str, dict[str, Any]] = {
     "bb30": {"bb_length": 30},  # default 20
     "wpr21": {"wpr_length": 21},  # default 14
 }
+
+# Pre-registered model-complexity ordering for automatic selection. Lower means simpler.
+# Complexity is defined per variation; training length is a later, independent tie-break.
+COMPLEXITY_SCORES: dict[str, int] = {
+    "no_confirms": 0,
+    "no_bb_wpr": 1,
+    "no_bb_rsi": 1,
+    "no_wpr_rsi": 1,
+    "no_bb": 2,
+    "no_wpr": 2,
+    "no_rsi": 2,
+    "baseline": 3,
+    "long_only": 4,
+    "ema20": 4,
+    "bb30": 4,
+    "wpr21": 4,
+}

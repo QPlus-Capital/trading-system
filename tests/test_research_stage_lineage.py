@@ -50,6 +50,7 @@ def _gbpusd() -> _Inst:
 
 INSTRUMENTS = [(_eurusd, "data/eurusd.csv", 1), (_gbpusd, "data/gbpusd.csv", 1)]
 VARIATIONS = {"v_alpha": {}, "v_beta": {}}
+COMPLEXITY_SCORES = {"v_alpha": 2, "v_beta": 1}
 TRAIN_MONTHS = [24, 36]
 PARAM_GRID: dict[str, list[float]] = {}
 """
@@ -78,11 +79,23 @@ def _write_study(study_dir: Path) -> Path:
                     }
                 )
     pd.DataFrame(rows).to_csv(study_dir / "study.csv", index=False)
-    pd.DataFrame({"variation": ["v_alpha", "v_beta"], "dsr": [1.5, 1.2]}).to_csv(
-        study_dir / "ranking.csv", index=False
-    )
-    (study_dir / "overfitting.json").write_text('{"pbo": 0.05, "n_trials": 4}', encoding="utf-8")
     _write_candidate_artifacts(study_dir)
+    names = [
+        definition.candidate_id
+        for definition in candidate_definitions(("v_alpha", "v_beta"), (24, 36))
+    ]
+    (study_dir / "overfitting.json").write_text(
+        json.dumps(
+            {
+                "role": "diagnostic_only",
+                "pbo": 0.99,
+                "pbo_diagnostic_ok": False,
+                "dsr_by_candidate": dict.fromkeys(names, 0.01),
+                "dsr_nominal_by_candidate": dict.fromkeys(names, 0.01),
+            }
+        ),
+        encoding="utf-8",
+    )
     return study_dir
 
 
@@ -128,16 +141,27 @@ def _fast_spa(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _spa_analysis(p_value: float, *, failing_block: int | None = None) -> SpaAnalysis:
+    candidates = {
+        f"{variation}__train_{train}m": 2.0
+        for variation in ("v_alpha", "v_beta")
+        for train in (24, 36)
+    }
     sensitivity = {
         block_length: SpaResult(
             block_length=block_length,
             statistic=2.0,
             p_value=0.2 if block_length == failing_block else p_value,
+            candidate_statistics=candidates,
         )
         for block_length in SENSITIVITY_BLOCK_LENGTHS
     }
     return SpaAnalysis(
-        selected=SpaResult(block_length=1, statistic=2.0, p_value=p_value),
+        selected=SpaResult(
+            block_length=1,
+            statistic=2.0,
+            p_value=p_value,
+            candidate_statistics=candidates,
+        ),
         sensitivity=sensitivity,
         replications=99,
         seed=20260719,
@@ -162,12 +186,23 @@ def _run_edge(study: tuple[Path, Path, Path]) -> None:
 
 
 # ------------------------------------------------------------------ the happy path
-def test_a_clean_run_completes_stage_1_and_2(study: tuple[Path, Path, Path]) -> None:
+def test_a_clean_run_completes_stage_1_and_2(
+    study: tuple[Path, Path, Path],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     _cfg, _src, run_dir = study
     _run_edge(study)
     select.main(["--run", str(run_dir)])
 
     assert (run_dir / "selection.json").is_file()
+    selection = json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))
+    assert selection["variation"] == "v_beta"  # lower complexity beats v_alpha's higher return
+    assert selection["train_months"] == 36
+    assert not selection["gates"]["dsr_diagnostic_ok"]
+    assert not selection["gates"]["pbo_diagnostic_ok"]
+    output = capsys.readouterr().out
+    assert "DSR-Diagnostik" in output and "kein Auswahl-Gate" in output
+    assert "PBO-Diagnostik" in output
     for stage in ("edge", "select"):
         m = lineage.read_manifest(run_dir, stage)
         assert m is not None, f"stage '{stage}' left no completion marker"
@@ -219,7 +254,7 @@ def test_edge_reports_mcs_failure_as_mcs_not_spa(
         _run_edge(study)
 
 
-def test_stage_2_does_not_consume_mcs_membership_before_p08(
+def test_stage_2_fails_closed_when_mcs_evidence_is_not_strictly_valid(
     study: tuple[Path, Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -237,10 +272,8 @@ def test_stage_2_does_not_consume_mcs_membership_before_p08(
     monkeypatch.setattr(edge, "mcs_test", lambda *_args, **_kwargs: NoEligibleMcs())
 
     _run_edge(study)
-    select.main(["--run", str(run_dir)])
-
-    selection = json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))
-    assert selection["variation"] == "v_alpha"
+    with pytest.raises(SystemExit, match="family evidence"):
+        select.main(["--run", str(run_dir)])
 
 
 def test_candidate_streams_are_copied_byte_exactly_and_selection_cannot_rewrite_them(
@@ -299,7 +332,7 @@ def test_edge_publishes_lineage_bound_romano_wolf_evidence(
     assert calls == [(1, 99, 20260719, {candidate.name for candidate in analysis.candidates})]
 
 
-def test_p06_candidate_eligibility_is_not_consumed_before_p08(
+def test_stage_2_fails_closed_when_romano_wolf_eligibility_is_empty(
     study: tuple[Path, Path, Path],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -333,13 +366,12 @@ def test_p06_candidate_eligibility_is_not_consumed_before_p08(
     monkeypatch.setattr(edge, "romano_wolf_test", all_ineligible)
     _run_edge(study)
 
-    select.main(["--run", str(run_dir)])
-
     evidence = RomanoWolfAnalysis.from_dict(
         json.loads((run_dir / "romano_wolf.json").read_text(encoding="utf-8"))
     )
     assert evidence.eligible_candidates == ()
-    assert (run_dir / "selection.json").is_file()
+    with pytest.raises(SystemExit, match="Romano-Wolf"):
+        select.main(["--run", str(run_dir)])
 
 
 def test_edge_fails_closed_when_candidate_daily_matrix_is_missing(
@@ -394,6 +426,19 @@ def test_selection_requires_verified_spa_evidence(study: tuple[Path, Path, Path]
         select.main(["--run", str(run_dir)])
 
 
+@pytest.mark.parametrize("artifact", ["romano_wolf.json", "mcs.json"])
+def test_selection_requires_every_family_artifact(
+    study: tuple[Path, Path, Path],
+    artifact: str,
+) -> None:
+    _cfg, _source, run_dir = study
+    _run_edge(study)
+    (run_dir / artifact).unlink()
+
+    with pytest.raises(SystemExit, match=artifact):
+        select.main(["--run", str(run_dir)])
+
+
 # ------------------------------------------------------------------ tampering with artifacts
 def test_altering_study_csv_stops_stage_2_and_names_both_hashes(
     study: tuple[Path, Path, Path],
@@ -434,7 +479,7 @@ def test_replacing_selection_json_stops_stage_4(study: tuple[Path, Path, Path]) 
     _fake_portfolio_stage(run_dir)
 
     sel = json.loads((run_dir / "selection.json").read_text(encoding="utf-8"))
-    sel["variation"] = "v_beta"  # a different structure than the portfolio was built for
+    sel["variation"] = "v_alpha"  # a different structure than the portfolio was built for
     (run_dir / "selection.json").write_text(json.dumps(sel, indent=2), encoding="utf-8")
 
     with pytest.raises(SystemExit) as err:
@@ -452,7 +497,7 @@ def test_portfolio_json_from_another_run_stops_stage_4(
     _fake_portfolio_stage(run_dir)
 
     other = json.loads((run_dir / "portfolio.json").read_text(encoding="utf-8"))
-    other["variation"] = "v_beta"
+    other["variation"] = "v_alpha"
     (run_dir / "portfolio.json").write_text(json.dumps(other, indent=2), encoding="utf-8")
 
     with pytest.raises(SystemExit) as err:

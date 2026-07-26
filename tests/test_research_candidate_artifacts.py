@@ -152,6 +152,24 @@ def test_production_config_defines_36_unique_formal_candidates_and_five_manual_t
     )
 
 
+def test_complexity_scores_cover_each_preregistered_variation_exactly() -> None:
+    assert robustness.COMPLEXITY_SCORES == {
+        "no_confirms": 0,
+        "no_bb_wpr": 1,
+        "no_bb_rsi": 1,
+        "no_wpr_rsi": 1,
+        "no_bb": 2,
+        "no_wpr": 2,
+        "no_rsi": 2,
+        "baseline": 3,
+        "long_only": 4,
+        "ema20": 4,
+        "bb30": 4,
+        "wpr21": 4,
+    }
+    assert set(robustness.COMPLEXITY_SCORES) == set(robustness.VARIATIONS)
+
+
 def test_daily_stream_uses_chicago_reset_and_includes_every_zero_day(tmp_path: Path) -> None:
     metadata = _write(tmp_path, _fixture_rows())
     daily = pd.read_csv(tmp_path / "candidate_daily_returns.csv", dtype=str)

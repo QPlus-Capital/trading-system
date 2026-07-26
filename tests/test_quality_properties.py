@@ -17,6 +17,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 from live.risk_control import RiskController, RiskLimits, position_volume
 from monitoring.deals import deal_ledger, deals_to_trades, per_trade_risk
+from research.engine.characterize import effective_trial_count
 from research.engine.continuous import window_returns
 from research.engine.mcs import mcs_test
 from research.engine.romano_wolf import _stepdown_adjusted_p_values
@@ -46,6 +47,22 @@ from tests.support.strategies import (
     trade_streams,
     valid_windows,
 )
+
+
+@given(
+    left=st.integers(min_value=0, max_value=10_000),
+    right=st.integers(min_value=0, max_value=10_000),
+)
+def test_effective_trial_count_is_bounded_and_decreases_with_correlation(
+    left: int,
+    right: int,
+) -> None:
+    low, high = sorted((Decimal(left) / Decimal(10_000), Decimal(right) / Decimal(10_000)))
+
+    low_count = effective_trial_count(low)
+    high_count = effective_trial_count(high)
+
+    assert Decimal("6") <= high_count <= low_count <= Decimal("41")
 
 
 @given(

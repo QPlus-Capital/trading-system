@@ -111,8 +111,22 @@ reason = "the edge stage must execute SPA, Romano-Wolf, and MCS and lineage-bind
 [[edges]]
 source = "research/stages/select.py"
 tests = [
+  "tests/test_research_selection_protocol.py",
   "tests/test_research_stage_lineage.py",
   "tests/test_research_stages.py",
 ]
 possibly_affected = []
-reason = "Stage 2 must fail closed on missing, invalid, or non-significant SPA evidence"
+reason = "Stage 2 must enforce the complete family-evidence intersection and complexity-first order"
+
+[[edges]]
+source = "research/engine/characterize.py"
+tests = [
+  "tests/test_research_selection_protocol.py",
+  "tests/test_research_overfitting.py",
+  "tests/test_research_candidate_artifacts.py",
+  "tests/test_quality_properties.py",
+]
+possibly_affected = [
+  "tests/test_research_stage_lineage.py",
+]
+reason = "Stage 1 must derive diagnostic-only DSR and PBO from the synchronized 36-candidate matrix"
