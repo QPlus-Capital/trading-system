@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
-from research.portfolio.curves import to_day
+from research.portfolio.curves import interval_loss_days, load_h4_prices, to_day
 from research.portfolio.risk import AccountProfile, FlatRisk, evaluate_policy
 from research.portfolio.sizing import DailyDiagnostics, flat, simulate
 
@@ -45,7 +46,10 @@ def _run(
     first = min(t["od"]) if d0 is None else d0
     last = max(t["cd"]) if d1 is None else d1
     closes = {
-        market: np.full(last - first + 1, float(rows["close"].iloc[-1]))
+        market: np.full(
+            last - first + 1,
+            float(rows["close"].iloc[-1]) if "close" in rows else 100.0,
+        )
         for market, rows in h4_prices.items()
     }
     return simulate(
@@ -81,6 +85,62 @@ def _trade(
         "is_long": False,
         "swap_base": swap_base,
     }
+
+
+def test_loss_day_interval_is_half_open_and_rejects_empty_ranges() -> None:
+    before_reset = _ts("2026-07-01 21:00")
+    after_reset = before_reset + 4 * _HOUR_NS
+
+    assert interval_loss_days(before_reset, before_reset) == ()
+    assert interval_loss_days(after_reset, before_reset) == ()
+    assert interval_loss_days(before_reset, after_reset) == (
+        to_day(before_reset),
+        to_day(after_reset),
+    )
+
+
+@pytest.mark.parametrize(
+    ("rows", "message"),
+    [
+        (
+            "2026.07.02\t00:00:00\t99\t101\t100\n2026.07.02\t00:00:00\t99\t101\t100\n",
+            "duplicate H4 timestamps",
+        ),
+        (
+            "2026.07.02\t04:00:00\t99\t101\t100\n2026.07.02\t00:00:00\t99\t101\t100\n",
+            "not strictly increasing",
+        ),
+        ("2026.07.02\t00:00:00\tnan\t101\t100\n", "non-finite H4 price"),
+    ],
+)
+def test_h4_loader_fails_closed_on_invalid_rows(tmp_path: Path, rows: str, message: str) -> None:
+    csv = tmp_path / "X_H4.csv"
+    csv.write_text(
+        "<DATE>\t<TIME>\t<LOW>\t<HIGH>\t<CLOSE>\n" + rows,
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match=message):
+        load_h4_prices(str(csv))
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        pd.DataFrame({"timestamp_ns": [1], "low": [99], "high": [101]}),
+        _h4((2, "99", "101", "100"), (1, "99", "101", "100")),
+        _h4((1, "nan", "101", "100")),
+        _h4((1, "102", "101", "100")),
+        _h4((1, "99", "101", "102")),
+    ],
+)
+def test_h4_replay_fails_closed_on_invalid_market_frames(frame: pd.DataFrame) -> None:
+    opened = 0
+    closed = 4 * _HOUR_NS
+    trades = pd.DataFrame([_trade("X", opened, closed)])
+
+    with pytest.raises(ValueError):
+        _run(trades, {"X": frame})
 
 
 def test_trade_uses_only_h4_observations_inside_its_lifetime() -> None:

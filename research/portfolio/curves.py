@@ -109,6 +109,7 @@ def load_h4_prices(csv_path: str) -> pd.DataFrame:
         sep="\t",
         usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>", "<CLOSE>"],
         dtype={"<LOW>": str, "<HIGH>": str, "<CLOSE>": str},
+        keep_default_na=False,
     )
     timestamps = parse_mt5_timestamps(df)
     # pandas may store parsed datetimes at microsecond resolution; Timestamp.value is explicitly

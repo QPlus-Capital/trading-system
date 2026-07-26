@@ -14,6 +14,27 @@ selection's four profitable positions at +6.14R/+4.11R/+3.08R/+2.00R are absent.
 therefore checked for honest current path changes; the prescribed old-structure magnitude is
 proved only by a deterministic synthetic fixture.
 
+## Direct impact
+
+- Replace whole-loss-day low/high collapse with timestamped Decimal H4 OHLC inputs.
+- Replay position events inside half-open H4 intervals and return one `DailyDiagnostics` object.
+- Make policy evaluation, Stage 3, Stage 4, and the fact sheet consume that one path.
+- Change only path metrics: daily loss, hard-limit breach flags, and intraday max drawdown.
+
+## Transitive impact
+
+Stage-3 `portfolio.json`, Stage-4 `verdict.json`, and the fact sheet receive corrected path metrics
+and may change a deployability limit result. Trade extraction, sizing multiples, realized returns,
+tail inputs, statistical edge metrics, signals, orders, and live execution remain unchanged.
+
+## Critical dependencies
+
+- `core.data.mt5_csv.parse_mt5_timestamps` owns broker-server-to-UTC conversion.
+- `research.portfolio.drawdown.trailing_floor` owns the existing trailing-HWM rule.
+- `research.portfolio.risk.evaluate_policy` is the sole policy-to-diagnostics boundary.
+- Stage 3 produces the sized trade stream; Stage 4 and `factsheet.compute_factsheet` must consume
+  its holdout-flat `PolicyResult` rather than reconstructing a separate flat path.
+
 ## Coupled quantity: daily minimum-equity path
 
 Every producer and consumer that must move in one pass:
