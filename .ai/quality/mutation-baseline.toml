@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-08 adds synchronized DSR/PBO diagnostics and the family-evidence selection protocol as critical targets. The Linux/Python 3.13 run measures 3,158 mutants: 2,835 are killed, two prior MCS dtype survivors are now killed, and 34 new survivors are classified below as equivalent or diagnostic-only."
+change_explanation = "P-08 adds synchronized DSR/PBO diagnostics and the family-evidence selection protocol as critical targets. The Linux/Python 3.13 ratchet now kills 2,836 of 3,158 mutants: pairwise-score dtype mutants 5 and 10 are removed after becoming killed, while range-decision mutant 49 is classified as an exact integer-index equivalence."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -28,8 +28,8 @@ targets = [
 
 [summary]
 total = 3158
-killed = 2835
-survived = 323
+killed = 2836
+survived = 322
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -43,16 +43,15 @@ caught_by_type_check = 0
 classification = "equivalent"
 reason = "np.zeros defaults to float64, so removing or replacing the explicit float64 dtype produces byte-identical score matrices."
 names = [
-    "research.engine.mcs.x__pairwise_scores__mutmut_5",
-    "research.engine.mcs.x__pairwise_scores__mutmut_10",
     "research.engine.mcs.x__pairwise_scores__mutmut_12",
 ]
 
 [[survivor_groups]]
 classification = "equivalent"
-reason = "Every active candidate index is validated as an int before np.asarray; inferred dtype is therefore the same integer index dtype as explicit int64 on the Linux gate."
+reason = "Range-decision active indices are validated unique in-range Python ints, the array is used only for NumPy indexing, and inferred integer dtype produces identical np.ix_ grids, slices, statistics, p-values, and elimination decisions."
 names = [
     "research.engine.mcs.x__range_decision__mutmut_47",
+    "research.engine.mcs.x__range_decision__mutmut_49",
 ]
 
 [[survivor_groups]]
