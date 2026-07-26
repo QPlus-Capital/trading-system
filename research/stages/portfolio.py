@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from decimal import Decimal
 from pathlib import Path
 
 import pandas as pd
@@ -40,6 +41,7 @@ from research.portfolio.risk import (
     evaluate_policy,
     tail_cap,
 )
+from research.portfolio.scenarios import build_loss_day_scenarios, write_loss_day_scenarios
 from research.portfolio.stress import worst_day_r
 from research.portfolio.tail import full_history_tail_cap, traded_stop_loss_pct
 from research.portfolio.trades import make_extract_fn
@@ -238,6 +240,11 @@ def main(argv: list[str] | None = None) -> None:
     }
     chosen_label = "throttle" if isinstance(policy, ThrottleRisk) else "flat"  # Kelly sizes flat
     chosen = results[chosen_label]
+    scenarios = build_loss_day_scenarios(
+        trades,
+        chosen,
+        start_balance=Decimal(str(account.start_balance)),
+    )
 
     print(f"\n  {results['flat'].n_trades} Trades / {chosen.years}J (Holdout, netto)\n")
     print(
@@ -282,6 +289,7 @@ def main(argv: list[str] | None = None) -> None:
         # The full-history stream (already computed for the tail) so the verdict fact sheet can
         # report full-history vs holdout side by side without re-running the backtests.
         rck_stream.to_csv(st.file("full_history_trades.csv"), index=False)
+        write_loss_day_scenarios(st.file("loss_day_scenarios.csv"), scenarios)
         st.save_json(
             "portfolio.json",
             {

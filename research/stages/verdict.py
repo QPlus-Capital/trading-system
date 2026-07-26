@@ -29,14 +29,18 @@ from typing import Any
 import pandas as pd
 
 from research.engine.config import load_config_module
-from research.engine.montecarlo import monte_carlo_paths, summarize
 from research.portfolio import factsheet, html_report
-from research.portfolio.curves import DAY_NS, load_daily_close, load_h4_prices, to_day
+from research.portfolio.curves import DAY_NS, load_daily_close, load_h4_prices
+from research.portfolio.resample import DEFAULT_SEED
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
     ThrottleRisk,
     evaluate_policy,
+)
+from research.portfolio.scenarios import (
+    read_loss_day_scenarios,
+    summarize_scenario_bootstrap,
 )
 from research.portfolio.stats import edge_stats, risk_stats
 from research.stages import _runbook as rb
@@ -101,6 +105,11 @@ def main(argv: list[str] | None = None) -> None:
     of_path = run.require("overfitting.json", "edge") if has_pbo else None
     spec = json.loads(run.require("portfolio.json", "portfolio").read_text(encoding="utf-8"))
     trades = pd.read_csv(run.require("portfolio_trades.csv", "portfolio"))
+    scenario_path = (
+        run.file("loss_day_scenarios.csv")
+        if run.allow_legacy
+        else run.require("loss_day_scenarios.csv", "portfolio")
+    )
     # A run predating this artifact must stay inspectable: legacy mode exists to READ old runs,
     # and demanding a file they never had would lock out the very workflow it is for. It stays
     # mandatory for a real run, where its absence means the stage did not finish.
@@ -144,13 +153,13 @@ def main(argv: list[str] | None = None) -> None:
     # published beside a breach it does not show. One number, one path.
     stats["max_drawdown"] = result.max_drawdown_pct / 100.0
 
-    # #16: resample whole trading days, not single trades -- our correlated markets lose together
-    # on a macro gap, and breaking those bundles apart understates the tail.
-    mc_days = [to_day(x) for x in trades["ts_closed"]]
-    paths = monte_carlo_paths(
-        sized_pnl.tolist(), n_sims=1000, start_equity=account.start_balance, days=mc_days
-    )
-    prob_profit = float(summarize(paths, account.start_balance)["prob_profit"])
+    if not scenario_path.is_file():
+        raise SystemExit(
+            "loss_day_scenarios.csv fehlt: Stage 3 mit dem aktuellen Code erneut ausfuehren."
+        )
+    scenarios = read_loss_day_scenarios(scenario_path)
+    bootstrap = summarize_scenario_bootstrap(scenarios)
+    prob_profit = float(bootstrap.prob_profit)
     # #11: a deployable verdict must describe the stops we actually TRADE. Without --fixed the
     # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
     # live account does not have -- such a run is exploratory, never a go-live decision.
@@ -243,9 +252,11 @@ def main(argv: list[str] | None = None) -> None:
     with run.stage(
         "verdict",
         argv={"run": str(run.path), "config": str(args.config or "")},
+        seeds={"loss_day_bootstrap": DEFAULT_SEED},
         inputs=inputs,
         semantics={"passed": passed, "variation": spec["variation"], "deployable": lineage_ok},
     ) as st:
+        st.save_json("path_bootstrap.json", bootstrap.to_json())
         st.save_json(
             "verdict.json",
             {
