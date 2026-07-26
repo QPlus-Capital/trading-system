@@ -57,7 +57,7 @@ def probabilistic_sharpe_ratio(returns: Sequence[float], sr_benchmark: float = 0
     return _NORMAL.cdf(stat)
 
 
-def expected_max_sharpe(n_trials: int, sharpe_variance: float) -> float:
+def expected_max_sharpe(n_trials: float, sharpe_variance: float) -> float:
     """Expected maximum Sharpe of ``n_trials`` independent zero-skill strategies."""
     if n_trials < 2 or sharpe_variance <= 0:
         return 0.0
@@ -69,7 +69,7 @@ def expected_max_sharpe(n_trials: int, sharpe_variance: float) -> float:
 
 def deflated_sharpe_ratio(
     returns: Sequence[float],
-    n_trials: int,
+    n_trials: float,
     sharpe_variance: float,
 ) -> float:
     """PSR against the expected-max Sharpe from ``n_trials`` -- corrected for selection."""
@@ -171,6 +171,4 @@ def study_trial_budget(cfg: Any) -> TrialBudget:
     train_lengths = len(train_cfg) if isinstance(train_cfg, list | tuple) else 1
     param_combos = len(expand_grid(getattr(cfg, "PARAM_GRID", {})))
     manual = len(getattr(cfg, "MANUAL_TRIALS", ()))
-    return TrialBudget(
-        max(variations, 1), max(train_lengths, 1), max(param_combos, 1), manual
-    )
+    return TrialBudget(max(variations, 1), max(train_lengths, 1), max(param_combos, 1), manual)

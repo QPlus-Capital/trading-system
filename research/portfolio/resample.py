@@ -181,7 +181,7 @@ def stationary_bootstrap(
         fresh_start = generator.integers(0, sample_size, size=repetitions)
         continuation = (indices[:, position - 1] + 1) % sample_size
         indices[:, position] = np.where(restart, fresh_start, continuation)
-    return np.asarray(values[indices], dtype=np.float64)
+    return values[indices]
 
 
 def stationary_bootstrap_sensitivity(

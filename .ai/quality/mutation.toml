@@ -118,6 +118,24 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "selection-diagnostics"
+path = "research/engine/characterize.py"
+mutant_patterns = [
+    "research.engine.characterize.x_effective_trial_count__mutmut_*",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_*",
+]
+
+[[targets]]
+id = "selection-protocol"
+path = "research/stages/select.py"
+mutant_patterns = [
+    "research.stages.select.x__validated_complexity_scores__mutmut_*",
+    "research.stages.select.x__filter_or_fail__mutmut_*",
+    "research.stages.select.x_choose_automatic_candidate__mutmut_*",
+    "research.stages.select.x__load_selection_evidence__mutmut_*",
+]
+
+[[targets]]
 id = "result-regression"
 path = "research/regression.py"
 mutant_patterns = [

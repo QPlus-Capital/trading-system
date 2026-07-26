@@ -1,9 +1,8 @@
 """Stage 1 — EDGE: does the strategy have an edge, where, and is it robust?
 
-Runs (or ingests) the walk-forward study sweep and prints a per-variation decision table:
-cross-instrument OOS return, its risk-adjusted twin, and how consistent it is. The two
-structure gates (robust majority positive AND risk within tolerance of the best) mark which
-variations are *eligible*. You read this and decide which variation to carry forward.
+Runs (or ingests) the walk-forward study sweep and prints the complete candidate evidence:
+cross-instrument return, structure checks, diagnostic-only DSR/PBO, SPA, Romano-Wolf, and MCS.
+Stage 2 consumes the lineage-bound family evidence for automatic selection.
 
 Usage::
 
@@ -136,23 +135,31 @@ def _run_study(config: Path) -> Path:
     return runs[-1] / "study.csv"
 
 
-def load_overfitting(source_dir: Path) -> tuple[dict[str, float], float | None]:
-    """Read the study's ``ranking.csv`` (per-variation DSR) + ``overfitting.json`` (study PBO).
+def load_overfitting(source_dir: Path) -> tuple[dict[str, float], dict[str, float], float | None]:
+    """Read synchronized candidate DSR diagnostics and study PBO.
 
-    Returns ``(dsr_by_variation, pbo)``. Both are empty/None if the study predates these artifacts
-    (the DSR/PBO are computed by the study, which alone holds the per-window return series).
+    Returns effective DSR, nominal DSR, and PBO. Missing diagnostics remain unavailable and never
+    become selection gates.
     """
     dsr: dict[str, float] = {}
-    ranking_csv = source_dir / "ranking.csv"
-    if ranking_csv.exists():
-        r = pd.read_csv(ranking_csv)
-        if "dsr" in r.columns:
-            dsr = {str(v): float(d) for v, d in zip(r["variation"], r["dsr"], strict=True)}
+    nominal: dict[str, float] = {}
     pbo: float | None = None
     of_json = source_dir / "overfitting.json"
     if of_json.exists():
-        pbo = json.loads(of_json.read_text(encoding="utf-8")).get("pbo")
-    return dsr, pbo
+        try:
+            payload = json.loads(of_json.read_text(encoding="utf-8"))
+            if isinstance(payload, dict):
+                effective_raw = payload.get("dsr_by_candidate", {})
+                nominal_raw = payload.get("dsr_nominal_by_candidate", {})
+                if isinstance(effective_raw, dict):
+                    dsr = {str(name): float(value) for name, value in effective_raw.items()}
+                if isinstance(nominal_raw, dict):
+                    nominal = {str(name): float(value) for name, value in nominal_raw.items()}
+                raw_pbo = payload.get("pbo")
+                pbo = None if raw_pbo is None else float(raw_pbo)
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+    return dsr, nominal, pbo
 
 
 def ranking(
@@ -160,13 +167,13 @@ def ranking(
     *,
     min_frac_positive: float = _MIN_FRAC_POSITIVE,
     rpd_tolerance: float = _RPD_TOLERANCE,
-    dsr_by_variation: dict[str, float] | None = None,
+    dsr_by_candidate: dict[str, float] | None = None,
+    dsr_nominal_by_candidate: dict[str, float] | None = None,
 ) -> pd.DataFrame:
-    """Per-variation decision table: the best training length per variation, return-first, gated.
+    """Return one row per formal candidate with structure and diagnostic labels.
 
-    ``eligible`` is the *structure* gate (robust majority positive AND risk within tolerance of the
-    best). ``dsr_ok`` is the *statistical* gate (deflated Sharpe clears ``_DSR_MIN``); it is only
-    applied when the DSR is available. The auto-pick requires both.
+    ``eligible`` retains the existing structure-gate summary. DSR fields are diagnostics only and
+    are not included in that boolean.
     """
     valid = df.dropna(subset=["mean_oos_pct", "return_per_dd"])
     g = universe.per_config(valid).reset_index()
@@ -183,10 +190,17 @@ def ranking(
         int(have.get((r.variation, r.train_months), 0)) for r in g.itertuples(index=False)
     ]
     g["complete"] = g["cells"] >= expected_cells
-    g["eligible"] = gate_pos & gate_rpd & g["complete"]
-    dsr_map = dsr_by_variation or {}
-    g["dsr"] = g["variation"].map(dsr_map)  # NaN where unavailable
-    g["dsr_ok"] = g["dsr"].isna() | (g["dsr"] >= _DSR_MIN)  # unknown DSR does not gate out
+    g["positive_ok"] = gate_pos
+    g["rpd_ok"] = gate_rpd
+    g["eligible"] = g["positive_ok"] & g["rpd_ok"] & g["complete"]
+    g["candidate_id"] = [
+        f"{row.variation}__train_{int(row.train_months)}m" for row in g.itertuples(index=False)
+    ]
+    dsr_map = dsr_by_candidate or {}
+    nominal_map = dsr_nominal_by_candidate or {}
+    g["dsr"] = g["candidate_id"].map(dsr_map)
+    g["dsr_nominal"] = g["candidate_id"].map(nominal_map)
+    g["dsr_diagnostic_ok"] = g["dsr"].notna() & (g["dsr"] >= _DSR_MIN)
     # EVERY (variation, train_months) row, gated individually. Reducing to each variation's
     # best-return length dropped eligible candidates: if the best length was incomplete or gated
     # out while a lower-return length passed, selection saw no eligible row at all and failed
@@ -194,28 +208,24 @@ def ranking(
     return g.sort_values("mean_ret", ascending=False).reset_index(drop=True)
 
 
-def _print_table(top: pd.DataFrame) -> str:
-    """Print the ranking; return the auto-pick (highest-return, structure- AND DSR-eligible)."""
+def _print_table(top: pd.DataFrame) -> None:
+    """Print structure gates and labelled DSR diagnostics without choosing a candidate."""
     print(
         f"\n  {'variation':14s} {'train':>5s} {'Rendite':>9s} {'Rend/DD':>8s} "
-        f"{'%pos':>6s} {'DSR':>6s}  Gate"
+        f"{'%pos':>6s} {'DSR':>6s}  Struktur / DSR-Diagnostik"
     )
-    auto = ""
     for _, r in top.iterrows():
-        ok = bool(r["eligible"]) and bool(r["dsr_ok"])
-        # Name the reason: an incomplete cell set is a different problem from a weak result (#17).
-        if ok:
+        if bool(r["eligible"]):
             gate = "ok eligible"
         else:
             gate = "unvollstaendig" if not r.get("complete", True) else "   gated out"
-        if ok and not auto:
-            auto, gate = str(r["variation"]), "<< AUTO-PICK"
         dsr_txt = "  n/a" if pd.isna(r["dsr"]) else f"{r['dsr']:5.2f}"
+        diagnostic = "DSR-Diag ok" if bool(r["dsr_diagnostic_ok"]) else "DSR-Diag nicht bestanden"
         print(
             f"  {r['variation']:14s} {int(r['train_months']):>4d}m {r['mean_ret']:>+8.1f}% "
-            f"{r['mean_rpd']:>8.2f} {r['frac_positive']:>5.0%} {dsr_txt:>6s}  {gate}"
+            f"{r['mean_rpd']:>8.2f} {r['frac_positive']:>5.0%} {dsr_txt:>6s}  "
+            f"{gate}; {diagnostic}"
         )
-    return auto
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -290,7 +300,7 @@ def main(argv: list[str] | None = None) -> None:
     # The study alone holds the per-window return series, so it (not this stage) computes the DSR +
     # PBO; carry those artifacts into the run and surface them. Older studies may lack them.
     source_dir = study_csv.parent
-    dsr_by_variation, pbo = load_overfitting(source_dir)
+    dsr_by_candidate, dsr_nominal_by_candidate, pbo = load_overfitting(source_dir)
     try:
         family = _spa_family(
             source_dir,
@@ -325,7 +335,11 @@ def main(argv: list[str] | None = None) -> None:
     rpd_tol = float(getattr(cfg, "SELECT_RPD_TOLERANCE", _RPD_TOLERANCE))
 
     top = ranking(
-        df, min_frac_positive=min_pos, rpd_tolerance=rpd_tol, dsr_by_variation=dsr_by_variation
+        df,
+        min_frac_positive=min_pos,
+        rpd_tolerance=rpd_tol,
+        dsr_by_candidate=dsr_by_candidate,
+        dsr_nominal_by_candidate=dsr_nominal_by_candidate,
     )
     # #31: everything this stage produces is published together, with the content hashes of the
     # config and raw data it was computed from. A later edit to any of them invalidates the run.
@@ -345,22 +359,24 @@ def main(argv: list[str] | None = None) -> None:
         st.save_json("spa.json", spa_analysis.to_dict())
         st.save_json(ROMANO_WOLF_ARTIFACT, romano_wolf_analysis.to_dict())
         st.save_json("mcs.json", mcs_result.to_dict())
-    auto = _print_table(top)
+    _print_table(top)
     print(f"\n  Struktur-Gate: %pos>={min_pos:.0%} und Rend/DD>={rpd_tol:.0%} vom Besten.")
-    if dsr_by_variation:
-        n = len(dsr_by_variation)
-        print(f"  Statistik-Gate: DSR>={_DSR_MIN:.2f} (nach Deflation um {n} Varianten)")
+    if dsr_by_candidate:
+        print(
+            f"  DSR-Diagnostik: Schwelle {_DSR_MIN:.2f}, "
+            f"{len(dsr_by_candidate)} synchronisierte Kandidaten; kein Auswahl-Gate"
+        )
     else:
-        print("  Statistik-Gate: DSR n/a - Studie neu laufen lassen fuer DSR/PBO.")
+        print("  DSR-Diagnostik: n/a; kein Auswahl-Gate.")
     if pbo is not None:
         verdict = "ok" if pbo <= PBO_MAX else "ZU HOCH"
-        print(f"  PBO (Overfitting-Wahrsch. der Auswahl): {pbo:.2f} <= {PBO_MAX:.2f}? {verdict}")
+        print(f"  PBO-Diagnostik: {pbo:.2f} <= {PBO_MAX:.2f}? {verdict}; kein Auswahl-Gate")
     else:
-        print("  PBO: n/a - Studie neu laufen lassen.")
+        print("  PBO-Diagnostik: n/a; kein Auswahl-Gate.")
     _print_spa(spa_analysis)
     _print_romano_wolf(romano_wolf_analysis)
     _print_mcs(mcs_result)
-    print(f"  Auto-Auswahl (hoechste Rendite unter eligible): {auto or '- (keine eligible)'}")
+    print("  Auto-Auswahl: Stage 2 wendet SPA, Romano-Wolf, MCS und Komplexitaet an.")
 
     select_auto = rb.cmd("select", "--run", str(run.path))
     rb.next_step(select_auto, "Universum waehlen (Auto) - oder --variation <name> anhaengen")
