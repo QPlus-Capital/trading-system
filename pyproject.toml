@@ -83,7 +83,7 @@ paths_to_mutate = [
     "research/forward_test_registry.py",
     "research/forward_decision.py",
 ]
-also_copy = ["core", "research", "live", "monitoring", "scripts", ".ai"]
+also_copy = ["core", "research", "live", "monitoring", "scripts", ".ai", "docs"]
 mutate_only_covered_lines = false
 pytest_add_cli_args = ["--disable-warnings"]
 pytest_add_cli_args_test_selection = [
