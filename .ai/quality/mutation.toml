@@ -22,10 +22,23 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "portfolio-h4-prices"
+path = "research/portfolio/curves.py"
+mutant_patterns = [
+    "research.portfolio.curves.x_h4_loss_days__mutmut_*",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_*",
+]
+
+[[targets]]
 id = "portfolio-sizing"
 path = "research/portfolio/sizing.py"
 mutant_patterns = [
+    "research.portfolio.sizing.x*DailyDiagnostics*breached__mutmut_*",
+    "research.portfolio.sizing.x*DailyDiagnostics*max_drawdown_pct__mutmut_*",
     "research.portfolio.sizing.x__events__mutmut_*",
+    "research.portfolio.sizing.x__validated_h4_prices__mutmut_*",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_*",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_*",
     "research.portfolio.sizing.x_simulate__mutmut_*",
     "research.portfolio.sizing.x_flat__mutmut_*",
     "research.portfolio.sizing.x_throttle__mutmut_*",

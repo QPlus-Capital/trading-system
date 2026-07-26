@@ -30,8 +30,7 @@ import numpy as np
 import pandas as pd
 
 from research.portfolio.curves import align_prices, to_day
-from research.portfolio.drawdown import daily_breach, evaluate
-from research.portfolio.sizing import flat, simulate, throttle
+from research.portfolio.sizing import DailyDiagnostics, flat, simulate, throttle
 from research.portfolio.stress import tail_safe_risk, worst_day_r
 
 
@@ -245,6 +244,7 @@ class PolicyResult:
     ann_return_pct: float
     ann_return_eur: float
     max_drawdown_pct: float
+    max_daily_loss_pct: float
     breached: bool  # did it ever break the account's hard daily or trailing limit?
     trade_pnl: np.ndarray  # each trade's EUR contribution AT the policy's size (for edge metrics)
     # The swap component of trade_pnl, sized the same way. Kept separate so a caller that MARKS
@@ -252,6 +252,7 @@ class PolicyResult:
     # linearly across the holding period (as base_curves does with pnl_base) would recognise it
     # before the trade closed, distorting the equity curve, Sharpe and drawdown.
     trade_swap: np.ndarray
+    daily_diagnostics: DailyDiagnostics
 
 
 def evaluate_policy(
@@ -262,7 +263,7 @@ def evaluate_policy(
     cap_frac: float,
     *,
     compound: bool = False,
-    daily_low_high: dict[str, tuple[pd.Series, pd.Series]] | None = None,
+    h4_prices: dict[str, pd.DataFrame] | None = None,
 ) -> PolicyResult:
     """Run ``policy`` over the trade stream day by day and report its honest return / drawdown.
 
@@ -282,43 +283,13 @@ def evaluate_policy(
         t["swap_base"] = t["swap_r"].to_numpy(dtype=float) * base
     d0, d1 = int(t["od"].min()), int(t["cd"].max())
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
-    # #15: the day's extremes drive the intraday limit check; without them it degrades to the old
-    # end-of-day comparison rather than silently claiming intraday coverage.
-    adverse = (
-        (
-            {m: align_prices(daily_low_high[m][0], d0, d1) for m in t["market"].unique()},
-            {m: align_prices(daily_low_high[m][1], d0, d1) for m in t["market"].unique()},
-        )
-        if daily_low_high
-        else None
-    )
-
     resolved = policy.resolve(cap_frac, account)
-    realized, equity, sizes, min_equity = simulate(
+    realized, _equity, sizes, diagnostics = simulate(
         t, prices, d0, d1, account.start_balance, account.trailing_hard, resolved.risk_fn,
-        compound=compound, adverse=adverse,
-    )
-    # #15: the daily-limit gate reads the worst INTRADAY mark, not the end-of-day equity -- a day
-    # that dips 3% and closes at -0.5% breaches live but was invisible to an EOD-only series.
-    # The BASELINE is the prior day's realized BALANCE, not its equity: the prop firm resets the
-    # daily budget from the closing balance, so measuring against an equity that carried a
-    # floating loss overnight would lower the bar and make the simulated budget looser than TTP's.
-    # Both prop rules react to INTRADAY equity, so both read the worst mark. The trailing floor
-    # is no different from the daily one here: a dip below it that recovers by the close is still
-    # a breach, and testing it on close-based equity reported those as OK.
-    breached = bool(
-        evaluate(min_equity, realized, account.start_balance, account.trailing_hard).breached
-        or daily_breach(
-            min_equity, account.daily_hard, prior=realized, start_balance=account.start_balance
-        )
+        compound=compound, h4_prices=h4_prices, daily_limit_frac=account.daily_hard,
     )
     years = max((d1 - d0) / 365.25, 1e-9)
     total = (float(realized[-1]) - account.start_balance) / account.start_balance
-    # Drawdown = intraday TROUGH measured from the running CLOSE-path PEAK. Both legs matter: a
-    # close-based trough hides the dip the gate just failed on, but accumulating peaks over the
-    # low series would measure the next day's low from the previous LOW instead of the high the
-    # account actually reached -- understating the drawdown in the very path this reports.
-    peak = np.maximum.accumulate(np.maximum(equity, min_equity))
     return PolicyResult(
         label=resolved.label,
         ceiling_pct=resolved.ceiling_pct,
@@ -328,13 +299,15 @@ def evaluate_policy(
         total_return_pct=round(total * 100, 1),
         ann_return_pct=round(total / years * 100, 1),
         ann_return_eur=round(float(realized[-1]) - account.start_balance, 0) / years,
-        max_drawdown_pct=round(float(((min_equity - peak) / peak).min()) * 100, 2),
-        breached=breached,
+        max_drawdown_pct=diagnostics.max_drawdown_pct,
+        max_daily_loss_pct=round(float(diagnostics.daily_loss.max()) * 100.0, 2),
+        breached=diagnostics.breached,
         # #10: the SAME net stream simulate() books -- realized += (pnl + swap) * size. Handing a
         # gross per-trade PnL downstream would run Monte-Carlo and the edge stats on gross while
         # this result's own return/drawdown are net.
         trade_pnl=(t["pnl_base"].to_numpy(dtype=float) + _swap_base(t)) * sizes,
         trade_swap=_swap_base(t) * sizes,
+        daily_diagnostics=diagnostics,
     )
 
 

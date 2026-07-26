@@ -9,12 +9,61 @@ drawdown check) plus the size each trade was given (for honest per-trade metrics
 """
 
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from decimal import Decimal
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 
+from research.portfolio.curves import h4_loss_days
+from research.portfolio.drawdown import trailing_floor
+
 _OPEN, _CLOSE = 0, 1
+_H4_UPPER_BOUND = (
+    "H4 upper bound: contemporaneous positions may hit their direction-adverse "
+    "extremes within the same H4 interval"
+)
+FloatArray = npt.NDArray[np.float64]
+
+
+@dataclass(frozen=True)
+class DailyDiagnostics:
+    """One shared daily risk path for sizing, gates, verdicts, and reports.
+
+    Monetary arrays are the established NumPy boundary used by the portfolio API. H4 price and
+    money aggregation is performed in :class:`~decimal.Decimal` before the result crosses that
+    boundary. The minimum is an H4 upper bound: positions open in the same H4 interval may all be
+    marked at their direction-adverse extreme simultaneously.
+    """
+
+    days: np.ndarray
+    opening_balance: np.ndarray
+    close_balance: np.ndarray
+    close_equity: np.ndarray
+    minimum_equity: np.ndarray
+    daily_loss: np.ndarray
+    trailing_floor: np.ndarray
+    daily_breach: np.ndarray
+    trailing_breach: np.ndarray
+    h4_upper_bound: str = _H4_UPPER_BOUND
+
+    @property
+    def breached(self) -> bool:
+        """Whether either hard account-limit path breached."""
+        return bool(self.daily_breach.any() or self.trailing_breach.any())
+
+    @property
+    def max_drawdown_pct(self) -> float:
+        """Worst H4 minimum from the running close-equity peak, including opening capital."""
+        if not self.minimum_equity.size:
+            return 0.0
+        prior_peak = np.maximum.accumulate(
+            np.concatenate([[self.opening_balance[0]], self.close_equity])
+        )[:-1]
+        peak = np.maximum(prior_peak, self.close_equity)
+        return round(float(((self.minimum_equity - peak) / peak).min()) * 100.0, 2)
 
 
 def _events(trades: pd.DataFrame) -> dict[int, list[tuple[int, int]]]:
@@ -37,6 +86,187 @@ def _events(trades: pd.DataFrame) -> dict[int, list[tuple[int, int]]]:
     return {day: [(kind, i) for _, kind, i in sorted(evs)] for day, evs in raw.items()}
 
 
+def _decimal(value: object) -> Decimal:
+    """Exact decimal representation at the pandas/NumPy input boundary."""
+    return value if isinstance(value, Decimal) else Decimal(str(value))
+
+
+def _validated_h4_prices(
+    h4_prices: Mapping[str, pd.DataFrame],
+) -> tuple[dict[str, dict[int, tuple[Decimal, Decimal, Decimal]]], list[int]]:
+    """Validate and index H4 lows/highs by exact market timestamp."""
+    required = {"timestamp_ns", "low", "high", "close"}
+    indexed: dict[str, dict[int, tuple[Decimal, Decimal, Decimal]]] = {}
+    all_timestamps: set[int] = set()
+    for market, frame in h4_prices.items():
+        missing = required.difference(frame.columns)
+        if missing:
+            raise ValueError(f"{market} H4 prices are missing columns: {sorted(missing)}")
+        rows: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
+        previous: int | None = None
+        for row in frame.itertuples(index=False):
+            timestamp = int(row.timestamp_ns)
+            if previous is not None and timestamp <= previous:
+                raise ValueError(f"{market} H4 timestamps must be strictly increasing")
+            previous = timestamp
+            low, high, close = _decimal(row.low), _decimal(row.high), _decimal(row.close)
+            if not low.is_finite() or not high.is_finite() or not close.is_finite():
+                raise ValueError(f"{market} has non-finite H4 prices at timestamp {timestamp}")
+            if low > high or not low <= close <= high:
+                raise ValueError(f"{market} has invalid H4 OHLC bounds at timestamp {timestamp}")
+            rows[timestamp] = (low, high, close)
+            all_timestamps.add(timestamp)
+        indexed[str(market)] = rows
+    return indexed, sorted(all_timestamps)
+
+
+def _synchronized_h4_minima(
+    trades: pd.DataFrame,
+    sizes: FloatArray,
+    h4_prices: Mapping[str, pd.DataFrame] | None,
+    days: npt.NDArray[np.int64],
+    opening_balance: FloatArray,
+    close_equity: FloatArray,
+    start_balance: float,
+) -> FloatArray:
+    """Minimum equity by loss day from synchronized, lifetime-filtered H4 adverse marks."""
+    minimum: FloatArray = np.minimum(opening_balance, close_equity)
+    if h4_prices is None:
+        return minimum
+    if "ts_opened" not in trades or "ts_closed" not in trades:
+        raise ValueError("synchronized H4 reconstruction requires ts_opened and ts_closed")
+
+    indexed, timestamps = _validated_h4_prices(h4_prices)
+    opened = trades["ts_opened"].to_numpy(dtype=np.int64)
+    closed = trades["ts_closed"].to_numpy(dtype=np.int64)
+    markets = trades["market"].astype(str).to_numpy()
+    pnl = trades["pnl_base"].to_numpy(dtype=float)
+    swap = (
+        trades["swap_base"].to_numpy(dtype=float)
+        if "swap_base" in trades.columns
+        else np.zeros(len(trades), dtype=float)
+    )
+    entry = trades["entry"].to_numpy(dtype=float)
+    exit_ = trades["exit"].to_numpy(dtype=float)
+    if "is_long" in trades.columns:
+        is_long = trades["is_long"].to_numpy(dtype=bool)
+    else:
+        won = pnl > 0
+        is_long = won == (exit_ > entry)
+
+    order_open = np.argsort(opened, kind="stable")
+    order_close = np.argsort(closed, kind="stable")
+    open_cursor = close_cursor = 0
+    active: set[int] = set()
+    observed = np.zeros(len(trades), dtype=bool)
+    current_price = {index: _decimal(entry[index]) for index in range(len(trades))}
+    realized = Decimal("0")
+    start = _decimal(start_balance)
+    day_to_index = {int(day): index for index, day in enumerate(days)}
+
+    for timestamp in timestamps:
+        while open_cursor < len(order_open) and opened[order_open[open_cursor]] < timestamp:
+            active.add(int(order_open[open_cursor]))
+            open_cursor += 1
+        while close_cursor < len(order_close) and closed[order_close[close_cursor]] < timestamp:
+            index = int(order_close[close_cursor])
+            realized += (_decimal(pnl[index]) + _decimal(swap[index])) * _decimal(sizes[index])
+            active.discard(index)
+            close_cursor += 1
+
+        active_now = sorted(index for index in active if closed[index] >= timestamp)
+        if not active_now:
+            continue
+        adverse = Decimal("0")
+        for index in active_now:
+            market = str(markets[index])
+            row = indexed.get(market, {}).get(timestamp)
+            if row is None:
+                # The market is closed while another market advances. Its observable equity mark
+                # is unchanged; carrying the last close/entry is not borrowing an adverse extreme
+                # from another interval.
+                price = current_price[index]
+            else:
+                low, high, close = row
+                price = low if is_long[index] else high
+                current_price[index] = close
+                observed[index] = True
+            entry_price = _decimal(entry[index])
+            exit_price = _decimal(exit_[index])
+            span = exit_price - entry_price
+            if abs(span) < Decimal("1e-12"):
+                span = Decimal("1")
+            fraction = (price - entry_price) / span
+            adverse += _decimal(pnl[index]) * _decimal(sizes[index]) * fraction
+        mark = float(start + realized + adverse)
+        for day in h4_loss_days(timestamp):
+            day_index = day_to_index.get(day)
+            if day_index is not None:
+                minimum[day_index] = min(minimum[day_index], mark)
+
+    missing_observations = [
+        index
+        for index in range(len(trades))
+        if opened[index] < closed[index] and not observed[index]
+    ]
+    if missing_observations:
+        detail = ", ".join(
+            f"{markets[index]} trade {index}" for index in missing_observations[:5]
+        )
+        raise ValueError(f"no H4 observation overlaps {detail}")
+    return np.asarray(minimum, dtype=np.float64)
+
+
+def _daily_diagnostics(
+    trades: pd.DataFrame,
+    sizes: np.ndarray,
+    h4_prices: Mapping[str, pd.DataFrame] | None,
+    d0: int,
+    start_balance: float,
+    trailing_limit_frac: float,
+    daily_limit_frac: float,
+    opening_balance: np.ndarray,
+    close_balance: np.ndarray,
+    close_equity: np.ndarray,
+) -> DailyDiagnostics:
+    """Build the sole account-limit and drawdown diagnostic path."""
+    days = np.arange(d0, d0 + len(close_balance), dtype=np.int64)
+    minimum = _synchronized_h4_minima(
+        trades,
+        sizes,
+        h4_prices,
+        days,
+        opening_balance,
+        close_equity,
+        start_balance,
+    )
+    loss_money = np.maximum(0.0, opening_balance - minimum)
+    daily_loss = np.divide(
+        loss_money,
+        opening_balance,
+        out=np.full_like(loss_money, np.inf),
+        where=opening_balance > 0,
+    )
+    floor = trailing_floor(close_balance, start_balance, trailing_limit_frac)
+    daily_flags = (
+        loss_money > daily_limit_frac * opening_balance
+        if daily_limit_frac > 0
+        else np.zeros(len(minimum), dtype=bool)
+    )
+    trailing_flags = minimum <= floor
+    return DailyDiagnostics(
+        days=days,
+        opening_balance=opening_balance,
+        close_balance=close_balance,
+        close_equity=close_equity,
+        minimum_equity=minimum,
+        daily_loss=daily_loss,
+        trailing_floor=floor,
+        daily_breach=np.asarray(daily_flags, dtype=bool),
+        trailing_breach=np.asarray(trailing_flags, dtype=bool),
+    )
+
+
 def simulate(
     trades: pd.DataFrame,
     prices: dict[str, np.ndarray],
@@ -47,8 +277,9 @@ def simulate(
     risk_fn: Callable[[float], float],
     *,
     compound: bool = False,
-    adverse: tuple[dict[str, np.ndarray], dict[str, np.ndarray]] | None = None,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    h4_prices: Mapping[str, pd.DataFrame] | None = None,
+    daily_limit_frac: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, DailyDiagnostics]:
     """Daily (realized_balance, equity) plus the risk multiple each trade was SIZED at.
 
     Each opening trade is sized ``risk_fn(used)`` where ``used`` in [0, 1] is the fraction
@@ -81,41 +312,16 @@ def simulate(
     def frac(i: int, day: int) -> float:
         return float((prices[mk[i]][day - d0] - entry[i]) / span[i])
 
-    if "is_long" in trades.columns:
-        is_long = trades["is_long"].to_numpy(dtype=bool)
-    else:
-        # Legacy streams (written before is_long existed): direction has to be inferred, and
-        # `exit > entry` alone is WRONG -- it calls every losing long a short and vice versa,
-        # which then marks the position at the wrong daily extreme and can hide an intraday
-        # breach. Combine the price move with the outcome, as core.broker does.
-        won = trades["pnl_base"].to_numpy(dtype=float) > 0
-        is_long = won == (exit_ > entry)
-
-    def frac_adverse(i: int, day: int) -> float:
-        """Mark at the day's WORST price for this position's direction (#15).
-
-        A long suffers at the day's LOW, a short at its HIGH -- so the extreme is chosen per
-        trade, not per market: two positions on the same symbol can face opposite ways.
-        """
-        if adverse is None:
-            return frac(i, day)
-        lows, highs = adverse
-        px = lows[mk[i]][day - d0] if is_long[i] else highs[mk[i]][day - d0]
-        return float((px - entry[i]) / span[i])
-
     size = np.zeros(len(trades))
     open_set: set[int] = set()
     realized = 0.0  # excess over start
     peak_bal = start_balance  # realized-balance high-water mark
+    opening_series = np.empty(d1 - d0 + 1)
     realized_series = np.empty(d1 - d0 + 1)
     equity_series = np.empty(d1 - d0 + 1)
-    min_equity_series = np.empty(d1 - d0 + 1)  # worst intraday mark, for the daily-limit gate
 
     for k, day in enumerate(range(d0, d1 + 1)):
-        # Everything open at ANY point today feeds the intraday worst mark below -- positions
-        # carried in, plus every open that happens during the day (added as it occurs).
-        active_today = set(open_set)
-        realized_before = realized  # the day's opening balance -- see the worst mark below
+        opening_series[k] = start_balance + realized
         # 1. Replay the day's events in TRUE intraday order: a close at 08:00 books its PnL
         # before an open at 20:00 sizes off the balance. Each open is sized off the equity at
         # ITS moment (realized so far + the current open set's mark), so a morning loss can no
@@ -133,25 +339,26 @@ def simulate(
                     r *= equity / start_balance  # fixed-fractional: risk tracks current equity
                 size[i] = r
                 open_set.add(i)
-                active_today.add(i)
             else:  # 2. realize the closer (sized at its own open) + its swap
                 realized += (pnl[i] + swap[i]) * size[i]
                 open_set.discard(i)
         peak_bal = max(peak_bal, start_balance + realized)
         unreal = sum(pnl[j] * size[j] * frac(j, day) for j in open_set)  # 3. EOD mark
-        # 4. Worst intraday mark: every position that traded today at its own adverse extreme, and
-        # NONE of today's closers booked yet -- at the worst moment they had not closed. Marking
-        # them adversely while also counting their realized PnL would double-count them.
-        # Assuming they all bottom at the same instant OVERSTATES the dip, deliberately: this
-        # feeds a hard-limit gate, and the previous EOD-only estimate understated it (a day can
-        # dip 3% and close at -0.5%). Conservative is the correct side to err on here.
-        worst = sum(pnl[j] * size[j] * frac_adverse(j, day) for j in active_today)
         realized_series[k] = start_balance + realized
         equity_series[k] = start_balance + realized + unreal
-        min_equity_series[k] = min(
-            equity_series[k], start_balance + realized_before + worst
-        )
-    return realized_series, equity_series, size, min_equity_series
+    diagnostics = _daily_diagnostics(
+        trades,
+        size,
+        h4_prices,
+        d0,
+        start_balance,
+        limit_frac,
+        daily_limit_frac,
+        opening_series,
+        realized_series,
+        equity_series,
+    )
+    return realized_series, equity_series, size, diagnostics
 
 
 def flat(multiple: float) -> Callable[[float], float]:

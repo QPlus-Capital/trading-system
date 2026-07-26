@@ -6,6 +6,7 @@ tool_version = "3.5.0"
 change_explanation = "P-08 adds synchronized DSR/PBO diagnostics and the family-evidence selection protocol as critical targets. Nine Mutmut candidates from three provably equivalent MCS dtype expressions and four from stationary_bootstrap's redundant float64 return cast are eliminated at source; exact behavioural tests prove unchanged MCS decisions and byte-identical float64 resamples."
 targets = [
     "live-risk-control",
+    "portfolio-h4-prices",
     "portfolio-sizing",
     "portfolio-drawdown",
     "portfolio-risk",
