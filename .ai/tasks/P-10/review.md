@@ -13,6 +13,7 @@ lineage, determinism, missing-artifact, and gate-isolation counterexamples were 
 | F4 | P2 | Dropping a zero-trade day shortens drawdowns and changes dependence before resampling. | Remove the middle calendar row from a valid CSV. | RESOLVED |
 | F5 | P2 | Separately accumulated float trade P&L can disagree with the authoritative realized balance. | Several same-day fractional P&Ls sum in a different binary order. | RESOLVED |
 | F6 | P2 | Stage 4 could keep calling the old helper even after the scenario module is correct. | The new artifact exists but `monte_carlo_paths` remains on the verdict path. | RESOLVED |
+| F7 | P2 | Validation branches and forwarding arguments could mutate without an observable test failure. | Change the empty-grid predicate, omit the seed, collapse two same-day closes, or move an error to the wrong loss day. | RESOLVED |
 
 ## Dispositions
 
@@ -27,5 +28,7 @@ real stage wiring guard and the real Stage-3/4 rerun.
 The review also exercised deterministic seeds, duplicate plug-in/fixed block labels, invalid CSV
 schemas, non-finite money, trade/diagnostic length mismatches, closes outside the diagnostic grid,
 discontinuous opening balances, source-index domain, P-04's fail-closed block estimator, and the
-unchanged 0.60 verdict boundary. No unresolved in-scope P0-P3 builder finding remains. Claude's
-independent review remains mandatory.
+unchanged 0.60 verdict boundary. F7 was exposed by the first Linux mutation run and closed with
+exact boundary, diagnostic, seed-forwarding, and same-day aggregation tests; no mutation-score
+regression is accepted. No unresolved in-scope P0-P3 builder finding remains. Claude's independent
+review remains mandatory.
