@@ -9,13 +9,22 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from numpy.typing import NDArray
 from research.engine.characterize import (
     effective_trial_count,
     synchronized_overfitting_diagnostics,
 )
+from research.engine.overfitting import (
+    deflated_sharpe_ratio,
+    expected_max_sharpe,
+    pbo,
+    sharpe_ratio,
+)
 from research.stages.select import (
+    AutomaticCandidate,
     NoAutomaticSelection,
     SelectionEvidence,
+    _validated_complexity_scores,
     choose_automatic_candidate,
 )
 
@@ -61,10 +70,35 @@ def _evidence(
 def test_effective_trial_count_is_capped_and_monotone() -> None:
     values = [effective_trial_count(Decimal(str(rho))) for rho in (0, 0.25, 0.5, 0.75, 1)]
 
-    assert values[0] == Decimal("41")
-    assert values[-1] == Decimal("6")
+    assert values == [
+        Decimal("41"),
+        Decimal("32.25"),
+        Decimal("23.5"),
+        Decimal("14.75"),
+        Decimal("6"),
+    ]
     assert all(left >= right for left, right in zip(values, values[1:], strict=False))
     assert all(value <= Decimal("41") for value in values)
+
+
+@pytest.mark.parametrize(
+    ("value", "error", "message"),
+    [
+        (0.5, TypeError, "rho_bar must be Decimal"),
+        (Decimal("-0.1"), ValueError, "rho_bar must be finite and between zero and one"),
+        (Decimal("1.1"), ValueError, "rho_bar must be finite and between zero and one"),
+        (Decimal("NaN"), ValueError, "rho_bar must be finite and between zero and one"),
+    ],
+)
+def test_effective_trial_count_rejects_invalid_inputs_exactly(
+    value: object,
+    error: type[Exception],
+    message: str,
+) -> None:
+    with pytest.raises(error) as raised:
+        effective_trial_count(value)  # type: ignore[arg-type]
+
+    assert str(raised.value) == message
 
 
 def test_synchronized_diagnostics_use_one_36_candidate_window_matrix(tmp_path: Path) -> None:
@@ -98,6 +132,80 @@ def test_synchronized_diagnostics_use_one_36_candidate_window_matrix(tmp_path: P
     assert all(candidate["sample_count"] == 8 for candidate in result["candidates"].values())
     assert Decimal("6") <= Decimal(str(result["effective_trial_count"])) <= Decimal("41")
     assert result["benchmark_effective"] <= result["benchmark_nominal"]
+    assert set(result) == {
+        "benchmark_effective",
+        "benchmark_nominal",
+        "candidate_count",
+        "candidates",
+        "dsr_by_candidate",
+        "dsr_nominal_by_candidate",
+        "dsr_threshold",
+        "effective_trial_count",
+        "manual_trial_count",
+        "nominal_trial_count",
+        "pbo",
+        "pbo_diagnostic_ok",
+        "pbo_split_count",
+        "pbo_threshold",
+        "rho_bar",
+        "role",
+        "sample_count",
+        "sharpe_variance",
+        "source",
+        "status",
+    }
+
+    matrix: NDArray[np.float64] = np.column_stack(
+        [np.asarray(frame[name], dtype=np.float64) for name in names]
+    )
+    correlations: NDArray[np.float64] = np.asarray(
+        np.corrcoef(matrix, rowvar=False),
+        dtype=np.float64,
+    )
+    upper = correlations[np.triu_indices(36, k=1)]
+    rho_bar = float(np.clip(upper.mean(), 0.0, 1.0))
+    n_eff = float(effective_trial_count(Decimal(str(rho_bar))))
+    sharpes = np.asarray(
+        [sharpe_ratio(matrix[:, index].tolist()) for index in range(matrix.shape[1])],
+        dtype=float,
+    )
+    sharpe_variance = float(np.var(sharpes.tolist(), ddof=1))
+
+    assert result["dsr_threshold"] == 0.90
+    assert result["pbo_threshold"] == 0.20
+    assert result["source"] == "candidate_window_returns.csv"
+    assert result["rho_bar"] == pytest.approx(rho_bar)
+    assert result["effective_trial_count"] == pytest.approx(n_eff)
+    assert result["sharpe_variance"] == pytest.approx(sharpe_variance)
+    assert result["benchmark_effective"] == pytest.approx(
+        expected_max_sharpe(n_eff, sharpe_variance)
+    )
+    assert result["benchmark_nominal"] == pytest.approx(expected_max_sharpe(41.0, sharpe_variance))
+    assert result["pbo"] == pytest.approx(pbo(matrix.tolist(), n_splits=8))
+    assert result["pbo_diagnostic_ok"] == (Decimal(str(result["pbo"])) <= Decimal("0.20"))
+
+    first_values = matrix[:, 0]
+    standardized = (first_values - first_values.mean()) / first_values.std(ddof=1)
+    first = result["candidates"][names[0]]
+    expected_effective = deflated_sharpe_ratio(first_values.tolist(), n_eff, sharpe_variance)
+    expected_nominal = deflated_sharpe_ratio(first_values.tolist(), 41.0, sharpe_variance)
+    assert set(first) == {
+        "dsr_diagnostic_ok",
+        "dsr_effective",
+        "dsr_nominal",
+        "kurtosis",
+        "sample_count",
+        "sharpe",
+        "skew",
+    }
+    assert first["sharpe"] == pytest.approx(sharpes[0])
+    assert first["dsr_effective"] == pytest.approx(expected_effective)
+    assert first["dsr_nominal"] == pytest.approx(expected_nominal)
+    assert first["dsr_diagnostic_ok"] == (Decimal(str(expected_effective)) >= Decimal("0.90"))
+    assert first["skew"] == pytest.approx(float((standardized**3).mean()))
+    assert first["kurtosis"] == pytest.approx(float((standardized**4).mean()))
+    assert result["dsr_by_candidate"][names[0]] == pytest.approx(expected_effective)
+    assert result["dsr_nominal_by_candidate"][names[0]] == pytest.approx(expected_nominal)
 
 
 def test_unusable_synchronized_diagnostics_are_labelled_not_zero_filled(
@@ -121,9 +229,16 @@ def test_unusable_synchronized_diagnostics_are_labelled_not_zero_filled(
 
     result = synchronized_overfitting_diagnostics(tmp_path)
 
-    assert result["status"] == "unavailable"
-    assert result["pbo"] is None
-    assert "36 formal" in result["reason"]
+    assert result == {
+        "role": "diagnostic_only",
+        "status": "unavailable",
+        "dsr_threshold": 0.90,
+        "pbo_threshold": 0.20,
+        "source": "candidate_window_returns.csv",
+        "reason": "DSR/PBO diagnostics require 36 formal and five manual trials",
+        "pbo": None,
+        "candidates": {},
+    }
 
 
 @pytest.mark.parametrize(
@@ -161,22 +276,59 @@ def test_pbo_uses_the_largest_permitted_even_split_count(
 def test_spa_failure_blocks_selection_despite_diagnostics_and_returns() -> None:
     rows = [("baseline", 36, 100.0, 10.0, True)]
 
-    with pytest.raises(NoAutomaticSelection, match="SPA"):
+    with pytest.raises(NoAutomaticSelection) as raised:
         choose_automatic_candidate(
             _ranking(rows),
             evidence=_evidence(rows, spa_passes=False),
             complexity_scores={"baseline": 3},
         )
 
+    assert str(raised.value) == "SPA family gate failed at p > 0.05"
+
 
 @pytest.mark.parametrize(
     ("romano_wolf", "mcs", "complete", "frac_positive", "mean_rpd", "criterion"),
     [
-        (set(), None, True, 1.0, 1.0, "Romano-Wolf"),
-        (None, set(), True, 1.0, 1.0, "MCS"),
-        (None, None, False, 1.0, 1.0, "completeness"),
-        (None, None, True, 0.89, 1.0, "positive-market"),
-        (None, None, True, 1.0, 0.84, "return/drawdown"),
+        (
+            set(),
+            None,
+            True,
+            1.0,
+            1.0,
+            "automatic eligibility is empty after criterion: Romano-Wolf adjusted p <= 0.05",
+        ),
+        (
+            None,
+            set(),
+            True,
+            1.0,
+            1.0,
+            "automatic eligibility is empty after criterion: 90% MCS membership",
+        ),
+        (
+            None,
+            None,
+            False,
+            1.0,
+            1.0,
+            "automatic eligibility is empty after criterion: completeness",
+        ),
+        (
+            None,
+            None,
+            True,
+            0.89,
+            1.0,
+            "automatic eligibility is empty after criterion: positive-market fraction >= 90%",
+        ),
+        (
+            None,
+            None,
+            True,
+            1.0,
+            0.84,
+            "automatic eligibility is empty after criterion: mean return/drawdown >= 85% of best",
+        ),
     ],
 )
 def test_empty_intersection_names_the_criterion(
@@ -190,7 +342,7 @@ def test_empty_intersection_names_the_criterion(
     rows = [("baseline", 36, 10.0, mean_rpd, complete)]
     ranking = _ranking(rows)
     ranking.loc[0, "frac_positive"] = frac_positive
-    if criterion == "return/drawdown":
+    if "return/drawdown" in criterion:
         ranking = pd.concat(
             [
                 ranking,
@@ -210,7 +362,7 @@ def test_empty_intersection_names_the_criterion(
     else:
         evidence = _evidence(rows, romano_wolf=romano_wolf, mcs=mcs)
 
-    with pytest.raises(NoAutomaticSelection, match=criterion):
+    with pytest.raises(NoAutomaticSelection) as raised:
         choose_automatic_candidate(
             ranking,
             evidence=evidence,
@@ -220,6 +372,8 @@ def test_empty_intersection_names_the_criterion(
                 else {"baseline": 3}
             ),
         )
+
+    assert str(raised.value) == criterion
 
 
 def test_tie_break_order_is_complexity_then_return_then_train_then_name() -> None:
@@ -302,3 +456,215 @@ def test_structure_decimal_boundaries_are_inclusive() -> None:
     )
 
     assert selected.variation == "baseline"
+
+
+@pytest.mark.parametrize(
+    ("raw", "variations", "message"),
+    [
+        (
+            {"baseline": 3},
+            {"baseline", "no_confirms"},
+            "complexity configuration must match the candidate variations exactly "
+            "(missing=['no_confirms'], extra=[])",
+        ),
+        (
+            {"baseline": 3, "unused": 0},
+            {"baseline"},
+            "complexity configuration must match the candidate variations exactly "
+            "(missing=[], extra=['unused'])",
+        ),
+        (
+            {"baseline": True},
+            {"baseline"},
+            "complexity score for 'baseline' must be a non-negative integer",
+        ),
+        (
+            {"baseline": "3"},
+            {"baseline"},
+            "complexity score for 'baseline' must be a non-negative integer",
+        ),
+        (
+            {"baseline": -1},
+            {"baseline"},
+            "complexity score for 'baseline' must be a non-negative integer",
+        ),
+    ],
+)
+def test_complexity_configuration_fails_closed_with_exact_reason(
+    raw: dict[str, object],
+    variations: set[str],
+    message: str,
+) -> None:
+    with pytest.raises(NoAutomaticSelection) as raised:
+        _validated_complexity_scores(raw, variations)
+
+    assert str(raised.value) == message
+
+
+def test_selection_rejects_missing_columns_with_exact_reason() -> None:
+    rows = [("baseline", 36, 1.0, 1.0, True)]
+    ranking = _ranking(rows).drop(columns=["mean_ret"])
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            ranking,
+            evidence=_evidence(rows),
+            complexity_scores={"baseline": 3},
+        )
+
+    assert str(raised.value) == "ranking is missing columns: ['mean_ret']"
+
+
+def test_selection_rejects_an_empty_ranking_with_exact_reason() -> None:
+    ranking = _ranking([("baseline", 36, 1.0, 1.0, True)]).iloc[0:0]
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            ranking,
+            evidence=SelectionEvidence(frozenset(), True, frozenset(), frozenset()),
+            complexity_scores={},
+        )
+
+    assert str(raised.value) == "ranking contains no candidates"
+
+
+def test_selection_rejects_malformed_candidate_identity_with_exact_reason() -> None:
+    rows = [("baseline", 36, 1.0, 1.0, True)]
+    ranking = _ranking(rows)
+    ranking["train_months"] = pd.Series(["not-an-integer"], dtype=object)
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            ranking,
+            evidence=_evidence(rows),
+            complexity_scores={"baseline": 3},
+        )
+
+    assert str(raised.value) == "ranking candidate identities are malformed"
+
+
+def test_selection_rejects_duplicate_candidate_identity_with_exact_reason() -> None:
+    rows = [
+        ("baseline", 36, 1.0, 1.0, True),
+        ("baseline", 36, 2.0, 1.0, True),
+    ]
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            _ranking(rows),
+            evidence=_evidence(rows),
+            complexity_scores={"baseline": 3},
+        )
+
+    assert str(raised.value) == "ranking candidate identities must be unique"
+
+
+@pytest.mark.parametrize(
+    ("evidence", "message"),
+    [
+        (
+            SelectionEvidence(
+                family=frozenset({_candidate("no_confirms", 36)}),
+                spa_passes=True,
+                romano_wolf_eligible=frozenset(),
+                mcs_members=frozenset(),
+            ),
+            "ranking and statistical evidence candidate families disagree",
+        ),
+        (
+            SelectionEvidence(
+                family=frozenset({_candidate("baseline", 36)}),
+                spa_passes=True,
+                romano_wolf_eligible=frozenset({"unknown"}),
+                mcs_members=frozenset(),
+            ),
+            "Romano-Wolf evidence contains an unknown candidate",
+        ),
+        (
+            SelectionEvidence(
+                family=frozenset({_candidate("baseline", 36)}),
+                spa_passes=True,
+                romano_wolf_eligible=frozenset(),
+                mcs_members=frozenset({"unknown"}),
+            ),
+            "MCS evidence contains an unknown candidate",
+        ),
+    ],
+)
+def test_selection_rejects_invalid_family_evidence_with_exact_reason(
+    evidence: SelectionEvidence,
+    message: str,
+) -> None:
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            _ranking([("baseline", 36, 1.0, 1.0, True)]),
+            evidence=evidence,
+            complexity_scores={"baseline": 3},
+        )
+
+    assert str(raised.value) == message
+
+
+def test_selection_rejects_non_boolean_completeness_with_exact_reason() -> None:
+    rows = [("baseline", 36, 1.0, 1.0, True)]
+    ranking = _ranking(rows)
+    ranking["complete"] = pd.Series([1], dtype=object)
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            ranking,
+            evidence=_evidence(rows),
+            complexity_scores={"baseline": 3},
+        )
+
+    assert str(raised.value) == "ranking completeness flags must be boolean"
+
+
+def test_selection_rejects_unsupported_training_length_with_exact_reason() -> None:
+    rows = [("baseline", 12, 1.0, 1.0, True)]
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            _ranking(rows),
+            evidence=_evidence(rows),
+            complexity_scores={"baseline": 3},
+        )
+
+    assert str(raised.value) == "unsupported training length 12; expected 36, 24, or 18"
+
+
+def test_return_drawdown_floor_is_multiplicative_and_uses_all_candidates() -> None:
+    rows = [
+        ("baseline", 36, 1.0, 1.0, True),
+        ("no_confirms", 36, 2.0, 2.0, True),
+    ]
+    eligible = {_candidate("baseline", 36)}
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            _ranking(rows),
+            evidence=_evidence(rows, romano_wolf=eligible, mcs=eligible),
+            complexity_scores={"baseline": 3, "no_confirms": 0},
+        )
+
+    assert (
+        str(raised.value) == "automatic eligibility is empty after criterion: "
+        "mean return/drawdown >= 85% of best"
+    )
+
+
+def test_selected_candidate_records_the_complete_identity() -> None:
+    rows = [("no_confirms", 36, 1.0, 1.0, True)]
+
+    selected = choose_automatic_candidate(
+        _ranking(rows),
+        evidence=_evidence(rows),
+        complexity_scores={"no_confirms": 0},
+    )
+
+    assert selected == AutomaticCandidate(
+        variation="no_confirms",
+        train_months=36,
+        candidate_id="no_confirms__train_36m",
+        complexity=0,
+    )
