@@ -1,6 +1,44 @@
 version = 1
 
 [[edges]]
+source = "research/portfolio/curves.py"
+tests = [
+  "tests/test_research_h4_path.py",
+  "tests/test_research_sizing.py",
+  "tests/test_research_factsheet.py",
+]
+possibly_affected = [
+  "tests/test_research_risk.py",
+  "tests/test_research_stages.py",
+]
+reason = "timestamped H4 prices and loss-day overlap feed every research account-limit diagnostic"
+
+[[edges]]
+source = "research/portfolio/sizing.py"
+tests = [
+  "tests/test_research_h4_path.py",
+  "tests/test_research_sizing.py",
+  "tests/test_research_risk.py",
+  "tests/test_research_factsheet.py",
+]
+possibly_affected = [
+  "tests/test_research_stages.py",
+  "tests/test_research_regression.py",
+]
+reason = "synchronized H4 daily diagnostics govern Stage-3/4 drawdown and breach decisions"
+
+[[edges]]
+source = "research/portfolio/factsheet.py"
+tests = [
+  "tests/test_research_factsheet.py",
+  "tests/test_research_h4_path.py",
+]
+possibly_affected = [
+  "tests/test_research_stages.py",
+]
+reason = "the fact sheet must report the same flat drawdown as the account-limit diagnostic path"
+
+[[edges]]
 source = "research/engine/continuous.py"
 tests = [
   "tests/test_research_continuous_integration.py",

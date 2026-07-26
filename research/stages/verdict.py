@@ -31,14 +31,14 @@ import pandas as pd
 from research.engine.config import load_config_module
 from research.engine.montecarlo import monte_carlo_paths, summarize
 from research.portfolio import factsheet, html_report
-from research.portfolio.curves import load_daily_close, load_daily_low_high, to_day
+from research.portfolio.curves import DAY_NS, load_daily_close, load_h4_prices, to_day
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
     ThrottleRisk,
     evaluate_policy,
 )
-from research.portfolio.stats import daily_equity, edge_stats, risk_stats
+from research.portfolio.stats import edge_stats, risk_stats
 from research.stages import _runbook as rb
 from research.stages import lineage
 from research.stages.edge import PBO_MAX
@@ -120,8 +120,7 @@ def main(argv: list[str] | None = None) -> None:
     specs = {str(f().raw_symbol): (f, csv, lev) for f, csv, lev in cfg.INSTRUMENTS}
     universe = [m for m in spec["instruments"] if m in specs]
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
-    # #15: day extremes for the intraday daily-limit check
-    daily_hl = {m: load_daily_low_high(str(specs[m][1])) for m in universe}
+    h4_prices = {m: load_h4_prices(str(specs[m][1])) for m in universe}
 
     # Re-run the chosen sizing (cheap: a daily sim, not backtests) to recover each trade's PnL AT
     # the size it was given -- so the metrics are honest under a dynamic policy too. Reconstruct it
@@ -132,14 +131,12 @@ def main(argv: list[str] | None = None) -> None:
         policy: FlatRisk | ThrottleRisk = ThrottleRisk(floor_pct=float(spec["floor_pct"]))
     else:
         policy = FlatRisk(float(spec["ceiling_pct"]))
-    result = evaluate_policy(trades, daily_close, account, policy, cap, daily_low_high=daily_hl)
+    result = evaluate_policy(trades, daily_close, account, policy, cap, h4_prices=h4_prices)
     sized_pnl = result.trade_pnl  # NET -- what the edge stats and Monte-Carlo should see
-    # ...but the mark-to-market curve must book swap at CLOSE, not smear it across the holding
-    # period, so hand daily_equity the gross leg and the swap separately.
-    eq_trades = trades.copy()
-    eq_trades["swap_base"] = result.trade_swap
-    equity = daily_equity(
-        eq_trades, sized_pnl - result.trade_swap, daily_close, start_balance=account.start_balance
+    diagnostics = result.daily_diagnostics
+    equity = pd.Series(
+        diagnostics.close_equity,
+        index=pd.to_datetime(diagnostics.days * DAY_NS),
     )
     stats = {**edge_stats(sized_pnl), **risk_stats(equity, start_balance=account.start_balance)}
     # The drawdown the GATE judged, not one recomputed from daily closes: with intraday marks a
@@ -256,13 +253,27 @@ def main(argv: list[str] | None = None) -> None:
                 "reasons": [f"{'PASS' if ok else 'FAIL'}: {m}" for ok, m in checks],
                 "mc_prob_profit": prob_profit,
                 "stats": {k: stats[k] for k, _, _ in _STAT_ROWS},
+                "path": {
+                    "max_drawdown_pct": result.max_drawdown_pct,
+                    "max_daily_loss_pct": result.max_daily_loss_pct,
+                    "daily_breach_days": int(diagnostics.daily_breach.sum()),
+                    "trailing_breach_days": int(diagnostics.trailing_breach.sum()),
+                    "assumption": diagnostics.h4_upper_bound,
+                },
             },
         )
         # Fact sheet: full history vs holdout, flat vs compound -- the consistent end-of-run
         # report. Sized at the chosen ceiling; the stream was cached by the portfolio stage.
         if full_trades is not None:
             fs_account = replace(account, base_risk_frac=float(spec["ceiling_pct"]) / 100.0)
-            fs = factsheet.compute_factsheet(full_trades, trades, daily_close, fs_account)
+            fs = factsheet.compute_factsheet(
+                full_trades,
+                trades,
+                daily_close,
+                h4_prices,
+                fs_account,
+                holdout_flat=result,
+            )
             print(factsheet.render_terminal(fs))
             html_report.render(fs, str(spec["variation"]), run.path.name, st.file("report.html"))
     if full_trades is None:
