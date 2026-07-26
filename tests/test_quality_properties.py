@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -33,6 +33,11 @@ from research.forward_test_registry import (
     hash_cohort_inputs,
 )
 from research.portfolio.drawdown import evaluate, trailing_floor
+from research.portfolio.scenarios import (
+    LossDayScenario,
+    sample_scenario_paths,
+    validate_joint_paths,
+)
 from research.portfolio.sizing import flat, simulate
 from research.regression import Thresholds, compare
 from scripts.quality.classify import classify_paths, load_model
@@ -47,6 +52,49 @@ from tests.support.strategies import (
     trade_streams,
     valid_windows,
 )
+
+
+@given(
+    values=st.lists(st.integers(min_value=-1_000, max_value=1_000), min_size=1, max_size=20),
+    block_length=st.integers(min_value=1, max_value=60),
+    replications=st.integers(min_value=1, max_value=10),
+    seed=st.integers(min_value=0, max_value=2**32 - 1),
+)
+def test_loss_day_scenarios_remain_joint_and_fixed_horizon(
+    values: list[int],
+    block_length: int,
+    replications: int,
+    seed: int,
+) -> None:
+    scenarios = tuple(
+        LossDayScenario(
+            source_date=date(2020, 1, 1) + timedelta(days=index),
+            close_realized_pnl=Decimal(value),
+            close_equity_change=Decimal(value * 2),
+            opening_to_minimum_equity_change=-abs(Decimal(value)),
+            closing_balance_change=Decimal(value),
+            trade_count=index % 4,
+            daily_swap=Decimal("0"),
+        )
+        for index, value in enumerate(values)
+    )
+
+    first = sample_scenario_paths(
+        scenarios,
+        mean_block_length=block_length,
+        replications=replications,
+        seed=seed,
+    )
+    second = sample_scenario_paths(
+        scenarios,
+        mean_block_length=block_length,
+        replications=replications,
+        seed=seed,
+    )
+
+    assert first == second
+    validate_joint_paths(scenarios, first)
+    assert all(len(path) == len(scenarios) for path in first)
 
 
 @given(

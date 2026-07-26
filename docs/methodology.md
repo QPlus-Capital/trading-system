@@ -150,8 +150,11 @@ limits never being breached, even in a worse-than-history crisis.**
 ### Stage 6 — Robustness of the sized portfolio
 - **Regime / per-year:** return every calendar year — a real edge pays in most years; an overfit one
   in a few. Reveals regime dependence (e.g. a reversal strategy earns more in high-vol years).
-- **Monte-Carlo:** bootstrap the trade order for a sequence-risk distribution (prob. of profit,
-  drawdown percentiles).
+- **Monte-Carlo:** preserve one complete row per 16:15 America/Chicago loss day, including observed
+  zero-trade days and P-09's synchronized H4 minimum. Resample fixed-horizon calendar paths with
+  the P-04 stationary bootstrap at the Politis-White plug-in block length, plus 5/10/20/60-day
+  sensitivity. All fields in a day move together; the plug-in path supplies the existing
+  probability-of-profit diagnostic.
 - **Stress:** extra slippage, crisis windows, a higher stress multiplier.
 - **Criterion:** positive in the large majority of years; MC profit probability high; survives the
   stressed cases.
@@ -297,7 +300,7 @@ now guarded by tests — check these first when a number looks too good:
 | 3 Selection | `stages/universe`, `stages/edge`, `stages/select` | ✅ |
 | 4 Holdout | `portfolio/trades` (phase="holdout"), `stages/portfolio` | ✅ |
 | 5 Sizing | `portfolio/risk` (tail cap, `rck_fraction`/`KellyRisk`, policies), `portfolio/tail`, `portfolio/stress` | ✅ gap tail cap + risk-constrained Kelly (`kelly:beta`), sized on the full-history stream; the drawdown bound is Monte-Carlo-verified |
-| 6 Robustness | `engine/montecarlo`, per-year analysis, `portfolio/stress` | ✅ |
+| 6 Robustness | `portfolio/scenarios`, `portfolio/resample`, per-year analysis, `portfolio/stress` | ✅ complete calendar-day scenario bootstrap; no scenario breach gate until P-11 |
 | 7 Decision | *(the stress/return frontier)* | ⚠️ produced ad-hoc; to formalize into Stage-4 report output |
 
 **Done since:** Stage 0 hypothesis written; DSR, PBO, SPA, Romano-Wolf, and MCS candidate evidence
