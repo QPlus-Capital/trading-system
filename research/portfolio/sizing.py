@@ -239,9 +239,7 @@ def _synchronized_h4_minima(
         if opened[index] < closed[index] and not observed[index]
     ]
     if missing_observations:
-        detail = ", ".join(
-            f"{markets[index]} trade {index}" for index in missing_observations[:5]
-        )
+        detail = ", ".join(f"{markets[index]} trade {index}" for index in missing_observations[:5])
         raise ValueError(f"no H4 observation overlaps {detail}")
     return np.asarray(minimum, dtype=np.float64)
 

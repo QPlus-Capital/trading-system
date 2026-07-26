@@ -202,9 +202,7 @@ def test_swap_is_realized_once_at_close_and_never_in_an_h4_mark() -> None:
     opened = _ts("2025-04-09 13:00")
     observed = _ts("2025-04-10 09:00")
     closed = _ts("2025-04-10 13:00")
-    trades = pd.DataFrame(
-        [_trade("X", opened, closed, pnl_base=1_000.0, swap_base=-50.0)]
-    )
+    trades = pd.DataFrame([_trade("X", opened, closed, pnl_base=1_000.0, swap_base=-50.0)])
     bars = {"X": _h4((observed, "99", "100.2", "99"))}
 
     realized, _equity, _sizes, diagnostics = _run(trades, bars)
@@ -291,9 +289,7 @@ def test_synthetic_retired_structure_replaces_impossible_whole_day_breach() -> N
         exit_price = Decimal("99") if result_r > 0 else Decimal("101")
         span = exit_price - Decimal("100")
         actual_loss = Decimal("185")
-        actual_high = Decimal("100") + actual_loss * abs(span) / (
-            abs(pnl_base) * risk_multiple
-        )
+        actual_high = Decimal("100") + actual_loss * abs(span) / (abs(pnl_base) * risk_multiple)
         later_high = Decimal("100") + per_trade_legacy_loss * abs(span) / (
             abs(pnl_base) * risk_multiple
         )
