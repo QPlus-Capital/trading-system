@@ -16,6 +16,7 @@ from research.portfolio.scenarios import (
     LossDayScenario,
     _probability_of_profit,
     _stationary_source_indices,
+    _validated_diagnostics,
     build_loss_day_scenarios,
     read_loss_day_scenarios,
     sample_scenario_paths,
@@ -155,8 +156,12 @@ def test_reader_fails_closed_when_a_zero_trade_calendar_day_is_dropped(tmp_path:
     lines = artifact.read_text(encoding="utf-8").splitlines()
     artifact.write_text("\n".join((lines[0], lines[1], lines[3])) + "\n", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="contiguous"):
+    with pytest.raises(ValueError) as exc_info:
         read_loss_day_scenarios(artifact)
+
+    assert (
+        str(exc_info.value) == "loss-day scenario dates must be contiguous and strictly increasing"
+    )
 
 
 def test_builder_rejects_a_discontinuous_diagnostic_balance() -> None:
@@ -170,7 +175,7 @@ def test_builder_rejects_a_discontinuous_diagnostic_balance() -> None:
         opening_balance=np.array([1_000.0, 1_009.0, 1_010.0]),
     )
 
-    with pytest.raises(ValueError, match="opening balance is discontinuous"):
+    with pytest.raises(ValueError) as exc_info:
         build_loss_day_scenarios(
             trades,
             SimpleNamespace(
@@ -180,6 +185,113 @@ def test_builder_rejects_a_discontinuous_diagnostic_balance() -> None:
             ),
             start_balance=Decimal("1000"),
         )
+
+    assert str(exc_info.value) == "diagnostic opening balance is discontinuous on 2024-10-05"
+
+
+def test_diagnostic_validation_rejects_empty_and_unequal_arrays() -> None:
+    empty = np.array([], dtype=np.float64)
+    empty_bool = np.array([], dtype=np.bool_)
+    empty_diagnostics = DailyDiagnostics(
+        days=empty.astype(np.int64),
+        opening_balance=empty,
+        close_balance=empty,
+        close_equity=empty,
+        minimum_equity=empty,
+        daily_loss=empty,
+        trailing_floor=empty,
+        daily_breach=empty_bool,
+        trailing_breach=empty_bool,
+    )
+    unequal = replace(_diagnostics(), close_equity=np.array([1_000.0]))
+
+    for diagnostics in (empty_diagnostics, unequal):
+        with pytest.raises(ValueError) as exc_info:
+            _validated_diagnostics(diagnostics)
+        assert str(exc_info.value) == "daily diagnostics must contain equal, non-empty arrays"
+
+
+def test_diagnostic_validation_returns_integer_days_and_checks_each_money_field() -> None:
+    integral_float_days = replace(
+        _diagnostics(),
+        days=np.array([20_000.0, 20_001.0, 20_002.0]),
+    )
+
+    days = _validated_diagnostics(integral_float_days)
+
+    assert days.dtype == np.int64
+    for invalid_diagnostics in (
+        replace(_diagnostics(), opening_balance=np.array([np.nan, 1.0, 1.0])),
+        replace(_diagnostics(), close_balance=np.array([np.nan, 1.0, 1.0])),
+        replace(_diagnostics(), close_equity=np.array([np.nan, 1.0, 1.0])),
+        replace(_diagnostics(), minimum_equity=np.array([np.nan, 1.0, 1.0])),
+        replace(_diagnostics(), daily_loss=np.array([np.nan, 1.0, 1.0])),
+    ):
+        with pytest.raises(ValueError) as exc_info:
+            _validated_diagnostics(invalid_diagnostics)
+        assert str(exc_info.value) == "daily diagnostics contain non-finite values"
+
+
+def test_diagnostic_validation_converts_decimal_object_arrays_before_finite_check() -> None:
+    diagnostics = replace(
+        _diagnostics(),
+        opening_balance=np.array(
+            [Decimal("1000"), Decimal("1010"), Decimal("1010")],
+            dtype=object,
+        ),
+    )
+
+    days = _validated_diagnostics(diagnostics)
+
+    assert np.array_equal(days, np.array([20_000, 20_001, 20_002], dtype=np.int64))
+
+
+def test_diagnostic_validation_reports_the_exact_grid_failure() -> None:
+    diagnostics = replace(_diagnostics(), days=np.array([20_000, 20_002, 20_003]))
+
+    with pytest.raises(ValueError) as exc_info:
+        _validated_diagnostics(diagnostics)
+
+    assert str(exc_info.value) == "daily diagnostics must use one contiguous loss-day grid"
+
+
+def test_builder_requires_close_timestamps() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        build_loss_day_scenarios(
+            pd.DataFrame({"not_closed": [1, 2]}),
+            _policy_result(),
+            start_balance=Decimal("1000"),
+        )
+
+    assert str(exc_info.value) == "scenario trades require ts_closed"
+
+
+def test_builder_names_a_close_outside_the_diagnostic_grid() -> None:
+    trades = pd.DataFrame(
+        {
+            "ts_closed": [_timestamp_for_loss_day(19_999), _timestamp_for_loss_day(20_002)],
+        }
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        build_loss_day_scenarios(trades, _policy_result(), start_balance=Decimal("1000"))
+
+    assert str(exc_info.value) == "trade closes outside daily diagnostics: loss day 19999"
+
+
+def test_builder_names_the_day_of_a_policy_balance_disagreement() -> None:
+    trades = pd.DataFrame(
+        {
+            "ts_closed": [_timestamp_for_loss_day(20_000), _timestamp_for_loss_day(20_002)],
+        }
+    )
+    result = _policy_result()
+    result.trade_pnl = np.array([9.0, -5.0])
+
+    with pytest.raises(ValueError) as exc_info:
+        build_loss_day_scenarios(trades, result, start_balance=Decimal("1000"))
+
+    assert str(exc_info.value) == "policy P&L disagrees with diagnostic balance on 2024-10-04"
 
 
 @pytest.mark.parametrize(
@@ -331,6 +443,13 @@ def test_stationary_source_indices_forward_seed_and_require_integer_indices(
     assert indices.shape == (4, 3)
 
 
+def test_stationary_source_indices_reject_empty_input_with_exact_diagnostic() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        _stationary_source_indices(0, 1, replications=1, seed=1)
+
+    assert str(exc_info.value) == "loss-day scenarios must be non-empty"
+
+
 def test_stationary_source_indices_reject_non_integral_bootstrap_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -405,8 +524,23 @@ def test_joint_validation_rejects_one_independently_shuffled_field() -> None:
         for index, row in enumerate(corrupted[0])
     ]
 
-    with pytest.raises(ValueError, match="not an observed joint bundle"):
+    with pytest.raises(ValueError) as exc_info:
         validate_joint_paths(source, tuple(tuple(path) for path in corrupted))
+
+    assert str(exc_info.value) == (
+        "scenario path contains a row that is not an observed joint bundle"
+    )
+
+
+def test_joint_validation_rejects_empty_source_and_wrong_horizon() -> None:
+    with pytest.raises(ValueError) as empty_exc:
+        validate_joint_paths((), ())
+    assert str(empty_exc.value) == "loss-day scenarios must be non-empty"
+
+    source = (_scenario(1, "1"), _scenario(2, "-1"))
+    with pytest.raises(ValueError) as horizon_exc:
+        validate_joint_paths(source, ((source[0],),))
+    assert str(horizon_exc.value) == "scenario path has 1 days, expected 2"
 
 
 def test_bootstrap_preserves_observed_zero_trade_rows_without_padding() -> None:
@@ -477,6 +611,46 @@ def test_summary_passes_the_named_return_stream_to_block_selection(
     assert set(observed) == {"closing_balance_change"}
     assert np.array_equal(observed["closing_balance_change"], np.array([-2, -1, 0, 1, 2]))
     assert summary.selected_block_length == 2
+
+
+def test_summary_rejects_empty_input_with_exact_diagnostic() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        summarize_scenario_bootstrap(())
+
+    assert str(exc_info.value) == "loss-day scenarios must be non-empty"
+
+
+def test_reader_reports_exact_schema_empty_and_parse_failures(tmp_path: Path) -> None:
+    invalid_schema = tmp_path / "invalid-schema.csv"
+    invalid_schema.write_text("wrong\nvalue\n", encoding="utf-8")
+    with pytest.raises(ValueError) as schema_exc:
+        read_loss_day_scenarios(invalid_schema)
+    assert str(schema_exc.value) == "loss-day scenario CSV has an invalid schema"
+
+    empty = tmp_path / "empty.csv"
+    empty.write_text(
+        ",".join(
+            (
+                "source_date",
+                "close_realized_pnl",
+                "close_equity_change",
+                "opening_to_minimum_equity_change",
+                "closing_balance_change",
+                "trade_count",
+                "daily_swap",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError) as empty_exc:
+        read_loss_day_scenarios(empty)
+    assert str(empty_exc.value) == "loss-day scenario CSV must be non-empty"
+
+    missing = tmp_path / "missing.csv"
+    with pytest.raises(ValueError) as missing_exc:
+        read_loss_day_scenarios(missing)
+    assert str(missing_exc.value) == f"cannot read loss-day scenarios from {missing}"
 
 
 def test_production_bootstrap_defaults_are_registered_p04_values() -> None:

@@ -12,9 +12,9 @@
 | AC-08 | summary labels with possible duplicate length | RED: only fixed 5-day trade blocks existed | GREEN: plug-in plus fixed 5/10/20/60 all appear |
 | AC-09 | real Stage-3/4 wiring guard plus integration rerun | RED: Stage 4 called `monte_carlo_paths` | GREEN: Stage 3 publishes, Stage 4 requires, seed recorded |
 | AC-10 | source boundary and verdict regression | RED: old source fed the threshold | GREEN: exact `prob_profit >= 0.60` check is unchanged |
-| AC-11 | real Stage-3/4 run plus issue-51 regression | RED: no P-10 comparison existed | Pending real rerun |
-| AC-12 | zero-tolerance regression and SHA-256 comparison | RED: no P-10 parity artifact existed | Pending real rerun |
-| AC-13 | cumulative R3 commands | RED: implementation absent | Pending final gates |
+| AC-11 | real Stage-3/4 run plus issue-51 regression | RED: no P-10 comparison existed | GREEN: `51-comparison.json` has both tolerances at zero and no unexpected changes |
+| AC-12 | zero-tolerance regression and SHA-256 comparison | RED: no P-10 parity artifact existed | GREEN: both trade CSV pairs are byte-identical; every non-bootstrap metric is exact |
+| AC-13 | cumulative R3 commands | RED: implementation absent | GREEN: every required gate is recorded with exit 0 in `evidence.md` |
 | INV-01 | known timestamps mapped through `to_day` and diagnostic dates | RED: no scenario axis existed | GREEN: source dates match the P-09 grid |
 | INV-02 | changed-minimum behavioural test and stage source guard | RED: no scenario builder existed | GREEN: no H4/path input accepted |
 | INV-03 | uniquely tagged source and independent-field corruption | RED: old fields were not bundled | GREEN: all sampled rows are observed bundles |
@@ -22,7 +22,7 @@
 | INV-05 | zero-trade source-identity test | RED: old padding invented zero slots | GREEN: every zero row names an observed zero day |
 | INV-06 | Decimal construction/CSV/path-sum tests | RED: no scenario money path existed | GREEN: float is confined to P-04 indexing/estimation |
 | INV-07 | default and sensitivity constant assertions | RED: Stage 4 used 1,000/seed 42 | GREEN: P-04 10,000/20260719/5-10-20-60 |
-| INV-08 | diff audit, threshold guard, and regression | RED: no P-10 scope guard existed | Pending final no-drift audit |
+| INV-08 | diff audit, threshold guard, and regression | RED: no P-10 scope guard existed | GREEN: no `live/**`, P-09 diagnostic, trade, threshold, or verdict-gate change |
 
 ## Properties and calibration
 
