@@ -14,6 +14,8 @@ import pytest
 from research.portfolio.resample import DEFAULT_REPLICATIONS, DEFAULT_SEED
 from research.portfolio.scenarios import (
     LossDayScenario,
+    _probability_of_profit,
+    _stationary_source_indices,
     build_loss_day_scenarios,
     read_loss_day_scenarios,
     sample_scenario_paths,
@@ -180,6 +182,203 @@ def test_builder_rejects_a_discontinuous_diagnostic_balance() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ("trade_pnl", "trade rows, policy P&L, and policy swap must have equal lengths"),
+        ("trade_swap", "trade rows, policy P&L, and policy swap must have equal lengths"),
+    ],
+)
+def test_builder_rejects_each_one_sided_trade_array_mismatch(field: str, expected: str) -> None:
+    trades = pd.DataFrame(
+        {
+            "ts_closed": [_timestamp_for_loss_day(20_000), _timestamp_for_loss_day(20_002)],
+        }
+    )
+    result = _policy_result()
+    setattr(result, field, np.array([10.0]))
+
+    with pytest.raises(ValueError) as exc_info:
+        build_loss_day_scenarios(trades, result, start_balance=Decimal("1000"))
+
+    assert str(exc_info.value) == expected
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ("trade_pnl", "policy trade P&L must be finite"),
+        ("trade_swap", "policy trade swap must be finite"),
+    ],
+)
+def test_builder_rejects_each_non_finite_trade_array(field: str, expected: str) -> None:
+    trades = pd.DataFrame(
+        {
+            "ts_closed": [_timestamp_for_loss_day(20_000), _timestamp_for_loss_day(20_002)],
+        }
+    )
+    result = _policy_result()
+    setattr(result, field, np.array([np.nan, -5.0]))
+
+    with pytest.raises(ValueError) as exc_info:
+        build_loss_day_scenarios(trades, result, start_balance=Decimal("1000"))
+
+    assert str(exc_info.value) == expected
+
+
+def test_builder_counts_and_sums_multiple_closes_on_one_day() -> None:
+    trades = pd.DataFrame(
+        {
+            "ts_closed": [
+                _timestamp_for_loss_day(20_000),
+                _timestamp_for_loss_day(20_000),
+                _timestamp_for_loss_day(20_002),
+            ],
+        }
+    )
+    result = SimpleNamespace(
+        trade_pnl=np.array([4.0, 6.0, -5.0]),
+        trade_swap=np.array([0.25, 0.75, -1.0]),
+        daily_diagnostics=_diagnostics(),
+    )
+
+    scenarios = build_loss_day_scenarios(trades, result, start_balance=Decimal("1000"))
+
+    assert scenarios[0].trade_count == 2
+    assert scenarios[0].daily_swap == Decimal("1.00")
+    assert scenarios[0].closing_balance_change == Decimal("10.0")
+    assert scenarios[0].close_realized_pnl == Decimal("9.00")
+
+
+def test_builder_accepts_exact_accounting_tolerance_boundary() -> None:
+    trades = pd.DataFrame({"ts_closed": [_timestamp_for_loss_day(20_000)]})
+    diagnostics = DailyDiagnostics(
+        days=np.array([20_000], dtype=np.int64),
+        opening_balance=np.array([1_000.00000001]),
+        close_balance=np.array([1_010.00000001]),
+        close_equity=np.array([1_010.00000001]),
+        minimum_equity=np.array([999.0]),
+        daily_loss=np.array([0.001]),
+        trailing_floor=np.array([940.0]),
+        daily_breach=np.array([False]),
+        trailing_breach=np.array([False]),
+    )
+    result = SimpleNamespace(
+        trade_pnl=np.array([10.0]),
+        trade_swap=np.array([0.0]),
+        daily_diagnostics=diagnostics,
+    )
+
+    scenarios = build_loss_day_scenarios(trades, result, start_balance=Decimal("1000"))
+
+    assert scenarios[0].closing_balance_change == Decimal("10.00000001")
+
+
+@pytest.mark.parametrize("invalid_day", [np.nan, 20_000.5])
+def test_builder_rejects_non_integer_diagnostic_day_identifiers(invalid_day: float) -> None:
+    diagnostics = replace(_diagnostics(), days=np.array([invalid_day, 20_001, 20_002]))
+    trades = pd.DataFrame(
+        {
+            "ts_closed": [_timestamp_for_loss_day(20_000), _timestamp_for_loss_day(20_002)],
+        }
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        build_loss_day_scenarios(
+            trades,
+            SimpleNamespace(
+                trade_pnl=np.array([10.0, -5.0]),
+                trade_swap=np.array([1.0, -1.0]),
+                daily_diagnostics=diagnostics,
+            ),
+            start_balance=Decimal("1000"),
+        )
+
+    assert str(exc_info.value) == "daily diagnostic day identifiers must be finite integers"
+
+
+def test_stationary_source_indices_forward_seed_and_require_integer_indices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_bootstrap(
+        values: np.ndarray,
+        mean_block_length: int,
+        *,
+        replications: int,
+        seed: int,
+    ) -> np.ndarray:
+        observed.update(
+            values=values.copy(),
+            mean_block_length=mean_block_length,
+            replications=replications,
+            seed=seed,
+        )
+        return np.tile(np.arange(len(values), dtype=np.float64), (replications, 1))
+
+    monkeypatch.setattr("research.portfolio.scenarios.stationary_bootstrap", fake_bootstrap)
+
+    indices = _stationary_source_indices(3, 2, replications=4, seed=31)
+
+    assert observed["mean_block_length"] == 2
+    assert observed["replications"] == 4
+    assert observed["seed"] == 31
+    sampled_values = observed["values"]
+    assert isinstance(sampled_values, np.ndarray)
+    assert np.array_equal(sampled_values, np.arange(3))
+    assert indices.dtype == np.int64
+    assert indices.shape == (4, 3)
+
+
+def test_stationary_source_indices_reject_non_integral_bootstrap_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "research.portfolio.scenarios.stationary_bootstrap",
+        lambda *_args, **_kwargs: np.array([[0.5]]),
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        _stationary_source_indices(1, 1, replications=1, seed=1)
+
+    assert str(exc_info.value) == "stationary bootstrap returned invalid source indices"
+
+
+def test_probability_of_profit_is_strictly_positive_and_forwards_seed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = (_scenario(1, "0"),)
+    observed: dict[str, int] = {}
+
+    def fake_paths(
+        scenarios: tuple[LossDayScenario, ...],
+        *,
+        mean_block_length: int,
+        replications: int,
+        seed: int,
+    ) -> tuple[tuple[LossDayScenario, ...], ...]:
+        observed.update(
+            block_length=mean_block_length,
+            replications=replications,
+            seed=seed,
+        )
+        zero = replace(scenarios[0], closing_balance_change=Decimal("0"))
+        positive = replace(
+            scenarios[0],
+            close_realized_pnl=Decimal("1"),
+            closing_balance_change=Decimal("1"),
+        )
+        return ((zero,), (positive,))
+
+    monkeypatch.setattr("research.portfolio.scenarios.sample_scenario_paths", fake_paths)
+
+    probability = _probability_of_profit(source, 7, replications=2, seed=37)
+
+    assert probability == Decimal("0.5")
+    assert observed == {"block_length": 7, "replications": 2, "seed": 37}
+
+
 def test_scenario_bootstrap_has_fixed_calendar_horizon_and_joint_rows() -> None:
     source = tuple(_scenario(index, str(index + 1), trades=index % 3) for index in range(12))
 
@@ -239,8 +438,10 @@ def test_scenario_bootstrap_is_deterministic_and_reports_all_sensitivities() -> 
     second = summarize_scenario_bootstrap(source, replications=40, seed=29)
 
     assert first == second
+    assert first.seed == 29
     assert first.replications == 40
     assert first.horizon_days == 120
+    assert first.selected_block_length == first.sensitivity[0].block_length
     assert [item.label for item in first.sensitivity] == [
         "plugin",
         "fixed_5",
@@ -253,6 +454,29 @@ def test_scenario_bootstrap_is_deterministic_and_reports_all_sensitivities() -> 
     assert json.dumps(first.to_json(), sort_keys=True) == json.dumps(
         second.to_json(), sort_keys=True
     )
+
+
+def test_summary_passes_the_named_return_stream_to_block_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tuple(_scenario(index, str(index - 2)) for index in range(5))
+    observed: dict[str, np.ndarray] = {}
+
+    def fake_select(streams: dict[str, np.ndarray]) -> int:
+        observed.update(streams)
+        return 2
+
+    monkeypatch.setattr("research.portfolio.scenarios.select_block_length", fake_select)
+    monkeypatch.setattr(
+        "research.portfolio.scenarios._probability_of_profit",
+        lambda *_args, **_kwargs: Decimal("0.25"),
+    )
+
+    summary = summarize_scenario_bootstrap(source, replications=3, seed=41)
+
+    assert set(observed) == {"closing_balance_change"}
+    assert np.array_equal(observed["closing_balance_change"], np.array([-2, -1, 0, 1, 2]))
+    assert summary.selected_block_length == 2
 
 
 def test_production_bootstrap_defaults_are_registered_p04_values() -> None:
