@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-08 adds synchronized DSR/PBO diagnostics and the family-evidence selection protocol as critical targets. Nine Mutmut candidates from three provably equivalent MCS dtype expressions are eliminated at the source by relying on NumPy's float64 zeros default and inferred integer index dtype; the exact behavioural comparison proves unchanged range decisions."
+change_explanation = "P-08 adds synchronized DSR/PBO diagnostics and the family-evidence selection protocol as critical targets. Nine Mutmut candidates from three provably equivalent MCS dtype expressions and four from stationary_bootstrap's redundant float64 return cast are eliminated at source; exact behavioural tests prove unchanged MCS decisions and byte-identical float64 resamples."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -27,9 +27,9 @@ targets = [
 ]
 
 [summary]
-total = 3149
-killed = 2830
-survived = 319
+total = 3145
+killed = 2828
+survived = 317
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -346,8 +346,6 @@ names = [
     "research.portfolio.resample.x_politis_white_block_length__mutmut_55",
     "research.portfolio.resample.x_stationary_bootstrap__mutmut_25",
     "research.portfolio.resample.x_stationary_bootstrap__mutmut_44",
-    "research.portfolio.resample.x_stationary_bootstrap__mutmut_62",
-    "research.portfolio.resample.x_stationary_bootstrap__mutmut_64",
 ]
 
 [[survivor_groups]]
