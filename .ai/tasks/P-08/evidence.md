@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 754f7e2b046ba34b1de2627b59a4aac8e4c1f33d
+HEAD: f6753448bd5b924cef988874e208981c307c3c18
 
 ## Commands
 
@@ -12,21 +12,21 @@ HEAD: 754f7e2b046ba34b1de2627b59a4aac8e4c1f33d
 | `red-first` | inline pre-P-08 return-first/no-eligibility stub against the two focused P-08 guards | 1 | RED as required: SPA failure did not raise `NoAutomaticSelection`; the tie-break selected `baseline` instead of complexity-first `no_bb` |
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | 13 changed files already formatted |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_engineering_workflow_docs.py tests/test_docs_architecture_map.py tests/test_docs_language.py` | 0 | 132 passed |
-| `check` | `uvx --from rust-just just check` | 0 | Ruff, mypy, Vulture, and pytest passed; 1,041 passed, 1 platform-skipped |
+| `check` | `uvx --from rust-just just check` | 0 | Ruff, mypy, Vulture, and pytest passed; 1,045 passed, 1 platform-skipped |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | 275 focused tests passed; Ruff and mypy passed |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | 17 properties passed twice with seed `20260721` |
-| `integration-tests` | full `uv run pytest -q` executed by `just check` | 0 | 1,041 passed, including the real Stage-2 and lineage integration paths |
+| `integration-tests` | full `uv run pytest -q` executed by `just check` | 0 | 1,045 passed, including the real Stage-2, MCS, and lineage integration paths |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task P-08` | 0 | `Task P-08: valid (13 AC, 9 INV)` |
-| `adversarial-review` | `.ai/tasks/P-08/review.md`, schema-checked by `validate_task P-08` | 0 | 20 counterexamples attempted; F1 resolved by Jan's exact complexity mapping; no unresolved P0-P3 builder finding |
+| `adversarial-review` | `.ai/tasks/P-08/review.md`, schema-checked by `validate_task P-08` | 0 | 20 selection counterexamples plus the exact MCS dtype equivalence were reviewed; F1/F2 resolved and no P0-P3 builder finding remains |
 | `invariants` | `uvx --from rust-just just check-invariants` | 0 | 181 passed |
-| `mutation-on-touched-critical` | Linux Critical mutation workflow run `30197181802` | 1 | FAILED: 2,836/3,158 killed and 322 survived; unexpected equivalent MCS `range_decision mutmut_49`, while baseline-equivalent `pairwise_scores mutmut_5` and `_10` were killed |
+| `mutation-on-touched-critical` | Linux Critical mutation workflow run `30200431311`, attempt 2 | 0 | GREEN: weakened-test probe and exact ratchet passed; 2,830/3,149 killed, 319 exactly classified survivors, and no unhealthy outcome |
 | `parity-where-applicable` | forced-selection integration test, Stage-3 producer diff, and zero-threshold `research.regression` self-comparison of `run_20260724_1146` | 0 | Forced `--variation` remained exploratory and bypassed automatic evidence; Stage-3/trade producers matched main; 1,348→1,348 trades, 40.6%→40.6%, and `full_history_trades.csv` remained byte-identical at SHA-256 `27592D20DDA0FB3B31EB06DE69D4D760D0F16CD961F2872E4F6376ACB3DD90DC` |
 | `live-money-review` | `git diff --quiet origin/main...HEAD -- research/stages/portfolio.py research/portfolio research/engine/walkforward.py research/engine/walkforward_runner.py research/engine/continuous.py core live` | 0 | No live, signal, order, sizing, risk, Stage-3, or historical-trade producer changed |
 | `human-decision-escalation` | exact config and focused P-08 tests | 0 | Jan's twelve approved `COMPLEXITY_SCORES` are present exactly; no methodology question remains open |
-| `no-autonomous-merge` | branch/PR state audit | 0 | Feature branch only; no PR, merge, or auto-merge exists |
+| `no-autonomous-merge` | branch/PR state audit | 0 | Feature branch and human-reviewed PR workflow only; merge and auto-merge remain disabled |
 | `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean, pip-audit found no known vulnerabilities, and static security checks passed |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | R3; seven production files, fifteen directly related test files, three critical escalations, no unknown/dynamic edge discovered |
-| `pr-ready` | `uvx --from rust-just just pr-ready P-08 origin/main` | 1 | NOT READY because the required Linux Critical mutation gate has exit 1 |
+| `pr-ready` | `uvx --from rust-just just pr-ready P-08 origin/main` | 0 | READY: task, R3 classification, every required gate, and evidence currency passed |
 
 ## Red-first proof
 
@@ -55,13 +55,18 @@ historical figure moved.
 
 ## Coverage and mutation
 
-The P-08 focused suite has 65 passing tests and the full suite has 1,041 passing tests. The Linux
-Critical mutation run `30197181802` failed its exact-survivor ratchet despite killing 2,836 of
-3,158 selected mutants. The reported differences are pre-existing equivalent NumPy-expression
-mutants in P-07's MCS implementation, not P-08 selection survivors. Issue #89 tracks the
-nondeterministic equivalent-mutant status. The baseline and gate were not weakened.
+The P-08 focused suite has 65 passing tests and the full suite has 1,045 passing tests. Exact
+inspection showed that MCS `range_decision mutmut_49` removed only the explicit integer dtype from
+a validated integer array used exclusively for indexing. A behavioural test proves identical
+statistics, p-values, and elimination decisions for inferred and explicit `int64` indexing across
+active subsets, order permutations, and the tie boundary. The redundant MCS dtype expressions were
+removed at source, eliminating nine equivalent Mutmut candidates without changing MCS output.
+
+Linux Critical mutation workflow `30200431311` attempt 2 passed independently: 2,830 of 3,149
+selected mutants were killed, all 319 survivors matched their exact classifications, and no
+no-test, timeout, suspicious, skipped, or unchecked outcome occurred. The gate and baseline score
+were not weakened.
 
 ## Deferred checks
 
-Readiness and PR publication are blocked on a real exit-0 Linux Critical mutation run. No other
-validation is deferred.
+None.
