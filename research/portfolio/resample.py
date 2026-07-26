@@ -173,7 +173,7 @@ def stationary_bootstrap(
     generator = np.random.default_rng(seed)
     sample_size = len(values)
     indices = np.empty((repetitions, sample_size), dtype=np.int64)
-    indices[:, 0] = generator.integers(0, sample_size, size=repetitions)
+    indices[:, 0] = generator.integers(sample_size, size=repetitions)
     restart_probability = 1.0 / block_length
 
     for position in range(1, sample_size):

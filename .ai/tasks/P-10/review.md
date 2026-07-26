@@ -14,7 +14,7 @@ lineage, determinism, missing-artifact, and gate-isolation counterexamples were 
 | F5 | P2 | Separately accumulated float trade P&L can disagree with the authoritative realized balance. | Several same-day fractional P&Ls sum in a different binary order. | RESOLVED |
 | F6 | P2 | Stage 4 could keep calling the old helper even after the scenario module is correct. | The new artifact exists but `monte_carlo_paths` remains on the verdict path. | RESOLVED |
 | F7 | P2 | Validation branches and forwarding arguments could mutate without an observable test failure. | Change the empty-grid predicate, omit the seed, collapse two same-day closes, or move an error to the wrong loss day. | RESOLVED |
-| F8 | P2 | An exactly equivalent P-04 RNG call alternated between killed and survived under mutation-runner load, making the exact ratchet nondeterministic. | `Generator.integers(0, high, ...)` and `Generator.integers(high, ...)` produce the same seeded samples, but `mutmut_44` could be misreported as killed by an unstable worker. | RESOLVED |
+| F8 | P2 | P-04 RNG equivalents alternated between killed and survived under mutation-runner load, making the exact ratchet nondeterministic. | `Generator.integers(0, high, ...)` equals `Generator.integers(high, ...)`; the `<` versus `<=` restart boundary also lacked a deterministic exact-threshold fixture. | RESOLVED |
 
 ## Dispositions
 
@@ -31,7 +31,7 @@ schemas, non-finite money, trade/diagnostic length mismatches, closes outside th
 discontinuous opening balances, source-index domain, P-04's fail-closed block estimator, and the
 unchanged 0.60 verdict boundary. F7 was exposed by the first Linux mutation run and closed with
 exact boundary, diagnostic, seed-forwarding, and same-day aggregation tests; no mutation-score
-regression is accepted. F8 was diagnosed from alternating Linux runs as a true API no-op, then
-removed from production source so the mutant no longer exists; fixed-seed and P-04 calibration
-tests prove identical behaviour. No unresolved in-scope P0-P3 builder finding remains. Claude's
-independent review remains mandatory.
+regression is accepted. F8 was diagnosed from alternating Linux runs: redundant zero-low RNG
+arguments were removed, and a fake RNG at exactly the restart threshold now proves the specified
+strict comparison. Fixed-seed and P-04 calibration tests preserve identical behaviour. No
+unresolved in-scope P0-P3 builder finding remains. Claude's independent review remains mandatory.
