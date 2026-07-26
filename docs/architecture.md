@@ -206,7 +206,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/schedule_builder.py` | Turns windows + their selected parameters into that schedule |
 | `research/engine/walkforward.py` | Walk-forward window scheme (train/test splits, purge/embargo) |
 | `research/engine/walkforward_runner.py` | Walk-forward runner (drives backtests over the windows) |
-| `research/engine/characterize.py` | The robustness study: walk-forward every instrument × variation, in parallel |
+| `research/engine/characterize.py` | The robustness study plus synchronized diagnostic-only DSR/PBO evidence |
 
 ### Research — portfolio math (pure, on DataFrames)
 
@@ -234,7 +234,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/stages/lineage.py` | Content-addressed lineage: stage manifests, atomic publication, the read gate |
 | `research/stages/open_report.py` | Opens a run's report only while its lineage still verifies |
 | `research/stages/edge.py` | Stage 1 — edge ranking plus SPA family, Romano-Wolf, and MCS candidate evidence |
-| `research/stages/select.py` | Stage 2 — structure and markets; auto-selection requires the SPA family gate |
+| `research/stages/select.py` | Stage 2 — strict SPA/Romano-Wolf/MCS intersection and complexity-first structure selection |
 | `research/stages/universe.py` | Stage-2 selection logic (structure + market universe) |
 | `research/stages/portfolio.py` | Stage 3 — combine + size under a risk policy |
 | `research/stages/verdict.py` | Stage 4 — trade yes/no + fact sheet + report |

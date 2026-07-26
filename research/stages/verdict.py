@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -60,9 +61,13 @@ def selection_is_gated(selection: Mapping[str, Any]) -> bool:
     gates = selection.get("gates")
     return bool(
         isinstance(gates, Mapping)
-        and gates.get("eligible")
-        and gates.get("dsr_ok")
+        and gates.get("automatic_eligible")
         and gates.get("spa_ok")
+        and gates.get("romano_wolf_ok")
+        and gates.get("mcs_ok")
+        and gates.get("complete")
+        and gates.get("positive_market_ok")
+        and gates.get("return_drawdown_ok")
         and not selection.get("forced")
     )
 
@@ -159,19 +164,20 @@ def main(argv: list[str] | None = None) -> None:
     gates = sel_manifest.get("gates", {})
     gated_pick = selection_is_gated(sel_manifest)
     dsr_txt = "n/a" if gates.get("dsr") is None else f"{gates['dsr']:.2f}"
-    # PBO is a STUDY-level verdict: a high value says the search itself is overfit, which no
-    # single candidate's DSR can rescue. Selection now refuses such a study, and the verdict
-    # re-tests it rather than trusting that it did.
-    pbo = (
-        json.loads(of_path.read_text(encoding="utf-8")).get("pbo") if of_path is not None else None
-    )
+    pbo: float | None = None
+    if of_path is not None:
+        try:
+            overfitting = json.loads(of_path.read_text(encoding="utf-8"))
+            raw_pbo = overfitting.get("pbo") if isinstance(overfitting, Mapping) else None
+            if not isinstance(raw_pbo, bool) and raw_pbo is not None:
+                parsed_pbo = float(raw_pbo)
+                pbo = parsed_pbo if math.isfinite(parsed_pbo) else None
+        except (OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
+            pass
     pbo_txt = "n/a" if pbo is None else f"{pbo:.2f}"
     # A contaminated holdout is IN-SAMPLE for the deployed config, so its numbers cannot support a
     # deployable verdict. Printing that warning next to "PASS - handelbar" contradicted itself.
     contaminated = bool(getattr(cfg, "HOLDOUT_CONTAMINATED", False))
-    # Missing DSR/PBO artifacts are not a pass either: those gates exist to reject overfit
-    # searches, and "we never measured it" is not evidence that it is fine. An older study without
-    # them has to be re-run rather than waved through.
     # #31: a PASS is a live-money decision, so it may only rest on numbers whose whole chain of
     # production is content-verified. A legacy run stays readable and can never clear this.
     try:
@@ -182,12 +188,10 @@ def main(argv: list[str] | None = None) -> None:
         lineage_txt = f"Herkunft NICHT verifiziert ({str(exc).splitlines()[0]})"
     checks = [
         (lineage_ok, lineage_txt),
-        (pbo is not None and pbo <= PBO_MAX, f"PBO {pbo_txt} <= {PBO_MAX:.2f} (gemessen)"),
-        (gates.get("dsr") is not None, f"DSR gemessen ({dsr_txt})"),
         (not contaminated, "Holdout ist echtes Out-of-Sample (nicht kontaminiert)"),
         (
             gated_pick,
-            f"Auswahl gegated (eligible + DSR {dsr_txt} + SPA, nicht erzwungen)",
+            "Auswahl gegated (SPA + Romano-Wolf + MCS + Struktur, nicht erzwungen)",
         ),
         (fixed_config is not None, "gegen die eingefrorene Live-Config geprueft (--fixed)"),
         (result.n_trades >= 30, f"genug Trades ({result.n_trades} >= 30)"),
@@ -201,6 +205,10 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\n  URTEIL: {'PASS - handelbar' if passed else 'FAIL - nicht handelbar'}")
     for ok, msg in checks:
         print(f"    {'PASS' if ok else 'FAIL'}: {msg}")
+    dsr_diag = "ok" if gates.get("dsr_diagnostic_ok") else "nicht bestanden/nicht verfuegbar"
+    pbo_diag = "ok" if gates.get("pbo_diagnostic_ok") else "nicht bestanden/nicht verfuegbar"
+    print(f"    DIAGNOSTIK: DSR {dsr_txt} gegen 0.90: {dsr_diag} (kein Gate)")
+    print(f"    DIAGNOSTIK: PBO {pbo_txt} gegen {PBO_MAX:.2f}: {pbo_diag} (kein Gate)")
     if fixed_config is None:
         print(
             "\n  EXPLORATIV: ohne --fixed wurden die Stops pro Fenster neu optimiert. Diese Zahlen"

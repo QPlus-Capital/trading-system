@@ -95,28 +95,45 @@ the component ablation (a 2ⁿ factorial of the confirmation filters) across **m
     negative-return losses, eliminating only candidates shown inferior while retaining a
     confidence set that acknowledges when the data cannot distinguish the best.
   - Multiple-testing haircut: Harvey & Liu (2015).
-- **Criterion:** a positive, generalizing edge — normalized WFE ≳ 0.5, **DSR significant after
-  deflation by the full trial budget** (variations × train-lengths × per-window param-combos), PBO
-  low, and the consistent SPA p-value at most 0.05. SPA uses the 36 formal
+- **Criterion:** a positive, generalizing edge — normalized WFE ≳ 0.5 and the consistent SPA
+  p-value at most 0.05. SPA uses the 36 formal
   `(variation, train_months)` daily net-R streams, a zero benchmark, P-04's selected stationary
   bootstrap length, 10,000 replications, and seed 20260719. The selected length and every fixed
   5/10/20/60-day sensitivity must pass; missing or unreadable evidence fails closed. Rank variants
   by return-per-drawdown across instruments; a component that lifts return but wrecks drawdown does
   not win. Stage 1 also persists Romano-Wolf adjusted p-values and the exact `p <= 0.05`
   per-candidate eligibility label using SPA's selected block length, seed, replications, paired
-  stationary-bootstrap draw, long-run variance, and studentization. P-06 only publishes this
-  evidence; P-08 owns its use in selection. The MCS uses
+  stationary-bootstrap draw, long-run variance, and studentization. The MCS uses
   the same matrix, selected block length, replications, seed, and paired bootstrap draw. Its
   coherent range elimination continues to the singleton to produce monotone model p-values;
-  candidates with `p >= 0.10` form the 90% MCS. P-07 publishes this evidence without changing
-  selection; P-08 will require eventual selections to belong to the set and will use
-  pre-registered complexity when the set contains several or all 36 candidates.
+  candidates with `p >= 0.10` form the 90% MCS.
+- **DSR diagnostic:** use the common six-month window matrix across all 36 formal candidates.
+  Let `rho_bar` be the clipped `[0,1]` mean upper-triangle Pearson correlation. Report DSR at
+  `N_eff = min(41, 5 + rho_bar + (1-rho_bar) * 36)` and at nominal `N=41`, using the sample
+  variance across the 36 synchronized candidate Sharpes. Record both benchmarks, sample count,
+  skew, and non-excess kurtosis. The `DSR >= 0.90` label is diagnostic only.
+- **PBO diagnostic:** apply CSCV once to the same common-window by 36-candidate matrix, with the
+  largest even split count no greater than `min(10, n_windows)`. The `PBO <= 0.20` label is
+  diagnostic only. Missing or unusable DSR/PBO evidence is reported as unavailable and does not
+  become a pass or a veto.
 
 ### Stage 3 — Selection: global structure + universe
-Pick the single **global** structure (variation + train length) that is most robust across markets
-(return-first, but only among the risk-tolerable and cross-instrument-consistent), then keep the
-instruments whose own risk-adjusted edge clears the thresholds.
-- **Criterion:** one structure for all markets; markets kept only on a robust risk-adjusted edge.
+Automatic selection fails closed unless the complete, lineage-verified family passes SPA at
+`p <= 0.05`. It then intersects, without fallback: Romano-Wolf adjusted `p <= 0.05`, membership in
+the 90% MCS, complete market cells, positive mean return on at least 90% of markets, and mean
+return/drawdown at least 85% of the best. If any step empties the set, the run names that criterion
+and produces no automatic selection.
+
+The surviving candidate with the lowest pre-registered per-variation complexity score wins.
+Ties break by higher mean net return, then training length `36, 24, 18`, then lexical variation
+name. `research/config/robustness.py::COMPLEXITY_SCORES` fixes the ordering:
+`no_confirms=0`; the three one-confirmation variants `=1`; the three two-confirmation variants
+`=2`; `baseline=3`; and `long_only`, `ema20`, `bb30`, `wpr21` `=4`.
+
+`--variation` deliberately bypasses automatic eligibility and complexity for deployment validation
+or exploration. The resulting selection is marked forced and can never support a deployable PASS.
+After the global structure is chosen, keep only markets whose own risk-adjusted edge clears the
+pre-registered universe thresholds.
 
 ### Stage 4 — Holdout *(touched once)*
 Score the chosen config on the reserved holdout period no earlier stage ever saw. This is the honest

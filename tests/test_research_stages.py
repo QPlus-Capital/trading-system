@@ -76,7 +76,7 @@ def test_edge_ranking_is_return_sorted_and_gated() -> None:
     assert [int(t) for t in top["train_months"]] == [36, 24, 36, 24]  # return-sorted
 
 
-def test_edge_ranking_dsr_gate_excludes_low_dsr() -> None:
+def test_edge_ranking_labels_dsr_without_changing_structure_eligibility() -> None:
     from research.stages.edge import ranking
 
     df = pd.DataFrame(
@@ -89,14 +89,22 @@ def test_edge_ranking_dsr_gate_excludes_low_dsr() -> None:
             "pct_profitable": [100, 100, 100, 100],
         }
     )
-    # 'a' has the higher return but an overfit DSR; 'b' clears the DSR gate.
-    top = ranking(df, dsr_by_variation={"a": 0.10, "b": 0.99})
+    top = ranking(
+        df,
+        dsr_by_candidate={
+            "a__train_24m": 0.10,
+            "a__train_36m": 0.10,
+            "b__train_24m": 0.99,
+            "b__train_36m": 0.99,
+        },
+    )
     a = top[top["variation"] == "a"].iloc[0]
     b = top[top["variation"] == "b"].iloc[0]
-    assert not a["dsr_ok"] and b["dsr_ok"]  # low DSR gated out, high DSR kept
+    assert not a["dsr_diagnostic_ok"] and b["dsr_diagnostic_ok"]
+    assert a["eligible"] and b["eligible"]
 
 
-def test_edge_ranking_unknown_dsr_does_not_gate_out() -> None:
+def test_edge_ranking_unknown_dsr_is_an_unavailable_diagnostic() -> None:
     from research.stages.edge import ranking
 
     df = pd.DataFrame(
@@ -110,37 +118,57 @@ def test_edge_ranking_unknown_dsr_does_not_gate_out() -> None:
         }
     )
     top = ranking(df)  # no DSR supplied
-    assert bool(top.iloc[0]["dsr_ok"])  # unknown DSR must not exclude
+    assert not bool(top.iloc[0]["dsr_diagnostic_ok"])
+    assert bool(top.iloc[0]["eligible"])
 
 
 def test_load_overfitting_reads_ranking_and_pbo(tmp_path: Path) -> None:
     from research.stages.edge import load_overfitting
 
-    pd.DataFrame({"variation": ["a", "b"], "dsr": [1.0, 0.4]}).to_csv(
-        tmp_path / "ranking.csv", index=False
+    (tmp_path / "overfitting.json").write_text(
+        '{"pbo": 0.05, "dsr_by_candidate": {"a__train_36m": 1.0}, '
+        '"dsr_nominal_by_candidate": {"a__train_36m": 0.9}}'
     )
-    (tmp_path / "overfitting.json").write_text('{"pbo": 0.05, "n_trials": 864}')
-    dsr, pbo = load_overfitting(tmp_path)
-    assert dsr == {"a": 1.0, "b": 0.4}
+    dsr, nominal, pbo = load_overfitting(tmp_path)
+    assert dsr == {"a__train_36m": 1.0}
+    assert nominal == {"a__train_36m": 0.9}
     assert pbo == 0.05
 
 
 def test_load_overfitting_missing_artifacts_returns_empty(tmp_path: Path) -> None:
     from research.stages.edge import load_overfitting
 
-    dsr, pbo = load_overfitting(tmp_path)
-    assert dsr == {} and pbo is None
+    dsr, nominal, pbo = load_overfitting(tmp_path)
+    assert dsr == {} and nominal == {} and pbo is None
 
 
-def test_verdict_selection_gate_requires_spa_and_prior_candidate_gates() -> None:
+def test_verdict_selection_gate_requires_the_complete_p08_intersection() -> None:
     from research.stages.verdict import selection_is_gated
 
     clean: dict[str, Any] = {
         "forced": False,
-        "gates": {"eligible": True, "dsr_ok": True, "spa_ok": True},
+        "gates": {
+            "automatic_eligible": True,
+            "spa_ok": True,
+            "romano_wolf_ok": True,
+            "mcs_ok": True,
+            "complete": True,
+            "positive_market_ok": True,
+            "return_drawdown_ok": True,
+            "dsr_diagnostic_ok": False,
+            "pbo_diagnostic_ok": False,
+        },
     }
     assert selection_is_gated(clean)
-    for field in ("eligible", "dsr_ok", "spa_ok"):
+    for field in (
+        "automatic_eligible",
+        "spa_ok",
+        "romano_wolf_ok",
+        "mcs_ok",
+        "complete",
+        "positive_market_ok",
+        "return_drawdown_ok",
+    ):
         damaged = {
             **clean,
             "gates": {**clean["gates"], field: False},
