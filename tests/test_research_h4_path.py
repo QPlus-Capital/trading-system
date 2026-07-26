@@ -37,6 +37,7 @@ def _run(
     d0: int | None = None,
     d1: int | None = None,
     risk_multiple: float = 1.0,
+    daily_limit_frac: float = 0.03,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, DailyDiagnostics]:
     opened = trades["ts_opened"].to_numpy(dtype=np.int64)
     closed = trades["ts_closed"].to_numpy(dtype=np.int64)
@@ -61,7 +62,7 @@ def _run(
         0.06,
         flat(risk_multiple),
         h4_prices=h4_prices,
-        daily_limit_frac=0.03,
+        daily_limit_frac=daily_limit_frac,
     )
 
 
@@ -127,6 +128,23 @@ def test_h4_loader_fails_closed_on_invalid_rows(tmp_path: Path, rows: str, messa
 
     with pytest.raises(ValueError, match=message):
         load_h4_prices(str(csv))
+
+
+def test_h4_loader_accepts_one_complete_observation(tmp_path: Path) -> None:
+    csv = tmp_path / "X_H4.csv"
+    csv.write_text(
+        "<DATE>\t<TIME>\t<LOW>\t<HIGH>\t<CLOSE>\n"
+        "2026.07.02\t00:00:00\t99\t101\t100\n",
+        encoding="utf-8",
+    )
+
+    loaded = load_h4_prices(str(csv))
+
+    assert loaded[["low", "high", "close"]].iloc[0].tolist() == [
+        Decimal("99"),
+        Decimal("101"),
+        Decimal("100"),
+    ]
 
 
 @pytest.mark.parametrize(
@@ -219,6 +237,48 @@ def test_legacy_direction_inference_treats_any_positive_pnl_as_a_win() -> None:
     )
 
     assert diagnostics.minimum_equity[0] == pytest.approx(99_999.5)
+
+
+def test_explicit_direction_overrides_legacy_pnl_inference() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trade = _trade(
+        "X",
+        opened,
+        closed,
+        pnl_base=-1_000.0,
+        entry=100.0,
+        exit_=101.0,
+    )
+    trade["is_long"] = True
+
+    _realized, _equity, _sizes, diagnostics = _run(
+        pd.DataFrame([trade]),
+        {"X": _h4((opened, "99", "102", "101"))},
+    )
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(99_000.0)
+
+
+def test_legacy_equal_entry_exit_keeps_the_strict_direction_boundary() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trade = _trade(
+        "X",
+        opened,
+        closed,
+        pnl_base=1_000.0,
+        entry=100.0,
+        exit_=100.0,
+    )
+    del trade["is_long"]
+
+    _realized, _equity, _sizes, diagnostics = _run(
+        pd.DataFrame([trade]),
+        {"X": _h4((opened, "99", "100", "100"))},
+    )
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(100_000.0)
 
 
 @pytest.mark.parametrize(
@@ -393,6 +453,21 @@ def test_daily_and_trailing_flags_share_the_minimum_equity_path() -> None:
     assert diagnostics.daily_breach[0]
     assert not diagnostics.trailing_breach[0]
     assert diagnostics.breached
+
+
+def test_zero_daily_limit_disables_daily_breach_flags() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trades = pd.DataFrame([_trade("X", opened, closed)])
+
+    *_unused, diagnostics = _run(
+        trades,
+        {"X": _h4((opened, "99", "104", "99"))},
+        daily_limit_frac=0.0,
+    )
+
+    assert diagnostics.daily_loss[0] == pytest.approx(0.04)
+    assert not diagnostics.daily_breach.any()
 
 
 def test_closed_market_carries_last_close_without_borrowing_an_extreme() -> None:
