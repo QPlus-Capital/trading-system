@@ -25,7 +25,7 @@ mutant_patterns = [
 id = "portfolio-h4-prices"
 path = "research/portfolio/curves.py"
 mutant_patterns = [
-    "research.portfolio.curves.x_h4_loss_days__mutmut_*",
+    "research.portfolio.curves.x_interval_loss_days__mutmut_*",
     "research.portfolio.curves.x_load_h4_prices__mutmut_*",
 ]
 
