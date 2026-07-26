@@ -215,6 +215,31 @@ def test_seed_is_bit_for_bit_reproducible_and_input_is_not_mutated() -> None:
     assert np.array_equal(daily_returns, original)
 
 
+@pytest.mark.parametrize(
+    "daily_returns",
+    [
+        [0, 1, -1, 2],
+        np.asarray([0, 1, -1, 2], dtype=np.int32),
+        np.asarray([0.0, 1.0, -1.0, 2.0], dtype=np.float32),
+        np.asarray([0.0, 1.0, -1.0, 2.0], dtype=np.float64),
+    ],
+)
+def test_bootstrap_output_is_float64_and_legacy_cast_is_byte_identical(
+    daily_returns: npt.ArrayLike,
+) -> None:
+    samples = stationary_bootstrap(
+        daily_returns,
+        3,
+        replications=25,
+        seed=20260719,
+    )
+    legacy_cast = np.asarray(samples, dtype=np.float64)
+
+    assert samples.dtype == np.float64
+    assert samples.tobytes() == legacy_cast.tobytes()
+    np.testing.assert_array_equal(samples, legacy_cast)
+
+
 def test_seed_pins_independent_restart_draws_and_uniform_zero_starts() -> None:
     samples = stationary_bootstrap(
         np.arange(2, dtype=np.float64),
