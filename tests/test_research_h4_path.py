@@ -89,6 +89,7 @@ def _trade(
 
 def test_loss_day_interval_is_half_open_and_rejects_empty_ranges() -> None:
     before_reset = _ts("2026-07-01 21:00")
+    reset = _ts("2026-07-01 21:15")
     after_reset = before_reset + 4 * _HOUR_NS
 
     assert interval_loss_days(before_reset, before_reset) == ()
@@ -97,6 +98,8 @@ def test_loss_day_interval_is_half_open_and_rejects_empty_ranges() -> None:
         to_day(before_reset),
         to_day(after_reset),
     )
+    assert interval_loss_days(before_reset, reset) == (to_day(before_reset),)
+    assert interval_loss_days(reset, reset + 1) == (to_day(reset),)
 
 
 @pytest.mark.parametrize(
@@ -111,6 +114,8 @@ def test_loss_day_interval_is_half_open_and_rejects_empty_ranges() -> None:
             "not strictly increasing",
         ),
         ("2026.07.02\t00:00:00\tnan\t101\t100\n", "non-finite H4 price"),
+        ("2026.07.02\t00:00:00\t99\tnan\t100\n", "non-finite H4 price"),
+        ("2026.07.02\t00:00:00\t99\t101\tnan\n", "non-finite H4 price"),
     ],
 )
 def test_h4_loader_fails_closed_on_invalid_rows(tmp_path: Path, rows: str, message: str) -> None:
@@ -125,22 +130,45 @@ def test_h4_loader_fails_closed_on_invalid_rows(tmp_path: Path, rows: str, messa
 
 
 @pytest.mark.parametrize(
-    "frame",
+    ("frame", "message"),
     [
-        pd.DataFrame({"timestamp_ns": [1], "low": [99], "high": [101]}),
-        _h4((2, "99", "101", "100"), (1, "99", "101", "100")),
-        _h4((1, "nan", "101", "100")),
-        _h4((1, "102", "101", "100")),
-        _h4((1, "99", "101", "102")),
+        (
+            pd.DataFrame({"timestamp_ns": [1], "low": [99], "high": [101]}),
+            "missing columns",
+        ),
+        (
+            _h4((2, "99", "101", "100"), (1, "99", "101", "100")),
+            "strictly increasing",
+        ),
+        (_h4((1, "nan", "101", "100")), "non-finite H4 prices"),
+        (_h4((1, "99", "nan", "100")), "non-finite H4 prices"),
+        (_h4((1, "99", "101", "nan")), "non-finite H4 prices"),
+        (_h4((1, "102", "101", "100")), "invalid H4 OHLC bounds"),
+        (_h4((1, "99", "101", "102")), "invalid H4 OHLC bounds"),
     ],
 )
-def test_h4_replay_fails_closed_on_invalid_market_frames(frame: pd.DataFrame) -> None:
+def test_h4_replay_fails_closed_on_invalid_market_frames(frame: pd.DataFrame, message: str) -> None:
     opened = 0
     closed = 4 * _HOUR_NS
     trades = pd.DataFrame([_trade("X", opened, closed)])
 
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=message):
         _run(trades, {"X": frame})
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        _h4((0, "100", "100", "100")),
+        _h4((0, "99", "100", "100")),
+    ],
+)
+def test_equal_h4_bounds_are_valid(frame: pd.DataFrame) -> None:
+    trades = pd.DataFrame([_trade("X", 0, 4 * _HOUR_NS)])
+
+    _realized, _equity, _sizes, diagnostics = _run(trades, {"X": frame})
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(100_000.0)
 
 
 def test_trade_uses_only_h4_observations_inside_its_lifetime() -> None:
@@ -177,6 +205,53 @@ def test_same_observation_short_never_consumes_a_later_high() -> None:
 
     assert diagnostics.minimum_equity[0] == pytest.approx(99_800.0)
     assert diagnostics.daily_loss[0] == pytest.approx(0.002)
+
+
+def test_legacy_direction_inference_treats_any_positive_pnl_as_a_win() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trade = _trade("X", opened, closed, pnl_base=0.5)
+    del trade["is_long"]
+
+    _realized, _equity, _sizes, diagnostics = _run(
+        pd.DataFrame([trade]),
+        {"X": _h4((opened, "99", "101", "99"))},
+    )
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(99_999.5)
+
+
+@pytest.mark.parametrize(
+    ("entry", "exit_", "high", "expected"),
+    [
+        (100.0, 100.0, "101", 99_000.0),
+        (0.0, 1e-12, "0.000000000002", 98_000.0),
+    ],
+)
+def test_zero_and_exact_epsilon_price_spans_are_explicit(
+    entry: float, exit_: float, high: str, expected: float
+) -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trades = pd.DataFrame(
+        [
+            _trade(
+                "X",
+                opened,
+                closed,
+                pnl_base=-1_000.0,
+                entry=entry,
+                exit_=exit_,
+            )
+        ]
+    )
+
+    _realized, _equity, _sizes, diagnostics = _run(
+        trades,
+        {"X": _h4((opened, "0", high, str(exit_)))},
+    )
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(expected)
 
 
 def test_different_h4_intervals_do_not_sum_adverse_extremes() -> None:
@@ -256,6 +331,7 @@ def test_reset_straddling_bar_is_charged_only_for_an_overlapping_position() -> N
 
     assert list(overlap_diagnostics.minimum_equity) == pytest.approx([99_800.0, 99_800.0])
     assert list(no_overlap_diagnostics.minimum_equity) == pytest.approx([100_000.0, 101_000.0])
+    assert not no_overlap_diagnostics.daily_loss.any()
 
 
 def test_swap_is_realized_once_at_close_and_never_in_an_h4_mark() -> None:
@@ -309,6 +385,95 @@ def test_closed_market_carries_last_close_without_borrowing_an_extreme() -> None
     _realized, _equity, _sizes, diagnostics = _run(trades, bars)
 
     assert diagnostics.minimum_equity[0] == pytest.approx(99_800.0)
+
+
+def test_closed_market_carry_changes_the_synchronized_minimum() -> None:
+    t05 = _ts("2025-04-10 05:00")
+    t09 = _ts("2025-04-10 09:00")
+    t13 = _ts("2025-04-10 13:00")
+    trades = pd.DataFrame([_trade("A", t05, t13), _trade("B", t05, t13)])
+    bars = {
+        "A": _h4((t09, "99", "100.2", "99")),
+        "B": _h4((t05, "97", "100", "98")),
+    }
+
+    _realized, _equity, _sizes, diagnostics = _run(trades, bars)
+
+    # B's 98 close is +2R when A first becomes adverse. Carrying entry instead would create
+    # a spurious 200-money loss and make the minimum 99,800.
+    assert diagnostics.minimum_equity[0] == pytest.approx(100_000.0)
+
+
+def test_prior_realized_closes_accumulate_before_a_later_h4_mark() -> None:
+    t05 = _ts("2025-04-10 05:00")
+    t09 = _ts("2025-04-10 09:00")
+    t13 = _ts("2025-04-10 13:00")
+    t17 = _ts("2025-04-10 17:00")
+    trades = pd.DataFrame(
+        [
+            _trade("A", t05, t09),
+            _trade("B", t05, t13),
+            _trade("C", t05, t17),
+        ]
+    )
+    bars = {
+        "A": _h4((t05, "99", "100", "99")),
+        "B": _h4((t05, "99", "100", "99"), (t09, "99", "100", "99")),
+        "C": _h4(
+            (t05, "99", "100", "99"),
+            (t09, "99", "100", "99"),
+            (t13, "99", "102.5", "99"),
+        ),
+    }
+
+    _realized, _equity, _sizes, diagnostics = _run(trades, bars)
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(99_500.0)
+
+
+def test_exact_daily_and_trailing_boundaries_keep_declared_strictness() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trades = pd.DataFrame([_trade("X", opened, closed)])
+
+    *_unused, daily_exact = _run(
+        trades,
+        {"X": _h4((opened, "99", "103", "99"))},
+    )
+    *_unused2, trailing_exact = _run(
+        trades,
+        {"X": _h4((opened, "99", "105", "99"))},
+    )
+
+    assert daily_exact.daily_loss[0] == pytest.approx(0.03)
+    assert not daily_exact.daily_breach[0]
+    assert trailing_exact.minimum_equity[0] == pytest.approx(trailing_exact.trailing_floor[0])
+    assert trailing_exact.trailing_breach[0]
+
+
+@pytest.mark.parametrize("missing", ["ts_opened", "ts_closed"])
+def test_h4_replay_names_a_missing_trade_timestamp(missing: str) -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trades = pd.DataFrame([_trade("X", opened, closed)]).drop(columns=missing)
+    trades["od"] = to_day(opened)
+    trades["cd"] = to_day(closed)
+    bars = {"X": _h4((opened, "99", "100.2", "99"))}
+
+    with pytest.raises(
+        ValueError,
+        match="synchronized H4 reconstruction requires ts_opened and ts_closed",
+    ):
+        simulate(
+            trades,
+            {"X": np.array([99.0])},
+            to_day(opened),
+            to_day(closed),
+            100_000.0,
+            0.06,
+            flat(1.0),
+            h4_prices=bars,
+        )
 
 
 def test_wholly_missing_h4_lifetime_evidence_fails_closed() -> None:
