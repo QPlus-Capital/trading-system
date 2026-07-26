@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-10 adds complete loss-day scenario construction and joint stationary-bootstrap paths to the critical scope. Exact accounting, calendar-grid, source-index, seed, bundle, CSV, and failure-boundary tests kill the observable P-10 mutants; redundant equivalent P-04 RNG and P-10 zip arguments are removed so the exact ratchet is deterministic. The global score rises from 0.8998 to 0.9073; seven remaining P-10 survivors are one unused-field validation variant and exact ASCII CSV encoding/newline defaults."
+change_explanation = "P-10 adds complete loss-day scenario construction and joint stationary-bootstrap paths to the critical scope. Exact accounting, calendar-grid, source-index, seed, bundle, CSV, and failure-boundary tests kill the observable P-10 mutants; redundant equivalent P-04 RNG and P-10 zip arguments are removed so the exact ratchet is deterministic. The global score rises from 0.8998 to 0.9072; seven remaining P-10 survivors are one unused-field validation variant and exact ASCII CSV encoding/newline defaults."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -29,8 +29,8 @@ targets = [
 ]
 
 [summary]
-total = 3927
-killed = 3563
+total = 3923
+killed = 3559
 survived = 364
 no_tests = 0
 skipped = 0
