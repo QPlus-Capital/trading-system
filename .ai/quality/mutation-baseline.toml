@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-06 and P-07 add Romano-Wolf and MCS as critical targets: the merged Linux run measures 2,498 unique mutants because 12 shared SPA-helper mutants overlap across the packages; 2,207 are killed and the six MCS dtype equivalences join the prior 285 classified survivors."
+change_explanation = "P-08 adds synchronized DSR/PBO diagnostics and the family-evidence selection protocol as critical targets. The Linux/Python 3.13 run measures 3,158 mutants: 2,835 are killed, two prior MCS dtype survivors are now killed, and 34 new survivors are classified below as equivalent or diagnostic-only."
 targets = [
     "live-risk-control",
     "portfolio-sizing",
@@ -16,6 +16,8 @@ targets = [
     "spa-family-gate",
     "romano-wolf-stepdown",
     "mcs-range-set",
+    "selection-diagnostics",
+    "selection-protocol",
     "result-regression",
     "mt5-deal-export",
     "monitoring-deal-reconstruction",
@@ -25,9 +27,9 @@ targets = [
 ]
 
 [summary]
-total = 2498
-killed = 2207
-survived = 291
+total = 3158
+killed = 2835
+survived = 323
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -42,7 +44,6 @@ classification = "equivalent"
 reason = "np.zeros defaults to float64, so removing or replacing the explicit float64 dtype produces byte-identical score matrices."
 names = [
     "research.engine.mcs.x__pairwise_scores__mutmut_5",
-    "research.engine.mcs.x__pairwise_scores__mutmut_7",
     "research.engine.mcs.x__pairwise_scores__mutmut_10",
     "research.engine.mcs.x__pairwise_scores__mutmut_12",
 ]
@@ -52,7 +53,6 @@ classification = "equivalent"
 reason = "Every active candidate index is validated as an int before np.asarray; inferred dtype is therefore the same integer index dtype as explicit int64 on the Linux gate."
 names = [
     "research.engine.mcs.x__range_decision__mutmut_47",
-    "research.engine.mcs.x__range_decision__mutmut_49",
 ]
 
 [[survivor_groups]]
@@ -477,3 +477,101 @@ names = ["research.portfolio.resample.x_stationary_bootstrap__mutmut_39"]
 classification = "equivalent"
 reason = "The function rejects empty input and validates every element as Decimal, so omitting the explicit Decimal zero start from sum preserves the exact mean."
 names = ["research.forward_decision.x_bootstrap_mean_bounds__mutmut_76"]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The un-clipped effective-trial formula has a maximum of 41 at rho_bar zero, so changing the redundant min cap from 41 to 42 cannot change the result."
+names = ["research.engine.characterize.x_effective_trial_count__mutmut_23"]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The synchronized matrix and Sharpe list are already float-valued; NumPy's omitted dtype and falsey rowvar=None defaults produce the same arrays and column-wise correlation."
+names = [
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_107",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_140",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_142",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_92",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "A finite Pearson correlation cannot exceed one, so removing or raising only the upper clipping bound leaves rho_bar unchanged."
+names = [
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_126",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_131",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "A zero-variance candidate makes its correlations non-finite and is rejected before the later per-candidate standard-deviation guard, so changing that unreachable guard or message has no observable effect."
+names = [
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_180",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_182",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Candidate metadata is ASCII JSON written by the framework; UTF-8 is an alias for utf-8 and the Linux mutation runner's default encoding decodes the same bytes."
+names = [
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_20",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_23",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The matrix guard requires at least four windows, for which cscv_splits returns at least four; the later splits-below-two branch and its message are unreachable."
+names = [
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_230",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_231",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_232",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_233",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_234",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_235",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "When the manual-trial field is absent, every mutated default remains unequal to the required value five and produces the same fail-closed unavailable diagnostic."
+names = [
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_64",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_65",
+]
+
+[[survivor_groups]]
+classification = "irrelevant"
+reason = "Exactly four synchronized windows already end as an unavailable diagnostic in the downstream DSR calculation; rejecting that unsupported sample one guard earlier changes only its diagnostic reason and cannot create a selection pass."
+names = [
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_98",
+    "research.engine.characterize.x_synchronized_overfitting_diagnostics__mutmut_99",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "SPA, Romano-Wolf, and MCS artifacts contain only ASCII JSON; UTF-8 aliases and the Linux runner's default UTF-8 decoder read identical payloads."
+names = [
+    "research.stages.select.x__load_selection_evidence__mutmut_13",
+    "research.stages.select.x__load_selection_evidence__mutmut_16",
+    "research.stages.select.x__load_selection_evidence__mutmut_26",
+    "research.stages.select.x__load_selection_evidence__mutmut_29",
+    "research.stages.select.x__load_selection_evidence__mutmut_3",
+    "research.stages.select.x__load_selection_evidence__mutmut_39",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Every mean return/drawdown value is validated in the preceding all-candidate pass, so the repeated subset conversion cannot raise and changing only its error label is unobservable."
+names = [
+    "research.stages.select.x_choose_automatic_candidate__mutmut_166",
+    "research.stages.select.x_choose_automatic_candidate__mutmut_169",
+    "research.stages.select.x_choose_automatic_candidate__mutmut_170",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The selector accesses itertuples fields only by column name; including an unused DataFrame index field does not change any candidate identity, filter, or ordering key."
+names = [
+    "research.stages.select.x_choose_automatic_candidate__mutmut_182",
+    "research.stages.select.x_choose_automatic_candidate__mutmut_183",
+    "research.stages.select.x_choose_automatic_candidate__mutmut_37",
+    "research.stages.select.x_choose_automatic_candidate__mutmut_38",
+]
