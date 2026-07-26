@@ -3,27 +3,36 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from decimal import Decimal
 from pathlib import Path
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
 import pytest
 from numpy.typing import NDArray
+from research.engine import overfitting
 from research.engine.characterize import (
     effective_trial_count,
     synchronized_overfitting_diagnostics,
 )
+from research.engine.mcs import McsCandidate, McsResult
 from research.engine.overfitting import (
     deflated_sharpe_ratio,
     expected_max_sharpe,
     pbo,
     sharpe_ratio,
 )
+from research.engine.romano_wolf import RomanoWolfAnalysis, RomanoWolfCandidate
+from research.engine.spa import SpaAnalysis, SpaResult
+from research.portfolio.resample import SENSITIVITY_BLOCK_LENGTHS
+from research.stages import _runbook as rb
 from research.stages.select import (
     AutomaticCandidate,
     NoAutomaticSelection,
     SelectionEvidence,
+    _load_selection_evidence,
     _validated_complexity_scores,
     choose_automatic_candidate,
 )
@@ -65,6 +74,62 @@ def _evidence(
         romano_wolf_eligible=frozenset(family if romano_wolf is None else romano_wolf),
         mcs_members=frozenset(family if mcs is None else mcs),
     )
+
+
+class _ArtifactRun:
+    def __init__(self, paths: dict[str, Path]) -> None:
+        self.paths = paths
+
+    def require(self, name: str, produced_by: str) -> Path:
+        assert produced_by == "edge"
+        return self.paths[name]
+
+
+def _family_payloads(name: str = "candidate__train_36m") -> dict[str, dict[str, Any]]:
+    statistics = {name: 2.0}
+    spa = SpaAnalysis(
+        selected=SpaResult(1, 2.0, 0.01, statistics),
+        sensitivity={
+            block_length: SpaResult(block_length, 2.0, 0.01, statistics)
+            for block_length in SENSITIVITY_BLOCK_LENGTHS
+        },
+        replications=99,
+        seed=20260719,
+        candidate_count=1,
+        observation_count=120,
+    )
+    romano_wolf = RomanoWolfAnalysis(
+        candidates=(RomanoWolfCandidate(1, name, 2.0, 0.01, 0.01),),
+        block_length=1,
+        replications=99,
+        seed=20260719,
+        observation_count=120,
+    )
+    mcs = McsResult(
+        candidates=(McsCandidate(name, -0.1, 1, 1.0),),
+        steps=(),
+        block_length=1,
+        replications=99,
+        seed=20260719,
+        observation_count=120,
+    )
+    return {
+        "spa.json": spa.to_dict(),
+        "romano_wolf.json": romano_wolf.to_dict(),
+        "mcs.json": mcs.to_dict(),
+    }
+
+
+def _write_family_payloads(
+    tmp_path: Path,
+    payloads: Mapping[str, object],
+) -> _ArtifactRun:
+    paths: dict[str, Path] = {}
+    for name, payload in payloads.items():
+        path = tmp_path / name
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        paths[name] = path
+    return _ArtifactRun(paths)
 
 
 def test_effective_trial_count_is_capped_and_monotone() -> None:
@@ -242,6 +307,112 @@ def test_unusable_synchronized_diagnostics_are_labelled_not_zero_filled(
 
 
 @pytest.mark.parametrize(
+    ("defect", "reason"),
+    [
+        ("metadata_object", "candidate metadata must be an object"),
+        ("metadata_shape", "candidate metadata is incomplete"),
+        ("manual_missing", "DSR/PBO diagnostics require 36 formal and five manual trials"),
+        (
+            "persisted_family",
+            "all 36 formal candidates must share the synchronized window grid",
+        ),
+        ("columns", "candidate window columns disagree with the formal family"),
+        ("duplicate_windows", "candidate window labels must be unique"),
+        ("short_matrix", "candidate window matrix is too short or non-finite"),
+        ("non_finite", "candidate window matrix is too short or non-finite"),
+        ("undefined_correlation", "candidate correlations are undefined"),
+        (
+            "zero_sharpe_variance",
+            "candidate Sharpe variance must be positive and finite",
+        ),
+    ],
+)
+def test_each_synchronized_diagnostic_guard_reports_its_exact_reason(
+    tmp_path: Path,
+    defect: str,
+    reason: str,
+) -> None:
+    names = [f"v{index:02d}__train_36m" for index in range(36)]
+    generator = np.random.default_rng(2026072601)
+    common = generator.normal(0.2, 0.4, 8)
+    frame: dict[str, object] = {"window": [f"w{index}" for index in range(8)]}
+    for index, name in enumerate(names):
+        frame[name] = common + generator.normal(0.0, 0.05 + index * 0.002, 8)
+    metadata: object = {
+        "formal_candidates": [{"candidate": name} for name in names],
+        "persisted_candidates": names,
+        "trial_counts": {"formal": 36, "manual": 5, "total": 41},
+    }
+
+    if defect == "metadata_object":
+        metadata = []
+    elif defect == "metadata_shape":
+        metadata = {"formal_candidates": []}
+    elif defect == "manual_missing":
+        cast(dict[str, Any], metadata)["trial_counts"] = {"formal": 36}
+    elif defect == "persisted_family":
+        cast(dict[str, Any], metadata)["persisted_candidates"] = names[:-1]
+    elif defect == "columns":
+        frame.pop(names[-1])
+    elif defect == "duplicate_windows":
+        frame["window"] = ["w0", "w0", "w2", "w3", "w4", "w5", "w6", "w7"]
+    elif defect == "short_matrix":
+        frame = {key: cast(list[object], value)[:3] for key, value in frame.items()}
+    elif defect == "non_finite":
+        cast(NDArray[np.float64], frame[names[0]])[0] = np.nan
+    elif defect == "undefined_correlation":
+        frame[names[0]] = np.ones(8)
+    elif defect == "zero_sharpe_variance":
+        common = np.asarray([-1.0, 1.0, -2.0, 2.0, -3.0, 3.0, -4.0, 4.0])
+        for name in names:
+            frame[name] = common.copy()
+
+    pd.DataFrame(frame).to_csv(tmp_path / "candidate_window_returns.csv", index=False)
+    (tmp_path / "candidate_metadata.json").write_text(
+        json.dumps(metadata),
+        encoding="utf-8",
+    )
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        result = synchronized_overfitting_diagnostics(tmp_path)
+
+    assert result["status"] == "unavailable"
+    assert result["reason"] == reason
+
+
+def test_diagnostic_threshold_labels_are_inclusive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    names = [f"v{index:02d}__train_36m" for index in range(36)]
+    generator = np.random.default_rng(2026072602)
+    frame: dict[str, object] = {"window": [f"w{index}" for index in range(8)]}
+    for index, name in enumerate(names):
+        frame[name] = generator.normal(0.1 + index * 0.001, 0.5, 8)
+    pd.DataFrame(frame).to_csv(tmp_path / "candidate_window_returns.csv", index=False)
+    (tmp_path / "candidate_metadata.json").write_text(
+        json.dumps(
+            {
+                "formal_candidates": [{"candidate": name} for name in names],
+                "persisted_candidates": names,
+                "trial_counts": {"formal": 36, "manual": 5, "total": 41},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(overfitting, "deflated_sharpe_ratio", lambda *_args: 0.90)
+    monkeypatch.setattr(overfitting, "pbo", lambda *_args, **_kwargs: 0.20)
+
+    result = synchronized_overfitting_diagnostics(tmp_path)
+
+    assert result["status"] == "available"
+    assert result["pbo_diagnostic_ok"] is True
+    assert all(
+        candidate["dsr_diagnostic_ok"] is True for candidate in result["candidates"].values()
+    )
+
+
+@pytest.mark.parametrize(
     ("window_count", "expected_splits"),
     [(8, 8), (9, 8), (10, 10), (11, 10)],
 )
@@ -271,6 +442,115 @@ def test_pbo_uses_the_largest_permitted_even_split_count(
 
     assert result["status"] == "available"
     assert result["pbo_split_count"] == expected_splits
+
+
+def test_family_evidence_loader_requires_edge_lineage_and_shared_identity(
+    tmp_path: Path,
+) -> None:
+    run = _write_family_payloads(tmp_path, _family_payloads())
+
+    evidence, spa, romano_wolf, mcs = _load_selection_evidence(cast(rb.RunDir, run))
+
+    assert evidence == SelectionEvidence(
+        family=frozenset({"candidate__train_36m"}),
+        spa_passes=True,
+        romano_wolf_eligible=frozenset({"candidate__train_36m"}),
+        mcs_members=frozenset({"candidate__train_36m"}),
+    )
+    assert spa.selected.block_length == romano_wolf.block_length == mcs.block_length == 1
+    assert spa.replications == romano_wolf.replications == mcs.replications == 99
+    assert spa.seed == romano_wolf.seed == mcs.seed == 20260719
+    assert spa.observation_count == romano_wolf.observation_count == mcs.observation_count == 120
+
+
+@pytest.mark.parametrize(
+    ("artifact", "payload", "message"),
+    [
+        ("spa.json", [], "family evidence is invalid: SPA evidence must be an object"),
+        (
+            "romano_wolf.json",
+            [],
+            "family evidence is invalid: Romano-Wolf evidence must be an object",
+        ),
+        ("mcs.json", [], "family evidence is invalid: MCS evidence must be an object"),
+    ],
+)
+def test_family_evidence_loader_rejects_non_objects_with_exact_reason(
+    tmp_path: Path,
+    artifact: str,
+    payload: object,
+    message: str,
+) -> None:
+    payloads: dict[str, object] = dict(_family_payloads())
+    payloads[artifact] = payload
+    run = _write_family_payloads(tmp_path, payloads)
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        _load_selection_evidence(cast(rb.RunDir, run))
+
+    assert str(raised.value) == message
+
+
+@pytest.mark.parametrize("mismatched_artifact", ["romano_wolf.json", "mcs.json"])
+def test_family_evidence_loader_rejects_each_candidate_family_mismatch(
+    tmp_path: Path,
+    mismatched_artifact: str,
+) -> None:
+    payloads = _family_payloads()
+    payloads[mismatched_artifact] = _family_payloads("other__train_36m")[mismatched_artifact]
+    run = _write_family_payloads(tmp_path, payloads)
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        _load_selection_evidence(cast(rb.RunDir, run))
+
+    assert (
+        str(raised.value)
+        == "SPA, Romano-Wolf, and MCS candidate families must be complete and identical"
+    )
+
+
+@pytest.mark.parametrize("defect", ["candidate_count", "sensitivity_family", "empty_family"])
+def test_family_evidence_loader_rejects_each_spa_completeness_defect(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    payloads = _family_payloads()
+    spa = payloads["spa.json"]
+    if defect == "candidate_count":
+        spa["candidate_count"] = 2
+    elif defect == "sensitivity_family":
+        sensitivity = cast(dict[str, dict[str, Any]], spa["sensitivity"])
+        sensitivity["5"]["candidate_statistics"] = {"other__train_36m": 2.0}
+    else:
+        selected = cast(dict[str, Any], spa["selected"])
+        selected["candidate_statistics"] = {}
+        sensitivity = cast(dict[str, dict[str, Any]], spa["sensitivity"])
+        for result in sensitivity.values():
+            result["candidate_statistics"] = {}
+    run = _write_family_payloads(tmp_path, payloads)
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        _load_selection_evidence(cast(rb.RunDir, run))
+
+    assert (
+        str(raised.value)
+        == "SPA, Romano-Wolf, and MCS candidate families must be complete and identical"
+    )
+
+
+@pytest.mark.parametrize("mismatched_artifact", ["romano_wolf.json", "mcs.json"])
+def test_family_evidence_loader_rejects_each_resampling_identity_mismatch(
+    tmp_path: Path,
+    mismatched_artifact: str,
+) -> None:
+    payloads = _family_payloads()
+    payloads[mismatched_artifact]["block_length"] = 2
+    run = _write_family_payloads(tmp_path, payloads)
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        _load_selection_evidence(cast(rb.RunDir, run))
+
+    assert str(raised.value) == "SPA, Romano-Wolf, and MCS resampling identities must agree"
 
 
 def test_spa_failure_blocks_selection_despite_diagnostics_and_returns() -> None:
@@ -618,6 +898,45 @@ def test_selection_rejects_non_boolean_completeness_with_exact_reason() -> None:
         )
 
     assert str(raised.value) == "ranking completeness flags must be boolean"
+
+
+@pytest.mark.parametrize(
+    ("column", "value", "message"),
+    [
+        (
+            "frac_positive",
+            True,
+            "positive-market fraction must be a finite decimal",
+        ),
+        (
+            "mean_rpd",
+            "not-a-decimal",
+            "mean return/drawdown must be a finite decimal",
+        ),
+        (
+            "mean_ret",
+            "not-a-decimal",
+            "mean net return must be a finite decimal",
+        ),
+    ],
+)
+def test_selection_rejects_invalid_decimal_inputs_with_exact_reason(
+    column: str,
+    value: object,
+    message: str,
+) -> None:
+    rows = [("baseline", 36, 1.0, 1.0, True)]
+    ranking = _ranking(rows)
+    ranking[column] = pd.Series([value], dtype=object)
+
+    with pytest.raises(NoAutomaticSelection) as raised:
+        choose_automatic_candidate(
+            ranking,
+            evidence=_evidence(rows),
+            complexity_scores={"baseline": 3},
+        )
+
+    assert str(raised.value) == message
 
 
 def test_selection_rejects_unsupported_training_length_with_exact_reason() -> None:
