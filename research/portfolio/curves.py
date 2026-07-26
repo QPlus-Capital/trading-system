@@ -18,6 +18,7 @@ These are pure functions (NumPy/pandas); pass the resulting curves to
 """
 
 from datetime import date, time, timedelta
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -83,28 +84,52 @@ def load_daily_close(csv_path: str) -> pd.Series:
     return pd.Series(df["<CLOSE>"].to_numpy(dtype=float), index=day).groupby(level=0).last()
 
 
-def load_daily_low_high(csv_path: str) -> tuple[pd.Series, pd.Series]:
-    """Per-day (low, high) from an MT5 H4 CSV, indexed by day number.
+def interval_loss_days(start_ns: int, end_ns: int) -> tuple[int, ...]:
+    """Loss days overlapped by the half-open interval ``[start_ns, end_ns)``.
 
-    The daily extremes are the closest thing to an intraday path the H4 data gives us, and they
-    are what the prop firm's *intraday* equity rule actually reacts to (#15): a day can dip 3%
-    and close at -0.5%, which an end-of-day series cannot see.
+    Splitting the replay at every position event means a reset-straddling H4 bar contributes to
+    both adjacent loss days only while the position actually overlaps each side of the reset.
     """
-    df = pd.read_csv(csv_path, sep="\t", usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>"])
-    ts = parse_mt5_timestamps(df)  # #18: server wall time -> real UTC
-    day_close = _loss_day_numbers(ts, _BAR_HOURS)
-    day_open = _loss_day_numbers(ts, 0.0)
-    # A bar that STRADDLES the 16:15 CT reset (opens before it, closes after -- the summer 21:00
-    # UTC bar does) charges its extremes to BOTH adjacent loss days: bucketing only by the close
-    # would hide a pre-reset dip from the day it happened in. Over-charging that one bar per day
-    # is the conservative side for a hard-limit gate.
-    straddle = day_open != day_close
-    day = np.concatenate([day_close, day_open[straddle]])
-    lo = df["<LOW>"].to_numpy(dtype=float)
-    hi = df["<HIGH>"].to_numpy(dtype=float)
-    low = pd.Series(np.concatenate([lo, lo[straddle]]), index=day).groupby(level=0).min()
-    high = pd.Series(np.concatenate([hi, hi[straddle]]), index=day).groupby(level=0).max()
-    return low, high
+    if end_ns <= start_ns:
+        return ()
+    first = to_day(start_ns)
+    last = to_day(end_ns - 1)
+    return tuple(range(first, last + 1))
+
+
+def load_h4_prices(csv_path: str) -> pd.DataFrame:
+    """Timestamped H4 low/high/close prices without collapsing interval identity.
+
+    Prices remain :class:`~decimal.Decimal`; the synchronized risk reconstruction performs money
+    and price arithmetic without introducing binary floating-point rounding. Timestamps use the
+    same verified broker-server conversion as catalog ingestion.
+    """
+    df = pd.read_csv(
+        csv_path,
+        sep="\t",
+        usecols=["<DATE>", "<TIME>", "<LOW>", "<HIGH>", "<CLOSE>"],
+        dtype={"<LOW>": str, "<HIGH>": str, "<CLOSE>": str},
+        keep_default_na=False,
+    )
+    timestamps = parse_mt5_timestamps(df)
+    # pandas may store parsed datetimes at microsecond resolution; Timestamp.value is explicitly
+    # nanoseconds and keeps the H4 observations in the same unit as trade timestamps.
+    timestamp_ns = np.asarray([int(value.value) for value in timestamps], dtype=np.int64)
+    if len(np.unique(timestamp_ns)) != len(timestamp_ns):
+        raise ValueError(f"{csv_path} contains duplicate H4 timestamps")
+    if len(timestamp_ns) > 1 and bool((np.diff(timestamp_ns) <= 0).any()):
+        raise ValueError(f"{csv_path} H4 timestamps are not strictly increasing")
+    out = pd.DataFrame(
+        {
+            "timestamp_ns": timestamp_ns,
+            "low": [Decimal(value) for value in df["<LOW>"]],
+            "high": [Decimal(value) for value in df["<HIGH>"]],
+            "close": [Decimal(value) for value in df["<CLOSE>"]],
+        }
+    )
+    if any(not value.is_finite() for column in ("low", "high", "close") for value in out[column]):
+        raise ValueError(f"{csv_path} contains a non-finite H4 price")
+    return out
 
 
 def align_prices(daily_close: pd.Series, d0: int, d1: int) -> np.ndarray:
@@ -150,5 +175,3 @@ def base_curves(
             continue
         unrealized[lo:hi] += pnl[i] / span[i] * (prices[mk[i]][lo:hi] - entry[i])
     return realized, unrealized
-
-

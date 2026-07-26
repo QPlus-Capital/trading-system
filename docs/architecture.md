@@ -215,13 +215,13 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/portfolio/trades.py` | The timestamped OOS trade stream + the stage-3 extractor factory |
 | `research/portfolio/stats.py` | Shared metric helpers: edge/risk stats, R-multiples, daily equity |
 | `research/portfolio/resample.py` | Corrected Politis-White block length + stationary bootstrap for daily net returns |
-| `research/portfolio/curves.py` | Daily realized + mark-to-market equity curves (swap realized-only) |
-| `research/portfolio/sizing.py` | Position-sizing simulation: per-trade risk + the daily path |
+| `research/portfolio/curves.py` | Loss-day conversion, daily closes, and timestamped Decimal H4 risk marks |
+| `research/portfolio/sizing.py` | Position sizing + synchronized-H4 daily diagnostics (same-H4 upper bound) |
 | `research/portfolio/risk.py` | The risk system: account context + pluggable tail-capped sizing policies |
 | `research/portfolio/tail.py` | The crisis tail on the FULL history — the ceiling no policy may cross |
 | `research/portfolio/stress.py` | Does the sized account survive a worse-than-history gap? |
 | `research/portfolio/drawdown.py` | Prop-firm drawdown rule (trailing/hybrid) |
-| `research/portfolio/factsheet.py` | End-of-run metrics matrix (full vs holdout, flat vs compound, net of swap) |
+| `research/portfolio/factsheet.py` | End-of-run metrics matrix consuming the shared policy daily diagnostics |
 | `research/portfolio/html_report.py` | Self-contained `report.html` from a fact sheet |
 | `research/portfolio/regime.py` | Does the edge hold across volatility/trend regimes? |
 | `research/portfolio/swap_analysis.py` | Swap-cost report + snapshot refresh (`pull_swap_specs`) |
