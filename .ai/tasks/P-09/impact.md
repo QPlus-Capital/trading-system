@@ -49,8 +49,9 @@ Every producer and consumer that must move in one pass:
 - Replace the lossy daily-extreme loader with a timestamped H4 low/high/close loader using
   `parse_mt5_timestamps`.
 - Preserve raw H4 observation identity and the bar's four-hour loss-day overlap.
-- Align contemporaneous marks by exact H4 timestamp across markets.
-- For each trade use only observations satisfying `ts_opened < bar_timestamp <= ts_closed`.
+- Align contemporaneous marks by exact H4 interval across markets.
+- Treat every MT5 timestamp as the start of a half-open H4 interval, split it at trade events, and
+  include a trade only for the interval segment where its lifetime actually overlaps.
 - Aggregate adverse marks only within one timestamp. Asynchronous sessions carry the last
   close/entry, never a prior extreme; a trade with no H4 observation during its whole non-zero
   lifetime fails closed.
@@ -110,7 +111,8 @@ generated reports remain gitignored.
 - Retaining cached daily low/high arrays through another caller.
 - Filtering position lifetime by loss day but not by H4 timestamp.
 - Summing one market's 01:00 high with another market's 13:00 low.
-- Including the entry observation or an observation after exit.
+- Excluding an entry-boundary bar, including an exit-boundary bar, or combining disjoint
+  intra-bar lifetimes.
 - Assigning a reset-straddling bar to a day when the trade does not overlap it.
 - Realizing swap in the H4 mark and again at close.
 - Computing breaches from diagnostics but leaving max drawdown on close equity.

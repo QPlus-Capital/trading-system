@@ -26,9 +26,10 @@ Stage-4 drawdown, and fact-sheet drawdown.
 
 - Load timestamped H4 low/high/close bars in the verified broker-server-to-UTC frame.
 - Replay trade open/close events and bar intervals in timestamp order.
-- A trade may consume a bar extreme only when the bar observation is after its entry and no later
-  than its exit (`ts_opened < bar_timestamp <= ts_closed`). This implements the required boundary
-  rule: exclude the entry bar and every bar after exit.
+- MT5 stamps each H4 bar at its start. Replay its half-open interval and split that interval at
+  exact trade events: an entry on the boundary participates in the following bar, while an exit
+  on the boundary does not. A partially overlapping trade may consume only that bar's extreme;
+  positions whose actual lifetimes do not overlap are never marked together.
 - Use the low for a long and the high for a short, from that market and that H4 observation only.
 - At each H4 timestamp, sum the adverse marks of positions whose markets have a contemporaneous bar
   and the last-close/entry marks of other open positions whose markets are closed. This
@@ -110,8 +111,8 @@ drawdown, account-limit decisions, reported results, holdout evaluation, and ver
 ## Assumptions
 
 - MT5 H4 stamps retain the verified UTC conversion used by catalog ingestion.
-- Backtest trade timestamps are bar-event timestamps. The issue's boundary rule therefore maps to
-  strict-after-entry and inclusive-at-exit H4 observations.
+- Backtest trade timestamps and MT5 H4 stamps are bar-start timestamps. The issue's boundary rule
+  therefore maps to half-open bar intervals with exact event splits, not point observations.
 - Markets have asynchronous sessions. Standard mark-to-market treatment carries the last close
   while that market has no new H4 bar; only a same-timestamp bar may contribute an adverse extreme.
 - The current baseline's 2025-04-10 slice contains six shorts but only one profitable trade
