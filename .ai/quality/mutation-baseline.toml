@@ -3,9 +3,10 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-08 adds synchronized DSR/PBO diagnostics and the family-evidence selection protocol as critical targets. Nine Mutmut candidates from three provably equivalent MCS dtype expressions and four from stationary_bootstrap's redundant float64 return cast are eliminated at source; exact behavioural tests prove unchanged MCS decisions and byte-identical float64 resamples."
+change_explanation = "P-09 adds timestamped H4 loading and synchronized daily diagnostics to the critical scope. Boundary tests kill the observable lifetime, reset, direction, realization, swap, gate, and diagnostic mutations; the score rises from 0.8992 to 0.8998. Existing simulate survivors are renumbered by the refactor and reduced from 35 to 21, while the remaining P-09 survivors are exact dtype/schema/control-flow equivalents or display-only diagnostic variants."
 targets = [
     "live-risk-control",
+    "portfolio-h4-prices",
     "portfolio-sizing",
     "portfolio-drawdown",
     "portfolio-risk",
@@ -27,9 +28,9 @@ targets = [
 ]
 
 [summary]
-total = 3145
-killed = 2828
-survived = 317
+total = 3574
+killed = 3216
+survived = 358
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -187,52 +188,129 @@ names = [
 ]
 
 [[survivor_groups]]
-classification = "meaningful"
-reason = "Existing focused tests do not distinguish these event-order mutations; retained as measured test-strength gaps."
+classification = "equivalent"
+reason = "The H4 loader's strict input schema makes these pandas parsing options equivalent: referenced OHLC columns remain strings before Decimal conversion, unused columns do not affect named access, integer nanosecond arrays infer int64, the unique-timestamp guard already rejects equality, and distinct second-resolution CSV timestamps differ by far more than one nanosecond."
 names = [
-    "research.portfolio.sizing.x__events__mutmut_15",
-    "research.portfolio.sizing.x__events__mutmut_16",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_10",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_11",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_23",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_24",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_25",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_26",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_27",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_28",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_29",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_34",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_36",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_4",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_40",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_41",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_45",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_46",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_5",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_6",
+    "research.portfolio.curves.x_load_h4_prices__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "H4 frame iteration accesses only named fields, so adding an unused pandas index field leaves timestamp and OHLC validation unchanged."
+names = [
+    "research.portfolio.sizing.x__validated_h4_prices__mutmut_17",
+    "research.portfolio.sizing.x__validated_h4_prices__mutmut_18",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Accounts enter this path with positive balances above one; NumPy therefore infers the same int64/bool dtypes and the divide out/where variants produce the same finite daily-loss values."
+names = [
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_34",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_38",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_39",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_4",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_41",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_44",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_45",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_59",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_61",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_7",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_83",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_85",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_87",
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_89",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Validated H4/trade columns already have numeric dtypes, and NumPy infers the same int64, float64, and bool arrays when these redundant dtype arguments are removed."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_21",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_228",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_230",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_25",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_33",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_37",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_44",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_46",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_48",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_52",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_59",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_94",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_96",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The replay timeline is sorted and unique, the final-loop continue and break both terminate iteration, regular H4 bars expire at their recorded end, and Decimal('1e-12') equals Decimal('1E-12'); these mutations cannot change a mark."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_116",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_148",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_152",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_153",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_188",
+]
+
+[[survivor_groups]]
+classification = "irrelevant"
+reason = "These mutations alter only the truncated missing-observation error detail after the fail-closed decision; they cannot create a usable diagnostic or a selection pass."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_224",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_225",
+]
+
+[[survivor_groups]]
+classification = "irrelevant"
+reason = "Production Stage-3 trades carry explicit is_long values; these fallback-only zero-PnL direction and isolated bar-end timeline mutations do not change the validated production path."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_63",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_90",
 ]
 
 [[survivor_groups]]
 classification = "meaningful"
-reason = "Existing focused tests do not distinguish these portfolio-replay mutations; retained as measured test-strength gaps."
+reason = "Existing focused tests do not distinguish these pre-P-09 close-path portfolio-replay mutations; the P-09 refactor renumbered them and reduced the measured gap from 35 survivors to 21."
 names = [
     "research.portfolio.sizing.x_simulate__mutmut_1",
-    "research.portfolio.sizing.x_simulate__mutmut_115",
-    "research.portfolio.sizing.x_simulate__mutmut_12",
-    "research.portfolio.sizing.x_simulate__mutmut_124",
-    "research.portfolio.sizing.x_simulate__mutmut_125",
-    "research.portfolio.sizing.x_simulate__mutmut_131",
-    "research.portfolio.sizing.x_simulate__mutmut_138",
-    "research.portfolio.sizing.x_simulate__mutmut_146",
-    "research.portfolio.sizing.x_simulate__mutmut_147",
-    "research.portfolio.sizing.x_simulate__mutmut_150",
-    "research.portfolio.sizing.x_simulate__mutmut_166",
-    "research.portfolio.sizing.x_simulate__mutmut_178",
-    "research.portfolio.sizing.x_simulate__mutmut_20",
-    "research.portfolio.sizing.x_simulate__mutmut_24",
-    "research.portfolio.sizing.x_simulate__mutmut_28",
+    "research.portfolio.sizing.x_simulate__mutmut_103",
+    "research.portfolio.sizing.x_simulate__mutmut_110",
+    "research.portfolio.sizing.x_simulate__mutmut_118",
+    "research.portfolio.sizing.x_simulate__mutmut_119",
+    "research.portfolio.sizing.x_simulate__mutmut_122",
+    "research.portfolio.sizing.x_simulate__mutmut_13",
+    "research.portfolio.sizing.x_simulate__mutmut_137",
+    "research.portfolio.sizing.x_simulate__mutmut_2",
+    "research.portfolio.sizing.x_simulate__mutmut_21",
+    "research.portfolio.sizing.x_simulate__mutmut_25",
     "research.portfolio.sizing.x_simulate__mutmut_29",
-    "research.portfolio.sizing.x_simulate__mutmut_35",
+    "research.portfolio.sizing.x_simulate__mutmut_30",
     "research.portfolio.sizing.x_simulate__mutmut_36",
-    "research.portfolio.sizing.x_simulate__mutmut_38",
-    "research.portfolio.sizing.x_simulate__mutmut_41",
-    "research.portfolio.sizing.x_simulate__mutmut_45",
-    "research.portfolio.sizing.x_simulate__mutmut_46",
-    "research.portfolio.sizing.x_simulate__mutmut_47",
-    "research.portfolio.sizing.x_simulate__mutmut_50",
-    "research.portfolio.sizing.x_simulate__mutmut_54",
-    "research.portfolio.sizing.x_simulate__mutmut_57",
-    "research.portfolio.sizing.x_simulate__mutmut_58",
-    "research.portfolio.sizing.x_simulate__mutmut_61",
-    "research.portfolio.sizing.x_simulate__mutmut_69",
-    "research.portfolio.sizing.x_simulate__mutmut_70",
-    "research.portfolio.sizing.x_simulate__mutmut_8",
-    "research.portfolio.sizing.x_simulate__mutmut_83",
-    "research.portfolio.sizing.x_simulate__mutmut_88",
-    "research.portfolio.sizing.x_simulate__mutmut_93",
-    "research.portfolio.sizing.x_simulate__mutmut_98",
+    "research.portfolio.sizing.x_simulate__mutmut_37",
+    "research.portfolio.sizing.x_simulate__mutmut_39",
+    "research.portfolio.sizing.x_simulate__mutmut_42",
+    "research.portfolio.sizing.x_simulate__mutmut_87",
+    "research.portfolio.sizing.x_simulate__mutmut_9",
+    "research.portfolio.sizing.x_simulate__mutmut_96",
+    "research.portfolio.sizing.x_simulate__mutmut_97",
 ]
 
 [[survivor_groups]]

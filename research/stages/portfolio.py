@@ -30,7 +30,7 @@ import pandas as pd
 from core.broker import standard_broker, swap_r_per_trade
 
 from research.engine.config import load_config_module
-from research.portfolio.curves import load_daily_close, load_daily_low_high
+from research.portfolio.curves import load_daily_close, load_h4_prices
 from research.portfolio.risk import (
     AccountProfile,
     FlatRisk,
@@ -77,24 +77,31 @@ def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Stage 3 (PORTFOLIO): combine + size.")
     parser.add_argument("--run", type=Path, required=True, help="the framework run directory")
     parser.add_argument(
-        "--config", type=Path, default=None,
-        help="study config (default: the one Stage 1 recorded in the run)"
+        "--config",
+        type=Path,
+        default=None,
+        help="study config (default: the one Stage 1 recorded in the run)",
     )
     parser.add_argument("--risk", default="flat:0.15", help="policy: flat:PCT or throttle:FLOORPCT")
     parser.add_argument(
         "--stress-mult", type=float, default=1.5, help="tail headroom over the worst day (def 1.5)"
     )
     parser.add_argument(
-        "--tail", choices=("full", "holdout"), default="full",
+        "--tail",
+        choices=("full", "holdout"),
+        default="full",
         help="measure the risk ceiling on the FULL history (all crises) or just the holdout",
     )
     parser.add_argument(
-        "--fixed", type=Path, default=None,
+        "--fixed",
+        type=Path,
+        default=None,
         help="trade the FIXED per-market SL/TP from this live config every window (no per-window "
         "stop re-optimisation) -- validates the config we deploy, whose gentle tail is tradeable",
     )
     parser.add_argument(
-        "--allow-legacy-unverified", action="store_true",
+        "--allow-legacy-unverified",
+        action="store_true",
         help="read a run that predates artifact hashing. Such a run can be inspected but can "
         "NEVER produce a deployable PASS -- its inputs cannot be confirmed.",
     )
@@ -169,7 +176,7 @@ def main(argv: list[str] | None = None) -> None:
 
     daily_close = {m: load_daily_close(str(specs[m][1])) for m in universe}
     # #15: day extremes for the intraday daily-limit check
-    daily_hl = {m: load_daily_low_high(str(specs[m][1])) for m in universe}
+    h4_prices = {m: load_h4_prices(str(specs[m][1])) for m in universe}
 
     # The crisis sets only the CEILING: the largest risk whose stressed worst-day gap still fits
     # the hard daily limit. Every policy is capped by it; within it a policy may size freely.
@@ -182,9 +189,15 @@ def main(argv: list[str] | None = None) -> None:
         sl_note = "feste Live-Stops je Markt" if fixed_stops is not None else f"SL {traded_sl}%"
         print(f"\n  Messe Tail-Decke auf der VOLLEN Historie ({sl_note}, wie gehandelt) ...")
         worst_day, cap, rck_stream = full_history_tail_cap(
-            specs, universe, overrides, cfg.PARAM_GRID, account,
-            broker=broker, stress_mult=args.stress_mult,
-            stop_loss_pct=traded_sl, fixed_stops=fixed_stops,
+            specs,
+            universe,
+            overrides,
+            cfg.PARAM_GRID,
+            account,
+            broker=broker,
+            stress_mult=args.stress_mult,
+            stop_loss_pct=traded_sl,
+            fixed_stops=fixed_stops,
         )
         source = f"volle Historie @ {sl_note}"
     else:
@@ -192,8 +205,10 @@ def main(argv: list[str] | None = None) -> None:
         cap = tail_cap(trades, account, stress_mult=args.stress_mult)
         rck_stream = trades  # holdout mode: no full-history stream, fall back to the holdout
         source = "nur Holdout - eine schlimmere Krise wuerde die Decke senken"
-    print(f"\n  Tail-Decke: schlechtester Tag {worst_day:.2f}R x {args.stress_mult} Stress "
-          f"-> {cap * 100:.3f}% pro Trade  [{source}]")
+    print(
+        f"\n  Tail-Decke: schlechtester Tag {worst_day:.2f}R x {args.stress_mult} Stress "
+        f"-> {cap * 100:.3f}% pro Trade  [{source}]"
+    )
 
     # Risk-constrained Kelly derives the growth-optimal flat fraction from the trade distribution
     # under the "P(ever hit the 6% trailing wall) <= beta" bound; the single-day gap tail still caps
@@ -215,25 +230,32 @@ def main(argv: list[str] | None = None) -> None:
     # Same base for both policies -> apples to apples: what does going dynamic actually buy?
     results = {
         "flat": evaluate_policy(
-            trades, daily_close, account, FlatRisk(base_pct), cap, daily_low_high=daily_hl
+            trades, daily_close, account, FlatRisk(base_pct), cap, h4_prices=h4_prices
         ),
         "throttle": evaluate_policy(
-            trades, daily_close, account, ThrottleRisk(base_pct), cap, daily_low_high=daily_hl
+            trades, daily_close, account, ThrottleRisk(base_pct), cap, h4_prices=h4_prices
         ),
     }
     chosen_label = "throttle" if isinstance(policy, ThrottleRisk) else "flat"  # Kelly sizes flat
     chosen = results[chosen_label]
 
     print(f"\n  {results['flat'].n_trades} Trades / {chosen.years}J (Holdout, netto)\n")
-    print(f"  {'Police':10s} {'Risiko/Trade':>18s} {'Rendite p.a.':>13s} {'EUR/Jahr':>11s} "
-          f"{'maxDD':>7s}  Limit")
+    print(
+        f"  {'Police':10s} {'Risiko/Trade':>18s} {'Rendite p.a.':>13s} {'EUR/Jahr':>11s} "
+        f"{'maxDD':>7s}  Limit"
+    )
     for label, res in results.items():
-        risk_txt = (f"{res.ceiling_pct:.3f}%" if label == "flat"
-                    else f"{res.floor_pct:.2f}% -> {res.ceiling_pct:.3f}%")
+        risk_txt = (
+            f"{res.ceiling_pct:.3f}%"
+            if label == "flat"
+            else f"{res.floor_pct:.2f}% -> {res.ceiling_pct:.3f}%"
+        )
         mark = "  <- gewaehlt" if label == chosen_label else ""
         limit = "BREACH" if res.breached else "ok"
-        print(f"  {label:10s} {risk_txt:>18s} {res.ann_return_pct:>+12.1f}% "
-              f"{res.ann_return_eur:>11,.0f} {res.max_drawdown_pct:>6.2f}% {limit:>6s}{mark}")
+        print(
+            f"  {label:10s} {risk_txt:>18s} {res.ann_return_pct:>+12.1f}% "
+            f"{res.ann_return_eur:>11,.0f} {res.max_drawdown_pct:>6.2f}% {limit:>6s}{mark}"
+        )
 
     # #31: the two trade streams and the spec describe ONE evaluation and are published together.
     # Written piecemeal they could be mixed: a spec from this run beside trades from the previous
@@ -283,7 +305,9 @@ def main(argv: list[str] | None = None) -> None:
                 "ann_return_eur": chosen.ann_return_eur,
                 "total_return_pct": chosen.total_return_pct,
                 "max_drawdown_pct": chosen.max_drawdown_pct,
+                "max_daily_loss_pct": chosen.max_daily_loss_pct,
                 "breached": chosen.breached,
+                "path_assumption": chosen.daily_diagnostics.h4_upper_bound,
                 **kelly_info,
             },
         )

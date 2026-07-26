@@ -214,6 +214,14 @@ The Trading Pit imposes two hard walls (account death on breach):
 2. **Trailing drawdown ≤ 6 %.** The multi-day path constraint. Checked as the full-history max
    drawdown of the sized, mark-to-market equity; it must stay under 6 % with margin.
 
+Both hard-limit checks use one synchronized H4 diagnostic path. A trade is marked only by bars
+inside its lifetime; adverse lows for longs and highs for shorts are summed only across positions
+open in the same H4 interval. Markets without a contemporaneous bar carry their last close (or
+entry), never an extreme from another interval. Because H4 data cannot reveal within-bar
+cross-market ordering, the reconstruction conservatively assumes all adverse extrema within one
+H4 interval co-occur: it is an **H4 upper bound**, not tick-level history. Swap remains realized
+once at close. Stage 3, the verdict gate, and the fact sheet consume the same daily diagnostics.
+
 A **dynamic throttle** (size down as the drawdown budget is consumed) is the path-dependent tool for
 constraint 2 — but it does **nothing** for constraint 1 (a gap hits before you can taper), so the
 *ceiling* is always the gap-safe tail cap. On calm data a throttle simply sits at the ceiling, so it

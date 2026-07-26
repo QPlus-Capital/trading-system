@@ -18,9 +18,8 @@ import numpy as np
 import pandas as pd
 
 from research.portfolio import regime
-from research.portfolio.curves import DAY_NS, align_prices, to_day
-from research.portfolio.risk import AccountProfile, flat_base_pnl
-from research.portfolio.sizing import flat, simulate
+from research.portfolio.curves import DAY_NS
+from research.portfolio.risk import AccountProfile, FlatRisk, PolicyResult, evaluate_policy
 from research.portfolio.stats import edge_stats, risk_stats
 
 # Must match regime.py's _VOL_LABELS / _TREND_LABELS (low -> high on each axis).
@@ -72,51 +71,42 @@ class FactSheet:
     holdout_start: pd.Timestamp
 
 
-def _daily_equity(
+def _evaluate_flat(
     trades: pd.DataFrame,
     daily_close: dict[str, pd.Series],
+    h4_prices: dict[str, pd.DataFrame],
     account: AccountProfile,
     *,
     compound: bool,
-) -> pd.Series:
-    """Mark-to-market daily equity (incl. floating) via the tested simulate, at the live risk."""
-    t = trades.copy()
-    ns_open = pd.to_datetime(t["ts_opened"]).astype("int64")
-    ns_close = pd.to_datetime(t["ts_closed"]).astype("int64")
-    # Same loss-day axis as the price series this simulate() call indexes into; UTC day numbers
-    # here would reindex trades and prices on different axes near the 16:15 CT reset.
-    t["od"] = [to_day(x) for x in ns_open]
-    t["cd"] = [to_day(x) for x in ns_close]
-    t["pnl_base"] = flat_base_pnl(t, account)  # r * base_risk_frac * start (flat EUR at live risk)
-    if "swap_r" in t.columns:  # realized cost of carry, booked at close (never marked to market)
-        base = account.base_risk_frac * account.start_balance
-        t["swap_base"] = t["swap_r"].to_numpy(dtype=float) * base
-    d0, d1 = int(t["od"].min()), int(t["cd"].max())
-    prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
-    _real, eq, _sizes, _min = simulate(
-        t,
-        prices,
-        d0,
-        d1,
-        account.start_balance,
-        account.trailing_hard,
-        flat(1.0),
+) -> PolicyResult:
+    """Evaluate one fact-sheet cell through the authoritative policy diagnostic path."""
+    risk_pct = account.base_risk_frac * 100.0
+    return evaluate_policy(
+        trades,
+        daily_close,
+        account,
+        FlatRisk(risk_pct),
+        account.base_risk_frac,
         compound=compound,
+        h4_prices=h4_prices,
     )
-    # d0..d1 are LOSS-day numbers (to_day); rendering them via DAY_NS labels each point with that
-    # loss day's date, which is what the index should read. Not a UTC-axis leak.
-    idx = pd.to_datetime(np.arange(d0, d1 + 1) * DAY_NS)
-    return pd.Series(eq, index=idx)
 
 
-def _money(equity: pd.Series, start: float, *, compound: bool) -> Money:
+def _equity_series(result: PolicyResult) -> pd.Series:
+    """Close-equity display series carried by the shared daily diagnostics."""
+    diagnostics = result.daily_diagnostics
+    index = pd.to_datetime(diagnostics.days * DAY_NS)
+    return pd.Series(diagnostics.close_equity, index=index)
+
+
+def _money(result: PolicyResult, start: float, *, compound: bool) -> Money:
+    equity = _equity_series(result)
     years = max((equity.index[-1] - equity.index[0]).days / 365.25, 1e-9)
     if compound:  # geometric: risk tracks equity, returns compound
         ann = (float(equity.iloc[-1]) / float(equity.iloc[0])) ** (1 / years) - 1
     else:  # flat: linear off the fixed start balance
         ann = (float(equity.iloc[-1]) - start) / start / years
-    maxdd = float(((equity - equity.cummax()) / equity.cummax()).min())
-    return Money(round(ann * 100, 1), round(maxdd * 100, 2))
+    return Money(round(ann * 100, 1), result.max_drawdown_pct)
 
 
 def _net_r(trades: pd.DataFrame) -> np.ndarray:
@@ -145,14 +135,23 @@ def _edge(trades: pd.DataFrame, equity_flat: pd.Series, start: float) -> Edge:
 
 
 def _window(
-    trades: pd.DataFrame, daily_close: dict[str, pd.Series], account: AccountProfile
+    trades: pd.DataFrame,
+    daily_close: dict[str, pd.Series],
+    h4_prices: dict[str, pd.DataFrame],
+    account: AccountProfile,
+    *,
+    flat_result: PolicyResult | None = None,
 ) -> WindowResult:
-    eq_f = _daily_equity(trades, daily_close, account, compound=False)
-    eq_c = _daily_equity(trades, daily_close, account, compound=True)
+    flat_policy = flat_result or _evaluate_flat(
+        trades, daily_close, h4_prices, account, compound=False
+    )
+    compound_policy = _evaluate_flat(trades, daily_close, h4_prices, account, compound=True)
+    eq_f = _equity_series(flat_policy)
+    eq_c = _equity_series(compound_policy)
     start = account.start_balance
     return WindowResult(
-        flat=_money(eq_f, start, compound=False),
-        compound=_money(eq_c, start, compound=True),
+        flat=_money(flat_policy, start, compound=False),
+        compound=_money(compound_policy, start, compound=True),
         edge=_edge(trades, eq_f, start),
         equity_flat=eq_f,
         equity_comp=eq_c,
@@ -253,16 +252,25 @@ def compute_factsheet(
     full_trades: pd.DataFrame,
     holdout_trades: pd.DataFrame,
     daily_close: dict[str, pd.Series],
+    h4_prices: dict[str, pd.DataFrame],
     account: AccountProfile,
+    *,
+    holdout_flat: PolicyResult | None = None,
 ) -> FactSheet:
-    """Assemble the full fact sheet from the full-history and holdout trade streams."""
+    """Assemble the fact sheet from the same daily policy diagnostics the verdict consumes."""
     risk_frac = account.base_risk_frac
     labeled = regime.label_trades(full_trades, daily_close)
-    full = _window(full_trades, daily_close, account)
+    full = _window(full_trades, daily_close, h4_prices, account)
     return FactSheet(
         risk_pct=round(risk_frac * 100, 3),
         full=full,
-        holdout=_window(holdout_trades, daily_close, account),
+        holdout=_window(
+            holdout_trades,
+            daily_close,
+            h4_prices,
+            account,
+            flat_result=holdout_flat,
+        ),
         per_market=_per_market(full_trades, risk_frac),
         per_year=_per_year(full.equity_comp),  # compound: return on the account at each year
         regime_vol=_regime(labeled, "vol_regime", _VOL_ORDER, risk_frac),
