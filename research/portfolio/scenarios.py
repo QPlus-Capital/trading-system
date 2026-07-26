@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from itertools import pairwise
 from pathlib import Path
 from typing import Protocol
 
@@ -287,7 +288,7 @@ def read_loss_day_scenarios(path: Path) -> tuple[LossDayScenario, ...]:
         raise ValueError("loss-day scenario CSV must be non-empty")
     if any(
         current.source_date != previous.source_date + timedelta(days=1)
-        for previous, current in zip(scenarios, scenarios[1:])
+        for previous, current in pairwise(scenarios)
     ):
         raise ValueError("loss-day scenario dates must be contiguous and strictly increasing")
     return scenarios
