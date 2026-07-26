@@ -48,9 +48,7 @@ class AccountProfile:
     base_risk_frac: float = 0.01  # the risk the backtest sized each trade at (recovers multiples)
 
 
-def tail_cap(
-    trades: pd.DataFrame, account: AccountProfile, *, stress_mult: float = 1.5
-) -> float:
+def tail_cap(trades: pd.DataFrame, account: AccountProfile, *, stress_mult: float = 1.5) -> float:
     """Largest flat risk fraction whose ``stress_mult`` x worst-day gap still fits the hard limits.
 
     The binding real constraint for a gap-exposed strategy: a single catastrophic day cannot be
@@ -285,8 +283,16 @@ def evaluate_policy(
     prices = {m: align_prices(daily_close[m], d0, d1) for m in t["market"].unique()}
     resolved = policy.resolve(cap_frac, account)
     realized, _equity, sizes, diagnostics = simulate(
-        t, prices, d0, d1, account.start_balance, account.trailing_hard, resolved.risk_fn,
-        compound=compound, h4_prices=h4_prices, daily_limit_frac=account.daily_hard,
+        t,
+        prices,
+        d0,
+        d1,
+        account.start_balance,
+        account.trailing_hard,
+        resolved.risk_fn,
+        compound=compound,
+        h4_prices=h4_prices,
+        daily_limit_frac=account.daily_hard,
     )
     years = max((d1 - d0) / 365.25, 1e-9)
     total = (float(realized[-1]) - account.start_balance) / account.start_balance

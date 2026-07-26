@@ -82,10 +82,13 @@ def test_the_intraday_low_reveals_a_breach_the_close_hides() -> None:
     trades = pd.DataFrame(
         {
             "market": ["X"],
-            "od": [to_day(opened)], "cd": [to_day(closed)],
-            "ts_opened": [opened], "ts_closed": [closed],
+            "od": [to_day(opened)],
+            "cd": [to_day(closed)],
+            "ts_opened": [opened],
+            "ts_closed": [closed],
             "pnl_base": [-2_000.0],  # a mild 2% loser overall
-            "entry": [100.0], "exit": [98.0],
+            "entry": [100.0],
+            "exit": [98.0],
             "is_long": [True],
         }
     )
@@ -93,14 +96,25 @@ def test_the_intraday_low_reveals_a_breach_the_close_hides() -> None:
     closes = {"X": np.linspace(100.0, 98.0, d1 - d0 + 1)}
     h4 = {
         "X": pd.DataFrame(
-            {"timestamp_ns": [observed, closed], "low": [94, 98], "high": [100, 100],
-             "close": [99.5, 98]}
+            {
+                "timestamp_ns": [observed, closed],
+                "low": [94, 98],
+                "high": [100, 100],
+                "close": [99.5, 98],
+            }
         )
     }
 
     _r, eq, _s, diagnostics = simulate(
-        trades, closes, d0, d1, 100_000.0, 0.06, flat(1.0),
-        h4_prices=h4, daily_limit_frac=0.03,
+        trades,
+        closes,
+        d0,
+        d1,
+        100_000.0,
+        0.06,
+        flat(1.0),
+        h4_prices=h4,
+        daily_limit_frac=0.03,
     )
     # On day 1 the close-based mark is mild, the intraday mark is far worse.
     assert diagnostics.minimum_equity.min() < eq.min()
@@ -119,24 +133,32 @@ def test_a_trade_that_dips_and_closes_the_same_day_still_counts_as_a_breach() ->
     trades = pd.DataFrame(
         {
             "market": ["X"],
-            "od": [to_day(opened)], "cd": [to_day(closed)],
-            "ts_opened": [opened], "ts_closed": [closed],
+            "od": [to_day(opened)],
+            "cd": [to_day(closed)],
+            "ts_opened": [opened],
+            "ts_closed": [closed],
             "pnl_base": [-500.0],  # ends the day only mildly down
-            "entry": [100.0], "exit": [99.5],
+            "entry": [100.0],
+            "exit": [99.5],
             "is_long": [True],
         }
     )
     d0 = to_day(opened)
     closes = {"X": np.array([99.5])}
     h4 = {
-        "X": pd.DataFrame(
-            {"timestamp_ns": [opened], "low": [94], "high": [100], "close": [99.5]}
-        )
+        "X": pd.DataFrame({"timestamp_ns": [opened], "low": [94], "high": [100], "close": [99.5]})
     }
 
     _r, eq, _s, diagnostics = simulate(
-        trades, closes, d0, d0, 100_000.0, 0.06, flat(1.0),
-        h4_prices=h4, daily_limit_frac=0.03,
+        trades,
+        closes,
+        d0,
+        d0,
+        100_000.0,
+        0.06,
+        flat(1.0),
+        h4_prices=h4,
+        daily_limit_frac=0.03,
     )
     assert diagnostics.minimum_equity[0] < eq[0]
     assert diagnostics.daily_breach[0]
@@ -155,9 +177,10 @@ def test_the_day_axis_is_the_prop_loss_day_not_utc_midnight() -> None:
     assert to_day(after.value) == to_day(before.value) + 1  # rolls at the CT reset ...
     assert to_calendar_day(after.value) == to_calendar_day(before.value)  # ... not at UTC midnight
     # And it agrees with the live runner, so research and live cannot drift on the boundary.
-    assert to_day(after.value) - to_day(before.value) == (
-        loss_day(after.to_pydatetime()) - loss_day(before.to_pydatetime())
-    ).days
+    assert (
+        to_day(after.value) - to_day(before.value)
+        == (loss_day(after.to_pydatetime()) - loss_day(before.to_pydatetime())).days
+    )
 
 
 def test_the_first_simulated_day_is_checked_for_a_breach() -> None:
@@ -194,16 +217,19 @@ def test_a_legacy_stream_infers_direction_from_the_outcome_too() -> None:
 
     day = to_day(opened)
     trades = pd.DataFrame(
-        {"market": ["X"], "od": [day], "cd": [day],
-         "ts_opened": [opened], "ts_closed": [closed], "pnl_base": [-1_000.0],
-         "entry": [100.0], "exit": [99.0]}
+        {
+            "market": ["X"],
+            "od": [day],
+            "cd": [day],
+            "ts_opened": [opened],
+            "ts_closed": [closed],
+            "pnl_base": [-1_000.0],
+            "entry": [100.0],
+            "exit": [99.0],
+        }
     )
     closes = {"X": np.array([99.0])}
-    h4 = {
-        "X": pd.DataFrame(
-            {"timestamp_ns": [opened], "low": [90], "high": [101], "close": [99]}
-        )
-    }
+    h4 = {"X": pd.DataFrame({"timestamp_ns": [opened], "low": [90], "high": [101], "close": [99]})}
     _r, eq, _s, diagnostics = simulate(
         trades, closes, day, day, 100_000.0, 0.06, flat(1.0), h4_prices=h4
     )
@@ -232,9 +258,7 @@ def test_a_morning_close_updates_the_balance_before_an_evening_open() -> None:
     # Day 1's close price sits back at A's entry, so the unrealized mark hides the loss --
     # only the REALIZED booking at 08:00 can inform B's sizing.
     prices = {"A": np.array([100.0, 100.0, 101.0])}
-    _r, _e, sizes, _m = simulate(
-        trades, prices, 0, 2, 100_000.0, 0.06, flat(1.0), compound=True
-    )
+    _r, _e, sizes, _m = simulate(trades, prices, 0, 2, 100_000.0, 0.06, flat(1.0), compound=True)
     assert sizes[1] == pytest.approx(0.9)  # sized AFTER the -10k booked: 90k / 100k
 
 
@@ -249,8 +273,7 @@ def test_a_reset_straddling_bar_charges_its_extremes_to_both_loss_days(
 
     csv = tmp_path / "X_H4.csv"
     csv.write_text(
-        "<DATE>\t<TIME>\t<LOW>\t<HIGH>\t<CLOSE>\n"
-        "2026.07.02\t00:00:00\t93.0\t101.0\t99.0\n",
+        "<DATE>\t<TIME>\t<LOW>\t<HIGH>\t<CLOSE>\n2026.07.02\t00:00:00\t93.0\t101.0\t99.0\n",
         encoding="utf-8",
     )
     bars = load_h4_prices(str(csv))

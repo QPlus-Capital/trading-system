@@ -174,5 +174,3 @@ def base_curves(
             continue
         unrealized[lo:hi] += pnl[i] / span[i] * (prices[mk[i]][lo:hi] - entry[i])
     return realized, unrealized
-
-
