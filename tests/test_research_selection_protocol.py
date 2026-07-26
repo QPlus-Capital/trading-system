@@ -187,7 +187,7 @@ def test_synchronized_diagnostics_use_one_36_candidate_window_matrix(tmp_path: P
 
     result = synchronized_overfitting_diagnostics(tmp_path)
 
-    assert result["status"] == "available"
+    assert result["status"] == "available", result
     assert result["role"] == "diagnostic_only"
     assert result["candidate_count"] == 36
     assert result["manual_trial_count"] == 5
@@ -311,6 +311,9 @@ def test_unusable_synchronized_diagnostics_are_labelled_not_zero_filled(
     [
         ("metadata_object", "candidate metadata must be an object"),
         ("metadata_shape", "candidate metadata is incomplete"),
+        ("formal_type", "candidate metadata is incomplete"),
+        ("persisted_type", "candidate metadata is incomplete"),
+        ("trials_type", "candidate metadata is incomplete"),
         ("manual_missing", "DSR/PBO diagnostics require 36 formal and five manual trials"),
         (
             "persisted_family",
@@ -348,6 +351,12 @@ def test_each_synchronized_diagnostic_guard_reports_its_exact_reason(
         metadata = []
     elif defect == "metadata_shape":
         metadata = {"formal_candidates": []}
+    elif defect == "formal_type":
+        cast(dict[str, Any], metadata)["formal_candidates"] = None
+    elif defect == "persisted_type":
+        cast(dict[str, Any], metadata)["persisted_candidates"] = None
+    elif defect == "trials_type":
+        cast(dict[str, Any], metadata)["trial_counts"] = None
     elif defect == "manual_missing":
         cast(dict[str, Any], metadata)["trial_counts"] = {"formal": 36}
     elif defect == "persisted_family":
@@ -440,7 +449,7 @@ def test_pbo_uses_the_largest_permitted_even_split_count(
 
     result = synchronized_overfitting_diagnostics(tmp_path)
 
-    assert result["status"] == "available"
+    assert result["status"] == "available", result
     assert result["pbo_split_count"] == expected_splits
 
 
