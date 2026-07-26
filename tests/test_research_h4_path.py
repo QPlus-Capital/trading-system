@@ -348,6 +348,34 @@ def test_swap_is_realized_once_at_close_and_never_in_an_h4_mark() -> None:
     assert diagnostics.close_balance[-1] == pytest.approx(100_950.0)
 
 
+def test_closed_swap_changes_every_later_synchronized_mark_once() -> None:
+    t05 = _ts("2025-04-10 05:00")
+    t09 = _ts("2025-04-10 09:00")
+    t13 = _ts("2025-04-10 13:00")
+    trades = pd.DataFrame(
+        [
+            _trade("A", t05, t09, pnl_base=0.0, swap_base=-50.0),
+            _trade("B", t05, t13),
+        ]
+    )
+    bars = {
+        "A": _h4((t05, "100", "100", "100")),
+        "B": _h4(
+            (t05, "100", "100", "100"),
+            (t09, "99", "100.2", "99"),
+        ),
+    }
+
+    _realized, _equity, _sizes, diagnostics = _run(
+        trades,
+        bars,
+        risk_multiple=0.5,
+    )
+
+    # A's -25 sized swap is realized at 09:00 before B's -100 sized adverse mark.
+    assert diagnostics.minimum_equity[0] == pytest.approx(99_875.0)
+
+
 def test_daily_and_trailing_flags_share_the_minimum_equity_path() -> None:
     opened = _ts("2025-04-10 05:00")
     closed = _ts("2025-04-10 09:00")
