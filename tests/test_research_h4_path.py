@@ -133,8 +133,7 @@ def test_h4_loader_fails_closed_on_invalid_rows(tmp_path: Path, rows: str, messa
 def test_h4_loader_accepts_one_complete_observation(tmp_path: Path) -> None:
     csv = tmp_path / "X_H4.csv"
     csv.write_text(
-        "<DATE>\t<TIME>\t<LOW>\t<HIGH>\t<CLOSE>\n"
-        "2026.07.02\t00:00:00\t99\t101\t100\n",
+        "<DATE>\t<TIME>\t<LOW>\t<HIGH>\t<CLOSE>\n2026.07.02\t00:00:00\t99\t101\t100\n",
         encoding="utf-8",
     )
 
