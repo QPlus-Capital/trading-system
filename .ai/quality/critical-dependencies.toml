@@ -31,13 +31,27 @@ reason = "synchronized H4 daily diagnostics govern Stage-3/4 drawdown and breach
 source = "research/portfolio/scenarios.py"
 tests = [
   "tests/test_research_scenarios.py",
+  "tests/test_research_path_risk.py",
   "tests/test_research_stage_lineage.py",
 ]
 possibly_affected = [
   "tests/test_research_stages.py",
   "tests/test_research_regression.py",
 ]
-reason = "joint calendar loss-day bundles supply the Stage-4 probability-of-profit diagnostic"
+reason = "joint calendar loss-day bundles supply every Stage-4 sampled path and risk diagnostic"
+
+[[edges]]
+source = "research/portfolio/path_risk.py"
+tests = [
+  "tests/test_research_path_risk.py",
+  "tests/test_research_scenarios.py",
+  "tests/test_quality_properties.py",
+]
+possibly_affected = [
+  "tests/test_research_stage_lineage.py",
+  "tests/test_research_regression.py",
+]
+reason = "exact sampled-path breach bounds replace the Stage-4 probability-of-profit gate"
 
 [[edges]]
 source = "research/portfolio/factsheet.py"
