@@ -14,6 +14,9 @@
 | AC-10 | real Stage-4 rerun and issue-52 regression | RED: no comparison | GREEN: empty unexpected changes at zero tolerances |
 | AC-11 | SHA-256 and metric comparison | RED: no P-11 run | GREEN: both trade files and non-path metrics exact |
 | AC-12 | cumulative R3 gates | RED: implementation absent | GREEN: every required gate has exit 0 |
+| AC-13 | fixed-fraction day at path balances 1,000 and 100,000 | RED: absolute loss breaches only the small path | GREEN: breach decision and return are scale invariant |
+| AC-14 | sub-2.5% source days at balances 1,000 through 2,900 | RED: foreign absolute losses create breaches | GREEN: zero raw breaches and positive exact upper bound |
+| AC-15 | unversioned and explicit old-version CSV fixtures | RED: unversioned rows load | GREEN: both fail closed; version 2 round-trips |
 | INV-01 | monkeypatched P-10 sampler call oracle | RED: no consumer | GREEN: P-10 sampler receives every block choice |
 | INV-02 | intraday recover fixture | RED: old gate uses final profit | GREEN: opening-to-minimum controls breach |
 | INV-03 | constants and strict ordering guard | RED: no limit set | GREEN: `0.025<0.03`, `0.05<0.06` |
@@ -22,6 +25,8 @@
 | INV-06 | zero-event analytical fixture | RED: no bound | GREEN: positive conservative upper bracket |
 | INV-07 | real Stage-4 check list | RED: old diagnostic gates | GREEN: only selected plug-in bounds gate |
 | INV-08 | zero-tolerance regression and live diff | RED: no proof | GREEN: no protected quantity or live path moves |
+| INV-09 | mutation of any source denominator or relative scaling operation | RED: old schema has no denominator | GREEN: source/path scale guards fail |
+| INV-10 | old CSV through the production reader | RED: accepted | GREEN: unsupported schema error |
 
 ## Statistical procedures
 

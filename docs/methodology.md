@@ -291,6 +291,9 @@ now guarded by tests — check these first when a number looks too good:
 - **Tail at the wrong stop.** R = move/stop, so the tail cap must be measured at the stop actually
   traded, per market — not a grid average.
 - **Zero-trade window / empty report.** A trade-free window is a flat window, not a crashed task.
+- **Resampled money needs its denominator.** Complete loss-day scenarios persist the source opening
+  balance and replay minimum, balance, and equity changes as fractions of that scale. Applying
+  compounded absolute money changes to another path balance creates artificial limit breaches.
 
 ---
 

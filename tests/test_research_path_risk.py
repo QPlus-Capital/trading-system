@@ -35,10 +35,12 @@ def _scenario(
     balance: str = "0",
     equity: str | None = None,
     minimum: str = "0",
+    source_opening: str = "1000",
 ) -> LossDayScenario:
     balance_change = Decimal(balance)
     return LossDayScenario(
         source_date=date(2026, 1, 1) + timedelta(days=day_number),
+        source_opening_balance=Decimal(source_opening),
         close_realized_pnl=balance_change,
         close_equity_change=Decimal(equity if equity is not None else balance),
         opening_to_minimum_equity_change=Decimal(minimum),
@@ -140,6 +142,45 @@ def test_intraday_internal_breach_survives_profitable_close() -> None:
     assert replay.final_return == Decimal("0.01")
     assert replay.internal_daily_breach
     assert replay.internal_any_breach
+
+
+def test_daily_breach_decision_is_invariant_to_path_balance_scale() -> None:
+    source_day = _scenario(0, minimum="-26", source_opening="1000")
+
+    small_path = replay_scenario_path((source_day,), start_balance=Decimal("1000"))
+    large_path = replay_scenario_path((source_day,), start_balance=Decimal("100000"))
+
+    assert small_path.internal_daily_breach
+    assert large_path.internal_daily_breach
+    assert small_path.prop_daily_breach == large_path.prop_daily_breach
+    assert small_path.final_return == large_path.final_return
+
+
+def test_zero_observed_breach_days_bootstrap_to_zero_raw_breach_frequency(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tuple(
+        _scenario(
+            index,
+            balance=str((Decimal("1000") + Decimal(index * 100)) * Decimal("0.01")),
+            minimum=str(-(Decimal("1000") + Decimal(index * 100)) * Decimal("0.0227")),
+            source_opening=str(Decimal("1000") + Decimal(index * 100)),
+        )
+        for index in range(20)
+    )
+    monkeypatch.setattr("research.portfolio.scenarios.select_block_length", lambda _streams: 1)
+
+    summary = summarize_path_risk(
+        source,
+        start_balance=Decimal("1000"),
+        replications=200,
+        seed=20260719,
+    )
+
+    assert summary.selected.internal_daily_breach_probability == 0
+    assert summary.selected.prop_daily_breach_probability == 0
+    assert summary.selected.internal_any_breach_probability == 0
+    assert summary.internal_breach_upper_95 > 0
 
 
 def test_daily_limit_breaches_at_the_exact_live_boundary() -> None:
@@ -604,9 +645,10 @@ def test_real_verdict_entrypoint_executes_new_path_gate(
     (run / "portfolio_trades.csv").write_text("market,r\n", encoding="utf-8")
     scenario = _scenario(0)
     (run / "loss_day_scenarios.csv").write_text(
-        "source_date,close_realized_pnl,close_equity_change,"
+        "schema_version,source_date,source_opening_balance,"
+        "close_realized_pnl,close_equity_change,"
         "opening_to_minimum_equity_change,closing_balance_change,trade_count,daily_swap\n"
-        f"{scenario.source_date},0,0,0,0,0,0\n",
+        f"2,{scenario.source_date},1000,0,0,0,0,0,0\n",
         encoding="utf-8",
     )
 

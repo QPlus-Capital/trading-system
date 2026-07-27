@@ -215,8 +215,8 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/portfolio/trades.py` | The timestamped OOS trade stream + the stage-3 extractor factory |
 | `research/portfolio/stats.py` | Shared metric helpers: edge/risk stats, R-multiples, daily equity |
 | `research/portfolio/resample.py` | Corrected Politis-White block length + stationary bootstrap for daily net returns |
-| `research/portfolio/scenarios.py` | Complete P-09 loss-day bundles + joint stationary-bootstrap profit probability |
-| `research/portfolio/path_risk.py` | Four-limit scenario replay + exact Clopper-Pearson Stage-4 risk bounds |
+| `research/portfolio/scenarios.py` | Versioned P-09 loss-day bundles with source scale + joint stationary bootstrap |
+| `research/portfolio/path_risk.py` | Source-relative four-limit replay + exact Clopper-Pearson Stage-4 risk bounds |
 | `research/portfolio/curves.py` | Loss-day conversion, daily closes, and timestamped Decimal H4 risk marks |
 | `research/portfolio/sizing.py` | Position sizing + synchronized-H4 daily diagnostics (same-H4 upper bound) |
 | `research/portfolio/risk.py` | The risk system: account context + pluggable tail-capped sizing policies |
