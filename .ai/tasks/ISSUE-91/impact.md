@@ -1,5 +1,19 @@
 # Impact analysis
 
+## Direct impact
+
+- `research/portfolio/sizing.py` owns chronological deterministic H4 drawdown.
+- `research/portfolio/path_risk.py` applies the same order to sampled paths and reports the paired
+  trailing-HWM diagnostic.
+- `research/stages/verdict.py` serializes and prints both trailing conventions without changing
+  the gate.
+
+## Transitive impact
+
+Stage 3, Stage 4, fact-sheet output, P-10 scenario consumers, P-11 path percentiles, report
+rendering, regression evidence, methodology documentation, and the critical mutation/finding
+registries are all traced below.
+
 ## Coupled quantity
 
 The coupled quantity is the drawdown equity HWM and every minimum evaluated against it. The complete
@@ -64,6 +78,12 @@ different trade-window curve and are not consumers of the Stage-3 synchronized H
 - P-10's version-2 source-relative daily scenarios and P-04 stationary bootstrap remain unchanged.
 - P-11's exact Clopper-Pearson implementation remains authoritative for both the gate and the new
   diagnostic bound.
+
+## Unknown or dynamic edges
+
+Final `just impact origin/main` reports no unknown/dynamic edges. External consumers of
+`path_bootstrap.json` or `verdict.json.path` may observe additive diagnostic keys; existing keys are
+preserved.
 
 ## Failure modes
 
