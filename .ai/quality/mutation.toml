@@ -72,6 +72,14 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "trade-direction-extraction"
+path = "research/portfolio/trades.py"
+mutant_patterns = [
+    "research.portfolio.trades.x__entry_is_long__mutmut_*",
+    "research.portfolio.trades.x_timed_trades_from_report__mutmut_*",
+]
+
+[[targets]]
 id = "portfolio-resample"
 path = "research/portfolio/resample.py"
 mutant_patterns = [

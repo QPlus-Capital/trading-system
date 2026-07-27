@@ -97,6 +97,16 @@ def assign_r(
     return rows
 
 
+def _entry_is_long(value: object) -> bool:
+    """Translate Nautilus' opening side into the canonical trade-direction flag."""
+    entry_side = str(value).strip().upper()
+    if entry_side == "BUY":
+        return True
+    if entry_side == "SELL":
+        return False
+    raise ValueError(f"unrecognized position entry side {value!r}; expected BUY or SELL")
+
+
 def timed_trades_from_report(
     pos: pd.DataFrame,
     market: str,
@@ -137,11 +147,10 @@ def timed_trades_from_report(
                 "entry": float(row["avg_px_open"]),
                 "exit": float(row["avg_px_close"]),
                 "sl_pct": float(stop),
-                # Direction straight from the report (#10). NOTE: our "entry" is the entry PRICE
-                # while the report's "entry" is the entry SIDE -- read "side" and read it here,
-                # before the name is reused. Swap is direction-dependent, and inferring direction
-                # from the outcome misclassifies any trade whose costs flip its sign.
-                "is_long": str(row["side"]).upper() == "LONG",
+                # The report's "entry" is the opening SIDE; the emitted "entry" is the entry PRICE.
+                # Read the side explicitly before that name is reused. A closed position's current
+                # side is FLAT, while swap and H4 adverse marks require its opening direction.
+                "is_long": _entry_is_long(row["entry"]),
             }
         )
     return out
