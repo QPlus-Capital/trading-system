@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: eb9bfc34bc0b74c1125871b1e6f8c94da6375ffe
+HEAD: e930ab3c3d3566682a6bce5825751d8dd060ddd6
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -14,14 +14,14 @@ The only later commit permitted by readiness is this evidence file itself.
 |---|---|---:|---|
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | Seven changed Python files were formatted; Ruff, strict mypy, impact analysis, and 418 focused tests passed. |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_gate_consistency.py tests/test_docs_language.py` | 0 | 139 tests passed. |
-| `check` | `uvx --from rust-just just check` | 0 | Post-rebase Ruff, strict mypy over 180 files, Vulture, and 1,194 tests passed; one Linux-only mutation test skipped on Windows. |
+| `check` | `uvx --from rust-just just check` | 0 | Post-#97 rebase Ruff, strict mypy over 180 files, Vulture, and 1,196 tests passed; one Linux-only mutation test skipped on Windows. |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | The critical dependency map selected and passed 418 Stage-1/3, swap, H4, scenario, path-risk, stage, and reporting tests. |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Twenty-one properties passed twice at fixed Hypothesis seed `20260721`. |
 | `integration-tests` | `uv run pytest -q tests/test_research_portfolio_trades.py tests/test_research_stage1_swap.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_risk.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_factsheet.py tests/test_research_stage_lineage.py tests/test_research_stages.py tests/test_research_regression.py` | 0 | 253 tests passed, including producer-to-H4 direction, swap, scenarios, path replay, and real stage entrypoints. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-99 --base origin/main` | 0 | Task schema, R3 declaration, criterion traceability, review, and evidence are valid. |
 | `adversarial-review` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-99 --base origin/main` | 0 | Sixteen counterexample findings are recorded and resolved, including Claude's P2; the adverse numerical result remains visible. |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 314 post-rebase critical tests passed, including #96 chronological H4 drawdown and #99 direction integration. |
-| `mutation-on-touched-critical` | GitHub Actions `Critical mutation` | 1 | **Blocked by infrastructure — Actions quota exhausted until 2026-08-01.** A $0 Actions budget is set, so no Linux mutation result exists and none is claimed. |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 316 post-#97 rebase critical tests passed, including #96 chronological H4 drawdown, #97 gross/swap decomposition, and #99 direction integration. |
+| `mutation-on-touched-critical` | GitHub Actions `Critical mutation` | 1 | **Blocked by infrastructure:** the Actions allowance for this organisation is exhausted until 2026-08-01. A $0 Actions budget is set, so this local run is the evidence; no Linux mutation result exists and none is claimed. |
 | `parity-where-applicable` | `git diff --exit-code origin/main...HEAD -- live core/strategies` plus row-by-row gross-stream comparison | 0 | No live/signal code changed; both trade streams retain exact identity, prices, stop, gross PnL, and gross R. The declared #57 exception permits only direction, swap, and derived artifacts to move. |
 | `live-money-review` | `.ai/tasks/ISSUE-99/review.md` plus `just check-invariants` | 0 | No live path was invoked or changed; risk limits and gates remain fixed, while the newly exposed worse risk is reported without mitigation. |
 | `human-decision-escalation` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-99 --base origin/main` | 0 | Jan's source-field, artifact-exception, Stage-1 deferral, draft-only, and merge decisions are explicit; no methodology choice remains delegated. |
@@ -38,10 +38,12 @@ The only later commit permitted by readiness is this evidence file itself.
 | `review-focused-green` | `uv run pytest -q tests/test_research_factsheet.py tests/test_research_sizing.py tests/test_research_h4_path.py` | 0 | 58 tests passed; all valid H4/fact-sheet fixtures now carry explicit direction. |
 | `outcome-fallback-audit` | `rg` over `research/portfolio/sizing.py` for the removed outcome expressions | 0 | No `won = pnl`, `is_long = won`, or optional-`is_long` fallback remains. `swap_analysis.py` was not changed. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | Two production files, eleven direct and thirteen transitive test paths, critical escalation for direction and H4 diagnostics, and no unknown/dynamic edges. |
-| `security` | `uvx --from rust-just just check-security` | 0 | Post-rebase secret scan clean; pip-audit reports no known vulnerabilities; Ruff security checks pass. |
+| `security` | `uvx --from rust-just just check-security` | 0 | Post-#97 rebase secret scan clean; pip-audit reports no known vulnerabilities; Ruff security checks pass. |
 | `rebase-semantic-integration` | `uv run pytest -q` with seven exact #96/#99 H4/direction node IDs | 0 | Seven cross-boundary tests passed: explicit BUY/SELL controls low/high marking, missing direction fails closed, and chronological peaks never use a later close or a pre-entry close. |
 | `rebase-h4-sizing-suite` | `uv run pytest -q tests/test_research_h4_path.py tests/test_research_sizing.py` | 0 | All 57 combined H4/sizing tests passed on the rebased implementation. |
 | `rebase-config-union` | TOML parse and identifier-set comparison against `origin/main` and pre-rebase `cb77cc87` | 0 | Mutation targets and critical-dependency edges contain both sides' complete sets; `git diff --exit-code origin/main...HEAD -- .ai/quality/mutation-baseline.toml` is clean. |
+| `post-97-rebase-integrity` | `git range-diff 8263206..84246c2 8851b91..HEAD`; structural TOML union audit | 0 | Issue #99 patches remain equivalent; F-035/F-038 are unique and ordered; mutation targets and critical edges contain both sides; mutation baseline unchanged. |
+| `post-97-caller-integration` | `uv run pytest -q tests/test_research_stats.py tests/test_research_portfolio_trades.py tests/test_research_stage1_swap.py` | 0 | 17 tests passed across #97's gross/swap/net helper and #99's authoritative direction producer. The combined behavioral boundary requires fresh independent review. |
 | `real-direction-reconciliation` | offline ten-market Nautilus report/extraction script | 0 | Every market's raw `entry=BUY/SELL` count equals extracted `is_long=True/False`; XAUUSD is `374/386`, full history is `4,522/4,181`. No MT5 connection was made. |
 | `stage-3` | `uv run python -m research.stages.portfolio --run reports/research/run_20260728_issue99 --fixed live/config/rsi_wpr_bb.py --risk flat:0.15 --stress-mult 1.5 --tail full --allow-legacy-unverified` | 0 | Replayed 1,348 holdout trades and 8,703 full-history trades on a copied baseline; corrected H4 path breaches the hard daily limit. |
 | `stage-4` | `uv run python -m research.stages.verdict --run reports/research/run_20260728_issue99 --allow-legacy-unverified` | 0 | Production 10,000-path plug-in plus fixed sensitivities completed; verdict remains `FAIL`, now also on the hard account limits and a 64.38% internal-breach upper bound. |
@@ -178,8 +180,8 @@ Critical mutation workflow, reconcile the exact baseline if required, update thi
 
 ## Coverage and mutation
 
-The rebased code HEAD has 1,194 passing tests, 418 focused impact tests, 253 explicit integration
-tests, 314 critical invariant tests, and twenty-one properties passing twice. New behavioural coverage
+The rebased code HEAD has 1,196 passing tests, 418 focused impact tests, 253 explicit integration
+tests, 316 critical invariant tests, and twenty-one properties passing twice. New behavioural coverage
 spans the producer's BUY/SELL/fail-closed boundary, missing-direction failure, and the
 producer-to-synchronized-H4 path. Critical mutation targets cover both trade extraction and
 portfolio sizing, but no Linux result exists because of the infrastructure blocker above.
@@ -187,7 +189,7 @@ portfolio sizing, but no Linux result exists because of the infrastructure block
 ## Deferred checks
 
 Linux Critical mutation is explicitly blocked by infrastructure, not pending or passed. The
-rebase also changes the reviewed code context by composing issue #99 with PR #96 in the same H4
-replay; targeted semantic checks pass, but the earlier independent review does not cover that
-combined implementation. A fresh independent review and Jan's merge decision remain external. The
-PR is draft-only.
+rebases also change the reviewed code context by composing issue #99 with PR #96 in the same H4
+replay and with PR #97 at the downstream `_market_trades` boundary. Targeted semantic checks pass,
+but the earlier independent review does not cover either combined implementation. A fresh
+independent review and Jan's merge decision remain external. The PR is draft-only.
