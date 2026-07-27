@@ -169,9 +169,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     prob_profit = float(bootstrap.prob_profit)
     internal_breach_upper_95 = bootstrap.internal_breach_upper_95
-    chronological_internal_breach_upper_95 = (
-        bootstrap.chronological_internal_breach_upper_95
-    )
+    chronological_internal_breach_upper_95 = bootstrap.chronological_internal_breach_upper_95
     negative_return_upper_95 = bootstrap.negative_return_upper_95
     # #11: a deployable verdict must describe the stops we actually TRADE. Without --fixed the
     # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
@@ -337,9 +335,7 @@ def main(argv: list[str] | None = None) -> None:
                         "gate_internal_trailing_breach_probability": str(
                             selected_path.internal_trailing_breach_probability
                         ),
-                        "gate_internal_any_breach_upper_95": str(
-                            internal_breach_upper_95
-                        ),
+                        "gate_internal_any_breach_upper_95": str(internal_breach_upper_95),
                         "chronological_diagnostic_only": True,
                         "chronological_internal_trailing_breach_probability": str(
                             selected_path.chronological_internal_trailing_breach_probability

@@ -366,10 +366,7 @@ class PathRiskMetrics:
             raise ValueError(
                 "chronological internal any-limit probability is below its trailing component"
             )
-        if (
-            self.chronological_prop_any_breach_probability
-            < self.prop_daily_breach_probability
-        ):
+        if self.chronological_prop_any_breach_probability < self.prop_daily_breach_probability:
             raise ValueError(
                 "chronological prop any-limit probability is below its daily component"
             )
@@ -471,9 +468,7 @@ def summarize_sampled_paths(
     chronological_internal_trailing = sum(
         replay.chronological_internal_trailing_breach for replay in replays
     )
-    chronological_internal_any = sum(
-        replay.chronological_internal_any_breach for replay in replays
-    )
+    chronological_internal_any = sum(replay.chronological_internal_any_breach for replay in replays)
     chronological_prop_trailing = sum(
         replay.chronological_prop_trailing_breach for replay in replays
     )

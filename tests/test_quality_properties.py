@@ -140,9 +140,7 @@ def test_path_replay_preserves_internal_prop_limit_monotonicity(
         or replay.chronological_internal_trailing_breach
     )
     assert not replay.chronological_prop_any_breach or replay.chronological_internal_any_breach
-    assert (
-        not replay.chronological_internal_trailing_breach or replay.internal_trailing_breach
-    )
+    assert not replay.chronological_internal_trailing_breach or replay.internal_trailing_breach
 
 
 @given(

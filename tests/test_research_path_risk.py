@@ -451,8 +451,7 @@ def test_summary_reports_all_metrics_and_all_p10_block_choices(
 
 def test_chronological_trailing_diagnostic_does_not_replace_the_gate() -> None:
     paths = tuple(
-        (_scenario(index, balance="50", equity="50", minimum="0"),)
-        for index in range(20)
+        (_scenario(index, balance="50", equity="50", minimum="0"),) for index in range(20)
     )
     metrics = summarize_sampled_paths(paths, start_balance=Decimal("1000"))
 
@@ -798,10 +797,12 @@ def test_real_verdict_entrypoint_executes_new_path_gate(
     assert payload["stats"]["max_drawdown"] * 100 == payload["path"]["max_drawdown_pct"]
     selected = payload["path_bootstrap"]
     comparison = payload["path"]["trailing_hwm_comparison"]
-    assert comparison["gate_internal_trailing_breach_probability"] == selected[
-        "internal_trailing_breach_probability"
-    ]
-    assert comparison["chronological_internal_trailing_breach_probability"] == selected[
-        "chronological_internal_trailing_breach_probability"
-    ]
+    assert (
+        comparison["gate_internal_trailing_breach_probability"]
+        == selected["internal_trailing_breach_probability"]
+    )
+    assert (
+        comparison["chronological_internal_trailing_breach_probability"]
+        == selected["chronological_internal_trailing_breach_probability"]
+    )
     assert comparison["chronological_diagnostic_only"] is True
