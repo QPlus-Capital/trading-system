@@ -36,3 +36,12 @@ guard that supplies conflicting `r`/`net_r` values and proves the report reads g
 No live file, signal, order, position, sizing, account, limit, or gate changes. The fix is confined
 to a private full-history analysis helper and its schema. The deployed research pipeline remains on
 the existing `continuous.py` and `trades.py` return paths.
+
+## Rebase review
+
+Rebased onto `origin/main` at `82632060223ab83b3ebaa06154f87b00ed7f8c59` after PR #96.
+The only conflict was the append-only finding registry. Main's F-034 was preserved and issue #60's
+pattern was renumbered to F-035. `git range-diff 8fff632..1a2957a 8263206..HEAD` shows the two
+issue-60 commits are patch-equivalent apart from retaining main's F-034 and renumbering this
+registry entry. No production or test behaviour changed during the rebase, so the earlier review
+still covers the implementation.
