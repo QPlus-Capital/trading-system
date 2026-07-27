@@ -118,6 +118,17 @@ def test_empty_symbol_cash_deal_stays_ledger_only() -> None:
     assert list(deal_ledger([cash])["amount"]) == [Decimal("500.0")]
 
 
+@pytest.mark.parametrize("invalid_entry", [4, True])
+def test_symbol_bearing_unknown_entry_mode_fails_closed(invalid_entry: object) -> None:
+    deal = {
+        **_deal(42, "EURUSD", 0, 0, 10, ticket=103),
+        "entry": invalid_entry,
+    }
+
+    with pytest.raises(ValueError, match=r"ticket=103.*entry=.*position_id=42"):
+        deals_to_trades([deal])
+
+
 def test_inout_reversal_emits_two_directionally_correct_segments() -> None:
     deals = [
         _deal(7, "XAUUSD", 0, 0, 10, volume=1.0, commission=-1.0, ticket=100),
@@ -210,6 +221,7 @@ def test_scale_ins_and_partial_exits_preserve_volume_and_money() -> None:
     assert row["volume"] == 0.3
     assert row["close_time"] == pd.Timestamp(21, unit="s", tz="UTC")
     assert row["net_pnl"] == Decimal("25.0")
+    assert row["net_pnl"] == sum(deal_ledger(deals)["amount"], Decimal("0"))
 
 
 def test_equity_curve_accumulates_from_start() -> None:
