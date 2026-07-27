@@ -101,18 +101,18 @@ def test_intraday_internal_breach_survives_profitable_close() -> None:
     assert replay.internal_any_breach
 
 
-def test_daily_limit_is_strict_at_the_exact_boundary() -> None:
+def test_daily_limit_breaches_at_the_exact_live_boundary() -> None:
     at_limit = replay_scenario_path(
         (_scenario(0, minimum="-25"),),
         start_balance=Decimal("1000"),
     )
-    above_limit = replay_scenario_path(
-        (_scenario(0, minimum="-25.01"),),
+    below_limit = replay_scenario_path(
+        (_scenario(0, minimum="-24.99"),),
         start_balance=Decimal("1000"),
     )
 
-    assert not at_limit.internal_daily_breach
-    assert above_limit.internal_daily_breach
+    assert at_limit.internal_daily_breach
+    assert not below_limit.internal_daily_breach
 
 
 def test_same_day_balance_high_raises_the_conservative_trailing_floor() -> None:
@@ -138,7 +138,7 @@ def test_one_breach_day_among_ten_matches_analytical_path_probability() -> None:
     expected = Decimal("1") - Decimal("0.9") ** 10
 
     assert abs(metrics.internal_daily_breach_probability - expected) < Decimal("0.02")
-    assert metrics.prop_daily_breach_probability == 0
+    assert abs(metrics.prop_daily_breach_probability - expected) < Decimal("0.02")
 
 
 def test_internal_limit_probabilities_dominate_prop_hard_probabilities() -> None:

@@ -3,7 +3,7 @@
 | Requirement | Test | Before-fix result | After-fix result |
 |---|---|---|---|
 | AC-01 | deterministic all-flat paths | RED: P-11 module absent | GREEN: raw zero, upper bound positive |
-| AC-02 | one `-3%` minimum among ten, block length 1 | RED: no breach replay | GREEN: frequency within `0.02` of `1 - 0.9^10` |
+| AC-02 | one `-3%` minimum among ten, block length 1 | RED: no breach replay | GREEN: internal and prop frequencies within `0.02` of `1 - 0.9^10` |
 | AC-03 | path and aggregate dominance guards | RED: no four-limit result | GREEN: internal >= prop or fail closed |
 | AC-04 | profitable close after `-3%` minimum | RED: old gate sees profit only | GREEN: internal daily breach remains true |
 | AC-05 | trusted beta-quantile fixtures | RED: no exact-binomial bound | GREEN: `x=0,1,5`, `n=10` within `1e-12` |
@@ -43,7 +43,7 @@
 
 ## Mutation focus
 
-Mutate the four thresholds, strict daily comparison, same-day trailing HWM update, intraday minimum
+Mutate the four thresholds, inclusive daily comparison, same-day trailing HWM update, intraday minimum
 source, unions, dominance invariant, negative-return sign, quantile ranks, ES tail count,
 time-under-water predicate, binomial CDF/tail inversion, bisection direction, confidence, gate
 boundaries, selected-block choice, and Stage-4 check wiring. Any unexplained survivor blocks.

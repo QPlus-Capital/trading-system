@@ -159,8 +159,8 @@ def replay_scenario_path(
             internal_daily = True
             prop_daily = True
         else:
-            internal_daily |= loss_money > INTERNAL_DAILY_LIMIT * opening_balance
-            prop_daily |= loss_money > PROP_DAILY_LIMIT * opening_balance
+            internal_daily |= loss_money >= INTERNAL_DAILY_LIMIT * opening_balance
+            prop_daily |= loss_money >= PROP_DAILY_LIMIT * opening_balance
 
         # Match P-09's conservative convention: the same day's realized close can raise the
         # trailing HWM before that day's synchronized H4 minimum is checked.
