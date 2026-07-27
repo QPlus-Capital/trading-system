@@ -7,7 +7,9 @@
   exact probability-bound checks, and expands its JSON/terminal diagnostics.
 - Update methodology, architecture, critical dependency, mutation scope, and test maps.
 
-## Coupled quantity: sampled loss-day path
+## Transitive impact
+
+The coupled quantity is the sampled loss-day path. Its complete producer/consumer chain is:
 
 Every producer and consumer is handled in one pass:
 
@@ -24,6 +26,22 @@ Every producer and consumer is handled in one pass:
 7. `path_bootstrap.json`, `verdict.json`, terminal output, and Stage-4 lineage expose the same
    selected result and sensitivities.
 8. `research/regression.py` proves all trade and non-path portfolio quantities remain exact.
+
+## Critical dependencies
+
+- P-09 `DailyDiagnostics` is the sole source of synchronized H4 minimum equity.
+- P-10 `LossDayScenario`, `scenario_bootstrap_choices`, and `sample_scenario_paths` remain the sole
+  scenario schema, block-selection, and path-sampling implementations.
+- P-04 `select_block_length` and `stationary_bootstrap` remain transitively authoritative through
+  P-10; P-11 does not duplicate either.
+- `live.risk_control.RiskController.must_flatten` defines the inclusive limit boundary used by the
+  research replay, but no live module is modified or invoked.
+
+## Unknown or dynamic edges
+
+`just impact origin/main` reported no unknown or dynamic edges. Runtime report consumers outside the
+repository could observe the additive `path_bootstrap.json` fields, but the existing top-level
+P-10 fields remain present and no in-repository reader depends on the old sensitivity schema.
 
 ## Stage and artifact impact
 
