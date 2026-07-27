@@ -421,7 +421,7 @@ generalized = "path-dependent denominators must be timestamped and updated only 
 workflow_change = "drawdown mutation and property guards now exercise peak/trough order in both deterministic H4 and sampled-day replay"
 
 [[finding]]
-id = "F-035"
+id = "F-039"
 source = "issue #107 Codex independent review of the workflow contract"
 defect_class = "procedural-contract-verified-by-reading-not-by-execution"
 severity = "P1"

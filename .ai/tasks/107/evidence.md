@@ -48,7 +48,7 @@ curly quote in an uncommitted Markdown file. Filed as
 [#115](https://github.com/QPlus-Capital/trading-system/issues/115) with a reproduction, and it is a
 result-integrity path (constitution §4).
 
-The generalised pattern for this change's own findings is registered as `F-035` in
+The generalised pattern for this change's own findings is registered as `F-039` in
 `.ai/quality/finding-patterns.toml`.
 
 ## Deferred checks
