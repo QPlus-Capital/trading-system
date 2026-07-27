@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 459d5c7e92b41dbe0c26ef2ca59c1735a13f3887
+HEAD: 81ada9235ce257bb920e5667407760657d9bebd3
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -14,14 +14,14 @@ The only later commit permitted by readiness is this evidence file itself.
 |---|---|---:|---|
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | Both changed Python files were already formatted; Ruff, strict mypy, impact analysis, and 352 focused tests passed. |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_gate_consistency.py tests/test_docs_language.py` | 0 | 139 tests passed. |
-| `check` | `uvx --from rust-just just check` | 0 | Rebase HEAD: Ruff, strict mypy over 180 files, Vulture, and 1,192 tests passed; one Linux-only mutation test skipped on Windows. |
+| `check` | `uvx --from rust-just just check` | 0 | Post-#97 rebase: Ruff, strict mypy over 180 files, Vulture, and 1,194 tests passed; one Linux-only mutation test skipped on Windows. |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | The conservative impact graph selected and passed 352 tests, including continuous-window, real-engine integration, candidate-matrix, Stage-1 swap, edge, factsheet, regression, and stage tests. |
-| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Rebase HEAD: 21 properties passed twice at fixed Hypothesis seed `20260721`. |
+| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Post-#97 rebase: 21 properties passed twice at fixed Hypothesis seed `20260721`. |
 | `integration-tests` | `uvx --from rust-just just check-fast origin/main` plus the two targeted real `_run_task` executions below | 0 | Static/dynamic impact tests passed, and both formerly failing XAGUSD candidates traversed the real characterize/continuous engine path without an error row. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-58 --base origin/main` | 0 | The task schema, traceability, R3 declaration, evidence, and review are valid. |
 | `adversarial-review` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-58 --base origin/main` | 0 | Four findings remain resolved; range-diff proves the rebase changed no Stage-1 implementation or test behaviour. |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | Rebase HEAD: 314 critical invariant tests passed, including continuous windows, Stage-1 sizing, regression, risk, and readiness. |
-| `mutation-on-touched-critical` | Linux Critical mutation workflow | 1 | **BLOCKED BY INFRASTRUCTURE:** GitHub Actions quota is exhausted until 2026-08-01. Mutmut requires fork/WSL and the repository's mutation self-test is skipped on Windows. No mutation result is claimed and no baseline or gate was weakened. |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | Post-#97 rebase: 316 critical invariant tests passed, including continuous windows, Stage-1 sizing, regression, risk, and readiness. |
+| `mutation-on-touched-critical` | Linux Critical mutation workflow | 1 | **BLOCKED BY INFRASTRUCTURE:** The Actions allowance for this organisation is exhausted until 2026-08-01. Mutmut requires fork/WSL and the repository's mutation self-test is skipped on Windows; this local gate run is the evidence. No mutation result is claimed and no baseline or gate was weakened. |
 | `parity-where-applicable` | `git diff --exit-code origin/main...HEAD -- live core/strategies research/portfolio research/stages research/engine/walkforward_runner.py research/engine/characterize.py` plus exact regression/hash comparison | 0 | No live, signal, deployed portfolio, Stage-3, or Stage-4 path changed; both trade CSVs are byte-identical. |
 | `live-money-review` | `.ai/tasks/ISSUE-58/review.md` plus `uvx --from rust-just just check-invariants` | 0 | Research scoring only: no runner interaction, order path, risk limit, sizing limit, account identity, or deployed variation changed. The two already-running live processes were observed only as OS processes and never touched. |
 | `human-decision-escalation` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-58 --base origin/main` | 0 | Jan's pinned Option A, exact regression thresholds, build-only delivery, and merge authority are explicit; Options B/C are excluded and no methodology decision remains delegated. |
@@ -37,7 +37,8 @@ The only later commit permitted by readiness is this evidence file itself.
 | `focused-behavior` | `uv run pytest -q tests/test_research_continuous_windows.py tests/test_research_candidate_matrix.py tests/test_research_continuous_integration.py tests/test_research_stage1_swap.py tests/test_research_candidate_artifacts.py tests/test_research_edge_ranking.py tests/test_research_selection_protocol.py` | 0 | 113 tests passed; the fixed-basis scorer, both candidate paths, canonical net stream, persisted evidence, and selection consumers remain coherent. |
 | `source-audit` | `rg -n -i "account exhausted\|post-ruin\|running.?equity\|equity = basis" research/engine research/stages` with no-match required | 0 | No Stage-1 running-equity viability branch or ruin message remains. Statistical cumulative curves still exist only for return/drawdown calculations. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | One changed production file; no unknown/dynamic edges; `continuous.py` escalates as a critical Stage-1 scoring dependency. |
-| `security` | `uvx --from rust-just just check-security` | 0 | Rebase HEAD: secret scan clean, pip-audit found no known vulnerabilities, and Ruff security checks passed. |
+| `security` | `uvx --from rust-just just check-security` | 0 | Post-#97 rebase: secret scan clean, pip-audit found no known vulnerabilities, and Ruff security checks passed. |
+| `rebase-integrity` | `git range-diff 8263206..8a96098 8851b91..HEAD`; registry parse; mutation-baseline diff | 0 | Issue #58 production/test patches remain equivalent; F-035 and F-036 are retained in ID order with no duplicate; `.ai/quality/mutation-baseline.toml` is unchanged. No behavior changed. |
 | `regression` | `uv run python -m research.regression --issue 58 --pair reports/research/run_20260727_p11_scaled=reports/research/run_20260727_issue58 --out reports/research/regression/58-comparison.json --trade-count-pct 0.0 --annual-return-pp 0.0` | 0 | GREEN at exact thresholds: no unexpected changes. The candidate is a read-only byte-copy because the changed scorer is unreachable from Stage 3/4. |
 | `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-58 --base origin/main` | 1 | NOT READY on `mutation-on-touched-critical` alone, as required in build-only mode. All other task/schema/evidence/readiness checks pass. |
 
