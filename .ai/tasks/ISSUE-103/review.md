@@ -31,3 +31,14 @@ No findings; 12 counterexamples attempted
 - Lowercase values were deliberately rejected rather than normalized because accepting anything
   beyond exact BUY/SELL would reintroduce ambiguity at the live boundary.
 - Independent Claude live-money review remains required before readiness or merge.
+
+## Rebase review
+
+Rebased onto `origin/main` at `82632060223ab83b3ebaa06154f87b00ed7f8c59` after PR #96.
+Main's F-034 was preserved and issue #103's pattern was renumbered to the merge-order-reserved
+F-037. The `mt5-deal-export` mutation target is the union: main's `history_deals` pattern remains
+and the runtime converter, pricing, positions, placement, and close patterns are added.
+`.ai/quality/mutation-baseline.toml` is unchanged. `git range-diff
+8fff632..2a558ba 8263206..HEAD` shows no live implementation or test patch change beyond the
+registry ID and unioned policy context. Legal/invalid side behaviour is unchanged by the rebase,
+so the earlier review still covers the implementation.
