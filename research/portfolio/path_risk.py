@@ -277,22 +277,14 @@ class PathRiskMetrics:
             raise ValueError("prop any-limit probability is below its trailing component")
         if self.prob_profit + self.negative_final_probability > 1:
             raise ValueError("profit and negative-return probabilities overlap")
-        if not (
-            self.final_return_p05 <= self.final_return_median <= self.final_return_p95
-        ):
+        if not (self.final_return_p05 <= self.final_return_median <= self.final_return_p95):
             raise ValueError("final-return percentiles must be ordered")
         if self.expected_shortfall_05 > self.final_return_p05:
             raise ValueError("expected shortfall must not exceed the fifth percentile")
-        if not (
-            self.max_drawdown_p05
-            <= self.max_drawdown_median
-            <= self.max_drawdown_p95
-        ):
+        if not (self.max_drawdown_p05 <= self.max_drawdown_median <= self.max_drawdown_p95):
             raise ValueError("maximum-drawdown percentiles must be ordered")
         if not (
-            self.time_under_water_p05
-            <= self.time_under_water_median
-            <= self.time_under_water_p95
+            self.time_under_water_p05 <= self.time_under_water_median <= self.time_under_water_p95
         ):
             raise ValueError("time-under-water percentiles must be ordered")
         if self.internal_any_breach_count < 0 or self.negative_final_count < 0:
