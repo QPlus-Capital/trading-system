@@ -12,6 +12,7 @@ import pytest
 from research.portfolio.curves import interval_loss_days, load_h4_prices, to_day
 from research.portfolio.risk import AccountProfile, FlatRisk, evaluate_policy
 from research.portfolio.sizing import DailyDiagnostics, flat, simulate
+from research.portfolio.trades import timed_trades_from_report
 
 _HOUR_NS = 3_600_000_000_000
 
@@ -87,6 +88,33 @@ def _trade(
         "is_long": False,
         "swap_base": swap_base,
     }
+
+
+def test_extracted_entry_side_drives_long_low_and_short_high() -> None:
+    opened = pd.Timestamp("2025-04-10 05:00", tz="UTC")
+    closed = pd.Timestamp("2025-04-10 09:00", tz="UTC")
+    report = pd.DataFrame(
+        {
+            "ts_opened": [opened, opened],
+            "ts_closed": [closed, closed],
+            "realized_pnl": ["1000.0 USD", "1000.0 USD"],
+            "avg_px_open": [100.0, 100.0],
+            "avg_px_close": [110.0, 90.0],
+            "entry": ["BUY", "SELL"],
+            "side": ["FLAT", "FLAT"],
+        }
+    )
+    trades = pd.DataFrame(timed_trades_from_report(report, "X", sl_pct=1.0))
+    bars = {
+        "X": _h4(
+            (_ts("2025-04-10 05:00"), "90", "110", "100"),
+        )
+    }
+
+    _realized, _equity, _sizes, diagnostics = _run(trades, bars)
+
+    assert trades["is_long"].tolist() == [True, False]
+    assert diagnostics.minimum_equity[0] == pytest.approx(98_000.0)
 
 
 def test_loss_day_interval_is_half_open_and_rejects_empty_ranges() -> None:
