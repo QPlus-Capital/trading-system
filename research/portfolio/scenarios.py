@@ -349,6 +349,30 @@ def validate_joint_paths(
             raise ValueError("scenario path contains a row that is not an observed joint bundle")
 
 
+def scenario_path_probability_of_profit(
+    paths: Sequence[Sequence[LossDayScenario]],
+) -> Decimal:
+    """Return P-10's strict positive-balance probability over already-sampled paths."""
+    if not paths:
+        raise ValueError("sampled path collection must be non-empty")
+    profitable = sum(sum(row.closing_balance_change for row in path) > 0 for path in paths)
+    return Decimal(profitable) / Decimal(len(paths))
+
+
+def scenario_bootstrap_choices(
+    scenarios: Sequence[LossDayScenario],
+) -> tuple[tuple[str, int], ...]:
+    """Return P-10's plug-in and fixed block choices for a complete scenario set."""
+    source = tuple(scenarios)
+    if not source:
+        raise ValueError("loss-day scenarios must be non-empty")
+    returns = np.asarray([float(row.closing_balance_change) for row in source])
+    selected = select_block_length({"closing_balance_change": returns})
+    return (("plugin", selected),) + tuple(
+        (f"fixed_{block_length}", block_length) for block_length in SENSITIVITY_BLOCK_LENGTHS
+    )
+
+
 def _probability_of_profit(
     scenarios: tuple[LossDayScenario, ...],
     block_length: int,
@@ -362,8 +386,7 @@ def _probability_of_profit(
         replications=replications,
         seed=seed,
     )
-    profitable = sum(sum(row.closing_balance_change for row in path) > 0 for path in paths)
-    return Decimal(profitable) / Decimal(replications)
+    return scenario_path_probability_of_profit(paths)
 
 
 def summarize_scenario_bootstrap(
@@ -374,13 +397,8 @@ def summarize_scenario_bootstrap(
 ) -> ScenarioBootstrapSummary:
     """Report plug-in and fixed-block calendar-path `P(profit)` without changing any gate."""
     source = tuple(scenarios)
-    if not source:
-        raise ValueError("loss-day scenarios must be non-empty")
-    returns = np.asarray([float(row.closing_balance_change) for row in source])
-    selected = select_block_length({"closing_balance_change": returns})
-    choices = (("plugin", selected),) + tuple(
-        (f"fixed_{block_length}", block_length) for block_length in SENSITIVITY_BLOCK_LENGTHS
-    )
+    choices = scenario_bootstrap_choices(source)
+    selected = choices[0][1]
     sensitivity = tuple(
         BootstrapSensitivity(
             label=label,

@@ -666,7 +666,9 @@ def test_real_stages_persist_and_consume_scenarios_without_trade_slot_bootstrap(
 
     assert 'st.file("loss_day_scenarios.csv")' in portfolio_source
     assert 'run.require("loss_day_scenarios.csv", "portfolio")' in verdict_source
-    assert "summarize_scenario_bootstrap(scenarios)" in verdict_source
+    assert "summarize_path_risk(" in verdict_source
     assert "monte_carlo_paths" not in verdict_source
     assert 'seeds={"loss_day_bootstrap": DEFAULT_SEED}' in verdict_source
-    assert "prob_profit >= 0.6" in verdict_source
+    assert "prob_profit >= 0.6" not in verdict_source
+    assert "internal_breach_gate_passes" in verdict_source
+    assert "negative_return_gate_passes" in verdict_source

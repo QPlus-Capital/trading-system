@@ -73,8 +73,8 @@ flowchart TD
     SEL --> S3["STAGE 3 — PORTFOLIO (stages/portfolio.py)<br/>Extract holdout trades, attach real TTP swap (swap_r),<br/>measure the crisis tail cap, size under a risk policy"]
     S3 --> PT[/"portfolio_trades.csv (holdout)<br/>full_history_trades.csv<br/>loss_day_scenarios.csv<br/>portfolio.json"/]
 
-    PT --> S4["STAGE 4 — VERDICT (stages/verdict.py)<br/>Trade yes/no: gates + fact sheet"]
-    S4 --> OUT[/"verdict.json + path_bootstrap.json + report.html<br/>(fact sheet: full history vs holdout,<br/>flat vs compound, per market, regimes)"/]
+    PT --> S4["STAGE 4 — VERDICT (stages/verdict.py)<br/>Trade yes/no: exact path-risk gates + fact sheet"]
+    S4 --> OUT[/"verdict.json + path_bootstrap.json + report.html<br/>(limit-breach bounds + fact sheet:<br/>full history vs holdout, flat/compound, regimes)"/]
 ```
 
 Cost model in research (matches the live TTP account):
@@ -216,6 +216,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/portfolio/stats.py` | Shared metric helpers: edge/risk stats, R-multiples, daily equity |
 | `research/portfolio/resample.py` | Corrected Politis-White block length + stationary bootstrap for daily net returns |
 | `research/portfolio/scenarios.py` | Complete P-09 loss-day bundles + joint stationary-bootstrap profit probability |
+| `research/portfolio/path_risk.py` | Four-limit scenario replay + exact Clopper-Pearson Stage-4 risk bounds |
 | `research/portfolio/curves.py` | Loss-day conversion, daily closes, and timestamped Decimal H4 risk marks |
 | `research/portfolio/sizing.py` | Position sizing + synchronized-H4 daily diagnostics (same-H4 upper bound) |
 | `research/portfolio/risk.py` | The risk system: account context + pluggable tail-capped sizing policies |
@@ -238,7 +239,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/stages/select.py` | Stage 2 — strict SPA/Romano-Wolf/MCS intersection and complexity-first structure selection |
 | `research/stages/universe.py` | Stage-2 selection logic (structure + market universe) |
 | `research/stages/portfolio.py` | Stage 3 — combine, size, and persist complete loss-day scenarios |
-| `research/stages/verdict.py` | Stage 4 — trade yes/no + loss-day bootstrap + fact sheet + report |
+| `research/stages/verdict.py` | Stage 4 — exact breach/negative-return bounds + diagnostics + fact sheet |
 
 ### Live
 

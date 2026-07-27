@@ -154,7 +154,11 @@ limits never being breached, even in a worse-than-history crisis.**
   zero-trade days and P-09's synchronized H4 minimum. Resample fixed-horizon calendar paths with
   the P-04 stationary bootstrap at the Politis-White plug-in block length, plus 5/10/20/60-day
   sensitivity. All fields in a day move together; the plug-in path supplies the existing
-  probability-of-profit diagnostic.
+  probability-of-profit diagnostic. Replay each path through the 2.5%/5% internal daily/trailing
+  limits and the 3%/6% prop-hard limits. The plug-in result is deployable only when the exact
+  one-sided 95% Clopper-Pearson upper bound on any internal-limit breach is at most 1% and the
+  corresponding upper bound on a negative final return is at most 5%. `P(profit)` remains a
+  diagnostic and does not gate.
 - **Stress:** extra slippage, crisis windows, a higher stress multiplier.
 - **Criterion:** positive in the large majority of years; MC profit probability high; survives the
   stressed cases.
@@ -300,7 +304,7 @@ now guarded by tests — check these first when a number looks too good:
 | 3 Selection | `stages/universe`, `stages/edge`, `stages/select` | ✅ |
 | 4 Holdout | `portfolio/trades` (phase="holdout"), `stages/portfolio` | ✅ |
 | 5 Sizing | `portfolio/risk` (tail cap, `rck_fraction`/`KellyRisk`, policies), `portfolio/tail`, `portfolio/stress` | ✅ gap tail cap + risk-constrained Kelly (`kelly:beta`), sized on the full-history stream; the drawdown bound is Monte-Carlo-verified |
-| 6 Robustness | `portfolio/scenarios`, `portfolio/resample`, per-year analysis, `portfolio/stress` | ✅ complete calendar-day scenario bootstrap; no scenario breach gate until P-11 |
+| 6 Robustness | `portfolio/scenarios`, `portfolio/path_risk`, `portfolio/resample`, per-year analysis, `portfolio/stress` | ✅ complete calendar-day scenario bootstrap with exact breach/negative-return probability gates |
 | 7 Decision | *(the stress/return frontier)* | ⚠️ produced ad-hoc; to formalize into Stage-4 report output |
 
 **Done since:** Stage 0 hypothesis written; DSR, PBO, SPA, Romano-Wolf, and MCS candidate evidence
