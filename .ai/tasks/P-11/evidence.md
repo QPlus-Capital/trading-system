@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: c3c10fda6857a2d542e4f357df778ecf85ad06fb
+HEAD: 9005d6d13a68d13321f84573e2dfb86753fb024c
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -35,6 +35,7 @@ The only later commit permitted by readiness is this evidence file itself.
 | `red-first` | `uv run pytest -q tests/test_research_path_risk.py` before `path_risk.py` existed | 2 | RED during collection: `ModuleNotFoundError: research.portfolio.path_risk`. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | Three production files; no unknown/dynamic edges; path risk and joint scenarios escalated as critical. |
 | `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean, pip-audit found no known vulnerability, and Ruff security checks passed. |
+| `pr-ready` | `uv run python -m scripts.quality.pr_ready P-11 --base origin/main` | 0 | READY: task schema, R3 classification, all 14 required gates, and HEAD-bound evidence passed. |
 | `exact-binomial-cross-check` | `uv run --with scipy python` comparison against SciPy beta quantiles | 0 | Six independent fixtures matched; maximum absolute difference was `3.3e-16`. |
 | `stage-4` | `uv run python -m research.stages.verdict --run reports/research/run_20260727_p11 --allow-legacy-unverified` | 0 | Production 10,000-replication plug-in plus 5/10/20/60 sensitivity completed; verdict FAIL. |
 | `regression` | `uv run python -m research.regression --issue 52 --pair reports/research/run_20260726_p10=reports/research/run_20260727_p11 --out reports/research/regression/52-comparison.json --trade-count-pct 0.0 --annual-return-pp 0.0` | 0 | GREEN: no unexpected changes at exact thresholds. |
