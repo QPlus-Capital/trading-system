@@ -223,6 +223,29 @@ def test_same_day_balance_high_raises_the_conservative_trailing_floor() -> None:
 
     assert replay.internal_trailing_breach
     assert not replay.prop_trailing_breach
+    assert not replay.chronological_internal_trailing_breach
+    assert not replay.chronological_prop_trailing_breach
+
+
+def test_path_drawdown_does_not_use_the_same_days_later_close_peak() -> None:
+    replay = replay_scenario_path(
+        (_scenario(0, balance="100", equity="100", minimum="-10"),),
+        start_balance=Decimal("1000"),
+    )
+
+    assert replay.max_drawdown == Decimal("0.01")
+
+
+def test_path_drawdown_uses_a_prior_days_high_for_a_later_minimum() -> None:
+    replay = replay_scenario_path(
+        (
+            _scenario(0, balance="100", equity="100", minimum="0"),
+            _scenario(1, balance="0", equity="0", minimum="-10", source_opening="1000"),
+        ),
+        start_balance=Decimal("1000"),
+    )
+
+    assert replay.max_drawdown == Decimal("0.01")
 
 
 def test_prop_trailing_breach_persists_after_a_recovery_day() -> None:
@@ -369,10 +392,15 @@ def test_impossible_internal_prop_order_fails_closed() -> None:
             prop_daily_breach_probability=Decimal("0.1"),
             prop_trailing_breach_probability=Decimal("0"),
             prop_any_breach_probability=Decimal("0.1"),
+            chronological_internal_trailing_breach_probability=Decimal("0"),
+            chronological_internal_any_breach_probability=Decimal("0"),
+            chronological_prop_trailing_breach_probability=Decimal("0"),
+            chronological_prop_any_breach_probability=Decimal("0.1"),
             time_under_water_p05=Decimal("0"),
             time_under_water_median=Decimal("0"),
             time_under_water_p95=Decimal("0"),
             internal_any_breach_count=0,
+            chronological_internal_any_breach_count=0,
             negative_final_count=0,
         )
 
@@ -412,10 +440,26 @@ def test_summary_reports_all_metrics_and_all_p10_block_choices(
         "internal_trailing_breach_probability",
         "prop_daily_breach_probability",
         "prop_trailing_breach_probability",
+        "chronological_internal_trailing_breach_probability",
+        "chronological_internal_any_breach_probability",
+        "chronological_internal_breach_upper_95",
         "time_under_water_p05",
         "time_under_water_median",
         "time_under_water_p95",
     }.issubset(selected)
+
+
+def test_chronological_trailing_diagnostic_does_not_replace_the_gate() -> None:
+    paths = tuple(
+        (_scenario(index, balance="50", equity="50", minimum="0"),)
+        for index in range(20)
+    )
+    metrics = summarize_sampled_paths(paths, start_balance=Decimal("1000"))
+
+    assert metrics.internal_trailing_breach_probability == 1
+    assert metrics.internal_any_breach_probability == 1
+    assert metrics.chronological_internal_trailing_breach_probability == 0
+    assert metrics.chronological_internal_any_breach_probability == 0
 
 
 def test_path_risk_uses_the_same_profit_diagnostic_as_p10(
@@ -475,7 +519,7 @@ def test_empirical_quantiles_expected_shortfall_and_water_time_are_exact() -> No
     assert metrics.final_return_median == Decimal("0.01")
     assert metrics.final_return_p95 == Decimal("0.06")
     assert metrics.expected_shortfall_05 == Decimal("-0.03")
-    assert metrics.max_drawdown_p95 == Decimal("60") / Decimal("1060")
+    assert metrics.max_drawdown_p95 == Decimal("0.03")
     assert metrics.time_under_water_p05 == 0
     assert metrics.time_under_water_p95 == 1
 
@@ -751,3 +795,13 @@ def test_real_verdict_entrypoint_executes_new_path_gate(
     assert all("Gewinnwahrsch" not in reason for reason in payload["reasons"])
     assert "internal_breach_upper_95" in payload["path_bootstrap"]
     assert any("interne Limitverletzung" in reason for reason in payload["reasons"])
+    assert payload["stats"]["max_drawdown"] * 100 == payload["path"]["max_drawdown_pct"]
+    selected = payload["path_bootstrap"]
+    comparison = payload["path"]["trailing_hwm_comparison"]
+    assert comparison["gate_internal_trailing_breach_probability"] == selected[
+        "internal_trailing_breach_probability"
+    ]
+    assert comparison["chronological_internal_trailing_breach_probability"] == selected[
+        "chronological_internal_trailing_breach_probability"
+    ]
+    assert comparison["chronological_diagnostic_only"] is True

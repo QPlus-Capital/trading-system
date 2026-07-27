@@ -112,6 +112,8 @@ class PathReplay:
     internal_trailing_breach: bool
     prop_daily_breach: bool
     prop_trailing_breach: bool
+    chronological_internal_trailing_breach: bool
+    chronological_prop_trailing_breach: bool
 
     @property
     def internal_any_breach(self) -> bool:
@@ -120,6 +122,16 @@ class PathReplay:
     @property
     def prop_any_breach(self) -> bool:
         return self.prop_daily_breach or self.prop_trailing_breach
+
+    @property
+    def chronological_internal_any_breach(self) -> bool:
+        """Diagnostic any-limit result under a strictly chronological trailing HWM."""
+        return self.internal_daily_breach or self.chronological_internal_trailing_breach
+
+    @property
+    def chronological_prop_any_breach(self) -> bool:
+        """Diagnostic prop result under a strictly chronological trailing HWM."""
+        return self.prop_daily_breach or self.chronological_prop_trailing_breach
 
 
 def replay_scenario_path(
@@ -140,6 +152,7 @@ def replay_scenario_path(
     balance = start_balance
     close_equity = start_balance
     balance_hwm = start_balance
+    chronological_balance_hwm = start_balance
     equity_hwm = start_balance
     max_drawdown = Decimal("0")
     underwater_days = 0
@@ -147,6 +160,8 @@ def replay_scenario_path(
     internal_trailing = False
     prop_daily = False
     prop_trailing = False
+    chronological_internal_trailing = False
+    chronological_prop_trailing = False
 
     for scenario in path:
         opening_balance = balance
@@ -168,7 +183,21 @@ def replay_scenario_path(
             internal_daily |= loss_money >= INTERNAL_DAILY_LIMIT * opening_balance
             prop_daily |= loss_money >= PROP_DAILY_LIMIT * opening_balance
 
-        # Match P-09's conservative convention: the same day's realized close can raise the
+        # Diagnostic only: strict chronology tests the intraday minimum before allowing the later
+        # daily close to raise the trailing HWM. The actual gate below deliberately retains P-09's
+        # established same-day-close convention.
+        chronological_internal_floor = min(
+            start_balance,
+            chronological_balance_hwm - INTERNAL_TRAILING_LIMIT * start_balance,
+        )
+        chronological_prop_floor = min(
+            start_balance,
+            chronological_balance_hwm - PROP_TRAILING_LIMIT * start_balance,
+        )
+        chronological_internal_trailing |= minimum_equity <= chronological_internal_floor
+        chronological_prop_trailing |= minimum_equity <= chronological_prop_floor
+
+        # Match P-09's conservative gate convention: the same day's realized close can raise the
         # trailing HWM before that day's synchronized H4 minimum is checked.
         balance_hwm = max(balance_hwm, balance)
         internal_floor = min(
@@ -182,15 +211,22 @@ def replay_scenario_path(
         internal_trailing |= minimum_equity <= internal_floor
         prop_trailing |= minimum_equity <= prop_floor
 
-        equity_hwm = max(equity_hwm, close_equity)
+        # The day's minimum precedes its close. A close cannot become the denominator for an
+        # earlier minimum; once observed, it can raise the HWM for following days.
         drawdown = max(Decimal("0"), (equity_hwm - minimum_equity) / equity_hwm)
         max_drawdown = max(max_drawdown, drawdown)
+        equity_hwm = max(equity_hwm, close_equity)
         underwater_days += int(close_equity < equity_hwm)
+        chronological_balance_hwm = max(chronological_balance_hwm, balance)
 
     if prop_daily and not internal_daily:
         raise RuntimeError("prop daily breach occurred without an internal daily breach")
     if prop_trailing and not internal_trailing:
         raise RuntimeError("prop trailing breach occurred without an internal trailing breach")
+    if chronological_prop_trailing and not chronological_internal_trailing:
+        raise RuntimeError(
+            "chronological prop trailing breach occurred without an internal trailing breach"
+        )
 
     return PathReplay(
         final_return=(balance - start_balance) / start_balance,
@@ -200,6 +236,8 @@ def replay_scenario_path(
         internal_trailing_breach=internal_trailing,
         prop_daily_breach=prop_daily,
         prop_trailing_breach=prop_trailing,
+        chronological_internal_trailing_breach=chronological_internal_trailing,
+        chronological_prop_trailing_breach=chronological_prop_trailing,
     )
 
 
@@ -236,10 +274,15 @@ class PathRiskMetrics:
     prop_daily_breach_probability: Decimal
     prop_trailing_breach_probability: Decimal
     prop_any_breach_probability: Decimal
+    chronological_internal_trailing_breach_probability: Decimal
+    chronological_internal_any_breach_probability: Decimal
+    chronological_prop_trailing_breach_probability: Decimal
+    chronological_prop_any_breach_probability: Decimal
     time_under_water_p05: Decimal
     time_under_water_median: Decimal
     time_under_water_p95: Decimal
     internal_any_breach_count: int
+    chronological_internal_any_breach_count: int
     negative_final_count: int
 
     def __post_init__(self) -> None:
@@ -252,6 +295,18 @@ class PathRiskMetrics:
             "prop daily breach probability": self.prop_daily_breach_probability,
             "prop trailing breach probability": self.prop_trailing_breach_probability,
             "prop any breach probability": self.prop_any_breach_probability,
+            "chronological internal trailing breach probability": (
+                self.chronological_internal_trailing_breach_probability
+            ),
+            "chronological internal any breach probability": (
+                self.chronological_internal_any_breach_probability
+            ),
+            "chronological prop trailing breach probability": (
+                self.chronological_prop_trailing_breach_probability
+            ),
+            "chronological prop any breach probability": (
+                self.chronological_prop_any_breach_probability
+            ),
             "time under water p05": self.time_under_water_p05,
             "time under water median": self.time_under_water_median,
             "time under water p95": self.time_under_water_p95,
@@ -283,6 +338,48 @@ class PathRiskMetrics:
             raise ValueError("prop any-limit probability is below its daily component")
         if self.prop_any_breach_probability < self.prop_trailing_breach_probability:
             raise ValueError("prop any-limit probability is below its trailing component")
+        if (
+            self.chronological_internal_trailing_breach_probability
+            < self.chronological_prop_trailing_breach_probability
+        ):
+            raise ValueError(
+                "chronological internal breach probability is below prop trailing probability"
+            )
+        if (
+            self.chronological_internal_any_breach_probability
+            < self.chronological_prop_any_breach_probability
+        ):
+            raise ValueError(
+                "chronological internal breach probability is below prop any-limit probability"
+            )
+        if (
+            self.chronological_internal_any_breach_probability
+            < self.internal_daily_breach_probability
+        ):
+            raise ValueError(
+                "chronological internal any-limit probability is below its daily component"
+            )
+        if (
+            self.chronological_internal_any_breach_probability
+            < self.chronological_internal_trailing_breach_probability
+        ):
+            raise ValueError(
+                "chronological internal any-limit probability is below its trailing component"
+            )
+        if (
+            self.chronological_prop_any_breach_probability
+            < self.prop_daily_breach_probability
+        ):
+            raise ValueError(
+                "chronological prop any-limit probability is below its daily component"
+            )
+        if (
+            self.chronological_prop_any_breach_probability
+            < self.chronological_prop_trailing_breach_probability
+        ):
+            raise ValueError(
+                "chronological prop any-limit probability is below its trailing component"
+            )
         if self.prob_profit + self.negative_final_probability > 1:
             raise ValueError("profit and negative-return probabilities overlap")
         if not (self.final_return_p05 <= self.final_return_median <= self.final_return_p95):
@@ -295,7 +392,11 @@ class PathRiskMetrics:
             self.time_under_water_p05 <= self.time_under_water_median <= self.time_under_water_p95
         ):
             raise ValueError("time-under-water percentiles must be ordered")
-        if self.internal_any_breach_count < 0 or self.negative_final_count < 0:
+        if (
+            self.internal_any_breach_count < 0
+            or self.chronological_internal_any_breach_count < 0
+            or self.negative_final_count < 0
+        ):
             raise ValueError("path event counts must be non-negative")
 
     def to_json(self) -> dict[str, str | int]:
@@ -315,10 +416,25 @@ class PathRiskMetrics:
             "prop_daily_breach_probability": str(self.prop_daily_breach_probability),
             "prop_trailing_breach_probability": str(self.prop_trailing_breach_probability),
             "prop_any_breach_probability": str(self.prop_any_breach_probability),
+            "chronological_internal_trailing_breach_probability": str(
+                self.chronological_internal_trailing_breach_probability
+            ),
+            "chronological_internal_any_breach_probability": str(
+                self.chronological_internal_any_breach_probability
+            ),
+            "chronological_prop_trailing_breach_probability": str(
+                self.chronological_prop_trailing_breach_probability
+            ),
+            "chronological_prop_any_breach_probability": str(
+                self.chronological_prop_any_breach_probability
+            ),
             "time_under_water_p05": str(self.time_under_water_p05),
             "time_under_water_median": str(self.time_under_water_median),
             "time_under_water_p95": str(self.time_under_water_p95),
             "internal_any_breach_count": self.internal_any_breach_count,
+            "chronological_internal_any_breach_count": (
+                self.chronological_internal_any_breach_count
+            ),
             "negative_final_count": self.negative_final_count,
         }
 
@@ -352,6 +468,16 @@ def summarize_sampled_paths(
     prop_daily = sum(replay.prop_daily_breach for replay in replays)
     prop_trailing = sum(replay.prop_trailing_breach for replay in replays)
     prop_any = sum(replay.prop_any_breach for replay in replays)
+    chronological_internal_trailing = sum(
+        replay.chronological_internal_trailing_breach for replay in replays
+    )
+    chronological_internal_any = sum(
+        replay.chronological_internal_any_breach for replay in replays
+    )
+    chronological_prop_trailing = sum(
+        replay.chronological_prop_trailing_breach for replay in replays
+    )
+    chronological_prop_any = sum(replay.chronological_prop_any_breach for replay in replays)
 
     return PathRiskMetrics(
         prob_profit=scenario_path_probability_of_profit(paths),
@@ -369,10 +495,27 @@ def summarize_sampled_paths(
         prop_daily_breach_probability=_probability(prop_daily, trials),
         prop_trailing_breach_probability=_probability(prop_trailing, trials),
         prop_any_breach_probability=_probability(prop_any, trials),
+        chronological_internal_trailing_breach_probability=_probability(
+            chronological_internal_trailing,
+            trials,
+        ),
+        chronological_internal_any_breach_probability=_probability(
+            chronological_internal_any,
+            trials,
+        ),
+        chronological_prop_trailing_breach_probability=_probability(
+            chronological_prop_trailing,
+            trials,
+        ),
+        chronological_prop_any_breach_probability=_probability(
+            chronological_prop_any,
+            trials,
+        ),
         time_under_water_p05=_nearest_rank(water, _FIVE_PERCENT),
         time_under_water_median=_nearest_rank(water, _HALF),
         time_under_water_p95=_nearest_rank(water, _NINETY_FIVE_PERCENT),
         internal_any_breach_count=internal_any,
+        chronological_internal_any_breach_count=chronological_internal_any,
         negative_final_count=negative,
     )
 
@@ -431,6 +574,10 @@ class PathRiskSummary:
                 raise ValueError("internal breach count exceeds the replication count")
             if item.metrics.negative_final_count > self.replications:
                 raise ValueError("negative return count exceeds the replication count")
+            if item.metrics.chronological_internal_any_breach_count > self.replications:
+                raise ValueError(
+                    "chronological internal breach count exceeds the replication count"
+                )
             if item.metrics.internal_any_breach_probability != _probability(
                 item.metrics.internal_any_breach_count,
                 self.replications,
@@ -441,6 +588,11 @@ class PathRiskSummary:
                 self.replications,
             ):
                 raise ValueError("negative return count and probability disagree")
+            if item.metrics.chronological_internal_any_breach_probability != _probability(
+                item.metrics.chronological_internal_any_breach_count,
+                self.replications,
+            ):
+                raise ValueError("chronological internal breach count and probability disagree")
 
     @property
     def selected(self) -> PathRiskMetrics:
@@ -465,6 +617,14 @@ class PathRiskSummary:
             self.replications,
         )
 
+    @cached_property
+    def chronological_internal_breach_upper_95(self) -> Decimal:
+        """Diagnostic bound under a prior-balance-only trailing HWM; never a gate."""
+        return clopper_pearson_upper(
+            self.selected.chronological_internal_any_breach_count,
+            self.replications,
+        )
+
     @property
     def internal_breach_gate_passes(self) -> bool:
         return self.internal_breach_upper_95 <= BREACH_PROBABILITY_LIMIT
@@ -479,6 +639,10 @@ class PathRiskSummary:
             {
                 "internal_breach_upper_95": str(self.internal_breach_upper_95),
                 "negative_return_upper_95": str(self.negative_return_upper_95),
+                "chronological_internal_breach_upper_95": str(
+                    self.chronological_internal_breach_upper_95
+                ),
+                "chronological_trailing_hwm_diagnostic_only": True,
                 "internal_breach_gate_limit": str(BREACH_PROBABILITY_LIMIT),
                 "negative_return_gate_limit": str(NEGATIVE_RETURN_PROBABILITY_LIMIT),
                 "internal_breach_gate_passes": self.internal_breach_gate_passes,

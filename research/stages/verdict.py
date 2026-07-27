@@ -169,6 +169,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     prob_profit = float(bootstrap.prob_profit)
     internal_breach_upper_95 = bootstrap.internal_breach_upper_95
+    chronological_internal_breach_upper_95 = (
+        bootstrap.chronological_internal_breach_upper_95
+    )
     negative_return_upper_95 = bootstrap.negative_return_upper_95
     # #11: a deployable verdict must describe the stops we actually TRADE. Without --fixed the
     # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
@@ -258,6 +261,15 @@ def main(argv: list[str] | None = None) -> None:
         f"Trailing {selected_path.prop_trailing_breach_probability:.2%}"
     )
     print(
+        "    TRAILING-HWM DIAGNOSTIK (kein Gate): "
+        "bestehende Same-Day-Close-Konvention "
+        f"Trailing {selected_path.internal_trailing_breach_probability:.2%}, "
+        f"95%-Obergrenze Any {internal_breach_upper_95:.3%}; "
+        "streng chronologisch "
+        f"Trailing {selected_path.chronological_internal_trailing_breach_probability:.2%}, "
+        f"95%-Obergrenze Any {chronological_internal_breach_upper_95:.3%}"
+    )
+    print(
         "    UNTER WASSER: "
         f"P05 {selected_path.time_under_water_p05:.1%}, "
         f"Median {selected_path.time_under_water_median:.1%}, "
@@ -320,6 +332,22 @@ def main(argv: list[str] | None = None) -> None:
                     "daily_breach_days": int(diagnostics.daily_breach.sum()),
                     "trailing_breach_days": int(diagnostics.trailing_breach.sum()),
                     "assumption": diagnostics.h4_upper_bound,
+                    "trailing_hwm_comparison": {
+                        "gate_convention": "same-day realized close raises HWM before minimum",
+                        "gate_internal_trailing_breach_probability": str(
+                            selected_path.internal_trailing_breach_probability
+                        ),
+                        "gate_internal_any_breach_upper_95": str(
+                            internal_breach_upper_95
+                        ),
+                        "chronological_diagnostic_only": True,
+                        "chronological_internal_trailing_breach_probability": str(
+                            selected_path.chronological_internal_trailing_breach_probability
+                        ),
+                        "chronological_internal_any_breach_upper_95": str(
+                            chronological_internal_breach_upper_95
+                        ),
+                    },
                 },
             },
         )

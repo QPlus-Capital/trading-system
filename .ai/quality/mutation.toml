@@ -108,6 +108,7 @@ mutant_patterns = [
     "research.portfolio.path_risk.x_summarize_sampled_paths__mutmut_*",
     "research.portfolio.path_risk.x*PathRiskSummary*__post_init____mutmut_*",
     "research.portfolio.path_risk.x*PathRiskSummary*internal_breach_upper_95__mutmut_*",
+    "research.portfolio.path_risk.x*PathRiskSummary*chronological_internal_breach_upper_95__mutmut_*",
     "research.portfolio.path_risk.x*PathRiskSummary*negative_return_upper_95__mutmut_*",
     "research.portfolio.path_risk.x*PathRiskSummary*internal_breach_gate_passes__mutmut_*",
     "research.portfolio.path_risk.x*PathRiskSummary*negative_return_gate_passes__mutmut_*",

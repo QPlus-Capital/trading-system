@@ -701,3 +701,94 @@ def test_h4_path_changes_leave_every_non_path_policy_statistic_exact() -> None:
         severe_result.daily_diagnostics.close_equity,
     )
     assert mild_result.max_drawdown_pct != severe_result.max_drawdown_pct
+
+
+def test_drawdown_does_not_use_a_later_profitable_close_as_its_peak() -> None:
+    opened = _ts("2026-07-02 00:00")
+    closed = opened + 4 * _HOUR_NS
+    trades = pd.DataFrame(
+        [
+            {
+                **_trade(
+                    "X",
+                    opened,
+                    closed,
+                    pnl_base=10_000.0,
+                    entry=100.0,
+                    exit_=110.0,
+                ),
+                "is_long": True,
+            }
+        ]
+    )
+    prices = {"X": _h4((opened, "99", "110", "110"))}
+
+    *_unused, diagnostics = _run(trades, prices)
+
+    assert diagnostics.minimum_equity.min() == pytest.approx(99_000.0)
+    assert diagnostics.close_equity[-1] == pytest.approx(110_000.0)
+    assert diagnostics.max_drawdown_pct == -1.0
+
+
+def test_drawdown_uses_an_observable_h4_high_before_a_later_minimum() -> None:
+    opened = _ts("2026-07-02 00:00")
+    closed = opened + 8 * _HOUR_NS
+    trades = pd.DataFrame(
+        [
+            {
+                **_trade(
+                    "X",
+                    opened,
+                    closed,
+                    pnl_base=10_000.0,
+                    entry=100.0,
+                    exit_=110.0,
+                ),
+                "is_long": True,
+            }
+        ]
+    )
+    prices = {
+        "X": _h4(
+            (opened, "100", "110", "110"),
+            (opened + 4 * _HOUR_NS, "109", "111", "110"),
+        )
+    }
+
+    *_unused, diagnostics = _run(trades, prices)
+
+    assert diagnostics.minimum_equity.min() == pytest.approx(100_000.0)
+    assert diagnostics.close_equity[-1] == pytest.approx(110_000.0)
+    assert diagnostics.max_drawdown_pct == -0.91
+
+
+def test_pre_entry_market_close_cannot_create_a_position_drawdown_peak() -> None:
+    first_bar = _ts("2026-07-02 00:00")
+    opened = first_bar + 4 * _HOUR_NS
+    closed = opened + 4 * _HOUR_NS
+    trades = pd.DataFrame(
+        [
+            {
+                **_trade(
+                    "X",
+                    opened,
+                    closed,
+                    pnl_base=10_000.0,
+                    entry=100.0,
+                    exit_=110.0,
+                ),
+                "is_long": True,
+            }
+        ]
+    )
+    prices = {
+        "X": _h4(
+            (first_bar, "120", "120", "120"),
+            (opened, "100", "110", "110"),
+        )
+    }
+
+    *_unused, diagnostics = _run(trades, prices)
+
+    assert diagnostics.minimum_equity.min() == pytest.approx(100_000.0)
+    assert diagnostics.max_drawdown_pct == 0.0
