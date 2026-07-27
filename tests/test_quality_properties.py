@@ -135,6 +135,35 @@ def test_path_replay_preserves_internal_prop_limit_monotonicity(
     assert not replay.prop_daily_breach or replay.internal_daily_breach
     assert not replay.prop_trailing_breach or replay.internal_trailing_breach
     assert not replay.prop_any_breach or replay.internal_any_breach
+    assert (
+        not replay.chronological_prop_trailing_breach
+        or replay.chronological_internal_trailing_breach
+    )
+    assert not replay.chronological_prop_any_breach or replay.chronological_internal_any_breach
+    assert (
+        not replay.chronological_internal_trailing_breach or replay.internal_trailing_breach
+    )
+
+
+@given(
+    dip=st.integers(min_value=1, max_value=249),
+    later_gain=st.integers(min_value=0, max_value=500),
+)
+def test_path_drawdown_is_invariant_to_a_later_close_high(dip: int, later_gain: int) -> None:
+    scenario = LossDayScenario(
+        source_date=date(2026, 1, 1),
+        source_opening_balance=Decimal("1000"),
+        close_realized_pnl=Decimal(later_gain),
+        close_equity_change=Decimal(later_gain),
+        opening_to_minimum_equity_change=-Decimal(dip),
+        closing_balance_change=Decimal(later_gain),
+        trade_count=1,
+        daily_swap=Decimal("0"),
+    )
+
+    replay = replay_scenario_path((scenario,), start_balance=Decimal("1000"))
+
+    assert replay.max_drawdown == Decimal(dip) / Decimal("1000")
 
 
 @given(

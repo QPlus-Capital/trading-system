@@ -17,7 +17,7 @@ import numpy as np
 import numpy.typing as npt
 import pandas as pd
 
-from research.portfolio.curves import interval_loss_days
+from research.portfolio.curves import interval_loss_days, to_day
 from research.portfolio.drawdown import trailing_floor
 
 _OPEN, _CLOSE = 0, 1
@@ -48,6 +48,7 @@ class DailyDiagnostics:
     trailing_floor: np.ndarray
     daily_breach: np.ndarray
     trailing_breach: np.ndarray
+    chronological_drawdown: np.ndarray | None = None
     h4_upper_bound: str = _H4_UPPER_BOUND
 
     @property
@@ -57,14 +58,18 @@ class DailyDiagnostics:
 
     @property
     def max_drawdown_pct(self) -> float:
-        """Worst H4 minimum from the running close-equity peak, including opening capital."""
+        """Worst minimum from the equity peak observable when that minimum occurred."""
         if not self.minimum_equity.size:
             return 0.0
-        prior_peak = np.maximum.accumulate(
-            np.concatenate([[self.opening_balance[0]], self.close_equity])
-        )[:-1]
-        peak = np.maximum(prior_peak, self.close_equity)
-        return round(float(((self.minimum_equity - peak) / peak).min()) * 100.0, 2)
+        if self.chronological_drawdown is not None:
+            return round(float(self.chronological_drawdown.min()) * 100.0, 2)
+        peak = float(self.opening_balance[0])
+        worst = 0.0
+        for minimum, close in zip(self.minimum_equity, self.close_equity, strict=True):
+            if peak > 0:
+                worst = min(worst, (float(minimum) - peak) / peak)
+            peak = max(peak, float(close))
+        return round(worst * 100.0, 2)
 
 
 def _events(trades: pd.DataFrame) -> dict[int, list[tuple[int, int]]]:
@@ -127,11 +132,19 @@ def _synchronized_h4_minima(
     opening_balance: FloatArray,
     close_equity: FloatArray,
     start_balance: float,
-) -> FloatArray:
-    """Minimum equity by loss day from synchronized, lifetime-filtered H4 adverse marks."""
+) -> tuple[FloatArray, FloatArray]:
+    """Return daily minima and chronological drawdowns from synchronized H4 marks."""
     minimum: FloatArray = np.minimum(opening_balance, close_equity)
     if h4_prices is None:
-        return minimum
+        peak = float(start_balance)
+        drawdown = np.zeros(len(days), dtype=np.float64)
+        for index, (day_minimum, day_close) in enumerate(
+            zip(minimum, close_equity, strict=True)
+        ):
+            if peak > 0:
+                drawdown[index] = min(0.0, (float(day_minimum) - peak) / peak)
+            peak = max(peak, float(day_close))
+        return minimum, drawdown
     if "ts_opened" not in trades or "ts_closed" not in trades:
         raise ValueError("synchronized H4 reconstruction requires ts_opened and ts_closed")
 
@@ -171,10 +184,38 @@ def _synchronized_h4_minima(
     active: set[int] = set()
     observed = np.zeros(len(trades), dtype=bool)
     active_bars: dict[str, tuple[int, Decimal, Decimal, Decimal]] = {}
-    last_close: dict[str, Decimal] = {}
+    last_close: dict[str, tuple[int, Decimal]] = {}
     realized = Decimal("0")
     start = _decimal(start_balance)
     day_to_index = {int(day): index for index, day in enumerate(days)}
+    chronological_drawdown = np.zeros(len(days), dtype=np.float64)
+    equity_hwm = start
+
+    def position_pnl(index: int, price: Decimal) -> Decimal:
+        entry_price = _decimal(entry[index])
+        span = _decimal(exit_[index]) - entry_price
+        if abs(span) < Decimal("1e-12"):
+            span = Decimal("1")
+        fraction = (price - entry_price) / span
+        return _decimal(pnl[index]) * _decimal(sizes[index]) * fraction
+
+    def observable_price(index: int) -> Decimal:
+        observed = last_close.get(str(markets[index]))
+        if observed is None or observed[0] <= opened[index]:
+            return _decimal(entry[index])
+        return observed[1]
+
+    def record_drawdown(mark: Decimal, affected_days: tuple[int, ...]) -> None:
+        if equity_hwm <= 0:
+            return
+        fraction = min(Decimal("0"), (mark - equity_hwm) / equity_hwm)
+        for day in affected_days:
+            day_index = day_to_index.get(day)
+            if day_index is not None:
+                chronological_drawdown[day_index] = min(
+                    chronological_drawdown[day_index],
+                    float(fraction),
+                )
 
     ordered_times = sorted(timeline)
     for cursor, timestamp in enumerate(ordered_times):
@@ -183,7 +224,7 @@ def _synchronized_h4_minima(
         for market, close_price in bar_ends.get(timestamp, ()):
             active_bar = active_bars.get(market)
             if active_bar is not None and active_bar[0] == timestamp:
-                last_close[market] = close_price
+                last_close[market] = (timestamp, close_price)
                 del active_bars[market]
 
         # A position closing exactly on a boundary is absent from the following interval. Its
@@ -201,6 +242,18 @@ def _synchronized_h4_minima(
         for market, (low, high, close_price) in bar_starts.get(timestamp, {}).items():
             active_bars[market] = (timestamp + _H4_NS, low, high, close_price)
 
+        # Boundary closes and realized trade events are observable now. Compare a losing event
+        # with the HWM that existed immediately before it, then let a profitable event raise the
+        # HWM for only later intervals.
+        observable = start + realized
+        for index in sorted(active):
+            observable += position_pnl(
+                index,
+                observable_price(index),
+            )
+        record_drawdown(observable, (to_day(timestamp),))
+        equity_hwm = max(equity_hwm, observable)
+
         if cursor + 1 >= len(ordered_times):
             continue
         interval_end = ordered_times[cursor + 1]
@@ -215,20 +268,17 @@ def _synchronized_h4_minima(
                 # The market is closed while another market advances. Its observable equity mark
                 # is unchanged; carrying its last close (or entry before the first post-entry bar)
                 # never borrows an adverse extreme from another interval.
-                price = last_close.get(market, _decimal(entry[index]))
+                price = observable_price(index)
             else:
                 _bar_end, low, high, _close = active_row
                 price = low if is_long[index] else high
                 observed[index] = True
-            entry_price = _decimal(entry[index])
-            exit_price = _decimal(exit_[index])
-            span = exit_price - entry_price
-            if abs(span) < Decimal("1e-12"):
-                span = Decimal("1")
-            fraction = (price - entry_price) / span
-            adverse += _decimal(pnl[index]) * _decimal(sizes[index]) * fraction
-        mark = float(start + realized + adverse)
-        for day in interval_loss_days(timestamp, interval_end):
+            adverse += position_pnl(index, price)
+        mark_decimal = start + realized + adverse
+        affected_days = interval_loss_days(timestamp, interval_end)
+        record_drawdown(mark_decimal, affected_days)
+        mark = float(mark_decimal)
+        for day in affected_days:
             day_index = day_to_index.get(day)
             if day_index is not None:
                 minimum[day_index] = min(minimum[day_index], mark)
@@ -241,7 +291,10 @@ def _synchronized_h4_minima(
     if missing_observations:
         detail = ", ".join(f"{markets[index]} trade {index}" for index in missing_observations[:5])
         raise ValueError(f"no H4 observation overlaps {detail}")
-    return np.asarray(minimum, dtype=np.float64)
+    return (
+        np.asarray(minimum, dtype=np.float64),
+        np.asarray(chronological_drawdown, dtype=np.float64),
+    )
 
 
 def _daily_diagnostics(
@@ -258,7 +311,7 @@ def _daily_diagnostics(
 ) -> DailyDiagnostics:
     """Build the sole account-limit and drawdown diagnostic path."""
     days = np.arange(d0, d0 + len(close_balance), dtype=np.int64)
-    minimum = _synchronized_h4_minima(
+    minimum, chronological_drawdown = _synchronized_h4_minima(
         trades,
         sizes,
         h4_prices,
@@ -291,6 +344,7 @@ def _daily_diagnostics(
         trailing_floor=floor,
         daily_breach=np.asarray(daily_flags, dtype=bool),
         trailing_breach=np.asarray(trailing_flags, dtype=bool),
+        chronological_drawdown=chronological_drawdown,
     )
 
 
