@@ -105,8 +105,8 @@ def swap_r_per_trade(trades: pd.DataFrame, spec: SwapSpec) -> np.ndarray:
     A trade sized so a stop-out loses exactly 1 R holds ``1 / loss_per_lot`` lots per R of risk,
     and over ``night_units`` nights accrues ``swap_per_lot_night`` per lot; so the swap in R is
     ``units * swap_per_lot_night / loss_per_lot``. Being in R it is independent of the account's
-    risk amount and nets directly onto the R-multiple stream (``r += swap_r``). Negative = a cost,
-    positive = a credit (index shorts).
+    risk amount and derives the statistical stream as ``net_r = r + swap_r`` while gross ``r``
+    remains recoverable. Negative = a cost, positive = a credit (index shorts).
 
     Requires columns ``entry``, ``exit``, ``ts_opened``, ``ts_closed``, ``sl_pct`` and the trade
     direction. Direction comes from an explicit ``is_long`` column; only legacy streams written
