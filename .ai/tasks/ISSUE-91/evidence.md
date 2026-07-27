@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 53932b46a7603c2e3f403aee02ec5a7a55c32899
+HEAD: 558b83a7f688f2035ca984091f325877afdaf385
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -14,7 +14,7 @@ The only later commit permitted by readiness is this evidence file itself.
 |---|---|---:|---|
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | Six changed Python files were already formatted; Ruff, strict mypy, impact analysis, and 388 focused tests passed. |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_gate_consistency.py tests/test_docs_language.py` | 0 | 139 tests passed on the final non-evidence HEAD. |
-| `check` | `uvx --from rust-just just check` | 0 | Ruff, strict mypy over 180 files, Vulture, and 1,190 tests passed; one Linux-only mutation test skipped on Windows. |
+| `check` | `uvx --from rust-just just check` | 0 | Ruff, strict mypy over 180 files, Vulture, and 1,191 tests passed; one Linux-only mutation test skipped on Windows. |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | Conservative impact mapping selected and passed 388 tests across H4 diagnostics, policy/fact-sheet, scenarios/path risk, stages, lineage, regression, and selection dependencies. |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Twenty-one properties passed twice at fixed Hypothesis seed `20260721`, including future-close invariance and both limit-dominance conventions. |
 | `integration-tests` | `uv run pytest -q tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_risk.py tests/test_research_factsheet.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_stage_lineage.py tests/test_research_stages.py tests/test_research_regression.py` | 0 | 246 tests passed, including real Stage-4 entrypoint and shared result-surface assertions. |
@@ -59,6 +59,18 @@ The first implementation then exposed a boundary bug: a market close from before
 entry could be reused as its opening equity mark. `test_pre_entry_market_close_cannot_create_a_position_drawdown_peak`
 guards the corrected timestamped-close rule.
 
+The review-question guard was also run against a deliberate daily-close-only stub:
+
+```text
+uv run pytest -q \
+  tests/test_research_h4_path.py::test_observable_h4_close_can_exceed_the_daily_close_only_hwm
+```
+
+Exit `1`: the stub produced `-0.46%` instead of the required `-0.91%`. Restoring the chronological
+H4 stream makes the test pass. Its first bar deliberately has a favorable within-bar high of
+`120000` but closes at `110000`; the later minimum is `109000`. Thus the test proves that the
+observable earlier close raises the HWM while the unknowable within-interval high does not.
+
 ## Numerical regression
 
 Reference: `reports/research/run_20260727_p11_scaled`.
@@ -93,10 +105,15 @@ Drawdown surfaces:
 - P-11 drawdown P05/median/P95:
   `1.5640/5.2166/10.6455% -> 1.4136/5.1222/10.5609%`.
 
-The deterministic result worsens by `0.05` percentage points despite removing look-ahead. On the
-worst day, a real observable H4 equity high precedes the later minimum and is slightly above the
-prior daily close peak. AC-02 explicitly requires retaining that denominator; hiding it to force an
-improvement would reintroduce a different bias.
+The deterministic result worsens by `0.05` percentage points despite removing look-ahead. The exact
+mechanism is an observable H4 portfolio-equity close of `105358.0054636296` at
+`2024-12-05 06:00 UTC`. It exceeds the old daily-close-only HWM of `105301.2943667631`. The later
+adverse portfolio mark is `101826.1397626577` in the half-open H4 interval
+`[2024-12-27 06:00, 10:00) UTC`, producing `-3.352251862998%`. The HWM event is about 22 days
+strictly before the trough. No favorable high from that trough's interval, or from any other
+interval, raises the HWM; only completed H4 closes and realized boundary events do. AC-02 explicitly
+requires retaining that denominator; hiding it to force an improvement would reintroduce a
+different bias.
 
 Unchanged Stage-4 path outputs:
 
@@ -135,9 +152,9 @@ not pending and not passed.
 
 ## Coverage and mutation
 
-The deterministic suite has 1,190 passing tests and the focused impact set has 388. Twenty-one
+The deterministic suite has 1,191 passing tests and the focused impact set has 388. Twenty-one
 properties pass twice; 246 explicit integration tests and 312 critical invariant tests pass. The
-new tests cover later-close look-ahead, a real earlier H4 high, entry-boundary stale marks, sampled
+new tests cover later-close look-ahead, a real earlier H4 close, entry-boundary stale marks, sampled
 day order, surface parity, trailing-convention separation, and exact regression hashes.
 
 No mutation score or survivor disposition is available because GitHub did not start the Linux job.
