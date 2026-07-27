@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 from research.portfolio.resample import DEFAULT_REPLICATIONS, DEFAULT_SEED
 from research.portfolio.scenarios import (
+    LOSS_DAY_SCENARIO_SCHEMA_VERSION,
     LossDayScenario,
     _probability_of_profit,
     _stationary_source_indices,
@@ -58,6 +59,7 @@ def _scenario(day_number: int, amount: str, *, trades: int = 1) -> LossDayScenar
     value = Decimal(amount)
     return LossDayScenario(
         source_date=date(1970, 1, 1) + timedelta(days=day_number),
+        source_opening_balance=Decimal("1000"),
         close_realized_pnl=value,
         close_equity_change=value,
         opening_to_minimum_equity_change=min(value, Decimal("0")),
@@ -82,6 +84,11 @@ def test_scenario_set_uses_every_diagnostic_day_and_exact_accounting(tmp_path: P
         "2024-10-06",
     ]
     assert [row.trade_count for row in scenarios] == [1, 0, 1]
+    assert [row.source_opening_balance for row in scenarios] == [
+        Decimal("1000.0"),
+        Decimal("1010.0"),
+        Decimal("1010.0"),
+    ]
     assert [row.closing_balance_change for row in scenarios] == [
         Decimal("10.0"),
         Decimal("0.0"),
@@ -114,7 +121,12 @@ def test_scenario_set_uses_every_diagnostic_day_and_exact_accounting(tmp_path: P
     artifact = tmp_path / "loss_day_scenarios.csv"
     write_loss_day_scenarios(artifact, scenarios)
     assert read_loss_day_scenarios(artifact) == scenarios
-    assert ",0," in artifact.read_text(encoding="utf-8")
+    artifact_text = artifact.read_text(encoding="utf-8")
+    assert artifact_text.startswith(
+        "schema_version,source_date,source_opening_balance,close_realized_pnl,"
+    )
+    assert f"\n{LOSS_DAY_SCENARIO_SCHEMA_VERSION},2024-10-04,1000.0," in artifact_text
+    assert ",0," in artifact_text
 
 
 def test_opening_to_minimum_is_copied_from_the_supplied_diagnostics() -> None:
@@ -631,7 +643,9 @@ def test_reader_reports_exact_schema_empty_and_parse_failures(tmp_path: Path) ->
     empty.write_text(
         ",".join(
             (
+                "schema_version",
                 "source_date",
+                "source_opening_balance",
                 "close_realized_pnl",
                 "close_equity_change",
                 "opening_to_minimum_equity_change",
@@ -653,6 +667,50 @@ def test_reader_reports_exact_schema_empty_and_parse_failures(tmp_path: Path) ->
     assert str(missing_exc.value) == f"cannot read loss-day scenarios from {missing}"
 
 
+def test_reader_fails_closed_on_the_unversioned_scenario_schema(tmp_path: Path) -> None:
+    legacy = tmp_path / "legacy.csv"
+    legacy.write_text(
+        "source_date,close_realized_pnl,close_equity_change,"
+        "opening_to_minimum_equity_change,closing_balance_change,trade_count,daily_swap\n"
+        "2026-01-01,0,0,0,0,0,0\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="schema"):
+        read_loss_day_scenarios(legacy)
+
+
+def test_reader_fails_closed_on_an_old_explicit_schema_version(tmp_path: Path) -> None:
+    old = tmp_path / "old.csv"
+    old.write_text(
+        "schema_version,source_date,source_opening_balance,close_realized_pnl,"
+        "close_equity_change,opening_to_minimum_equity_change,"
+        "closing_balance_change,trade_count,daily_swap\n"
+        "1,2026-01-01,1000,0,0,0,0,0,0\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsupported loss-day scenario schema '1'"):
+        read_loss_day_scenarios(old)
+
+
+@pytest.mark.parametrize("source_opening", ["0", "-1", "NaN"])
+def test_scenarios_require_a_positive_finite_source_opening_balance(
+    source_opening: str,
+) -> None:
+    with pytest.raises(ValueError, match="source opening balance|non-finite money"):
+        LossDayScenario(
+            source_date=date(2026, 1, 1),
+            source_opening_balance=Decimal(source_opening),
+            close_realized_pnl=Decimal("0"),
+            close_equity_change=Decimal("0"),
+            opening_to_minimum_equity_change=Decimal("0"),
+            closing_balance_change=Decimal("0"),
+            trade_count=0,
+            daily_swap=Decimal("0"),
+        )
+
+
 def test_production_bootstrap_defaults_are_registered_p04_values() -> None:
     assert DEFAULT_REPLICATIONS == 10_000
     assert DEFAULT_SEED == 20260719
@@ -666,7 +724,9 @@ def test_real_stages_persist_and_consume_scenarios_without_trade_slot_bootstrap(
 
     assert 'st.file("loss_day_scenarios.csv")' in portfolio_source
     assert 'run.require("loss_day_scenarios.csv", "portfolio")' in verdict_source
-    assert "summarize_scenario_bootstrap(scenarios)" in verdict_source
+    assert "summarize_path_risk(" in verdict_source
     assert "monte_carlo_paths" not in verdict_source
     assert 'seeds={"loss_day_bootstrap": DEFAULT_SEED}' in verdict_source
-    assert "prob_profit >= 0.6" in verdict_source
+    assert "prob_profit >= 0.6" not in verdict_source
+    assert "internal_breach_gate_passes" in verdict_source
+    assert "negative_return_gate_passes" in verdict_source

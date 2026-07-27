@@ -92,9 +92,10 @@ finite Decimals, valid and overlapping windows, schedule segments, trade streams
 references, symbol/lot metadata, and boundary timestamps.
 
 Properties are deliberately confined to pure high-value logic: live risk decisions and sizing,
-portfolio sizing/drawdown, parameter schedules, continuous window/gap attribution, regression
-gates, and the shared change-risk classifier. A discovered production defect keeps the minimized
-property and a named regression example, and adds its generalized class to
+portfolio sizing/drawdown, sampled-path limit monotonicity, exact-binomial confidence bounds,
+parameter schedules, continuous window/gap attribution, regression gates, and the shared
+change-risk classifier. A discovered production defect keeps the minimized property and a named
+regression example, and adds its generalized class to
 `.ai/quality/finding-patterns.toml`.
 
 ## Mutation tests
