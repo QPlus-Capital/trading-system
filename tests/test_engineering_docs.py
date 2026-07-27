@@ -93,7 +93,9 @@ def test_tool_contracts_bind_builder_and_reviewer_to_the_correct_files() -> None
         "Specify",
         "Analyse impact",
         "Design tests, then implement",
-        "Do not open a pull request until",
+        # A draft PR carries the independent review; readiness gates the ready-for-review
+        # transition, not the creation of the pull request.
+        "Do not mark a pull request ready for review until",
         "Do not merge",
     ):
         assert marker.lower() in agents.lower(), f"AGENTS.md builder contract must define {marker}"

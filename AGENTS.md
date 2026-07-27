@@ -70,14 +70,17 @@ order would destroy the permit if the status update failed.
 4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's
    fresh reviewer path; resolve every blocking finding with executable proof. You fix every finding,
    including trivial ones, so the reviewer never reviews its own code.
-5. **Prepare the PR** — open it ready for review only after the readiness check passes for current
-   HEAD, with `Closes #<issue>` in the body. Then move the card to `Reviewing`. Do not merge or
-   enable autonomous merge.
+5. **Open a draft PR** — with `Closes #<issue>` in the body, once implementation and deterministic
+   verification are complete. Then move the card to `Reviewing`. The draft is what the independent
+   review is performed on, so findings land inline at the lines they concern.
+6. **Mark it ready for review** — only after the review is clean and the readiness check passes for
+   current HEAD. Do not merge or enable autonomous merge.
 
 Work in **one git worktree per issue** on branch `codex/<issue>-<slug>`, so the main checkout stays
 clean and a running live runner never sees half-finished code.
 
-**Do not open a pull request until the readiness check for the change's risk class passes.** R3
+**Do not mark a pull request ready for review until the readiness check for the change's risk class
+passes.** A draft carries the review; only a ready pull request asks for a merge. R3
 changes never merge autonomously. Only a **trivial R0** change may go straight to `main`; every R1+
 change uses a feature branch and pull request. Valid out-of-scope work becomes a separate issue —
 evidenced only, never speculative, and you return to the task at hand immediately.

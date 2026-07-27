@@ -149,9 +149,14 @@ clean, and a running live runner never sees half-finished code.
 5  Prove GREEN
 6  Gates           those of the risk class — no more, no less
 7  Evidence        command, exit code, result
-8  Open the PR     with "Closes #101"
+8  Open a draft PR with "Closes #101"
 9  Card            → Reviewing
 ```
+
+The pull request is opened as a **draft**. A draft is what the review is performed on, so every
+finding lands as an inline comment at the line it concerns. Marking it *ready for review* is a later,
+separate act — it happens only once the review is clean, and it is the step the readiness check
+gates.
 
 Step 3 carries the whole system: a test that was never red proves nothing.
 
@@ -194,6 +199,9 @@ Changes are requested for any blocking finding. At R2 and above the same finding
 
 A blocking finding returns the card to `Implementing`. After the fix the **entire** review runs
 again, not only the changed place — a fix can break something elsewhere.
+
+Once the review is clean, Codex marks the pull request **ready for review**. That transition is what
+the readiness check gates, and it is the signal that the change is Jan's to judge.
 
 **Codex fixes every finding**, including trivial ones. If Claude fixed them it would afterwards be
 reviewing its own code, and the separation between builder and reviewer would no longer hold.

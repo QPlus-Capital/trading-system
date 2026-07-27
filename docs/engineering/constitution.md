@@ -148,11 +148,16 @@ the task artifacts and PR evidence required by its risk class are present.
 
 ## 11. Required evidence before a PR
 
-A PR is opened only after implementation, deterministic verification, adversarial review, and
-remediation are complete. The evidence — gates run and their outcomes, tests added, before/after
-results for regression tests, and the adversarial review with its dispositions — is recorded in the
-task artifacts, not asserted in prose. A narrative description never substitutes for missing
-evidence. **Never claim correctness without executable evidence.**
+A **draft** pull request is opened once implementation and deterministic verification are complete;
+it is what the independent review is performed on, so that every finding lands as an inline comment
+at the line it concerns. A pull request is marked **ready for review** only after that review and its
+remediation are complete — that is the point the readiness check gates, and it is the only state Jan
+is asked to merge from.
+
+The evidence — gates run and their outcomes, tests added, before/after results for regression tests,
+and the adversarial review with its dispositions — is recorded in the task artifacts, not asserted in
+prose. A narrative description never substitutes for missing evidence.
+**Never claim correctness without executable evidence.**
 
 ## 12. Finding severity
 
