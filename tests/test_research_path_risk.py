@@ -156,6 +156,24 @@ def test_daily_breach_decision_is_invariant_to_path_balance_scale() -> None:
     assert small_path.final_return == large_path.final_return
 
 
+def test_balance_deltas_compound_from_their_source_opening_balances() -> None:
+    path = (
+        _scenario(0, balance="50", equity="50", source_opening="100"),
+        _scenario(1, balance="-100", equity="-100", source_opening="1000"),
+    )
+    losing_path = (
+        _scenario(2, balance="-10", equity="-10", source_opening="1000"),
+        _scenario(3),
+    )
+
+    replay = replay_scenario_path(path, start_balance=Decimal("1000"))
+    metrics = summarize_sampled_paths((path, path, losing_path), start_balance=Decimal("1000"))
+
+    assert replay.final_return == Decimal("0.35")
+    assert metrics.prob_profit == Decimal("2") / Decimal("3")
+    assert metrics.negative_final_probability == Decimal("1") / Decimal("3")
+
+
 def test_zero_observed_breach_days_bootstrap_to_zero_raw_breach_frequency(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

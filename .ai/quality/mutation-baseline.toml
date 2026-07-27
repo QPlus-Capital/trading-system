@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-11 adds exact Clopper-Pearson bounds and complete loss-day path replay to the critical scope. Boundary, persistence, common-horizon, tail, dominance, count-consistency, and real-verdict tests kill every observed P-11 mutant that changes a statistic, breach flag, gate, or serialized value. The global score rises from 0.9077 to 0.9101. Twenty-nine remaining P-11 survivors change only fail-closed exception text, and one changes exact CDF equality to a conservatively higher result by at most one Decimal ULP."
+change_explanation = "PR #94 review adds a versioned source opening balance and source-relative P-11 replay. Scale-invariance, zero-observed-breach, compounded-return, schema, boundary, persistence, tail, dominance, count-consistency, and real-verdict tests kill every observed mutant that changes a statistic, breach flag, gate, or serialized value. The measured total changes from 4,358 to 4,406 and the score rises from 0.9101 to 0.9108. Remaining P-11 survivors change only fail-closed exception text, a zero-balance branch that is equivalent under the inclusive limit comparison, or exact CDF equality to a conservatively higher result by at most one Decimal ULP."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -30,9 +30,9 @@ targets = [
 ]
 
 [summary]
-total = 4358
-killed = 3966
-survived = 392
+total = 4406
+killed = 4013
+survived = 393
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -663,12 +663,12 @@ names = [
     "research.portfolio.path_risk.x_clopper_pearson_upper__mutmut_33",
     "research.portfolio.path_risk.x_clopper_pearson_upper__mutmut_7",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_10",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_112",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_113",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_114",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_117",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_118",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_119",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_133",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_134",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_135",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_138",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_139",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_140",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_15",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_2",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_20",
@@ -682,6 +682,11 @@ names = [
     "research.portfolio.scenarios.x_scenario_path_probability_of_profit__mutmut_3",
     "research.portfolio.scenarios.x_scenario_path_probability_of_profit__mutmut_4",
 ]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "At a zero path opening balance, the unmutated `<= 0` branch and the mutated `< 0` fallthrough both set both daily breach flags: the fallthrough compares zero loss to zero inclusive limits. Negative balances still take the fail-closed branch."
+names = ["research.portfolio.path_risk.x_replay_scenario_path__mutmut_69"]
 
 [[survivor_groups]]
 classification = "equivalent"
