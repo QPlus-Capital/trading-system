@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import numpy as np
 import pandas as pd
+import pytest
 from monitoring.deals import deal_ledger, deals_to_trades, equity_curve, live_stats
 
 
@@ -79,7 +80,7 @@ def test_deals_to_trades_empty() -> None:
 def test_deals_to_trades_sorts_deals_before_selecting_the_round_trip() -> None:
     deals = [
         _deal(2, "EURUSD", 0, 1, 30, profit=5.0, ticket=13),
-        _deal(2, "EURUSD", 1, 1, 20, profit=10.0, ticket=12),
+        _deal(2, "EURUSD", 0, 1, 20, profit=10.0, ticket=12),
         _deal(2, "EURUSD", 1, 0, 10, volume=0.2, ticket=11),
     ]
 
@@ -91,6 +92,124 @@ def test_deals_to_trades_sorts_deals_before_selecting_the_round_trip() -> None:
     assert row["close_time"] == pd.Timestamp(30, unit="s", tz="UTC")
     assert row["volume"] == 0.2
     assert row["net_pnl"] == Decimal("15.0")
+
+
+@pytest.mark.parametrize("invalid_type", [13, True])
+def test_symbol_bearing_non_trade_deal_type_fails_closed(invalid_type: object) -> None:
+    deals = [
+        {
+            **_deal(41, "EURUSD", 0, 0, 10, ticket=101),
+            "type": invalid_type,
+        },
+        _deal(41, "EURUSD", 1, 1, 20, ticket=102),
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"type=.*ticket=101.*entry=0.*position_id=41",
+    ):
+        deals_to_trades(deals)
+
+
+def test_empty_symbol_cash_deal_stays_ledger_only() -> None:
+    cash = _deal(0, "", 2, 0, 10, profit=500.0, ticket=100)
+
+    assert deals_to_trades([cash]).empty
+    assert list(deal_ledger([cash])["amount"]) == [Decimal("500.0")]
+
+
+def test_inout_reversal_emits_two_directionally_correct_segments() -> None:
+    deals = [
+        _deal(7, "XAUUSD", 0, 0, 10, volume=1.0, commission=-1.0, ticket=100),
+        _deal(
+            7,
+            "XAUUSD",
+            1,
+            2,
+            20,
+            volume=1.5,
+            profit=100.0,
+            swap=-2.0,
+            commission=-3.0,
+            ticket=101,
+        ),
+        _deal(
+            7,
+            "XAUUSD",
+            0,
+            1,
+            30,
+            volume=0.5,
+            profit=20.0,
+            fee=-1.0,
+            ticket=102,
+        ),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert list(trades["position_id"]) == [7, 7]
+    assert list(trades["direction"]) == ["BUY", "SELL"]
+    assert list(trades["open_ticket"]) == [100, 101]
+    assert list(trades["volume"]) == [1.0, 0.5]
+    assert list(trades["net_pnl"]) == [Decimal("94.0"), Decimal("19.0")]
+    assert trades.iloc[0]["close_time"] == trades.iloc[1]["open_time"]
+    assert sum(trades["net_pnl"], Decimal("0")) == sum(
+        deal_ledger(deals)["amount"],
+        Decimal("0"),
+    )
+
+
+def test_out_by_deals_close_their_own_position_ids() -> None:
+    deals = [
+        _deal(11, "EURUSD", 0, 0, 10, volume=0.3, ticket=100),
+        _deal(22, "EURUSD", 1, 0, 11, volume=0.3, ticket=101),
+        _deal(11, "EURUSD", 1, 3, 20, volume=0.3, profit=12.0, ticket=102),
+        _deal(22, "EURUSD", 0, 3, 20, volume=0.3, profit=-7.0, ticket=103),
+    ]
+
+    trades = deals_to_trades(deals).set_index("position_id")
+
+    assert trades.loc[11, "direction"] == "BUY"
+    assert trades.loc[11, "net_pnl"] == Decimal("12.0")
+    assert trades.loc[22, "direction"] == "SELL"
+    assert trades.loc[22, "net_pnl"] == Decimal("-7.0")
+
+
+def test_scale_ins_and_partial_exits_preserve_volume_and_money() -> None:
+    deals = [
+        _deal(5, "GBPUSD", 0, 0, 10, volume=0.1, commission=-1.0, ticket=100),
+        _deal(5, "GBPUSD", 0, 0, 11, volume=0.2, commission=-2.0, ticket=101),
+        _deal(
+            5,
+            "GBPUSD",
+            1,
+            1,
+            20,
+            volume=0.15,
+            profit=10.0,
+            fee=-1.0,
+            ticket=102,
+        ),
+        _deal(
+            5,
+            "GBPUSD",
+            1,
+            1,
+            21,
+            volume=0.15,
+            profit=20.0,
+            fee=-1.0,
+            ticket=103,
+        ),
+    ]
+
+    row = deals_to_trades(deals).iloc[0]
+
+    assert row["direction"] == "BUY"
+    assert row["volume"] == 0.3
+    assert row["close_time"] == pd.Timestamp(21, unit="s", tz="UTC")
+    assert row["net_pnl"] == Decimal("25.0")
 
 
 def test_equity_curve_accumulates_from_start() -> None:

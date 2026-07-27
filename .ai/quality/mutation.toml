@@ -201,6 +201,11 @@ id = "monitoring-deal-reconstruction"
 path = "monitoring/deals.py"
 mutant_patterns = [
     "monitoring.deals.x__deal_amount__mutmut_*",
+    "monitoring.deals.x__deal_direction__mutmut_*",
+    "monitoring.deals.x__deal_entry__mutmut_*",
+    "monitoring.deals.x__deal_volume__mutmut_*",
+    "monitoring.deals.x__opposite__mutmut_*",
+    "monitoring.deals.x__trade_row__mutmut_*",
     "monitoring.deals.x_deals_to_trades__mutmut_*",
     "monitoring.deals.x_deal_ledger__mutmut_*",
     "monitoring.deals.x_money_events__mutmut_*",

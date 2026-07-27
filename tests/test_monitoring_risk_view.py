@@ -242,6 +242,48 @@ def test_same_second_opening_cost_is_excluded_from_its_own_basis() -> None:
     assert isinstance(risk[0], Decimal)
 
 
+def test_reversal_segment_uses_the_balance_before_its_inout_deal() -> None:
+    opened = int(pd.Timestamp("2026-01-01", tz="UTC").timestamp())
+    reversed_at = int(pd.Timestamp("2026-01-02", tz="UTC").timestamp())
+    closed = int(pd.Timestamp("2026-01-03", tz="UTC").timestamp())
+    deals = [
+        {
+            **_deal(opened, "EURUSD", 0.0, -1.0),
+            "position_id": 17,
+            "ticket": 10,
+            "volume": 1.0,
+        },
+        {
+            **_deal(reversed_at, "EURUSD", 100.0, -2.0),
+            "position_id": 17,
+            "ticket": 20,
+            "type": 1,
+            "entry": 2,
+            "volume": 1.5,
+        },
+        {
+            **_deal(closed, "EURUSD", 10.0),
+            "position_id": 17,
+            "ticket": 30,
+            "type": 0,
+            "entry": 1,
+            "volume": 0.5,
+        },
+    ]
+    trades = deals_to_trades(deals)
+    ledger = deal_ledger(deals)
+
+    risk = per_trade_risk(
+        trades,
+        Decimal("100107"),
+        Decimal("0.01"),
+        ledger=ledger,
+    )
+
+    assert list(trades["open_ticket"]) == [10, 20]
+    assert list(risk) == [Decimal("1000.00"), Decimal("999.99")]
+
+
 def test_ticket_cutoffs_must_align_with_trade_open_times() -> None:
     with pytest.raises(ValueError, match="one-for-one"):
         balance_at(

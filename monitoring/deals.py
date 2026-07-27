@@ -1,13 +1,14 @@
 """Turn raw MT5 deals into round-trip trades, a realized-equity curve, and live stats.
 
 Pure functions over a list of deal dicts (from ``Mt5Bridge.history_deals``), so they are
-testable without a terminal. A "trade" is one closed position: its deals are grouped by
-``position_id``; the net PnL is profit + swap + commission + fee across the position's deals.
+testable without a terminal. A "trade" is one closed position segment: deals are processed by
+``position_id``; an INOUT reversal ends one segment and starts its opposite successor.
 """
 
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
@@ -16,6 +17,12 @@ import pandas as pd
 
 _ZERO = Decimal("0")
 _MONEY_LEGS = ("profit", "swap", "commission", "fee")
+_DEAL_TYPE_BUY = 0
+_DEAL_TYPE_SELL = 1
+_DEAL_ENTRY_IN = 0
+_DEAL_ENTRY_OUT = 1
+_DEAL_ENTRY_INOUT = 2
+_DEAL_ENTRY_OUT_BY = 3
 _TRADE_COLUMNS = [
     "position_id",
     "symbol",
@@ -28,6 +35,18 @@ _TRADE_COLUMNS = [
 ]
 
 
+@dataclass
+class _OpenSegment:
+    position_id: int
+    symbol: str
+    direction: str
+    open_time: int
+    open_ticket: int
+    opened_volume: Decimal
+    remaining_volume: Decimal
+    net_pnl: Decimal
+
+
 def _money(value: object) -> Decimal:
     """Convert a broker or fixture money value without binary-float arithmetic."""
     return value if isinstance(value, Decimal) else Decimal(str(value))
@@ -37,53 +56,173 @@ def _deal_amount(deal: dict[str, Any]) -> Decimal:
     return sum((_money(deal.get(leg, 0)) for leg in _MONEY_LEGS), start=_ZERO)
 
 
+def _deal_context(deal: dict[str, Any]) -> str:
+    return (
+        f"type={deal.get('type')!r}, ticket={deal.get('ticket')!r}, "
+        f"entry={deal.get('entry')!r}, position_id={deal.get('position_id')!r}"
+    )
+
+
+def _deal_direction(deal: dict[str, Any]) -> str:
+    """Map only MT5 BUY/SELL deal types to a monitoring direction."""
+    value = deal.get("type")
+    if type(value) is not int:
+        raise ValueError(f"MT5 deal type must be an exact integer ({_deal_context(deal)})")
+    if value == _DEAL_TYPE_BUY:
+        return "BUY"
+    if value == _DEAL_TYPE_SELL:
+        return "SELL"
+    raise ValueError(f"Unsupported symbol-bearing MT5 deal type ({_deal_context(deal)})")
+
+
+def _deal_entry(deal: dict[str, Any]) -> int:
+    value = deal.get("entry")
+    if type(value) is not int or value not in {
+        _DEAL_ENTRY_IN,
+        _DEAL_ENTRY_OUT,
+        _DEAL_ENTRY_INOUT,
+        _DEAL_ENTRY_OUT_BY,
+    }:
+        raise ValueError(f"Unsupported symbol-bearing MT5 deal entry ({_deal_context(deal)})")
+    return value
+
+
+def _deal_volume(deal: dict[str, Any]) -> Decimal:
+    volume = _money(deal.get("volume", _ZERO))
+    if volume <= _ZERO:
+        raise ValueError(f"MT5 trade deal volume must be positive ({_deal_context(deal)})")
+    return volume
+
+
+def _opposite(direction: str) -> str:
+    if direction == "BUY":
+        return "SELL"
+    if direction == "SELL":
+        return "BUY"
+    raise ValueError(f"Unsupported active direction: {direction!r}")
+
+
+def _trade_row(segment: _OpenSegment, deal: dict[str, Any]) -> dict[str, object]:
+    return {
+        "position_id": segment.position_id,
+        "symbol": segment.symbol,
+        "direction": segment.direction,
+        "open_time": pd.to_datetime(segment.open_time, unit="s", utc=True),
+        "open_ticket": segment.open_ticket,
+        "close_time": pd.to_datetime(int(deal["time"]), unit="s", utc=True),
+        "volume": float(segment.opened_volume),
+        "net_pnl": segment.net_pnl,
+    }
+
+
 def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
-    """Reconstruct closed round-trip trades from raw deals (grouped by position).
+    """Reconstruct ordered position segments from raw MT5 deals.
 
-    Skips balance operations (no symbol) and still-open positions (no OUT deal). Net PnL folds in
-    swap + commission + fee, so the live numbers are the honest, all-in result. The opening ticket
-    is retained because MT5 timestamps have only one-second precision: the ticket establishes
-    which same-second money movements existed before the runner sized this trade.
+    Empty-symbol cash operations remain ledger-only. Normal OUT and OUT_BY deals close the segment
+    named by their own position ID. INOUT closes the active segment and opens its opposite residual
+    under the same position ID. Net PnL folds in swap, commission, and fee exactly once. Because MT5
+    exposes one indivisible money record for an INOUT deal, that record belongs to the segment the
+    event closes; the residual segment starts without a duplicated amount.
+
+    The opening ticket is retained because MT5 timestamps have only one-second precision: the
+    ticket establishes which same-second money movements existed before the runner sized the
+    segment. Still-open final segments are omitted from the closed-trade view but remain fully
+    represented in :func:`deal_ledger`.
     """
-    records = []
+    grouped: dict[int, list[dict[str, Any]]] = {}
     for sequence, deal in enumerate(deals):
-        normalized = {leg: deal.get(leg, _ZERO) for leg in _MONEY_LEGS}
-        records.append(
-            {
-                **normalized,
-                **deal,
-                "_sequence": sequence,
-                "_event_order": int(deal.get("ticket", sequence)),
-            }
-        )
-    df = pd.DataFrame(records)
-    if df.empty or "position_id" not in df:
-        return pd.DataFrame(columns=_TRADE_COLUMNS)
-    df = df[df["symbol"].astype(bool)]  # drop balance/credit deals (empty symbol)
+        if not str(deal.get("symbol", "")):
+            continue
+        normalized = {
+            **{leg: deal.get(leg, _ZERO) for leg in _MONEY_LEGS},
+            **deal,
+            "_sequence": sequence,
+            "_event_order": int(deal.get("ticket", sequence)),
+        }
+        position_id = int(deal["position_id"])
+        grouped.setdefault(position_id, []).append(normalized)
 
-    rows = []
-    for pid, g in df.groupby("position_id"):
-        g = g.sort_values(["time", "_event_order", "_sequence"], kind="stable")
-        ins, outs = g[g["entry"] == 0], g[g["entry"] == 1]
-        if ins.empty or outs.empty:
-            continue  # not a completed round trip
-        first_in, last_out = ins.iloc[0], outs.iloc[-1]
-        net = sum(
-            (_deal_amount(deal) for deal in g.to_dict(orient="records")),
-            start=_ZERO,
+    rows: list[dict[str, object]] = []
+    for position_id in sorted(grouped):
+        events = sorted(
+            grouped[position_id],
+            key=lambda deal: (
+                int(deal["time"]),
+                int(deal["_event_order"]),
+                int(deal["_sequence"]),
+            ),
         )
-        rows.append(
-            {
-                "position_id": int(pid),
-                "symbol": str(first_in["symbol"]),
-                "direction": "BUY" if int(first_in["type"]) == 0 else "SELL",
-                "open_time": pd.to_datetime(int(first_in["time"]), unit="s", utc=True),
-                "open_ticket": int(first_in["_event_order"]),
-                "close_time": pd.to_datetime(int(last_out["time"]), unit="s", utc=True),
-                "volume": float(first_in["volume"]),
-                "net_pnl": net,
-            }
-        )
+        segment: _OpenSegment | None = None
+        for deal in events:
+            direction = _deal_direction(deal)
+            entry = _deal_entry(deal)
+            volume = _deal_volume(deal)
+            amount = _deal_amount(deal)
+            symbol = str(deal["symbol"])
+
+            if entry == _DEAL_ENTRY_IN:
+                if segment is None:
+                    segment = _OpenSegment(
+                        position_id=position_id,
+                        symbol=symbol,
+                        direction=direction,
+                        open_time=int(deal["time"]),
+                        open_ticket=int(deal["_event_order"]),
+                        opened_volume=volume,
+                        remaining_volume=volume,
+                        net_pnl=amount,
+                    )
+                    continue
+                if segment.symbol != symbol or segment.direction != direction:
+                    raise ValueError(
+                        "MT5 IN deal contradicts its active position segment "
+                        f"({_deal_context(deal)})"
+                    )
+                segment.opened_volume += volume
+                segment.remaining_volume += volume
+                segment.net_pnl += amount
+                continue
+
+            if segment is None:
+                raise ValueError(
+                    f"MT5 closing deal has no active position segment ({_deal_context(deal)})"
+                )
+            if segment.symbol != symbol or direction != _opposite(segment.direction):
+                raise ValueError(
+                    "MT5 closing deal contradicts its active position segment "
+                    f"({_deal_context(deal)})"
+                )
+
+            if entry in {_DEAL_ENTRY_OUT, _DEAL_ENTRY_OUT_BY}:
+                if volume > segment.remaining_volume:
+                    raise ValueError(
+                        f"MT5 closing deal exceeds active volume ({_deal_context(deal)})"
+                    )
+                segment.remaining_volume -= volume
+                segment.net_pnl += amount
+                if segment.remaining_volume == _ZERO:
+                    rows.append(_trade_row(segment, deal))
+                    segment = None
+                continue
+
+            if volume <= segment.remaining_volume:
+                raise ValueError(
+                    f"MT5 INOUT deal has no opposite residual volume ({_deal_context(deal)})"
+                )
+            residual = volume - segment.remaining_volume
+            segment.net_pnl += amount
+            rows.append(_trade_row(segment, deal))
+            segment = _OpenSegment(
+                position_id=position_id,
+                symbol=symbol,
+                direction=direction,
+                open_time=int(deal["time"]),
+                open_ticket=int(deal["_event_order"]),
+                opened_volume=residual,
+                remaining_volume=residual,
+                net_pnl=_ZERO,
+            )
+
     out = pd.DataFrame(rows, columns=_TRADE_COLUMNS)
     return out.sort_values("close_time").reset_index(drop=True) if not out.empty else out
 
