@@ -42,24 +42,45 @@ A defect is a loss, not a bug report. These constraints are immutable and always
 
 ## Development protocol
 
+Jan starts you with nothing but an issue number: `implement #101`. Everything you need is in the
+issue body, the labels, and this file. The full procedure is
+[docs/engineering/workflow.md](docs/engineering/workflow.md).
+
 Every non-trivial change carries a risk class R0–R3, defined in
 [docs/engineering/risk-classes.md](docs/engineering/risk-classes.md). The class sets its cumulative
-mandatory gates.
+mandatory gates, which task artifacts exist as files, how many PR sections are required, and which
+review subagents run.
 
-1. **Specify** — create `.ai/tasks/<id>/` with acceptance criteria, invariants, risk class, scope,
-   and explicit human decisions.
+**0. Check the permit — before anything else.** Refuse to build unless the board card is in
+`Ready to Implement`, the label `arm:implement` is present, and a `risk:Rn` label is present. On
+refusal, report the actual status and stop. If a branch or pull request already exists for the
+issue, resume it rather than starting again.
+
+Then move the card to `Implementing` and **only afterwards** remove `arm:implement`. The reverse
+order would destroy the permit if the status update failed.
+
+1. **Specify** — the specification is the issue body; Claude wrote it and Jan approved it. Do not
+   restate it in a file and do not extend it. If it is wrong, incomplete, or unbuildable, do not
+   guess: move the card back, state the concrete gap in an issue comment, and stop.
 2. **Analyse impact** — trace files, callers, configuration routes, lifecycle, artifacts, and tests
    before implementation. Enumerate every consumer of a coupled quantity in one pass.
-3. **Design tests, then implement** — add the red-first behavioural guard, record its failure,
-   implement the smallest bounded change, and keep `just check` green.
+3. **Design tests, then implement** — map every `AC-nn` and `INV-nn` to exactly one named test, add
+   the red-first behavioural guard, record its failure, implement the smallest bounded change, and
+   keep `just check` green. Clean up nothing on the side; the non-goals bound the diff.
 4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's
-   fresh reviewer path; resolve every blocking finding with executable proof.
+   fresh reviewer path; resolve every blocking finding with executable proof. You fix every finding,
+   including trivial ones, so the reviewer never reviews its own code.
 5. **Prepare the PR** — open it ready for review only after the readiness check passes for current
-   HEAD. Do not merge or enable autonomous merge.
+   HEAD, with `Closes #<issue>` in the body. Then move the card to `Reviewing`. Do not merge or
+   enable autonomous merge.
+
+Work in **one git worktree per issue** on branch `codex/<issue>-<slug>`, so the main checkout stays
+clean and a running live runner never sees half-finished code.
 
 **Do not open a pull request until the readiness check for the change's risk class passes.** R3
 changes never merge autonomously. Only a **trivial R0** change may go straight to `main`; every R1+
-change uses a feature branch and pull request. Valid out-of-scope work becomes a separate issue.
+change uses a feature branch and pull request. Valid out-of-scope work becomes a separate issue —
+evidenced only, never speculative, and you return to the task at hand immediately.
 
 ## Roles, exception, and authority
 

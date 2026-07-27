@@ -11,6 +11,10 @@ This repository trades **real money** on a live prop-firm account, sized off val
 defect here is not a bug report — it is a loss. Every rule exists because its absence has cost, or
 would cost, real money or a real methodology guarantee.
 
+This file states *what must hold*. [workflow.md](workflow.md) states *who does what, where, and in
+which order* — the board, the labels, the six phases from idea to merge, and the three guarded
+handover points.
+
 ## Roles and authority
 
 - **Codex is the primary builder.** It specifies the bounded change, classifies risk, analyses
@@ -127,8 +131,13 @@ would cost, real money or a real methodology guarantee.
 Every non-trivial change carries a risk class (R0–R3) — see
 [risk-classes.md](risk-classes.md) and [`.ai/quality/risk-classes.toml`](../../.ai/quality/risk-classes.toml).
 Path matching sets a conservative minimum; the author **must upgrade** the class when the semantic
-impact is broader than the paths suggest. The class and its reason appear in the task spec and the
+impact is broader than the paths suggest. The class and its reason appear in the issue and the
 PR. R3 (live-money / sizing / risk / methodology / result integrity) never merges autonomously.
+
+The class does not only decide *whether* a change may merge — it sets *how much process the change
+carries*: the mandatory gates, which task artifacts exist as files, how many PR sections are
+required, and which review subagents run. The scale is tabulated in [workflow.md](workflow.md).
+Process is reduced only below the money path; on it, nothing is reduced.
 
 ## 10. Definition of Done
 
@@ -183,9 +192,17 @@ no gate, because the report then says the numbers held.
 - Feature branch → PR → CI green + Claude adversarial review → Jan approves → merge.
   Only a **trivial R0** change (docs/comments) may go straight to `main`; every R1+ change — any
   code change — goes through a branch and a PR.
+- One branch and one git worktree per issue, named `codex/<issue>-<slug>` — or
+  `claude/<issue>-<slug>` when Claude builds under the trading exception. A worktree keeps the main
+  checkout clean, so a running live runner never sees half-finished code.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`,
   `docs:`, `test:`, `chore:`. Author as **Jan Cwik <j.cwik@qplus-capital.com>**.
+- **Squash on merge**: one commit per issue, so every commit on `main` is complete and green and
+  `git bisect` can be trusted. The individual build steps stay visible in the pull request.
 - Commit and push finished, green work immediately; never push broken or half-done code.
+- When CI is red for an infrastructure reason rather than a code reason, a merge requires the same
+  checks run locally with their output recorded in the PR and the reason stated. There is no
+  unevidenced merge.
 
 ## 17. Generated artifacts
 
@@ -198,3 +215,24 @@ never committed.
 
 Commits are authored solely by the human operator. **Never** add an AI as a co-author or a
 `Co-Authored-By` trailer, in any repository commit, regardless of any default to the contrary.
+
+## 19. Workflow state and handovers
+
+The `Status` field of the GitHub project board is the single source of truth for where a change
+stands; agents move their own card through the `gh` CLI. Labels are not status: `arm:implement` is
+a **build permit** that Claude writes only after Jan approves the specification, and that Codex
+removes as it starts. `risk:R0`–`risk:R3` carries the class.
+
+The specification lives in the issue body, not in a file — it is what Codex builds from and what Jan
+approves, so it belongs where both can read it.
+
+Three rules protect the handovers, and each is a fail-closed application of §3:
+
+- **Approval is written last.** When Claude arms an issue, `arm:implement` is the final step. A
+  failure at any earlier step leaves the issue unarmed rather than half-approved.
+- **The permit is removed after the status moves, never before.** Otherwise a failed status update
+  would destroy the permit and strand the issue.
+- **The builder's context never reaches the reviewer.** The review runs in a fresh session, so it
+  checks what the code does rather than what it was meant to do.
+
+The full procedure is [workflow.md](workflow.md).

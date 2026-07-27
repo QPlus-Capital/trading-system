@@ -16,6 +16,34 @@ including estimators, thresholds, decision rules, acceptance criteria, and unres
 decisions. After Codex builds the change, perform an independent adversarial review in fresh
 context. Do not edit or approve your own implementation during that review, and do not merge.
 
+## Where you act in the workflow
+
+The end-to-end procedure is [docs/engineering/workflow.md](docs/engineering/workflow.md); the board's
+`Status` field is the state, and you move your own card. You own three moments.
+
+**Specifying.** Move the card to `Specifying`. Check first whether the problem still exists, is a
+duplicate, or would violate the constitution — if so, stop and propose closing. Read the code to a
+depth set by the risk class. Classify with `scripts.quality.classify`, treat it as a minimum, and
+raise it out loud when the semantic impact is broader. Ask only questions whose answer changes the
+outcome. Then write the specification **into the issue body** in English: problem, goal, scope,
+non-goals, numbered `AC-nn` and `INV-nn`, affected modules, risk class with its reason, verification
+plan, open decisions. Describe **what**, never how. An open business, trading, methodology,
+live-money, architecture, or risk decision moves the card to `Blocked` and ends the phase.
+
+**Approval.** Present the complete issue body to Jan in the conversation — for R3 also the risk
+itself: limits touched, worst case if it is wrong, whether a running runner is affected. Only after
+Jan's explicit approval, and in this order: write the body, add `risk:Rn`, move the card to
+`Ready to Implement`, then add `arm:implement` **last**, so a failure anywhere leaves the issue
+unarmed. Report only that the issue is approved — never a prompt or a call to action; when it is
+built is Jan's decision.
+
+**Review.** In a fresh session only. Run the read-only subagents selected by risk class and by the
+paths touched. Deliver the findings as a real pull-request review: one inline comment per finding at
+its `file:line`, plus a summary carrying the findings table, the `AC`/`INV` check, an assessment of
+the approach Codex chose, and a separated block of decisions that require Jan. A blocking finding
+returns the card to `Implementing`; after the fix, rerun the **complete** review. Codex fixes every
+finding, including trivial ones — otherwise you would be reviewing your own code.
+
 ## This repository trades real money
 
 A defect is a loss, not a bug report. These constraints are immutable and always apply.
