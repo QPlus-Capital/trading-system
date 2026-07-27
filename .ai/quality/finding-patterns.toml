@@ -419,3 +419,15 @@ why_tests_missed = "existing fixtures checked synchronized minima and shared rep
 regression = "test_drawdown_does_not_use_a_later_profitable_close_as_its_peak; test_drawdown_uses_an_observable_h4_high_before_a_later_minimum; test_path_drawdown_does_not_use_the_same_days_later_close_peak"
 generalized = "path-dependent denominators must be timestamped and updated only after the event that establishes them; vary event order, not only values"
 workflow_change = "drawdown mutation and property guards now exercise peak/trough order in both deterministic H4 and sampled-day replay"
+
+[[finding]]
+id = "F-035"
+source = "issue #60 constitution audit"
+defect_class = "canonical-component-overwritten-by-derived-value"
+severity = "P1"
+affected = "research/portfolio/stats.py"
+root_cause = "the broker-aware helper stored gross R and then overwrote that column with gross plus swap instead of preserving the cost decomposition"
+why_tests_missed = "tests covered R recovery and swap pricing separately but never invoked the helper's broker-aware branch and asserted all three column identities"
+regression = "test_market_trades_preserves_gross_and_separate_swap; test_market_trades_records_zero_swap_when_broker_has_no_market_spec"
+generalized = "when a derived financial quantity combines canonical components, preserve each component and assert the algebraic identity at the real orchestration boundary"
+workflow_change = "broker-aware return helpers now require behavioural gross/separate-cost/net schema guards"
