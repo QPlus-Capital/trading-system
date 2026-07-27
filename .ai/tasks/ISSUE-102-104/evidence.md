@@ -39,6 +39,13 @@ HEAD: pending
 
 Pending.
 
+## Coverage and mutation
+
+Focused behavioural, integration, property, full-suite, and invariant results will be recorded
+after final HEAD. The Linux Critical mutation workflow is unavailable while the Actions quota is
+exhausted; the existing mutation target was extended so every new critical helper is in scope when
+the quota resets.
+
 ## Deferred checks
 
 Linux Critical mutation is blocked by infrastructure: the GitHub Actions quota is exhausted until

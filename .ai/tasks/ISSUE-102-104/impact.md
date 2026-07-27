@@ -11,7 +11,7 @@
 - `.ai/quality/mutation.toml` extends the existing monitoring reconstruction target to cover the
   strict converter and state-machine helpers; it does not add a second matcher or target.
 
-## Coupled quantities and every consumer
+## Transitive impact
 
 The coupled quantities are reconstructed direction and deal-to-trade grouping. Their complete
 in-repository chain is:
