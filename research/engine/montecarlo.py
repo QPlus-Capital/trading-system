@@ -1,9 +1,13 @@
-"""Monte-Carlo robustness analysis from a backtest's per-trade PnLs.
+"""Legacy Monte-Carlo utilities for callers that still operate on per-trade PnLs.
 
 Given the realized PnL of each closed trade, we bootstrap many alternative trade
 sequences (sampling trades with replacement) and build an equity path for each.
 The spread of these paths estimates how much the result depends on the exact order
 and selection of trades -- i.e. how robust (or lucky) the backtest was.
+
+The Stage-4 portfolio verdict no longer uses this trade-slot representation. It consumes complete
+calendar loss-day scenarios through :mod:`research.portfolio.scenarios`, which retains genuine
+zero-trade days and the joint P-09 intraday/close accounting bundle.
 
 These are pure functions (NumPy only); no backtest engine is involved.
 """

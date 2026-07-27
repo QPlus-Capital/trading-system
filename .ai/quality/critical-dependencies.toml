@@ -28,6 +28,18 @@ possibly_affected = [
 reason = "synchronized H4 daily diagnostics govern Stage-3/4 drawdown and breach decisions"
 
 [[edges]]
+source = "research/portfolio/scenarios.py"
+tests = [
+  "tests/test_research_scenarios.py",
+  "tests/test_research_stage_lineage.py",
+]
+possibly_affected = [
+  "tests/test_research_stages.py",
+  "tests/test_research_regression.py",
+]
+reason = "joint calendar loss-day bundles supply the Stage-4 probability-of-profit diagnostic"
+
+[[edges]]
 source = "research/portfolio/factsheet.py"
 tests = [
   "tests/test_research_factsheet.py",

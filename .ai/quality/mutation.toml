@@ -81,6 +81,21 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "portfolio-scenarios"
+path = "research/portfolio/scenarios.py"
+mutant_patterns = [
+    "research.portfolio.scenarios.x*LossDayScenario*__post_init____mutmut_*",
+    "research.portfolio.scenarios.x__validated_diagnostics__mutmut_*",
+    "research.portfolio.scenarios.x_build_loss_day_scenarios__mutmut_*",
+    "research.portfolio.scenarios.x_read_loss_day_scenarios__mutmut_*",
+    "research.portfolio.scenarios.x__stationary_source_indices__mutmut_*",
+    "research.portfolio.scenarios.x_sample_scenario_paths__mutmut_*",
+    "research.portfolio.scenarios.x_validate_joint_paths__mutmut_*",
+    "research.portfolio.scenarios.x__probability_of_profit__mutmut_*",
+    "research.portfolio.scenarios.x_summarize_scenario_bootstrap__mutmut_*",
+]
+
+[[targets]]
 id = "parameter-schedule"
 path = "core/strategies/param_schedule.py"
 mutant_patterns = [
