@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from pathlib import Path
 
@@ -730,7 +731,7 @@ def test_drawdown_does_not_use_a_later_profitable_close_as_its_peak() -> None:
     assert diagnostics.max_drawdown_pct == -1.0
 
 
-def test_drawdown_uses_an_observable_h4_high_before_a_later_minimum() -> None:
+def test_drawdown_uses_an_observable_h4_close_before_a_later_minimum() -> None:
     opened = _ts("2026-07-02 00:00")
     closed = opened + 8 * _HOUR_NS
     trades = pd.DataFrame(
@@ -760,6 +761,52 @@ def test_drawdown_uses_an_observable_h4_high_before_a_later_minimum() -> None:
     assert diagnostics.minimum_equity.min() == pytest.approx(100_000.0)
     assert diagnostics.close_equity[-1] == pytest.approx(110_000.0)
     assert diagnostics.max_drawdown_pct == -0.91
+
+
+def test_observable_h4_close_can_exceed_the_daily_close_only_hwm() -> None:
+    opened = _ts("2026-07-02 00:00")
+    later_bar = opened + 28 * _HOUR_NS
+    trades = pd.DataFrame(
+        [
+            {
+                **_trade(
+                    "X",
+                    opened,
+                    opened + 8 * _HOUR_NS,
+                    pnl_base=9_500.0,
+                    entry=100.0,
+                    exit_=109.5,
+                ),
+                "is_long": True,
+            },
+            {
+                **_trade(
+                    "X",
+                    later_bar,
+                    later_bar + 4 * _HOUR_NS,
+                    pnl_base=1_000.0,
+                    entry=100.0,
+                    exit_=110.0,
+                ),
+                "is_long": True,
+            },
+        ]
+    )
+    prices = {
+        "X": _h4(
+            # The 120 high is unknowable within the interval and must not become the HWM.
+            # The 110 close is observable before every later mark and therefore must.
+            (opened, "100", "120", "110"),
+            (opened + 4 * _HOUR_NS, "109.5", "110", "109.5"),
+            (later_bar, "95", "100", "100"),
+        )
+    }
+
+    *_unused, diagnostics = _run(trades, prices)
+    daily_close_only = replace(diagnostics, chronological_drawdown=None)
+
+    assert diagnostics.max_drawdown_pct == -0.91
+    assert daily_close_only.max_drawdown_pct == -0.46
 
 
 def test_pre_entry_market_close_cannot_create_a_position_drawdown_peak() -> None:

@@ -77,6 +77,15 @@ and trailing limit rules.
 - A P-10 daily scenario contains a minimum that precedes its recorded close for chronological
   drawdown and for the alternative trailing diagnostic.
 
+## Scope clarification
+
+Tracking an observable H4 close above the prior daily-close HWM is required by AC-02 and is not an
+additional methodology choice beyond issue #91. Removing the same-day-close look-ahead can only
+improve an individual trough for a fixed HWM event set, but replacing the old daily-only event set
+with chronological H4 observations can expose a higher, genuinely earlier peak and deepen a later
+drawdown. Favorable H4 highs are deliberately excluded because their within-interval ordering is
+unknown; only the H4 close becomes an HWM event at the interval boundary.
+
 ## Open questions
 
 - **Jan decision required:** should the trailing-limit gate eventually adopt the strictly

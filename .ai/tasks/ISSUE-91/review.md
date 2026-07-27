@@ -12,7 +12,7 @@ is required before Jan's merge decision.
 | ISSUE-91-F1 | P1 | Deterministic H4 drawdown used the same day's later close-equity peak for an earlier minimum. | Fixed in the authoritative synchronized H4 replay; two red-first ordering fixtures pass. | resolved |
 | ISSUE-91-F2 | P1 | P-11 replay repeated the same minimum/close ordering error. | Compare the minimum before updating the close-equity HWM; red-first path fixtures pass. | resolved |
 | ISSUE-91-F3 | P1 | The first chronological H4 implementation could mark a newly opened position at a market close observed before its entry, creating a false peak. | Timestamp the last market close and use entry until a post-entry close is observable; boundary-entry regression passes. | resolved |
-| ISSUE-91-F4 | P2 | The requested claim that drawdown should improve is not true for the current baseline once genuine earlier intraday peaks are retained. | Report the adverse direction: holdout drawdown `-3.30% -> -3.35%`; retain the required real pre-trough H4 peak. | resolved |
+| ISSUE-91-F4 | P2 | The requested claim that drawdown should improve is not true for the current baseline once genuine earlier H4 closes are retained. | Report the adverse direction: holdout drawdown `-3.30% -> -3.35%`; pin the strictly earlier H4-close mechanism and exclude unknowable within-bar highs. | resolved |
 | ISSUE-91-F5 | P2 | Changing the trailing gate to strict chronology would be an unratified methodology/gate decision. | Preserve the gate, label paired strict chronology diagnostic-only, and escalate the open decision to Jan. | resolved |
 
 ## Dispositions
@@ -25,25 +25,28 @@ methodology choice to Jan; no implementation work is silently deferred inside th
 
 1. `100000 -> 99000 minimum -> 110000 close`: reports `-1.00%`.
 2. First H4 interval closes at `110000`, later interval minimum is `109000`: reports `-0.91%`.
-3. Pre-entry market close is above a new trade's entry: cannot create a position HWM.
-4. A losing realized close at an H4 boundary: compared with the HWM before the event.
-5. A profitable realized close at an H4 boundary: raises the HWM only for following intervals.
-6. Position closes exactly at the interval boundary: absent from the next interval and realized once.
-7. Position opens exactly at the interval boundary: enters at its own price, not a stale market close.
-8. Market closed while another market advances: carries only a post-entry observable close or entry.
-9. One P-10 day dips 1% then closes 10% higher: sampled drawdown remains 1%.
-10. Prior sampled day closes at a new high, following day dips 1%: following denominator includes
+3. A prior H4 close reaches `110000` while the daily-close-only peak is `109500`; the later
+   `109000` minimum reports `-0.91%` rather than `-0.46%`, while an unknowable within-bar high of
+   `120000` is ignored.
+4. Pre-entry market close is above a new trade's entry: cannot create a position HWM.
+5. A losing realized close at an H4 boundary: compared with the HWM before the event.
+6. A profitable realized close at an H4 boundary: raises the HWM only for following intervals.
+7. Position closes exactly at the interval boundary: absent from the next interval and realized once.
+8. Position opens exactly at the interval boundary: enters at its own price, not a stale market close.
+9. Market closed while another market advances: carries only a post-entry observable close or entry.
+10. One P-10 day dips 1% then closes 10% higher: sampled drawdown remains 1%.
+11. Prior sampled day closes at a new high, following day dips 1%: following denominator includes
     the prior high.
-11. Same-day profitable close raises the established trailing gate floor: existing breach remains.
-12. The same scenario under strict trailing chronology: diagnostic may differ but never gates.
-13. Random source/path changes: internal daily/trailing/any dominance over prop-hard remains.
-14. Random future positive closes: one-day sampled drawdown is invariant to the later close height.
-15. Zero H4 trades/days and direct `DailyDiagnostics` fixtures: daily fallback remains
+12. Same-day profitable close raises the established trailing gate floor: existing breach remains.
+13. The same scenario under strict trailing chronology: diagnostic may differ but never gates.
+14. Random source/path changes: internal daily/trailing/any dominance over prop-hard remains.
+15. Random future positive closes: one-day sampled drawdown is invariant to the later close height.
+16. Zero H4 trades/days and direct `DailyDiagnostics` fixtures: daily fallback remains
     minimum-before-close chronological.
-16. Existing Stage-4 integration fixture: verdict stats/path and trailing comparison use the same
+17. Existing Stage-4 integration fixture: verdict stats/path and trailing comparison use the same
     selected result.
-17. Fact-sheet holdout-flat path: reuses the exact Stage-4 `PolicyResult`.
-18. Real Stage-3/4 rerun: both trade CSVs and the P-10 scenario artifact are byte-identical.
+18. Fact-sheet holdout-flat path: reuses the exact Stage-4 `PolicyResult`.
+19. Real Stage-3/4 rerun: both trade CSVs and the P-10 scenario artifact are byte-identical.
 
 ## Execution-path review
 
