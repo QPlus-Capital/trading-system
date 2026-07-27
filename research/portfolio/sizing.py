@@ -138,9 +138,7 @@ def _synchronized_h4_minima(
     if h4_prices is None:
         peak = float(start_balance)
         drawdown = np.zeros(len(days), dtype=np.float64)
-        for index, (day_minimum, day_close) in enumerate(
-            zip(minimum, close_equity, strict=True)
-        ):
+        for index, (day_minimum, day_close) in enumerate(zip(minimum, close_equity, strict=True)):
             if peak > 0:
                 drawdown[index] = min(0.0, (float(day_minimum) - peak) / peak)
             peak = max(peak, float(day_close))
