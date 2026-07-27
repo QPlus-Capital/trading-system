@@ -257,11 +257,10 @@ def test_same_observation_short_never_consumes_a_later_high() -> None:
     assert diagnostics.daily_loss[0] == pytest.approx(0.002)
 
 
-def test_legacy_direction_inference_treats_any_positive_pnl_as_a_win() -> None:
+def test_explicit_short_direction_handles_small_positive_pnl() -> None:
     opened = _ts("2025-04-10 05:00")
     closed = _ts("2025-04-10 09:00")
     trade = _trade("X", opened, closed, pnl_base=0.5)
-    del trade["is_long"]
 
     _realized, _equity, _sizes, diagnostics = _run(
         pd.DataFrame([trade]),
@@ -271,7 +270,7 @@ def test_legacy_direction_inference_treats_any_positive_pnl_as_a_win() -> None:
     assert diagnostics.minimum_equity[0] == pytest.approx(99_999.5)
 
 
-def test_explicit_direction_overrides_legacy_pnl_inference() -> None:
+def test_explicit_long_direction_ignores_cost_flipped_outcome() -> None:
     opened = _ts("2025-04-10 05:00")
     closed = _ts("2025-04-10 09:00")
     trade = _trade(
@@ -292,7 +291,7 @@ def test_explicit_direction_overrides_legacy_pnl_inference() -> None:
     assert diagnostics.minimum_equity[0] == pytest.approx(99_000.0)
 
 
-def test_legacy_equal_entry_exit_keeps_the_strict_direction_boundary() -> None:
+def test_explicit_short_direction_handles_equal_entry_and_exit() -> None:
     opened = _ts("2025-04-10 05:00")
     closed = _ts("2025-04-10 09:00")
     trade = _trade(
@@ -303,7 +302,6 @@ def test_legacy_equal_entry_exit_keeps_the_strict_direction_boundary() -> None:
         entry=100.0,
         exit_=100.0,
     )
-    del trade["is_long"]
 
     _realized, _equity, _sizes, diagnostics = _run(
         pd.DataFrame([trade]),
