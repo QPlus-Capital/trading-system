@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 4a24ad698a1883d1be7872a7cb0f7702b67b2433
+HEAD: a6b94bb700f8973ba3c5b31cdf8b6cb040e7ce38
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -14,13 +14,13 @@ The only later commit permitted by readiness is this evidence file itself.
 |---|---|---:|---|
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | Both changed Python files were already formatted; Ruff and strict mypy passed. |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_gate_consistency.py tests/test_docs_language.py` | 0 | 139 tests passed. |
-| `check` | `uvx --from rust-just just check` | 0 | Ruff, strict mypy over 180 files, Vulture, and 1,199 tests passed; one Linux-only mutation test was correctly skipped on Windows. |
+| `check` | `uvx --from rust-just just check` | 0 | Rebase HEAD: Ruff, strict mypy over 180 files, Vulture, and 1,207 tests passed; one Linux-only mutation test was correctly skipped on Windows. |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | The committed R3 diff selected and passed 108 bridge, runner, account, parity, monitoring, research-sizing, and swap-analysis tests. |
-| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Twenty properties passed twice at fixed Hypothesis seed `20260721`. |
+| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Rebase HEAD: 21 properties passed twice at fixed Hypothesis seed `20260721`. |
 | `integration-tests` | `uv run pytest -q tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_parity_check.py tests/test_live_run_cli.py tests/test_live_runner.py tests/test_live_runner_cycle.py tests/test_monitoring_dashboard.py tests/test_monitoring_dashboard_copy.py tests/test_research_sizing.py tests/test_research_swap_analysis.py` | 0 | 108 tests passed through the complete bridge consumer set using synthetic fakes only. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-103 --base origin/main` | 0 | Task schema, nine acceptance criteria, seven invariants, R3 declaration, traceability, and review are valid. |
-| `adversarial-review` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-103 --base origin/main` | 0 | Twelve counterexamples are recorded with no remaining builder finding; independent Claude live-money review remains required. |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 306 critical invariant tests passed, including live risk, account identity, parity, sizing, path risk, regression, and readiness. |
+| `adversarial-review` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-103 --base origin/main` | 0 | Twelve counterexamples remain resolved; range-diff proves the rebase changed no live implementation or test behaviour. |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | Rebase HEAD: 313 critical invariant tests passed, including live risk, account identity, parity, sizing, path risk, regression, and readiness. |
 | `mutation-on-touched-critical` | Linux Critical mutation workflow | 1 | **Blocked by infrastructure — Actions quota exhausted until 2026-08-01.** Mutmut requires Linux/fork; no result is claimed, no survivor is classified without measurement, and no baseline or gate was weakened. |
 | `parity-where-applicable` | non-target production diff audit plus SHA-256 comparison of `run_20260724_1146` trade CSVs | 0 | No research, core, monitoring, runner, risk-control, account, config, preflight, parity, or notification path changed. The two trade artifacts retain their baseline hashes exactly. |
 | `live-money-review` | focused zero-call boundary tests, complete consumer integration set, and `.ai/tasks/ISSUE-103/review.md` | 0 | Every invalid value stops before terminal pricing/order calls; valid requests are exact-pinned. MT5 was never initialized or connected and neither running runner was touched. |
@@ -34,9 +34,9 @@ The only later commit permitted by readiness is this evidence file itself.
 | `risk-classification` | `uv run python -m scripts.quality.classify $(git diff --name-only origin/main...HEAD)` | 0 | R3 because the broker bridge and quality registry/policy change; all fourteen cumulative gates apply. |
 | `red-first` | `uv run pytest -q tests/test_live_mt5_bridge.py -k "fail_closed_on_unknown or fails_before"` before the production edit | 1 | Ten expected failures: three unknown position types and seven invalid pricing/entry/close sides all reported `DID NOT RAISE Mt5Error`. |
 | `focused-green` | `uv run pytest -q tests/test_live_mt5_bridge.py` | 0 | 25 tests passed: invalid values leave all pricing/tick/filling/order counters at zero; valid BUY/SELL records and request dictionaries remain exact. |
-| `registry-and-policy` | `uv run pytest -q tests/test_finding_registry.py tests/test_quality_mutation.py` | 0 | Finding F-034 and mutation policy are valid; 19 tests passed and the one Linux-only Mutmut execution test was skipped on Windows. |
+| `registry-and-policy` | policy union audit plus `uv run pytest -q tests/test_finding_registry.py tests/test_quality_mutation.py` | 0 | Finding F-037 is unique; mutation policy retains main's history-deal pattern plus all issue-103 boundaries; mutation baseline unchanged. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | Exactly one changed production file; eight direct and two transitive test files; no unknown/dynamic edge or additional possible test discovered. |
-| `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean, pip-audit found no known vulnerabilities, and Ruff security checks passed. |
+| `security` | `uvx --from rust-just just check-security` | 0 | Rebase HEAD: secret scan clean, pip-audit found no known vulnerabilities, and Ruff security checks passed. |
 | `artifact-hashes` | `Get-FileHash -Algorithm SHA256 reports/research/run_20260724_1146/{portfolio_trades.csv,full_history_trades.csv}` | 0 | `portfolio_trades.csv` remains `b5a0a9bb6d19ccee85c35aa6570a3bd67ea8fd885665d92901e5f14113f45129`; `full_history_trades.csv` remains `27592d20dda0fb3b31eb06de69d4d760d0f16cd961f2872e4f6376acb3dd90dc`. |
 | `check-timeout-diagnostic` | initial `uvx --from rust-just just check` invocation with a 180-second host-tool cap | 124 | The host tool terminated the command at its time limit without a reported test failure. The identical command was rerun with sufficient time and passed as the required `check` record above. |
 | `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-103 --base origin/main` | 1 | NOT READY on `mutation-on-touched-critical` alone, as required while Linux evidence is unavailable. |
@@ -78,10 +78,11 @@ order. Neither running live runner was touched.
 
 ## Coverage and mutation
 
-The focused bridge suite has 25 passing tests, the impact suite has 108, the invariant suite has
-306, and the complete deterministic suite has 1,199. Property tests pass twice with the fixed seed.
-Coverage includes all five issue-defined runtime boundaries, both legal directions, unknown
-integer/string values, and Python's boolean/integer alias.
+The rebased invariant suite has 313 passing tests, the complete deterministic suite has 1,207, and
+21 properties pass twice with the fixed seed. Range-diff shows the bridge/test implementation patch
+is unchanged, so the prior 25-test bridge and 108-test impact evidence remains applicable. Coverage
+includes all five issue-defined runtime boundaries, both legal directions, unknown integer/string
+values, and Python's boolean/integer alias.
 
 The critical mutation policy now includes the shared side converter, centralized order-type
 mapping, and all five boundary methods while retaining the existing history-deal target. Linux
