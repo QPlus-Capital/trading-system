@@ -14,6 +14,14 @@ earlier independent review did not review this combined #96/#99 implementation. 
 not cover the current branch HEAD. A fresh independent review of the interaction is required before
 this draft can be considered ready; no readiness claim is made here.
 
+The later rebase onto `origin/main` at `8851b91fbf20469d75cd9c2ee2900ccc05183f20` adds merged PR
+#97's broker-aware `_market_trades` behavior downstream of issue #99's direction producer. Registry
+F-035/F-038, mutation targets, and critical-dependency edges are complete unions and the issue #99
+patch remains range-diff equivalent, but the combined producer/helper path is a behavioral addition
+to the branch. The current operator caller omits the broker argument, so no existing report changes
+from this rebase; still, the earlier review does not cover the combined boundary. Independent review
+must rerun before readiness.
+
 ## Findings
 
 | ID | Severity | Finding | Disposition | Status |

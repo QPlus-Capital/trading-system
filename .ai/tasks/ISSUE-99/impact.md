@@ -39,6 +39,14 @@ The source overlap adds no new implementation beyond the intended composition of
 changes. It does, however, change the code context and behavior relative to the earlier issue #99
 review, so the combined path requires a fresh independent review before readiness.
 
+The subsequent rebase onto `origin/main` at `8851b91fbf20469d75cd9c2ee2900ccc05183f20`
+also incorporates merged PR #97. That PR changes `_market_trades`, a downstream caller of issue
+#99's corrected producer, so a broker-supplied call now preserves gross `r` and exposes separate
+`swap_r` and derived `net_r`. The current operator `swap_analysis` caller does not supply the broker
+argument, and no Stage 1-4 caller uses this helper, so this rebase does not alter the previously
+reported research or operator figures. Nevertheless, the combined producer/helper behavior is new
+relative to the earlier issue #99 review and must be reviewed independently.
+
 ## Coupled direction chain
 
 There is one producer and the following consumers:
