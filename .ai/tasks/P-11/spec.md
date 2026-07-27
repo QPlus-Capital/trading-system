@@ -22,13 +22,16 @@ on any internal breach and on a negative final return.
 
 ## Behavioural requirements
 
-- P-11 consumes `research.portfolio.scenarios.sample_scenario_paths` and
-  `summarize_scenario_bootstrap`; it does not implement another scenario or bootstrap convention.
+- P-11 consumes `research.portfolio.scenarios.sample_scenario_paths`,
+  `scenario_bootstrap_choices`, and `scenario_path_probability_of_profit`; it does not implement
+  another scenario, bootstrap, block-choice, or profit convention.
 - Each sampled path starts from the configured account start balance and accumulates the P-10
   closing-balance and close-equity changes in sampled order.
 - Each day's synthetic minimum is opening balance plus the sampled
   `opening_to_minimum_equity_change`. Daily breaches use that minimum, so a positive close cannot
   erase an intraday breach.
+- Daily limits are inclusive: equity at or below the corresponding floor is a breach, matching
+  `live.risk_control.RiskController.must_flatten`.
 - The realized-balance high-water mark includes the same day's close before the trailing floor is
   checked, matching P-09's deliberately conservative `drawdown.trailing_floor` semantics.
 - Four path-level breach flags are retained: internal daily `2.5%`, internal trailing `5%`, prop
@@ -52,8 +55,9 @@ on any internal breach and on a negative final return.
 
 - AC-01: A deterministic no-loss fixture reports zero raw breach frequency and a strictly
   positive one-sided 95% Clopper-Pearson upper bound.
-- AC-02: With one internal-breach day among ten and independent one-day blocks, the simulated
-  any-breach probability agrees with `1 - (9/10)^10` within pre-declared Monte-Carlo tolerance.
+- AC-02: With one 3% breach day among ten and independent one-day blocks, the simulated internal
+  and prop daily-breach probabilities agree with `1 - (9/10)^10` within pre-declared Monte-Carlo
+  tolerance.
 - AC-03: Internal daily, trailing, and any-limit breach probabilities are always greater than or
   equal to the corresponding prop-hard probabilities; an impossible result fails closed.
 - AC-04: A path that breaches at its intraday minimum and closes profitably remains breached.
