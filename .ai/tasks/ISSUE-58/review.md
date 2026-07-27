@@ -48,3 +48,9 @@ pattern was renumbered to the merge-order-reserved F-036. `git range-diff
 8fff632..8631368 8263206..HEAD` shows the issue-58 commits are patch-equivalent apart from retaining
 main's F-034 and renumbering this registry entry. No Stage-1 implementation or test behaviour
 changed during the rebase, so the earlier review still covers the implementation.
+
+Rebased again onto `origin/main` at `8851b91fbf20469d75cd9c2ee2900ccc05183f20` after PR #97.
+The sole conflict was the append-only finding registry; merged F-035 and issue #58's existing F-036
+are both retained in ID order. Range-diff shows the issue #58 implementation and tests remain
+patch-equivalent, and `.ai/quality/mutation-baseline.toml` is unchanged. This second rebase changes
+no behavior, so the earlier review continues to cover the implementation.
