@@ -171,6 +171,21 @@ def test_inout_reversal_emits_two_directionally_correct_segments() -> None:
     )
 
 
+def test_inout_residual_uses_the_volume_still_open_after_partial_exit() -> None:
+    deals = [
+        _deal(8, "XAUUSD", 0, 0, 10, volume=1.0, ticket=100),
+        _deal(8, "XAUUSD", 1, 1, 15, volume=0.4, profit=4.0, ticket=101),
+        _deal(8, "XAUUSD", 1, 2, 20, volume=0.9, profit=6.0, ticket=102),
+        _deal(8, "XAUUSD", 0, 1, 30, volume=0.3, profit=3.0, ticket=103),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert list(trades["direction"]) == ["BUY", "SELL"]
+    assert list(trades["volume"]) == [1.0, 0.3]
+    assert list(trades["net_pnl"]) == [Decimal("10.0"), Decimal("3.0")]
+
+
 def test_out_by_deals_close_their_own_position_ids() -> None:
     deals = [
         _deal(11, "EURUSD", 0, 0, 10, volume=0.3, ticket=100),
@@ -185,6 +200,16 @@ def test_out_by_deals_close_their_own_position_ids() -> None:
     assert trades.loc[11, "net_pnl"] == Decimal("12.0")
     assert trades.loc[22, "direction"] == "SELL"
     assert trades.loc[22, "net_pnl"] == Decimal("-7.0")
+
+
+def test_closing_side_must_be_opposite_the_active_position() -> None:
+    deals = [
+        _deal(23, "EURUSD", 0, 0, 10, ticket=100),
+        _deal(23, "EURUSD", 0, 1, 20, profit=1.0, ticket=101),
+    ]
+
+    with pytest.raises(ValueError, match="contradicts its active position"):
+        deals_to_trades(deals)
 
 
 def test_scale_ins_and_partial_exits_preserve_volume_and_money() -> None:
