@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "P-09 adds timestamped H4 loading and synchronized daily diagnostics to the critical scope. Boundary tests kill the observable lifetime, reset, direction, realization, swap, gate, and diagnostic mutations; the score rises from 0.8992 to 0.8998. Existing simulate survivors are renumbered by the refactor and reduced from 35 to 21, while the remaining P-09 survivors are exact dtype/schema/control-flow equivalents or display-only diagnostic variants."
+change_explanation = "P-10 adds complete loss-day scenario construction and joint stationary-bootstrap paths to the critical scope. Exact accounting, calendar-grid, source-index, seed, bundle, CSV, and failure-boundary tests kill the observable P-10 mutants; redundant equivalent P-04 RNG and P-10 zip arguments are removed so the exact ratchet is deterministic, and an exact-threshold RNG fixture kills the prior restart-boundary survivor. The global score rises from 0.8998 to 0.9077; seven remaining P-10 survivors are one unused-field validation variant and exact ASCII CSV encoding/newline defaults."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -12,6 +12,7 @@ targets = [
     "portfolio-risk",
     "portfolio-accounting",
     "portfolio-resample",
+    "portfolio-scenarios",
     "parameter-schedule",
     "continuous-attribution",
     "spa-family-gate",
@@ -28,9 +29,9 @@ targets = [
 ]
 
 [summary]
-total = 3574
-killed = 3216
-survived = 358
+total = 3920
+killed = 3558
+survived = 362
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -422,8 +423,6 @@ names = [
     "research.portfolio.resample.x_politis_white_block_length__mutmut_112",
     "research.portfolio.resample.x_politis_white_block_length__mutmut_53",
     "research.portfolio.resample.x_politis_white_block_length__mutmut_55",
-    "research.portfolio.resample.x_stationary_bootstrap__mutmut_25",
-    "research.portfolio.resample.x_stationary_bootstrap__mutmut_44",
 ]
 
 [[survivor_groups]]
@@ -529,11 +528,6 @@ names = [
 ]
 
 [[survivor_groups]]
-classification = "meaningful"
-reason = "The restart comparison differs only when a generated uniform draw equals the restart threshold exactly; retained as a measured boundary-test gap."
-names = ["research.portfolio.resample.x_stationary_bootstrap__mutmut_39"]
-
-[[survivor_groups]]
 classification = "equivalent"
 reason = "The function rejects empty input and validates every element as Decimal, so omitting the explicit Decimal zero start from sum preserves the exact mean."
 names = ["research.forward_decision.x_bootstrap_mean_bounds__mutmut_76"]
@@ -634,4 +628,21 @@ names = [
     "research.stages.select.x_choose_automatic_candidate__mutmut_183",
     "research.stages.select.x_choose_automatic_candidate__mutmut_37",
     "research.stages.select.x_choose_automatic_candidate__mutmut_38",
+]
+
+[[survivor_groups]]
+classification = "irrelevant"
+reason = "The mutation additionally validates trailing_floor, which the P-10 scenario schema and bootstrap do not consume; valid P-09 diagnostics behave identically and the mutation can only reject an otherwise unused invalid field."
+names = ["research.portfolio.scenarios.x__validated_diagnostics__mutmut_37"]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The canonical scenario CSV contains ASCII dates, digits, signs, decimal points, commas, and LF only; UTF-8 aliases, the platform default decoder, read-mode defaults, and universal-newline defaults read exactly the same artifact."
+names = [
+    "research.portfolio.scenarios.x_read_loss_day_scenarios__mutmut_10",
+    "research.portfolio.scenarios.x_read_loss_day_scenarios__mutmut_2",
+    "research.portfolio.scenarios.x_read_loss_day_scenarios__mutmut_3",
+    "research.portfolio.scenarios.x_read_loss_day_scenarios__mutmut_4",
+    "research.portfolio.scenarios.x_read_loss_day_scenarios__mutmut_5",
+    "research.portfolio.scenarios.x_read_loss_day_scenarios__mutmut_6",
 ]

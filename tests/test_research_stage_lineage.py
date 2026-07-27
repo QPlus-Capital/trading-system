@@ -609,7 +609,12 @@ def test_an_upstream_artifact_swapped_after_the_stage_read_it_is_rejected(
     # AND quarantined outputs -- so the directory looks untouched to anything but the hashes.
     marker = (run_dir / "_stage_portfolio.json").read_text(encoding="utf-8")
     select.main(["--run", str(run_dir), "--variation", "v_beta"])
-    for name in ("portfolio.json", "portfolio_trades.csv", "full_history_trades.csv"):
+    for name in (
+        "portfolio.json",
+        "portfolio_trades.csv",
+        "full_history_trades.csv",
+        "loss_day_scenarios.csv",
+    ):
         shutil.copyfile(run_dir / "_invalidated" / "portfolio" / name, run_dir / name)
     (run_dir / "_stage_portfolio.json").write_text(marker, encoding="utf-8")
 
@@ -1234,6 +1239,12 @@ def _fake_portfolio_stage(run_dir: Path, config: Path | None = None) -> None:
         frame = pd.DataFrame({"market": ["EURUSD"], "r": [1.0], "swap_r": [0.0]})
         frame.to_csv(st.file("portfolio_trades.csv"), index=False)
         frame.to_csv(st.file("full_history_trades.csv"), index=False)
+        st.file("loss_day_scenarios.csv").write_text(
+            "source_date,close_realized_pnl,close_equity_change,"
+            "opening_to_minimum_equity_change,closing_balance_change,trade_count,daily_swap\n"
+            "2026-01-01,1,1,0,1,1,0\n",
+            encoding="utf-8",
+        )
         st.save_json(
             "portfolio.json",
             {"variation": sel["variation"], "instruments": ["EURUSD"], "tail_cap_pct": 0.2},
