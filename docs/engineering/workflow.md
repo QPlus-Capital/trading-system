@@ -34,7 +34,7 @@ none exist.
 
 | Label | Function | Set by | Removed by |
 |---|---|---|---|
-| `arm:implement` | The build permit. Without it Codex refuses to build. | Claude, at approval | **Codex, at build start** |
+| `approved` | The build permit. Without it Codex refuses to build. | Claude, at approval | **Codex, at build start** |
 | `risk:R0` … `risk:R3` | Selects gates, artifacts, PR scope, and review agents. | Claude, from the classifier | — |
 
 Priority is the vertical order of the `Backlog` column, not a label.
@@ -114,27 +114,27 @@ On approval, in this order:
 1  write the final issue body
 2  add risk:Rn
 3  move the card to Ready to Implement
-4  add arm:implement          ← last
+4  add approved          ← last
 ```
 
-`arm:implement` is added last on purpose. If any earlier step fails, the issue is **not** armed and
+`approved` is added last on purpose. If any earlier step fails, the issue is **not** approved and
 Codex will not build it — the constitution's fail-closed rule (§3) applied to the workflow itself.
 
 Claude then reports only `#101 is approved (R2).` — **no prompt and no call to action.** When the
 change is built is Jan's decision. `Ready to Implement` is a supply, not a queue.
 
-A change to an approved issue requires moving it back to `Specifying` and removing `arm:implement`;
+A change to an approved issue requires moving it back to `Specifying` and removing `approved`;
 phase 2 then runs again, including Jan's approval.
 
 ## Phase 3 — Building (Codex)
 
 Jan says `implement #101`. Nothing more is ever required.
 
-**Guard first.** Codex refuses to build unless the card is in `Ready to Implement`, `arm:implement`
+**Guard first.** Codex refuses to build unless the card is in `Ready to Implement`, `approved`
 is present, and a `risk:Rn` label is present. If a branch or PR already exists for the issue, Codex
 resumes rather than restarting. On refusal it reports the actual status.
 
-Then it moves the card to `Implementing` and **only afterwards** removes `arm:implement` — the
+Then it moves the card to `Implementing` and **only afterwards** removes `approved` — the
 reverse order would lose the permit if the status update failed.
 
 **Isolation:** one git worktree per issue, branch `codex/<issue>-<slug>` (or `claude/<issue>-<slug>`
@@ -257,8 +257,8 @@ The workflow has exactly three places where control changes hands. Each is guard
 
 | Handover | Guard |
 |---|---|
-| Claude → Jan (approval) | Jan's explicit approval; `arm:implement` is written last |
-| Jan → Codex (build) | Status, `arm:implement`, and `risk:Rn` are all verified before any work |
+| Claude → Jan (approval) | Jan's explicit approval; `approved` is written last |
+| Jan → Codex (build) | Status, `approved`, and `risk:Rn` are all verified before any work |
 | Codex → Claude (review) | A fresh session; the reviewer never carries the builder's context |
 
 Everything else is a status transition an agent performs on itself.

@@ -224,7 +224,7 @@ Commits are authored solely by the human operator. **Never** add an AI as a co-a
 ## 19. Workflow state and handovers
 
 The `Status` field of the GitHub project board is the single source of truth for where a change
-stands; agents move their own card through the `gh` CLI. Labels are not status: `arm:implement` is
+stands; agents move their own card through the `gh` CLI. Labels are not status: `approved` is
 a **build permit** that Claude writes only after Jan approves the specification, and that Codex
 removes as it starts. `risk:R0`–`risk:R3` carries the class.
 
@@ -233,7 +233,7 @@ approves, so it belongs where both can read it.
 
 Three rules protect the handovers, and each is a fail-closed application of §3:
 
-- **Approval is written last.** When Claude arms an issue, `arm:implement` is the final step. A
+- **Approval is written last.** When Claude approves an issue, the `approved` label is the final step. A
   failure at any earlier step leaves the issue unarmed rather than half-approved.
 - **The permit is removed after the status moves, never before.** Otherwise a failed status update
   would destroy the permit and strand the issue.

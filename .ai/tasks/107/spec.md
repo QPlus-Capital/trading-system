@@ -30,7 +30,7 @@ as permits, so that `implement #101` is a complete instruction to the builder.
   when CI is red for an infrastructure reason.
 - The constitution states the three fail-closed handover rules: the permit is written last, the card
   moves before the permit is removed, and the builder context never reaches the reviewer.
-- `CLAUDE.md` states the three moments Claude owns and that arming requires explicit approval by Jan.
+- `CLAUDE.md` states the three moments Claude owns and that the approval label is written last and requires Jan explicitly.
 - `AGENTS.md` states the permit check as the first step of the build procedure.
 
 ## Acceptance criteria
@@ -39,9 +39,9 @@ as permits, so that `implement #101` is a complete instruction to the builder.
   the resulting board status.
 - AC-02: The constitution states that the risk class scales the process, not only merge eligibility.
 - AC-03: The constitution states the branch and worktree scheme and squash-on-merge.
-- AC-04: `AGENTS.md` states the permit check and that the card moves before `arm:implement` is
+- AC-04: `AGENTS.md` states the permit check and that the card moves before `approved` is
   removed.
-- AC-05: `CLAUDE.md` states that `arm:implement` is written last and that approval requires Jan
+- AC-05: `CLAUDE.md` states that `approved` is written last and that approval requires Jan
   explicitly.
 - AC-06: The existing documentation consistency tests pass unchanged.
 

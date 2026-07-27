@@ -33,8 +33,8 @@ live-money, architecture, or risk decision moves the card to `Blocked` and ends 
 **Approval.** Present the complete issue body to Jan in the conversation — for R3 also the risk
 itself: limits touched, worst case if it is wrong, whether a running runner is affected. Only after
 Jan's explicit approval, and in this order: write the body, add `risk:Rn`, move the card to
-`Ready to Implement`, then add `arm:implement` **last**, so a failure anywhere leaves the issue
-unarmed. Report only that the issue is approved — never a prompt or a call to action; when it is
+`Ready to Implement`, then add `approved` **last**, so a failure anywhere leaves the issue
+unapproved. Report only that the issue is approved — never a prompt or a call to action; when it is
 built is Jan's decision.
 
 **Review.** In a fresh session only, on the draft pull request. Run the read-only subagents selected

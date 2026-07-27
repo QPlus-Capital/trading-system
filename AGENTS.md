@@ -52,11 +52,11 @@ mandatory gates, which task artifacts exist as files, how many PR sections are r
 review subagents run.
 
 **0. Check the permit — before anything else.** Refuse to build unless the board card is in
-`Ready to Implement`, the label `arm:implement` is present, and a `risk:Rn` label is present. On
+`Ready to Implement`, the label `approved` is present, and a `risk:Rn` label is present. On
 refusal, report the actual status and stop. If a branch or pull request already exists for the
 issue, resume it rather than starting again.
 
-Then move the card to `Implementing` and **only afterwards** remove `arm:implement`. The reverse
+Then move the card to `Implementing` and **only afterwards** remove `approved`. The reverse
 order would destroy the permit if the status update failed.
 
 1. **Specify** — the specification is the issue body; Claude wrote it and Jan approved it. Do not
