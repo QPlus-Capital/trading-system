@@ -602,11 +602,11 @@ def test_real_verdict_entrypoint_executes_new_path_gate(
         encoding="utf-8",
     )
     (run / "portfolio_trades.csv").write_text("market,r\n", encoding="utf-8")
-    scenario = _scenario(0, balance="1", equity="1")
+    scenario = _scenario(0)
     (run / "loss_day_scenarios.csv").write_text(
         "source_date,close_realized_pnl,close_equity_change,"
         "opening_to_minimum_equity_change,closing_balance_change,trade_count,daily_swap\n"
-        f"{scenario.source_date},1,1,0,1,1,0\n",
+        f"{scenario.source_date},0,0,0,0,0,0\n",
         encoding="utf-8",
     )
 
@@ -687,6 +687,7 @@ def test_real_verdict_entrypoint_executes_new_path_gate(
     verdict.main(["--run", str(run), "--allow-legacy-unverified"])
 
     payload = json.loads((run / "verdict.json").read_text(encoding="utf-8"))
-    assert payload["mc_prob_profit"] == 1.0
+    assert payload["mc_prob_profit"] == 0.0
+    assert all("Gewinnwahrsch" not in reason for reason in payload["reasons"])
     assert "internal_breach_upper_95" in payload["path_bootstrap"]
     assert any("interne Limitverletzung" in reason for reason in payload["reasons"])
