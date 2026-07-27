@@ -202,7 +202,16 @@ mutant_patterns = [
 [[targets]]
 id = "mt5-deal-export"
 path = "live/mt5_bridge.py"
-mutant_patterns = ["live.mt5_bridge.x*Mt5Bridge*history_deals__mutmut_*"]
+mutant_patterns = [
+    "live.mt5_bridge.x__runtime_side__mutmut_*",
+    "live.mt5_bridge.x__order_type__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*positions__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*loss_for_order__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*loss_to_stop__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*history_deals__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*place_order__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*close_position__mutmut_*",
+]
 
 [[targets]]
 id = "monitoring-deal-reconstruction"

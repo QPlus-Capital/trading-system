@@ -445,6 +445,18 @@ generalized = "when an accounting basis changes, enumerate sizing, denominators,
 workflow_change = "constant-basis scoring tests now cross both exact and beyond-basis cumulative losses and require later evidence to remain scored"
 
 [[finding]]
+id = "F-037"
+source = "issue #103 from direction-correctness audit #101"
+defect_class = "catch-all-enum-becomes-executable-action"
+severity = "P2"
+affected = "live/mt5_bridge.py"
+root_cause = "typed BUY/SELL inputs were trusted at runtime and every non-BUY value fell through to an executable SELL, or the opposing BUY close"
+why_tests_missed = "tests covered legal typed values but never injected an unknown MT5 enum or side string and asserted that terminal pricing and order calls stayed at zero"
+regression = "invalid side/type tests in test_live_mt5_bridge.py cover positions, pricing, placement, and close boundaries with zero-call assertions"
+generalized = "at an external or live-action enum boundary, enumerate every accepted value and reject the complement before any side effect; a static Literal is not runtime validation"
+workflow_change = "the critical MT5 mutation scope now covers the shared runtime converter and all five live side boundaries"
+
+[[finding]]
 id = "F-038"
 source = "issue #99 real-artifact direction reconciliation"
 defect_class = "stable-wrong-categorical-value-hidden-by-drift-gates"

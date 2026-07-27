@@ -60,6 +60,35 @@ class Mt5Error(RuntimeError):
     """Raised when a MetaTrader 5 call fails (init, login, data, or order)."""
 
 
+def _runtime_side(
+    value: object,
+    *,
+    position_types: tuple[int, int] | None = None,
+) -> Side:
+    """Return the canonical side, rejecting every unsupported runtime value."""
+    if position_types is not None:
+        buy_type, sell_type = position_types
+        if type(value) is int and value == buy_type:
+            return "BUY"
+        if type(value) is int and value == sell_type:
+            return "SELL"
+        raise Mt5Error(
+            "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+        )
+    if type(value) is str and value == "BUY":
+        return "BUY"
+    if type(value) is str and value == "SELL":
+        return "SELL"
+    raise Mt5Error("invalid order side; expected BUY or SELL")
+
+
+def _order_type(m: Any, value: object, *, opposite: bool = False) -> int:
+    """Return the MT5 order type for a validated side, optionally opposing it."""
+    side = _runtime_side(value)
+    buy_order = (side == "BUY") != opposite
+    return int(m.ORDER_TYPE_BUY if buy_order else m.ORDER_TYPE_SELL)
+
+
 @dataclass(frozen=True)
 class Bar:
     """One completed OHLC bar (epoch seconds, broker feed)."""
@@ -302,7 +331,10 @@ class Mt5Bridge:
             raise Mt5Error(f"positions_get failed: {m.last_error()}")
         out: list[Position] = []
         for p in raw:
-            side: Side = "BUY" if p.type == m.POSITION_TYPE_BUY else "SELL"
+            side = _runtime_side(
+                p.type,
+                position_types=(int(m.POSITION_TYPE_BUY), int(m.POSITION_TYPE_SELL)),
+            )
             out.append(
                 Position(
                     ticket=int(p.ticket),
@@ -345,7 +377,7 @@ class Mt5Bridge:
         cost 0.206% instead of the intended 0.18%. This is not a theoretical correction.
         """
         m = self._require()
-        order_type = m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL
+        order_type = _order_type(m, side)
         profit = m.order_calc_profit(order_type, self.terminal_symbol(name), volume, entry, sl)
         if profit is None:
             return None
@@ -365,10 +397,11 @@ class Mt5Bridge:
         Returns ``None`` when the position has no stop or the terminal cannot price it; the caller
         then falls back to the arithmetic estimate.
         """
+        side = _runtime_side(position.side)
         if position.sl <= 0:
             return None  # unbounded downside -> the caller charges the worst case
         m = self._require()
-        order_type = m.ORDER_TYPE_BUY if position.side == "BUY" else m.ORDER_TYPE_SELL
+        order_type = _order_type(m, side)
         profit = m.order_calc_profit(
             order_type, position.symbol, position.volume, position.price_open, position.sl
         )
@@ -440,14 +473,12 @@ class Mt5Bridge:
     ) -> int:
         """Send a market order; return the resulting deal/order ticket. Raises on rejection."""
         m = self._require()
+        order_type = _order_type(m, side)
         sym = self.terminal_symbol(name)
         tick = m.symbol_info_tick(sym)
         if tick is None:
             raise Mt5Error(f"no tick for {sym}: {m.last_error()}")
-        if side == "BUY":
-            order_type, price = m.ORDER_TYPE_BUY, float(tick.ask)
-        else:
-            order_type, price = m.ORDER_TYPE_SELL, float(tick.bid)
+        price = float(tick.ask) if order_type == m.ORDER_TYPE_BUY else float(tick.bid)
         request = {
             "action": m.TRADE_ACTION_DEAL,
             "symbol": sym,
@@ -497,14 +528,12 @@ class Mt5Bridge:
     def close_position(self, position: Position, *, deviation: int = 20) -> None:
         """Close an open position with an opposing market order. Raises on rejection."""
         m = self._require()
+        order_type = _order_type(m, position.side, opposite=True)
         sym = position.symbol
         tick = m.symbol_info_tick(sym)
         if tick is None:
             raise Mt5Error(f"no tick for {sym}: {m.last_error()}")
-        if position.side == "BUY":
-            order_type, price = m.ORDER_TYPE_SELL, float(tick.bid)
-        else:
-            order_type, price = m.ORDER_TYPE_BUY, float(tick.ask)
+        price = float(tick.ask) if order_type == m.ORDER_TYPE_BUY else float(tick.bid)
         request = {
             "action": m.TRADE_ACTION_DEAL,
             "symbol": sym,
