@@ -39,3 +39,12 @@ number is fabricated.
 No live module or deployed trading path changes. Option A affects research candidate evidence only.
 Stage-3/4 forced deployment remains unchanged, internal/prop limits remain unchanged, and neither
 running live process was invoked or restarted.
+
+## Rebase review
+
+Rebased onto `origin/main` at `82632060223ab83b3ebaa06154f87b00ed7f8c59` after PR #96.
+The only conflict was the append-only finding registry. Main's F-034 was preserved and issue #58's
+pattern was renumbered to the merge-order-reserved F-036. `git range-diff
+8fff632..8631368 8263206..HEAD` shows the issue-58 commits are patch-equivalent apart from retaining
+main's F-034 and renumbering this registry entry. No Stage-1 implementation or test behaviour
+changed during the rebase, so the earlier review still covers the implementation.
