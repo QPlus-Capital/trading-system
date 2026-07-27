@@ -14,6 +14,9 @@ from research.portfolio.path_risk import (
     PROP_DAILY_LIMIT,
     PROP_TRAILING_LIMIT,
     PathRiskMetrics,
+    PathRiskSensitivity,
+    PathRiskSummary,
+    _nearest_rank,
     clopper_pearson_upper,
     replay_scenario_path,
     summarize_path_risk,
@@ -90,6 +93,44 @@ def test_clopper_pearson_all_events_has_unit_upper_bound() -> None:
     assert Decimal("1") == clopper_pearson_upper(10, 10)
 
 
+@pytest.mark.parametrize(
+    ("events", "trials"),
+    [
+        (Decimal("0"), 10),
+        (0, Decimal("10")),
+        (False, 10),
+        (0, True),
+    ],
+)
+def test_clopper_pearson_rejects_non_integer_and_boolean_counts(
+    events: object,
+    trials: object,
+) -> None:
+    with pytest.raises(TypeError, match="event and trial counts must be integers"):
+        clopper_pearson_upper(events, trials)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("confidence", [Decimal("0"), Decimal("1")])
+def test_clopper_pearson_rejects_open_interval_confidence_boundaries(
+    confidence: Decimal,
+) -> None:
+    with pytest.raises(ValueError, match="strictly between zero and one"):
+        clopper_pearson_upper(0, 10, confidence=confidence)
+
+
+def test_nearest_rank_uses_ceiling_and_validates_its_domain() -> None:
+    values = tuple(Decimal(value) for value in range(1, 11))
+
+    assert _nearest_rank(values, Decimal("0.25")) == Decimal("3")
+    assert _nearest_rank(values, Decimal("1")) == Decimal("10")
+    with pytest.raises(ValueError, match="non-empty"):
+        _nearest_rank((), Decimal("0.5"))
+    with pytest.raises(ValueError, match=r"\(0, 1\]"):
+        _nearest_rank(values, Decimal("0"))
+    with pytest.raises(ValueError, match=r"\(0, 1\]"):
+        _nearest_rank(values, Decimal("1.01"))
+
+
 def test_intraday_internal_breach_survives_profitable_close() -> None:
     replay = replay_scenario_path(
         (_scenario(0, balance="10", equity="10", minimum="-30"),),
@@ -123,6 +164,83 @@ def test_same_day_balance_high_raises_the_conservative_trailing_floor() -> None:
 
     assert replay.internal_trailing_breach
     assert not replay.prop_trailing_breach
+
+
+def test_prop_trailing_breach_persists_after_a_recovery_day() -> None:
+    replay = replay_scenario_path(
+        (
+            _scenario(0, minimum="-60"),
+            _scenario(1, balance="10", equity="10", minimum="0"),
+        ),
+        start_balance=Decimal("1000"),
+    )
+
+    assert replay.internal_trailing_breach
+    assert replay.prop_trailing_breach
+
+
+def test_prop_trailing_breach_uses_the_exact_live_boundary() -> None:
+    at_limit = replay_scenario_path(
+        (_scenario(0, minimum="-60"),),
+        start_balance=Decimal("1000"),
+    )
+    below_limit = replay_scenario_path(
+        (_scenario(0, minimum="-59.99"),),
+        start_balance=Decimal("1000"),
+    )
+
+    assert at_limit.prop_trailing_breach
+    assert not below_limit.prop_trailing_breach
+
+
+def test_time_under_water_counts_every_underwater_close() -> None:
+    replay = replay_scenario_path(
+        (
+            _scenario(0, balance="-10", equity="-10", minimum="-10"),
+            _scenario(1),
+            _scenario(2, balance="20", equity="20"),
+        ),
+        start_balance=Decimal("1000"),
+    )
+
+    assert replay.time_under_water == Decimal("2") / Decimal("3")
+
+
+@pytest.mark.parametrize("start_balance", [Decimal("0"), Decimal("-1"), Decimal("NaN")])
+def test_path_replay_rejects_nonpositive_or_nonfinite_start_balance(
+    start_balance: Decimal,
+) -> None:
+    with pytest.raises(ValueError, match="finite and positive"):
+        replay_scenario_path((_scenario(0),), start_balance=start_balance)
+
+
+def test_path_replay_guards_strict_internal_limit_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("research.portfolio.path_risk.INTERNAL_DAILY_LIMIT", PROP_DAILY_LIMIT)
+    with pytest.raises(RuntimeError, match="daily limit must be strictly tighter"):
+        replay_scenario_path((_scenario(0),), start_balance=Decimal("1000"))
+
+    monkeypatch.setattr("research.portfolio.path_risk.INTERNAL_DAILY_LIMIT", INTERNAL_DAILY_LIMIT)
+    monkeypatch.setattr(
+        "research.portfolio.path_risk.INTERNAL_TRAILING_LIMIT",
+        PROP_TRAILING_LIMIT,
+    )
+    with pytest.raises(RuntimeError, match="trailing limit must be strictly tighter"):
+        replay_scenario_path((_scenario(0),), start_balance=Decimal("1000"))
+
+
+def test_nonpositive_opening_balance_fails_both_daily_limits_closed() -> None:
+    replay = replay_scenario_path(
+        (
+            _scenario(0, balance="-1001", equity="-1001"),
+            _scenario(1),
+        ),
+        start_balance=Decimal("1000"),
+    )
+
+    assert replay.internal_daily_breach is True
+    assert replay.prop_daily_breach is True
 
 
 def test_one_breach_day_among_ten_matches_analytical_path_probability() -> None:
@@ -282,6 +400,83 @@ def test_empirical_quantiles_expected_shortfall_and_water_time_are_exact() -> No
     assert metrics.max_drawdown_p95 == Decimal("60") / Decimal("1060")
     assert metrics.time_under_water_p05 == 0
     assert metrics.time_under_water_p95 == 1
+
+
+def test_expected_shortfall_uses_ceiling_five_percent_tail_count() -> None:
+    returns = (-50, -40, -30, *range(47))
+    paths = tuple(
+        (
+            _scenario(
+                index,
+                balance=str(value),
+                equity=str(value),
+                minimum=str(min(value, 0)),
+            ),
+        )
+        for index, value in enumerate(returns)
+    )
+
+    metrics = summarize_sampled_paths(paths, start_balance=Decimal("1000"))
+
+    assert metrics.expected_shortfall_05 == Decimal("-0.04")
+
+
+def test_sampled_path_summary_requires_one_complete_common_horizon() -> None:
+    with pytest.raises(ValueError, match="positive calendar-day horizon"):
+        summarize_sampled_paths(((),), start_balance=Decimal("1000"))
+    with pytest.raises(ValueError, match="positive calendar-day horizon"):
+        summarize_sampled_paths(
+            (
+                (_scenario(0),),
+                (_scenario(1), _scenario(2)),
+            ),
+            start_balance=Decimal("1000"),
+        )
+
+
+def test_path_risk_summary_rejects_inconsistent_counts_and_seed() -> None:
+    metrics = summarize_sampled_paths(
+        ((_scenario(0, balance="1"),),),
+        start_balance=Decimal("1000"),
+    )
+    sensitivity = tuple(
+        PathRiskSensitivity(label, block, metrics)
+        for label, block in (
+            ("plugin", 2),
+            ("fixed_5", 5),
+            ("fixed_10", 10),
+            ("fixed_20", 20),
+            ("fixed_60", 60),
+        )
+    )
+
+    with pytest.raises(TypeError, match="seed and counts must be integers"):
+        PathRiskSummary(
+            seed=None,  # type: ignore[arg-type]
+            replications=1,
+            horizon_days=1,
+            selected_block_length=2,
+            sensitivity=sensitivity,
+        )
+
+    inconsistent = PathRiskMetrics(
+        **{
+            **metrics.__dict__,
+            "internal_any_breach_probability": Decimal("1"),
+            "internal_any_breach_count": 0,
+        }
+    )
+    with pytest.raises(ValueError, match="count and probability disagree"):
+        PathRiskSummary(
+            seed=1,
+            replications=1,
+            horizon_days=1,
+            selected_block_length=2,
+            sensitivity=(
+                PathRiskSensitivity("plugin", 2, inconsistent),
+                *sensitivity[1:],
+            ),
+        )
 
 
 def test_path_risk_summary_is_bit_deterministic(
