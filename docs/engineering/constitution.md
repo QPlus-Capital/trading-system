@@ -19,7 +19,8 @@ handover points.
 
 - **Codex is the primary builder.** It specifies the bounded change, classifies risk, analyses
   impact, proves the guard red, implements, verifies every required gate, maintains the task
-  artifact, and opens the ready pull request. It does not merge.
+  artifact, and opens the **draft** pull request that the independent review runs on. It marks a
+  pull request ready for review only once that review is clean, and it does not merge.
 - **Claude is the primary reviewer and conceptual designer.** It translates Jan's intent into a
   precise specification, then independently reviews the completed Codex change in fresh context
   through its read-only review skills and subagents. The builder never reviews its own work.

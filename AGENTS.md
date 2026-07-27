@@ -20,7 +20,8 @@ diagrams, and the one-line-per-file module map.
 
 Codex specifies the bounded change from Jan's request or Claude's design, classifies its risk,
 analyses impact, writes red-first tests, implements, runs every required gate, maintains the task
-artifact, and opens a ready pull request. Do not merge.
+artifact, and opens the **draft** pull request the independent review runs on. Mark it ready for
+review only once that review is clean. Do not merge.
 
 ## This repository trades real money
 
@@ -51,13 +52,21 @@ Every non-trivial change carries a risk class R0–R3, defined in
 mandatory gates, which task artifacts exist as files, how many PR sections are required, and which
 review subagents run.
 
-**0. Check the permit — before anything else.** Refuse to build unless the board card is in
-`Ready to Implement`, the label `approved` is present, and a `risk:Rn` label is present. On
-refusal, report the actual status and stop. If a branch or pull request already exists for the
-issue, resume it rather than starting again.
+**0. Check the permit — before anything else.** Two disjoint guards, because the first start
+consumes the permit and resuming therefore cannot demand it.
 
-Then move the card to `Implementing` and **only afterwards** remove `approved`. The reverse
-order would destroy the permit if the status update failed.
+- **Starting new work.** Refuse unless the board card is in `Ready to Implement`, the label
+  `approved` is present, and a `risk:Rn` label is present. Then move the card to `Implementing` and
+  **only afterwards** remove `approved` — the reverse order would destroy the permit if the status
+  update failed.
+- **Resuming.** When a branch or pull request for this issue already exists and was created by a
+  builder for this repository, resume it **without** a permit, provided the card is in
+  `Implementing` or `Reviewing`. That is the normal state after an interruption or after a review
+  sent the change back, and demanding the already-consumed permit there would lock you out of your
+  own branch.
+
+Any other combination is a refusal: report the actual status and stop. A card in `Backlog`,
+`Specifying` or `Blocked` is never built, with or without a branch.
 
 1. **Specify** — the specification is the issue body; Claude wrote it and Jan approved it. Do not
    restate it in a file and do not extend it. If it is wrong, incomplete, or unbuildable, do not

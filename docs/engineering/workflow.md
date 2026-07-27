@@ -130,12 +130,21 @@ phase 2 then runs again, including Jan's approval.
 
 Jan says `implement #101`. Nothing more is ever required.
 
-**Guard first.** Codex refuses to build unless the card is in `Ready to Implement`, `approved`
-is present, and a `risk:Rn` label is present. If a branch or PR already exists for the issue, Codex
-resumes rather than restarting. On refusal it reports the actual status.
+**Guard first — two disjoint rules**, because starting consumes the permit and resuming therefore
+cannot require it.
 
-Then it moves the card to `Implementing` and **only afterwards** removes `approved` — the
-reverse order would lose the permit if the status update failed.
+| Case | Condition | Then |
+|---|---|---|
+| **Start** | card in `Ready to Implement`, `approved` present, `risk:Rn` present | move the card to `Implementing`, **then** remove `approved` |
+| **Resume** | a branch or PR for this issue already exists, and the card is in `Implementing` or `Reviewing` | continue on it **without** a permit — the first start already consumed it |
+
+Anything else is a refusal, reporting the actual status. A card in `Backlog`, `Specifying` or
+`Blocked` is never built, branch or no branch.
+
+The order in the start case matters: removing the permit before the status move would destroy it if
+the move then failed. The resume case exists because it is the normal state after an interruption or
+after a review sent the change back — a guard that demanded the consumed permit there would lock the
+builder out of its own branch.
 
 **Isolation:** one git worktree per issue, branch `codex/<issue>-<slug>` (or `claude/<issue>-<slug>`
 when Claude builds under the exception). Several issues can run in parallel, the main checkout stays
@@ -147,7 +156,7 @@ clean, and a running live runner never sees half-finished code.
 3  Prove RED       write the test, run it, record the failure
 4  Build           the smallest coherent change; clean up nothing on the side
 5  Prove GREEN
-6  Gates           those of the risk class — no more, no less
+6  Gates           at least those of the risk class, plus any scoped check that applies
 7  Evidence        command, exit code, result
 8  Open a draft PR with "Closes #101"
 9  Card            → Reviewing
@@ -197,8 +206,10 @@ assessment of the **chosen approach**, and a clearly separated block of decision
 Changes are requested for any blocking finding. At R2 and above the same findings are recorded in
 `.ai/tasks/<id>/review.md` as a versioned audit trail.
 
-A blocking finding returns the card to `Implementing`. After the fix the **entire** review runs
-again, not only the changed place — a fix can break something elsewhere.
+A blocking finding returns the card to `Implementing`. Codex fixes it and, on pushing the fix, moves
+the card **back to `Reviewing`** — otherwise the board would report building while a review is
+running, and the status field would stop being the truth it is declared to be. The **entire** review
+then runs again, not only the changed place: a fix can break something elsewhere.
 
 Once the review is clean, Codex marks the pull request **ready for review**. That transition is what
 the readiness check gates, and it is the signal that the change is Jan's to judge.
@@ -250,6 +261,47 @@ worktree removed.
 `uv sync`, start, observe — and only then investigate the cause. Below R3 an ordinary fix is enough.
 
 ---
+
+## State transitions
+
+Prose describes one transition at a time, which is how a missing one hides. The table is the
+contract; the phases above explain it.
+
+| From → To | Who | When |
+|---|---|---|
+| — → `Backlog` | project automation | an issue is opened |
+| `Backlog` → `Specifying` | Claude | Jan asks for the idea to be worked out |
+| `Specifying` → `Blocked` | Claude | a decision only Jan can make is open |
+| `Blocked` → `Specifying` | Claude | Jan decided |
+| `Specifying` → `Backlog` | Claude | Jan defers the idea; the specification is kept |
+| `Specifying` → `Ready to Implement` | Claude | Jan approves; `approved` is written last |
+| `Ready to Implement` → `Specifying` | Claude | an approved issue must change; `approved` is removed first |
+| `Ready to Implement` → `Implementing` | Codex | build starts; `approved` is removed afterwards |
+| `Implementing` → `Reviewing` | Codex | the draft pull request is opened |
+| `Reviewing` → `Implementing` | Claude | a blocking finding |
+| `Implementing` → `Reviewing` | Codex | the review fix is pushed |
+| `Implementing` → `Specifying` | Codex | the specification is wrong, incomplete or unbuildable |
+| any → `Blocked` | any agent | a business, trading, methodology, live-money, architecture or risk decision is open |
+| `Reviewing` → `Done` | project automation | the pull request merged and closed the issue |
+
+`Done` is terminal. `Backlog` is the only status with no predecessor.
+
+## Not yet active
+
+Three parts of this contract describe tooling the repository does not have yet. Until each lands,
+the rule in the right-hand column is authoritative — so the procedure above is always executable as
+written.
+
+| Part of this contract | Lands with | Until then |
+|---|---|---|
+| The draft pull request carries the review | [#109](https://github.com/QPlus-Capital/trading-system/issues/109) | The pre-Bash hook blocks `gh pr create` until the readiness check passes, so the independent review runs on the **branch** and the pull request is opened afterwards. |
+| Artifact files scale by risk class | [#109](https://github.com/QPlus-Capital/trading-system/issues/109) | `task-artifacts.toml` requires all five files for every class, `spec.md` included. Write them. |
+| Board transitions performed by tooling | [#110](https://github.com/QPlus-Capital/trading-system/issues/110) | Agents call `gh` directly and are responsible for the ordering rules themselves. |
+| The `methodology-reviewer` subagent | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | The general code reviewer carries the constitution §4 methodology invariants, as it does today. |
+| Findings named `Blocker` / `Defect` / `Suspected defect` / `Note` | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | Severities are `P0`–`P3`, as the constitution §12 states. |
+
+A row leaves this table in the same change that lands its dependency. An empty table means the
+contract and the repository have converged.
 
 ## Handover points
 

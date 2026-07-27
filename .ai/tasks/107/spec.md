@@ -43,7 +43,16 @@ as permits, so that `implement #101` is a complete instruction to the builder.
   removed.
 - AC-05: `CLAUDE.md` states that `approved` is written last and that approval requires Jan
   explicitly.
-- AC-06: The existing documentation consistency tests pass unchanged.
+- AC-06: The existing documentation consistency tests still pass; any marker they hold that this
+  change invalidates is updated in the same change, and none is removed or weakened.
+- AC-07: The builder guard defines starting and resuming as two disjoint rules, so a builder can
+  resume its own branch after the permit was consumed.
+- AC-08: The workflow declares its transitions as a table in which every status has a documented way
+  in and out, including the return to `Reviewing` after a review fix.
+- AC-09: Every part of the contract that the repository cannot execute yet is named together with
+  the change that activates it and the rule that holds until then.
+- AC-10: No role document describes the builder as opening a ready pull request, and the workflow
+  never describes the required gates as a maximum.
 
 ## Invariants
 
