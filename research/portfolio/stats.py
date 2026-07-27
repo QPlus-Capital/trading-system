@@ -50,8 +50,9 @@ def _market_trades(
 ) -> pd.DataFrame:
     """Full-history backtest of one market at the frozen config -> timed trades with R-multiples.
 
-    If ``broker`` carries a swap spec for this market, the per-trade overnight swap (in R) is
-    netted onto the R-multiples, so every downstream metric is automatically net of swap.
+    ``r`` remains the gross price R recovered from the engine report. When ``broker`` is supplied,
+    realized overnight carry is attached separately as ``swap_r`` and the statistical stream is
+    exposed as ``net_r = r + swap_r``. A broker without a market swap spec records zero carry.
     """
     from nautilus_trader.backtest.node import BacktestNode
 
@@ -72,8 +73,11 @@ def _market_trades(
     rows = timed_trades_from_report(pos, name, sl)
     df = pd.DataFrame(rows).sort_values("ts_closed").reset_index(drop=True)
     df["r"] = r_multiples(df["pnl_base"].tolist())
-    if broker is not None and (spec := broker.swap_spec(name)) is not None:
-        df["r"] = df["r"].to_numpy(dtype=float) + swap_r_per_trade(df, spec)
+    if broker is not None:
+        df["swap_r"] = 0.0
+        if (spec := broker.swap_spec(name)) is not None:
+            df["swap_r"] = swap_r_per_trade(df, spec)
+        df["net_r"] = df["r"].to_numpy(dtype=float) + df["swap_r"].to_numpy(dtype=float)
     return df
 
 

@@ -61,6 +61,8 @@ def test_market_swaps_direction_and_sign() -> None:
             "entry": [2000.0],
             "exit": [1980.0],
             "r": [1.0],
+            "swap_r": [-0.25],
+            "net_r": [0.75],
         }  # price fell, r>0 -> short winner
     )
     spec = SwapSpec(
@@ -68,5 +70,5 @@ def test_market_swaps_direction_and_sign() -> None:
     )
     m = market_swaps(trades, spec, sl_pct=1.0, risk_amount=300.0)
     assert not bool(m["is_long"].iloc[0])  # inferred short
-    assert m["flat_pnl"].iloc[0] == 300.0  # risk_amount * r
+    assert m["flat_pnl"].iloc[0] == 300.0  # risk_amount * gross r, never pre-netted net_r
     assert m["swap_pnl"].iloc[0] < 0  # one night of the (negative) short swap
