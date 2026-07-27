@@ -214,6 +214,12 @@ def test_path_replay_rejects_nonpositive_or_nonfinite_start_balance(
         replay_scenario_path((_scenario(0),), start_balance=start_balance)
 
 
+def test_unit_start_balance_is_valid() -> None:
+    replay = replay_scenario_path((_scenario(0),), start_balance=Decimal("1"))
+
+    assert replay.final_return == 0
+
+
 def test_path_replay_guards_strict_internal_limit_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -241,6 +247,19 @@ def test_nonpositive_opening_balance_fails_both_daily_limits_closed() -> None:
 
     assert replay.internal_daily_breach is True
     assert replay.prop_daily_breach is True
+
+
+def test_small_positive_opening_balance_is_not_itself_a_breach() -> None:
+    replay = replay_scenario_path(
+        (
+            _scenario(0, balance="-999.5", equity="-999.5"),
+            _scenario(1),
+        ),
+        start_balance=Decimal("1000"),
+    )
+
+    assert replay.internal_daily_breach is False
+    assert replay.prop_daily_breach is False
 
 
 def test_one_breach_day_among_ten_matches_analytical_path_probability() -> None:
@@ -419,6 +438,17 @@ def test_expected_shortfall_uses_ceiling_five_percent_tail_count() -> None:
     metrics = summarize_sampled_paths(paths, start_balance=Decimal("1000"))
 
     assert metrics.expected_shortfall_05 == Decimal("-0.04")
+
+
+def test_exactly_flat_final_return_is_not_negative_or_profitable() -> None:
+    metrics = summarize_sampled_paths(
+        ((_scenario(0),),),
+        start_balance=Decimal("1000"),
+    )
+
+    assert metrics.prob_profit == 0
+    assert metrics.negative_final_probability == 0
+    assert metrics.negative_final_count == 0
 
 
 def test_sampled_path_summary_requires_one_complete_common_horizon() -> None:
