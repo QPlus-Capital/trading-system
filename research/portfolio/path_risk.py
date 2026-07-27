@@ -204,7 +204,7 @@ def _nearest_rank(values: Sequence[Decimal], probability: Decimal) -> Decimal:
         raise ValueError("nearest-rank probability must be in (0, 1]")
     ordered = sorted(values)
     rank = int((probability * Decimal(len(ordered))).to_integral_value(rounding=ROUND_CEILING))
-    return ordered[max(1, rank) - 1]
+    return ordered[rank - 1]
 
 
 def _probability(count: int, trials: int) -> Decimal:
@@ -269,6 +269,34 @@ class PathRiskMetrics:
             raise ValueError("internal breach probability is below prop trailing probability")
         if self.internal_any_breach_probability < self.prop_any_breach_probability:
             raise ValueError("internal breach probability is below prop any-limit probability")
+        if self.internal_any_breach_probability < self.internal_daily_breach_probability:
+            raise ValueError("internal any-limit probability is below its daily component")
+        if self.internal_any_breach_probability < self.internal_trailing_breach_probability:
+            raise ValueError("internal any-limit probability is below its trailing component")
+        if self.prop_any_breach_probability < self.prop_daily_breach_probability:
+            raise ValueError("prop any-limit probability is below its daily component")
+        if self.prop_any_breach_probability < self.prop_trailing_breach_probability:
+            raise ValueError("prop any-limit probability is below its trailing component")
+        if self.prob_profit + self.negative_final_probability > 1:
+            raise ValueError("profit and negative-return probabilities overlap")
+        if not (
+            self.final_return_p05 <= self.final_return_median <= self.final_return_p95
+        ):
+            raise ValueError("final-return percentiles must be ordered")
+        if self.expected_shortfall_05 > self.final_return_p05:
+            raise ValueError("expected shortfall must not exceed the fifth percentile")
+        if not (
+            self.max_drawdown_p05
+            <= self.max_drawdown_median
+            <= self.max_drawdown_p95
+        ):
+            raise ValueError("maximum-drawdown percentiles must be ordered")
+        if not (
+            self.time_under_water_p05
+            <= self.time_under_water_median
+            <= self.time_under_water_p95
+        ):
+            raise ValueError("time-under-water percentiles must be ordered")
         if self.internal_any_breach_count < 0 or self.negative_final_count < 0:
             raise ValueError("path event counts must be non-negative")
 
@@ -305,6 +333,9 @@ def summarize_sampled_paths(
     """Summarize an already-sampled P-10 path collection without resampling it."""
     if not paths:
         raise ValueError("sampled path collection must be non-empty")
+    horizon_days = len(paths[0])
+    if horizon_days <= 0 or any(len(path) != horizon_days for path in paths):
+        raise ValueError("sampled paths must share one positive calendar-day horizon")
     replays = tuple(replay_scenario_path(path, start_balance=start_balance) for path in paths)
     finals = tuple(replay.final_return for replay in replays)
     drawdowns = tuple(replay.max_drawdown for replay in replays)
@@ -330,7 +361,7 @@ def summarize_sampled_paths(
         final_return_p05=_nearest_rank(finals, _FIVE_PERCENT),
         final_return_median=_nearest_rank(finals, _HALF),
         final_return_p95=_nearest_rank(finals, _NINETY_FIVE_PERCENT),
-        expected_shortfall_05=sum(worst_returns, start=Decimal("0")) / Decimal(tail_count),
+        expected_shortfall_05=sum(worst_returns) / Decimal(tail_count),
         max_drawdown_p05=_nearest_rank(drawdowns, _FIVE_PERCENT),
         max_drawdown_median=_nearest_rank(drawdowns, _HALF),
         max_drawdown_p95=_nearest_rank(drawdowns, _NINETY_FIVE_PERCENT),
@@ -375,17 +406,43 @@ class PathRiskSummary:
     sensitivity: tuple[PathRiskSensitivity, ...]
 
     def __post_init__(self) -> None:
+        if (
+            isinstance(self.seed, bool)
+            or isinstance(self.replications, bool)
+            or isinstance(self.horizon_days, bool)
+            or isinstance(self.selected_block_length, bool)
+            or not isinstance(self.seed, int)
+            or not isinstance(self.replications, int)
+            or not isinstance(self.horizon_days, int)
+            or not isinstance(self.selected_block_length, int)
+        ):
+            raise TypeError("path-risk summary seed and counts must be integers")
         if self.replications <= 0 or self.horizon_days <= 0:
             raise ValueError("path-risk summary counts must be positive")
-        if not self.sensitivity or self.sensitivity[0].label != "plugin":
-            raise ValueError("path-risk sensitivity must begin with the plug-in result")
+        if self.selected_block_length <= 0:
+            raise ValueError("selected block length must be positive")
+        expected_labels = ("plugin", "fixed_5", "fixed_10", "fixed_20", "fixed_60")
+        if tuple(item.label for item in self.sensitivity) != expected_labels:
+            raise ValueError("path-risk sensitivity labels are incomplete or out of order")
         if self.sensitivity[0].block_length != self.selected_block_length:
             raise ValueError("selected block length disagrees with the plug-in result")
         for item in self.sensitivity:
+            if item.block_length <= 0:
+                raise ValueError("sensitivity block lengths must be positive")
             if item.metrics.internal_any_breach_count > self.replications:
                 raise ValueError("internal breach count exceeds the replication count")
             if item.metrics.negative_final_count > self.replications:
                 raise ValueError("negative return count exceeds the replication count")
+            if item.metrics.internal_any_breach_probability != _probability(
+                item.metrics.internal_any_breach_count,
+                self.replications,
+            ):
+                raise ValueError("internal breach count and probability disagree")
+            if item.metrics.negative_final_probability != _probability(
+                item.metrics.negative_final_count,
+                self.replications,
+            ):
+                raise ValueError("negative return count and probability disagree")
 
     @property
     def selected(self) -> PathRiskMetrics:
