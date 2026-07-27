@@ -120,5 +120,9 @@ the synchronized H4 path and sampled-path risk.
 - Both trade CSVs and `loss_day_scenarios.csv` are byte-identical.
 
 The deterministic direction is worse by `0.05` percentage points because the old daily-only HWM
-missed a real H4 equity high before the worst day's later trough. That is the ordering required by
-AC-02, not future leakage, and is recorded as an explicit review finding rather than suppressed.
+missed a real observable H4 equity close before the worst day's later trough. The HWM is
+`105358.0054636296` at `2024-12-05 06:00 UTC`; the adverse mark is
+`101826.1397626577` in `[2024-12-27 06:00, 10:00) UTC`. The old daily-close-only HWM was
+`105301.2943667631`. The peak is therefore about 22 days strictly earlier than the minimum, not a
+same-interval favorable extreme or a later close. That is the ordering required by AC-02, not
+future leakage, and is recorded as an explicit review finding rather than suppressed.
