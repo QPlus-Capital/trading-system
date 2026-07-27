@@ -7,13 +7,19 @@ is required before Jan's merge decision.
 
 ## Findings
 
-| ID | Severity | Finding | Resolution |
-|---|---|---|---|
-| ISSUE-91-F1 | P1 | Deterministic H4 drawdown used the same day's later close-equity peak for an earlier minimum. | Fixed in the authoritative synchronized H4 replay; two red-first ordering fixtures pass. |
-| ISSUE-91-F2 | P1 | P-11 replay repeated the same minimum/close ordering error. | Fixed by comparing the minimum before updating the close-equity HWM; red-first path fixtures pass. |
-| ISSUE-91-F3 | P1 | The first chronological H4 implementation could mark a newly opened position at a market close observed before its entry, creating a false peak. | Fixed by timestamping the last market close and using entry until a post-entry close is observable; a boundary-entry regression passes. |
-| ISSUE-91-F4 | P2 | The requested claim that drawdown should improve is not true for the current baseline once genuine earlier intraday peaks are retained. | Reported, not hidden: deterministic holdout max drawdown moves `-3.30% -> -3.35%`; the worst day contains a real pre-trough H4 peak. No rule was weakened. |
-| ISSUE-91-F5 | P2 | Changing the trailing gate to strict chronology would be an unratified methodology/gate decision. | Existing gate convention is unchanged; paired strict-chronology results are labelled diagnostic-only and escalated to Jan. |
+| ID | Severity | Finding | Disposition | Status |
+|---|---|---|---|---|
+| ISSUE-91-F1 | P1 | Deterministic H4 drawdown used the same day's later close-equity peak for an earlier minimum. | Fixed in the authoritative synchronized H4 replay; two red-first ordering fixtures pass. | resolved |
+| ISSUE-91-F2 | P1 | P-11 replay repeated the same minimum/close ordering error. | Compare the minimum before updating the close-equity HWM; red-first path fixtures pass. | resolved |
+| ISSUE-91-F3 | P1 | The first chronological H4 implementation could mark a newly opened position at a market close observed before its entry, creating a false peak. | Timestamp the last market close and use entry until a post-entry close is observable; boundary-entry regression passes. | resolved |
+| ISSUE-91-F4 | P2 | The requested claim that drawdown should improve is not true for the current baseline once genuine earlier intraday peaks are retained. | Report the adverse direction: holdout drawdown `-3.30% -> -3.35%`; retain the required real pre-trough H4 peak. | resolved |
+| ISSUE-91-F5 | P2 | Changing the trailing gate to strict chronology would be an unratified methodology/gate decision. | Preserve the gate, label paired strict chronology diagnostic-only, and escalate the open decision to Jan. | resolved |
+
+## Dispositions
+
+All five findings have a bounded disposition. F1-F3 have executable regressions. F4 records an
+unfavourable but correct numerical result. F5 preserves the ratified gate and leaves the broader
+methodology choice to Jan; no implementation work is silently deferred inside this package.
 
 ## Counterexamples attempted
 
