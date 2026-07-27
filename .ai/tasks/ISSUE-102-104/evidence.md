@@ -35,7 +35,7 @@ Only this evidence file may change after the tested HEAD.
 | `red-first` | `uv run pytest -q tests/test_monitoring_deals.py tests/test_monitoring_risk_view.py` before implementation | 1 | RED: 6 failed and 26 passed. Unknown type `13` and `True` did not raise; INOUT emitted one row instead of two; OUT_BY emitted none; scale-in volume remained `0.1` instead of `0.3`; and the reversal opening boundary was absent. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | One production file; two direct and two transitive monitoring test modules plus property tests; no unknown or dynamic edges. |
 | `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean, pip-audit found no known vulnerability, and Ruff security checks passed. |
-| `pr-ready` | pending evidence-only run | 1 | To be run after this evidence is committed; expected NOT READY solely because Linux mutation is blocked. |
+| `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-102-104 --base origin/main` | 1 | NOT READY solely on `mutation-on-touched-critical (1)`; task artifacts, R3 declaration, and HEAD-bound evidence all pass. |
 
 ## Numerical and artifact regression
 
