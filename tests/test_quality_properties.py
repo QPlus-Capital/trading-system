@@ -33,6 +33,7 @@ from research.forward_test_registry import (
     hash_cohort_inputs,
 )
 from research.portfolio.drawdown import evaluate, trailing_floor
+from research.portfolio.path_risk import clopper_pearson_upper, replay_scenario_path
 from research.portfolio.scenarios import (
     LossDayScenario,
     sample_scenario_paths,
@@ -69,6 +70,7 @@ def test_loss_day_scenarios_remain_joint_and_fixed_horizon(
     scenarios = tuple(
         LossDayScenario(
             source_date=date(2020, 1, 1) + timedelta(days=index),
+            source_opening_balance=Decimal("100000"),
             close_realized_pnl=Decimal(value),
             close_equity_change=Decimal(value * 2),
             opening_to_minimum_equity_change=-abs(Decimal(value)),
@@ -95,6 +97,62 @@ def test_loss_day_scenarios_remain_joint_and_fixed_horizon(
     assert first == second
     validate_joint_paths(scenarios, first)
     assert all(len(path) == len(scenarios) for path in first)
+
+
+@given(
+    balance_changes=st.lists(
+        st.integers(min_value=-500, max_value=500),
+        min_size=1,
+        max_size=20,
+    ),
+    adverse_changes=st.lists(
+        st.integers(min_value=-700, max_value=0),
+        min_size=1,
+        max_size=20,
+    ),
+)
+def test_path_replay_preserves_internal_prop_limit_monotonicity(
+    balance_changes: list[int],
+    adverse_changes: list[int],
+) -> None:
+    horizon = min(len(balance_changes), len(adverse_changes))
+    scenarios = tuple(
+        LossDayScenario(
+            source_date=date(2026, 1, 1) + timedelta(days=index),
+            source_opening_balance=Decimal("100000"),
+            close_realized_pnl=Decimal(balance_changes[index]),
+            close_equity_change=Decimal(balance_changes[index]),
+            opening_to_minimum_equity_change=Decimal(adverse_changes[index]),
+            closing_balance_change=Decimal(balance_changes[index]),
+            trade_count=1,
+            daily_swap=Decimal("0"),
+        )
+        for index in range(horizon)
+    )
+
+    replay = replay_scenario_path(scenarios, start_balance=Decimal("100000"))
+
+    assert not replay.prop_daily_breach or replay.internal_daily_breach
+    assert not replay.prop_trailing_breach or replay.internal_trailing_breach
+    assert not replay.prop_any_breach or replay.internal_any_breach
+
+
+@given(
+    trials=st.integers(min_value=1, max_value=100),
+    first=st.integers(min_value=0, max_value=100),
+    second=st.integers(min_value=0, max_value=100),
+)
+def test_clopper_pearson_upper_is_positive_and_monotone(
+    trials: int,
+    first: int,
+    second: int,
+) -> None:
+    low_events, high_events = sorted((min(first, trials), min(second, trials)))
+
+    low = clopper_pearson_upper(low_events, trials)
+    high = clopper_pearson_upper(high_events, trials)
+
+    assert Decimal("0") < low <= high <= Decimal("1")
 
 
 @given(

@@ -91,8 +91,27 @@ mutant_patterns = [
     "research.portfolio.scenarios.x__stationary_source_indices__mutmut_*",
     "research.portfolio.scenarios.x_sample_scenario_paths__mutmut_*",
     "research.portfolio.scenarios.x_validate_joint_paths__mutmut_*",
+    "research.portfolio.scenarios.x_scenario_path_probability_of_profit__mutmut_*",
+    "research.portfolio.scenarios.x_scenario_bootstrap_choices__mutmut_*",
     "research.portfolio.scenarios.x__probability_of_profit__mutmut_*",
     "research.portfolio.scenarios.x_summarize_scenario_bootstrap__mutmut_*",
+]
+
+[[targets]]
+id = "loss-day-path-risk"
+path = "research/portfolio/path_risk.py"
+mutant_patterns = [
+    "research.portfolio.path_risk.x_clopper_pearson_upper__mutmut_*",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_*",
+    "research.portfolio.path_risk.x__nearest_rank__mutmut_*",
+    "research.portfolio.path_risk.x*PathRiskMetrics*__post_init____mutmut_*",
+    "research.portfolio.path_risk.x_summarize_sampled_paths__mutmut_*",
+    "research.portfolio.path_risk.x*PathRiskSummary*__post_init____mutmut_*",
+    "research.portfolio.path_risk.x*PathRiskSummary*internal_breach_upper_95__mutmut_*",
+    "research.portfolio.path_risk.x*PathRiskSummary*negative_return_upper_95__mutmut_*",
+    "research.portfolio.path_risk.x*PathRiskSummary*internal_breach_gate_passes__mutmut_*",
+    "research.portfolio.path_risk.x*PathRiskSummary*negative_return_gate_passes__mutmut_*",
+    "research.portfolio.path_risk.x_summarize_path_risk__mutmut_*",
 ]
 
 [[targets]]

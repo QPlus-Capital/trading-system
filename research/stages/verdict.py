@@ -2,7 +2,7 @@
 
 Reads the cached holdout + full-history trade streams from Stage 3 (no slow re-extraction) and
 produces: the accept/reject gate (positive return, within the drawdown ceiling, survives a
-stressed tail, Monte-Carlo profit probability), the tradeable portfolio spec, and the fact sheet
+stressed tail, and bounded loss-day path risk), the tradeable portfolio spec, and the fact sheet
 (:mod:`research.portfolio.factsheet`) -- the metrics matrix comparing the full history vs
 the holdout and flat vs compound sizing, per-market and per-year contributions (flat % lens), and
 regime robustness. It is printed as a terminal summary and written as a self-contained
@@ -23,6 +23,7 @@ import json
 import math
 from collections.abc import Mapping
 from dataclasses import replace
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,11 @@ import pandas as pd
 from research.engine.config import load_config_module
 from research.portfolio import factsheet, html_report
 from research.portfolio.curves import DAY_NS, load_daily_close, load_h4_prices
+from research.portfolio.path_risk import (
+    BREACH_PROBABILITY_LIMIT,
+    NEGATIVE_RETURN_PROBABILITY_LIMIT,
+    summarize_path_risk,
+)
 from research.portfolio.resample import DEFAULT_SEED
 from research.portfolio.risk import (
     AccountProfile,
@@ -40,7 +46,6 @@ from research.portfolio.risk import (
 )
 from research.portfolio.scenarios import (
     read_loss_day_scenarios,
-    summarize_scenario_bootstrap,
 )
 from research.portfolio.stats import edge_stats, risk_stats
 from research.stages import _runbook as rb
@@ -158,8 +163,13 @@ def main(argv: list[str] | None = None) -> None:
             "loss_day_scenarios.csv fehlt: Stage 3 mit dem aktuellen Code erneut ausfuehren."
         )
     scenarios = read_loss_day_scenarios(scenario_path)
-    bootstrap = summarize_scenario_bootstrap(scenarios)
+    bootstrap = summarize_path_risk(
+        scenarios,
+        start_balance=Decimal(str(account.start_balance)),
+    )
     prob_profit = float(bootstrap.prob_profit)
+    internal_breach_upper_95 = bootstrap.internal_breach_upper_95
+    negative_return_upper_95 = bootstrap.negative_return_upper_95
     # #11: a deployable verdict must describe the stops we actually TRADE. Without --fixed the
     # portfolio stage re-optimises stops inside every window, which passes on adaptive stops the
     # live account does not have -- such a run is exploratory, never a go-live decision.
@@ -204,7 +214,16 @@ def main(argv: list[str] | None = None) -> None:
         (not result.breached, "haelt die harten Konto-Limits (3%/Tag, 6% trailing)"),
         (result.ann_return_pct > 0, f"Rendite positiv ({result.ann_return_pct:+.1f}%/Jahr)"),
         (result.ceiling_pct <= float(spec["tail_cap_pct"]) + 1e-9, "Risiko unter der Tail-Decke"),
-        (prob_profit >= 0.6, f"Monte-Carlo Gewinnwahrsch. {prob_profit:.0%} >= 60%"),
+        (
+            bootstrap.internal_breach_gate_passes,
+            "95%-Obergrenze fuer irgendeine interne Limitverletzung "
+            f"{internal_breach_upper_95:.2%} <= {BREACH_PROBABILITY_LIMIT:.0%}",
+        ),
+        (
+            bootstrap.negative_return_gate_passes,
+            "95%-Obergrenze fuer negative Endrendite "
+            f"{negative_return_upper_95:.2%} <= {NEGATIVE_RETURN_PROBABILITY_LIMIT:.0%}",
+        ),
     ]
     passed = all(ok for ok, _ in checks)
 
@@ -215,6 +234,35 @@ def main(argv: list[str] | None = None) -> None:
     pbo_diag = "ok" if gates.get("pbo_diagnostic_ok") else "nicht bestanden/nicht verfuegbar"
     print(f"    DIAGNOSTIK: DSR {dsr_txt} gegen 0.90: {dsr_diag} (kein Gate)")
     print(f"    DIAGNOSTIK: PBO {pbo_txt} gegen {PBO_MAX:.2f}: {pbo_diag} (kein Gate)")
+    selected_path = bootstrap.selected
+    print(f"    DIAGNOSTIK: Monte-Carlo Gewinnwahrsch. {prob_profit:.0%} (kein Gate)")
+    print(
+        "    PFADRISIKO: Endrendite "
+        f"P05 {selected_path.final_return_p05:.1%}, "
+        f"Median {selected_path.final_return_median:.1%}, "
+        f"P95 {selected_path.final_return_p95:.1%}; "
+        f"ES05 {selected_path.expected_shortfall_05:.1%}"
+    )
+    print(
+        "    PFADRISIKO: Max Drawdown "
+        f"P05 {selected_path.max_drawdown_p05:.1%}, "
+        f"Median {selected_path.max_drawdown_median:.1%}, "
+        f"P95 {selected_path.max_drawdown_p95:.1%}"
+    )
+    print(
+        "    LIMITRISIKO: intern "
+        f"Tag {selected_path.internal_daily_breach_probability:.2%}, "
+        f"Trailing {selected_path.internal_trailing_breach_probability:.2%}; "
+        "Prop "
+        f"Tag {selected_path.prop_daily_breach_probability:.2%}, "
+        f"Trailing {selected_path.prop_trailing_breach_probability:.2%}"
+    )
+    print(
+        "    UNTER WASSER: "
+        f"P05 {selected_path.time_under_water_p05:.1%}, "
+        f"Median {selected_path.time_under_water_median:.1%}, "
+        f"P95 {selected_path.time_under_water_p95:.1%}"
+    )
     if fixed_config is None:
         print(
             "\n  EXPLORATIV: ohne --fixed wurden die Stops pro Fenster neu optimiert. Diese Zahlen"
@@ -256,13 +304,15 @@ def main(argv: list[str] | None = None) -> None:
         inputs=inputs,
         semantics={"passed": passed, "variation": spec["variation"], "deployable": lineage_ok},
     ) as st:
-        st.save_json("path_bootstrap.json", bootstrap.to_json())
+        path_bootstrap_payload = bootstrap.to_json()
+        st.save_json("path_bootstrap.json", path_bootstrap_payload)
         st.save_json(
             "verdict.json",
             {
                 "passed": passed,
                 "reasons": [f"{'PASS' if ok else 'FAIL'}: {m}" for ok, m in checks],
                 "mc_prob_profit": prob_profit,
+                "path_bootstrap": path_bootstrap_payload["selected"],
                 "stats": {k: stats[k] for k, _, _ in _STAT_ROWS},
                 "path": {
                     "max_drawdown_pct": result.max_drawdown_pct,
