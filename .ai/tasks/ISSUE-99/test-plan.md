@@ -9,3 +9,4 @@
 | AC-06, INV-02, INV-05 | row-by-row holdout/full-history comparison | RED: corrected artifacts absent | GREEN: identity/gross columns exact; only declared direction/swap/derived fields move |
 | AC-07, INV-03, INV-06 | Stage-3/4 diagnostic rerun and explicit before/after report | RED: current baseline uses all-short direction | GREEN: swap/path/breach/verdict movements recorded without relaxed limits |
 | AC-08, INV-07 | cumulative local R3 gates plus infrastructure record | RED: task/evidence incomplete | GREEN: all local gates pass; Linux mutation alone remains blocked |
+| AC-09, INV-08 | `test_h4_reconstruction_fails_closed_without_explicit_direction` | RED: missing `is_long` silently inferred from PnL and price outcome | GREEN: clear `ValueError`; all valid tests supply explicit direction |

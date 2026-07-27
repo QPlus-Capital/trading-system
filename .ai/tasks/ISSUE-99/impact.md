@@ -4,10 +4,12 @@
 
 - `research/portfolio/trades.py::timed_trades_from_report` changes one categorical producer:
   `row["entry"]` (`BUY`/`SELL`) becomes emitted `is_long`; `row["side"]` is no longer consulted.
+- `research/portfolio/sizing.py::_synchronized_h4_minima` now requires that producer's explicit
+  `is_long` column and removes its remaining PnL/price-outcome fallback.
 - `tests/test_research_portfolio_trades.py` uses real closed-report semantics (`side=FLAT`) and
   guards BUY, SELL, and invalid entry-side behavior.
-- `tests/test_research_h4_path.py` crosses the real producer boundary into P-09 synchronized H4
-  reconstruction.
+- `tests/test_research_h4_path.py` and `tests/test_research_sizing.py` cross the real producer
+  boundary into P-09 synchronized H4 reconstruction and guard missing-direction failure.
 - Quality configuration registers the producer as a critical impact/mutation target; the finding
   registry records the stable-wrong-category failure.
 
@@ -53,8 +55,10 @@ There is one producer and the following consumers:
 
 The coupled direction chain above is the complete known transitive surface: Stage-1 net selection,
 Stage-3 swap and H4 diagnostics, P-10 scenarios, P-11 path replay/verdict, the fact sheet, and the
-operator swap report. Static impact analysis discovers no additional unknown edge; dynamic
-Nautilus report generation is covered by the independent ten-market reconciliation.
+operator swap report. The sizing hardening changes no valid producer path; it only converts a
+malformed missing-direction stream from a silent guess into a loud error. Static impact analysis
+discovers no additional unknown edge; dynamic Nautilus report generation is covered by the
+independent ten-market reconciliation.
 
 ## Artifacts carrying or inheriting direction
 

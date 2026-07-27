@@ -207,10 +207,8 @@ def test_the_trailing_floor_also_reads_the_intraday_mark() -> None:
     assert evaluate(intraday_low, realized, 100_000.0, 0.05).breached
 
 
-def test_a_legacy_stream_infers_direction_from_the_outcome_too() -> None:
-    """Codex P2: `exit > entry` alone calls every LOSING long a short, which then marks it at the
-    day's high instead of its low -- hiding exactly the intraday breach the mark exists to find."""
-    # A losing long: bought at 100, stopped at 99. No is_long column (legacy stream).
+def test_h4_reconstruction_fails_closed_without_explicit_direction() -> None:
+    """A missing categorical direction must never fall back to a trade's outcome."""
     opened = pd.Timestamp("2025-04-10 05:00", tz="UTC").value
     closed = pd.Timestamp("2025-04-10 09:00", tz="UTC").value
     from research.portfolio.curves import to_day
@@ -230,10 +228,8 @@ def test_a_legacy_stream_infers_direction_from_the_outcome_too() -> None:
     )
     closes = {"X": np.array([99.0])}
     h4 = {"X": pd.DataFrame({"timestamp_ns": [opened], "low": [90], "high": [101], "close": [99]})}
-    _r, eq, _s, diagnostics = simulate(
-        trades, closes, day, day, 100_000.0, 0.06, flat(1.0), h4_prices=h4
-    )
-    assert diagnostics.minimum_equity[0] < eq[0]  # marked at the low, as a long should be
+    with pytest.raises(ValueError, match="requires an explicit is_long column"):
+        simulate(trades, closes, day, day, 100_000.0, 0.06, flat(1.0), h4_prices=h4)
 
 
 def test_a_morning_close_updates_the_balance_before_an_evening_open() -> None:

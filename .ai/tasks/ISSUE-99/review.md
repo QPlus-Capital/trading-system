@@ -24,10 +24,11 @@ required before Jan's merge decision.
 | ISSUE-99-R13 | P2 | A real-artifact check could accidentally query MT5 or touch a running runner. | Reconcile only offline Nautilus backtest reports from the local catalog in an isolated worktree. | resolved |
 | ISSUE-99-R14 | P2 | Updating only holdout extraction would leave the full-history tail and operator stream inconsistent. | Confirm all four callers share `timed_trades_from_report`; change that producer once. | resolved |
 | ISSUE-99-R15 | P3 | A local Windows mutation invocation could be misreported as equivalent to the required Linux gate. | Register the critical target but record Linux mutation as infrastructure-blocked until quota recovery. | resolved |
+| ISSUE-99-R16 | P2 | `_synchronized_h4_minima` retained an unreachable-looking outcome fallback that would silently misclassify cost-sign-flipped trades from a future caller. | Require `is_long`, fail closed when absent, and convert every valid legacy fixture to explicit direction; leave issue #95 untouched. | resolved |
 
 ## Dispositions
 
-All fifteen findings have bounded code/test dispositions. The corrected fixed Stage-3/4 rerun
+All sixteen findings have bounded code/test dispositions. The corrected fixed Stage-3/4 rerun
 confirms the adverse counterexample: trade identity and gross R stay exact, while corrected
 direction worsens holdout H4 max drawdown from `-3.30%` to `-5.09%`, creates a `4.21%` observed
 daily loss, and leaves the verdict `FAIL`. No threshold, limit, gate, or downstream consumer was

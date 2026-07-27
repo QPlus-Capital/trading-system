@@ -51,6 +51,8 @@ risk, and reporting consumer inherit the correction without local patches.
   all four P-11 breach probabilities, and internal trailing/any upper-bound gate outcome.
 - AC-08: Every locally executable cumulative R3 gate passes; Linux Critical mutation is recorded
   as blocked by the Actions quota through 2026-08-01, never pending or passed.
+- AC-09: Synchronized H4 reconstruction rejects a trade stream without `is_long`; it never infers
+  direction from PnL or entry/exit outcomes.
 
 ## Invariants
 
@@ -67,6 +69,8 @@ risk, and reporting consumer inherit the correction without local patches.
 - INV-06: Internal limits remain 2.5%/5%, prop limits remain 3%/6%, and no gate or confidence bound
   is weakened.
 - INV-07: No live code or running process is invoked, restarted, queried, or changed.
+- INV-08: Every direction-dependent H4 mark consumes an explicit categorical direction and fails
+  closed when that source is absent.
 
 ## Artifact-integrity exception
 
