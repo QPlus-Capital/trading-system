@@ -13,6 +13,32 @@
 - Quality configuration registers the producer as a critical impact/mutation target; the finding
   registry records the stable-wrong-category failure.
 
+## Rebase interaction with issue #91 / PR #96
+
+The rebase onto `origin/main` at `82632060223ab83b3ebaa06154f87b00ed7f8c59` is a real semantic
+interaction, not only a textual merge: PR #96 rewrote the H4 event replay and chronological
+drawdown-HWM logic in `research/portfolio/sizing.py` and its tests, while issue #99 changes the
+direction consumed by that replay.
+
+The combined path was re-derived and verified as follows:
+
+- `timed_trades_from_report` still translates the authoritative report entry side before the
+  emitted `entry` name is reused for price;
+- `_synchronized_h4_minima` still fails closed without `is_long`;
+- the #96 event loop reads that explicit value at the actual adverse-mark site, selecting the
+  interval low for a long and high for a short;
+- #96's chronological ordering remains intact: a later profitable close cannot become the peak
+  for an earlier minimum, an observable earlier H4 close can raise the peak for a later minimum,
+  and a pre-entry market close cannot raise a position's drawdown peak;
+- the focused combined suite passed all 57 tests in `test_research_h4_path.py` and
+  `test_research_sizing.py`, including seven explicit cross-boundary counterexamples;
+- `.ai/quality/mutation.toml` and `.ai/quality/critical-dependencies.toml` contain every entry from
+  both current `origin/main` and pre-rebase issue #99; mutation-baseline content is unchanged.
+
+The source overlap adds no new implementation beyond the intended composition of the two merged
+changes. It does, however, change the code context and behavior relative to the earlier issue #99
+review, so the combined path requires a fresh independent review before readiness.
+
 ## Coupled direction chain
 
 There is one producer and the following consumers:

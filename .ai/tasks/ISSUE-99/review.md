@@ -5,6 +5,15 @@
 Builder counterexample analysis is complete. Independent Claude review remains external and is
 required before Jan's merge decision.
 
+## Rebase review coverage
+
+The branch now includes PR #96's chronological H4 drawdown replay in the same
+`research/portfolio/sizing.py` function changed by issue #99. The issue #99 delta remains
+patch-equivalent after rebase and targeted tests confirm the intended combined behavior, but the
+earlier independent review did not review this combined #96/#99 implementation. It therefore does
+not cover the current branch HEAD. A fresh independent review of the interaction is required before
+this draft can be considered ready; no readiness claim is made here.
+
 ## Findings
 
 | ID | Severity | Finding | Disposition | Status |
