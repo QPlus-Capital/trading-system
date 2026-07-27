@@ -64,3 +64,14 @@ test-only package.
 - Stubbing both adapters symmetrically, allowing the same wrong behaviour to agree.
 - Constructing a real bridge or calling `run_once`, which could touch a running terminal.
 - Registering only the signal engine and leaving adapter changes outside the critical mapping.
+
+## Measured impact
+
+`just impact origin/main` reports R3, no changed production file, exactly the new parity harness as
+the direct test, and no transitive, unknown, or dynamically affected edge. The explicit critical
+registrations are prospective: a future change to the signal engine or either adapter selects the
+harness even though none of those sources changes in this package.
+
+`git diff --exit-code origin/main...HEAD -- core live research monitoring pyproject.toml uv.lock`
+passes. No Stage 1-4 producer, dependency, configuration, signal, runner, or monitoring byte moves,
+so the existing research artifacts need no rerun.
