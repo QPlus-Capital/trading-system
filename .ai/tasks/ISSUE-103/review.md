@@ -42,3 +42,10 @@ and the runtime converter, pricing, positions, placement, and close patterns are
 8fff632..2a558ba 8263206..HEAD` shows no live implementation or test patch change beyond the
 registry ID and unioned policy context. Legal/invalid side behaviour is unchanged by the rebase,
 so the earlier review still covers the implementation.
+
+Rebased again onto `origin/main` at `8851b91fbf20469d75cd9c2ee2900ccc05183f20` after PR #97.
+The sole textual conflict was the append-only registry: merged F-035 and issue #103's existing
+F-037 are retained in ID order. A structural TOML comparison proves every mutation target and
+pattern from both main and the pre-rebase branch remains present; the mutation baseline is
+unchanged. Range-diff shows the live implementation and tests remain patch-equivalent. This rebase
+changes no behavior, so the earlier review continues to cover the implementation.
