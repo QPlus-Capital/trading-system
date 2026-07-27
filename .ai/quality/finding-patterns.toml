@@ -407,3 +407,15 @@ why_tests_missed = "fixtures used one source and path balance, so absolute and r
 regression = "test_daily_breach_decision_is_invariant_to_path_balance_scale; test_zero_observed_breach_days_bootstrap_to_zero_raw_breach_frequency; versioned scenario reader tests"
 generalized = "every resampled absolute quantity must carry and validate its source denominator; replay scale invariance and zero-event preservation at the domain threshold"
 workflow_change = "P-10 scenario artifacts are explicitly versioned and path-risk tests vary source and replay scales"
+
+[[finding]]
+id = "F-034"
+source = "issue #91 deterministic counterexample"
+defect_class = "future-high-water-mark-applied-to-earlier-trough"
+severity = "P1"
+affected = "research/portfolio/sizing.py, research/portfolio/path_risk.py"
+root_cause = "drawdown replay raised the equity high-water mark with a later close before evaluating an earlier intraday or daily minimum"
+why_tests_missed = "existing fixtures checked synchronized minima and shared report surfaces but did not place a profitable close after an earlier trough or an observable intraday high before a later trough"
+regression = "test_drawdown_does_not_use_a_later_profitable_close_as_its_peak; test_drawdown_uses_an_observable_h4_high_before_a_later_minimum; test_path_drawdown_does_not_use_the_same_days_later_close_peak"
+generalized = "path-dependent denominators must be timestamped and updated only after the event that establishes them; vary event order, not only values"
+workflow_change = "drawdown mutation and property guards now exercise peak/trough order in both deterministic H4 and sampled-day replay"
