@@ -227,7 +227,16 @@ open in the same H4 interval. Markets without a contemporaneous bar carry their 
 entry), never an extreme from another interval. Because H4 data cannot reveal within-bar
 cross-market ordering, the reconstruction conservatively assumes all adverse extrema within one
 H4 interval co-occur: it is an **H4 upper bound**, not tick-level history. Swap remains realized
-once at close. Stage 3, the verdict gate, and the fact sheet consume the same daily diagnostics.
+once at close. Drawdown peaks are replayed chronologically: an interval minimum is compared only
+with equity highs observable before or at that interval; a later close cannot become the
+denominator of an earlier trough. Stage 3, the verdict gate, and the fact sheet consume the same
+daily diagnostics.
+
+The trailing-limit gate remains a separate, deliberately conservative convention: the same day's
+realized close may raise the balance HWM before that day's minimum is tested against the
+start-balance-anchored floor. Stage 4 reports, but does not gate on, the paired result from a
+strictly chronological trailing HWM. Changing the gate convention requires an explicit human
+methodology decision.
 
 A **dynamic throttle** (size down as the drawdown budget is consumed) is the path-dependent tool for
 constraint 2 — but it does **nothing** for constraint 1 (a gap hits before you can taper), so the
