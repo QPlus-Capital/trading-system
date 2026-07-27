@@ -150,15 +150,23 @@ def replay_scenario_path(
 
     for scenario in path:
         opening_balance = balance
-        minimum_equity = opening_balance + scenario.opening_to_minimum_equity_change
-        balance += scenario.closing_balance_change
-        close_equity += scenario.close_equity_change
+        minimum_fraction = (
+            scenario.opening_to_minimum_equity_change / scenario.source_opening_balance
+        )
+        balance_fraction = scenario.closing_balance_change / scenario.source_opening_balance
+        equity_fraction = scenario.close_equity_change / scenario.source_opening_balance
+        minimum_equity = opening_balance * (Decimal("1") + minimum_fraction)
+        balance = opening_balance * (Decimal("1") + balance_fraction)
+        close_equity += opening_balance * equity_fraction
 
-        loss_money = max(Decimal("0"), opening_balance - minimum_equity)
-        # A non-positive opening balance also fails closed here because non-negative loss money
-        # is necessarily greater than or equal to either non-positive percentage threshold.
-        internal_daily |= loss_money >= INTERNAL_DAILY_LIMIT * opening_balance
-        prop_daily |= loss_money >= PROP_DAILY_LIMIT * opening_balance
+        adverse_fraction = max(Decimal("0"), -minimum_fraction)
+        loss_money = adverse_fraction * opening_balance
+        if opening_balance <= 0:
+            internal_daily = True
+            prop_daily = True
+        else:
+            internal_daily |= loss_money >= INTERNAL_DAILY_LIMIT * opening_balance
+            prop_daily |= loss_money >= PROP_DAILY_LIMIT * opening_balance
 
         # Match P-09's conservative convention: the same day's realized close can raise the
         # trailing HWM before that day's synchronized H4 minimum is checked.

@@ -70,6 +70,7 @@ def test_loss_day_scenarios_remain_joint_and_fixed_horizon(
     scenarios = tuple(
         LossDayScenario(
             source_date=date(2020, 1, 1) + timedelta(days=index),
+            source_opening_balance=Decimal("100000"),
             close_realized_pnl=Decimal(value),
             close_equity_change=Decimal(value * 2),
             opening_to_minimum_equity_change=-abs(Decimal(value)),
@@ -118,6 +119,7 @@ def test_path_replay_preserves_internal_prop_limit_monotonicity(
     scenarios = tuple(
         LossDayScenario(
             source_date=date(2026, 1, 1) + timedelta(days=index),
+            source_opening_balance=Decimal("100000"),
             close_realized_pnl=Decimal(balance_changes[index]),
             close_equity_change=Decimal(balance_changes[index]),
             opening_to_minimum_equity_change=Decimal(adverse_changes[index]),

@@ -32,8 +32,11 @@ from research.portfolio.resample import (
 from research.portfolio.sizing import DailyDiagnostics
 
 _EPOCH_DATE = date(1970, 1, 1)
+LOSS_DAY_SCENARIO_SCHEMA_VERSION = 2
 _CSV_COLUMNS = (
+    "schema_version",
     "source_date",
+    "source_opening_balance",
     "close_realized_pnl",
     "close_equity_change",
     "opening_to_minimum_equity_change",
@@ -67,6 +70,7 @@ class LossDayScenario:
     """One indivisible observed loss-day bundle, with exact monetary accounting."""
 
     source_date: date
+    source_opening_balance: Decimal
     close_realized_pnl: Decimal
     close_equity_change: Decimal
     opening_to_minimum_equity_change: Decimal
@@ -76,6 +80,7 @@ class LossDayScenario:
 
     def __post_init__(self) -> None:
         money = (
+            self.source_opening_balance,
             self.close_realized_pnl,
             self.close_equity_change,
             self.opening_to_minimum_equity_change,
@@ -84,6 +89,10 @@ class LossDayScenario:
         )
         if any(not value.is_finite() for value in money):
             raise ValueError(f"scenario {self.source_date} contains non-finite money")
+        if self.source_opening_balance <= 0:
+            raise ValueError(
+                f"scenario {self.source_date} has a non-positive source opening balance"
+            )
         if isinstance(self.trade_count, bool) or self.trade_count < 0:
             raise ValueError(f"scenario {self.source_date} has an invalid trade count")
         if self.close_realized_pnl + self.daily_swap != self.closing_balance_change:
@@ -226,6 +235,7 @@ def build_loss_day_scenarios(
         scenarios.append(
             LossDayScenario(
                 source_date=_EPOCH_DATE + timedelta(days=int(day_number)),
+                source_opening_balance=opening_balance,
                 close_realized_pnl=balance_change - swap,
                 close_equity_change=close_equity - prior_close_equity,
                 opening_to_minimum_equity_change=minimum_equity - opening_balance,
@@ -250,7 +260,9 @@ def write_loss_day_scenarios(path: Path, scenarios: Sequence[LossDayScenario]) -
         for row in scenarios:
             writer.writerow(
                 (
+                    LOSS_DAY_SCENARIO_SCHEMA_VERSION,
                     row.source_date.isoformat(),
+                    str(row.source_opening_balance),
                     str(row.close_realized_pnl),
                     str(row.close_equity_change),
                     str(row.opening_to_minimum_equity_change),
@@ -268,20 +280,27 @@ def read_loss_day_scenarios(path: Path) -> tuple[LossDayScenario, ...]:
             reader = csv.DictReader(handle)
             if tuple(reader.fieldnames or ()) != _CSV_COLUMNS:
                 raise ValueError("loss-day scenario CSV has an invalid schema")
-            scenarios = tuple(
-                LossDayScenario(
-                    source_date=date.fromisoformat(row["source_date"]),
-                    close_realized_pnl=Decimal(row["close_realized_pnl"]),
-                    close_equity_change=Decimal(row["close_equity_change"]),
-                    opening_to_minimum_equity_change=Decimal(
-                        row["opening_to_minimum_equity_change"]
-                    ),
-                    closing_balance_change=Decimal(row["closing_balance_change"]),
-                    trade_count=int(row["trade_count"]),
-                    daily_swap=Decimal(row["daily_swap"]),
+            parsed: list[LossDayScenario] = []
+            for row in reader:
+                if row["schema_version"] != str(LOSS_DAY_SCENARIO_SCHEMA_VERSION):
+                    raise ValueError(
+                        f"unsupported loss-day scenario schema {row['schema_version']!r}"
+                    )
+                parsed.append(
+                    LossDayScenario(
+                        source_date=date.fromisoformat(row["source_date"]),
+                        source_opening_balance=Decimal(row["source_opening_balance"]),
+                        close_realized_pnl=Decimal(row["close_realized_pnl"]),
+                        close_equity_change=Decimal(row["close_equity_change"]),
+                        opening_to_minimum_equity_change=Decimal(
+                            row["opening_to_minimum_equity_change"]
+                        ),
+                        closing_balance_change=Decimal(row["closing_balance_change"]),
+                        trade_count=int(row["trade_count"]),
+                        daily_swap=Decimal(row["daily_swap"]),
+                    )
                 )
-                for row in reader
-            )
+            scenarios = tuple(parsed)
     except (OSError, UnicodeError, KeyError, ArithmeticError) as exc:
         raise ValueError(f"cannot read loss-day scenarios from {path}") from exc
     if not scenarios:
@@ -352,10 +371,15 @@ def validate_joint_paths(
 def scenario_path_probability_of_profit(
     paths: Sequence[Sequence[LossDayScenario]],
 ) -> Decimal:
-    """Return P-10's strict positive-balance probability over already-sampled paths."""
+    """Return strict positive compounded-balance probability over already-sampled paths."""
     if not paths:
         raise ValueError("sampled path collection must be non-empty")
-    profitable = sum(sum(row.closing_balance_change for row in path) > 0 for path in paths)
+    profitable = 0
+    for path in paths:
+        growth = Decimal("1")
+        for row in path:
+            growth *= Decimal("1") + row.closing_balance_change / row.source_opening_balance
+        profitable += int(growth > 1)
     return Decimal(profitable) / Decimal(len(paths))
 
 

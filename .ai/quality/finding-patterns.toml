@@ -395,3 +395,15 @@ why_tests_missed = "the safety fixture was exercised only on Windows, where the 
 regression = "test_pytest_boundary_imports_without_the_windows_only_mt5_package"
 generalized = "cross-platform test guards must not eagerly import an optional platform dependency"
 workflow_change = "the fixture conditionally loads MT5 and the Linux-absent path is an executable regression"
+
+[[finding]]
+id = "F-033"
+source = "PR #94 Claude independent review"
+defect_class = "resampled-absolute-amount-without-source-scale"
+severity = "P1"
+affected = "research/portfolio/scenarios.py, research/portfolio/path_risk.py"
+root_cause = "compounded Stage-3 money deltas were resampled against unrelated path balances without persisting each source day's opening balance"
+why_tests_missed = "fixtures used one source and path balance, so absolute and relative replay produced the same decisions"
+regression = "test_daily_breach_decision_is_invariant_to_path_balance_scale; test_zero_observed_breach_days_bootstrap_to_zero_raw_breach_frequency; versioned scenario reader tests"
+generalized = "every resampled absolute quantity must carry and validate its source denominator; replay scale invariance and zero-event preservation at the domain threshold"
+workflow_change = "P-10 scenario artifacts are explicitly versioned and path-risk tests vary source and replay scales"

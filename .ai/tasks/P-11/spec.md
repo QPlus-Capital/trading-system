@@ -4,32 +4,37 @@
 
 `research/stages/verdict.py::main` gates deployment on `P(profit) >= 0.60`, a statistic that has
 been 100% in every completed run and does not measure the probability of violating either the
-internal or prop-firm account limits.
+internal or prop-firm account limits. Claude's independent review additionally found that the first
+P-11 implementation replayed compounded Stage-3 absolute money changes against unrelated path
+balances, inflating daily-breach probabilities from zero observed breach days.
 
 ## Goal
 
 Replay every complete P-10 stationary-bootstrap path through the internal and prop-firm daily and
 trailing limits, then replace the probability-of-profit gate with exact one-sided binomial bounds
-on any internal breach and on a negative final return.
+on any internal breach and on a negative final return. Persist each scenario day's source opening
+balance and replay every money delta as a fraction of that source scale.
 
 ## Non-goals
 
-- Rebuilding P-10 scenarios, source indices, stationary bootstrap, or block-length selection.
+- Rebuilding P-10 source indices, stationary bootstrap, or block-length selection.
 - Changing P-09 H4 diagnostics, trade extraction, sizing, signals, selection, costs, return
   calculations, tail caps, account limits, confidence levels, or gate thresholds.
 - Removing `P(profit)` as a reported diagnostic.
-- Changing Stage 1, Stage 2, or Stage 3.
+- Changing Stage 1 or Stage 2, or changing Stage-3 trades, sizing, or reported metrics.
 
 ## Behavioural requirements
 
 - P-11 consumes `research.portfolio.scenarios.sample_scenario_paths`,
   `scenario_bootstrap_choices`, and `scenario_path_probability_of_profit`; it does not implement
   another scenario, bootstrap, block-choice, or profit convention.
-- Each sampled path starts from the configured account start balance and accumulates the P-10
-  closing-balance and close-equity changes in sampled order.
-- Each day's synthetic minimum is opening balance plus the sampled
-  `opening_to_minimum_equity_change`. Daily breaches use that minimum, so a positive close cannot
-  erase an intraday breach.
+- The loss-day CSV schema is version 2 and carries each day's positive source opening balance.
+  Readers reject old, unversioned, and unsupported artifacts instead of assuming a denominator.
+- Each sampled path starts from the configured account start balance. Opening-to-minimum,
+  closing-balance, and close-equity changes are divided by the source opening balance and scaled by
+  the path day's opening balance. Balance therefore compounds multiplicatively.
+- Each day's synthetic minimum uses its source-scaled opening-to-minimum fraction. Daily breaches
+  use that minimum, so a positive close cannot erase an intraday breach.
 - Daily limits are inclusive: equity at or below the corresponding floor is a breach, matching
   `live.risk_control.RiskController.must_flatten`.
 - The realized-balance high-water mark includes the same day's close before the trailing floor is
@@ -77,6 +82,12 @@ on any internal breach and on a negative final return.
 - AC-11: `portfolio_trades.csv` and `full_history_trades.csv` remain byte-identical; trade count,
   return, expectancy, Sharpe, and tail cap remain exact. Record old/new path estimates and verdict.
 - AC-12: Every cumulative R3 gate passes with current-HEAD evidence.
+- AC-13: A day with a fixed source loss fraction produces the same daily-breach decision at two
+  different path balances.
+- AC-14: Bootstrap paths made only from observed sub-limit days have zero raw daily-breach
+  frequency, while the exact upper confidence bound remains positive.
+- AC-15: Stage 3 emits schema version 2 with source opening balances; the reader rejects the
+  previous unversioned schema and every unsupported explicit version.
 
 ## Invariants
 
@@ -91,11 +102,14 @@ on any internal breach and on a negative final return.
 - INV-07: Only the plug-in result gates; sensitivity results and `P(profit)` are diagnostics.
 - INV-08: No trade, return, expectancy, Sharpe, tail-cap, P-09 diagnostic, selection, or live path
   changes.
+- INV-09: No absolute scenario money change is applied to a path until it is normalized by the
+  same row's positive source opening balance.
+- INV-10: Scenario artifacts without an explicit supported schema version fail closed.
 
 ## Assumptions
 
-- P-10's complete daily deltas are the registered resampling unit and are sufficient to replay
-  balance, close equity, and intraday minima in a synthetic order.
+- P-10's complete daily deltas plus their source opening balances are the registered resampling
+  unit and are sufficient to replay balance, close equity, and intraday minima in a synthetic order.
 - The P-09 trailing-floor convention deliberately includes the same day's realized close in its
   high-water mark and is retained for exact parity.
 - A final return of exactly zero is not negative; `P(profit)` continues to require strictly
@@ -108,6 +122,7 @@ None.
 ## Expected artifacts
 
 - `research/portfolio/path_risk.py`.
+- Version-2 `loss_day_scenarios.csv` from the unchanged Stage-3 account path.
 - Extended `path_bootstrap.json` and `verdict.json` path-risk evidence.
 - Focused unit, property, mutation, and real-verdict integration tests.
 - `reports/research/regression/52-comparison.json`.
@@ -121,5 +136,5 @@ math and replaces a Stage-4 deployability gate.
 
 Jan fixed all four limit levels, the exact one-sided 95% Clopper-Pearson construction, the `1%` and
 `5%` gate thresholds, the requirement that `P(profit)` cease gating, the zero-tolerance regression,
-and Jan-only merge authority. No unresolved methodology or risk decision is delegated to the
-implementer.
+the source-relative replay and fail-closed schema migration, and Jan-only merge authority. No
+unresolved methodology or risk decision is delegated to the implementer.
