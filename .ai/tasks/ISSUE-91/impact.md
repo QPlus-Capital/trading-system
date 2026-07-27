@@ -49,8 +49,9 @@ different trade-window curve and are not consumers of the Stage-3 synchronized H
 
 ## Expected numerical effect
 
-- Deterministic max drawdown and P-11 drawdown percentiles can only improve or remain equal when
-  removal of future peaks is the only change.
+- Removing a future close peak improves or preserves the affected trough. Retaining a genuine
+  earlier intraday peak can deepen a different drawdown relative to the former daily-close-only
+  HWM; the current baseline exhibits this second effect.
 - Current trailing breach probabilities/bounds, daily breaches, final-return distribution,
   expected shortfall, time under water, trade count, returns, expectancy, Sharpe, and tail cap must
   remain exact.
@@ -79,5 +80,25 @@ different trade-window curve and are not consumers of the Stage-3 synchronized H
 
 ## Initial classification and impact
 
-The explicit planned-path classifier returned R3 with all fourteen cumulative gates. Final
-`just impact origin/main` output is recorded in evidence after the complete changed path exists.
+The explicit planned-path classifier and final branch classifier return R3 with all fourteen
+cumulative gates. Final `just impact origin/main` identifies three production files, nine direct
+test files, ten transitive test files, no unknown/dynamic edges, and critical escalation for both
+the synchronized H4 path and sampled-path risk.
+
+## Measured impact
+
+- Stage-3/verdict deterministic holdout flat drawdown: `-3.30% -> -3.35%`.
+- Fact-sheet full flat / full compound / holdout flat / holdout compound:
+  `-2.27/-4.99/-3.30/-4.42% -> -2.44/-5.24/-3.35/-4.61%`.
+- P-11 drawdown P05/median/P95:
+  `1.5640/5.2166/10.6455% -> 1.4136/5.1222/10.5609%`.
+- Current and strict chronological internal trailing raw probability: both `1.12%`; exact
+  one-sided 95% upper bound: both `1.3090986%`. Measured inflation is therefore `0.00` percentage
+  points on this baseline.
+- Current daily/prop/trailing probabilities, gate bounds, final-return distribution, expected
+  shortfall, and time under water remain exact.
+- Both trade CSVs and `loss_day_scenarios.csv` are byte-identical.
+
+The deterministic direction is worse by `0.05` percentage points because the old daily-only HWM
+missed a real H4 equity high before the worst day's later trough. That is the ordering required by
+AC-02, not future leakage, and is recorded as an explicit review finding rather than suppressed.
