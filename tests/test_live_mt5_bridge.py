@@ -167,7 +167,7 @@ def test_match_terminal_symbol_none_when_absent() -> None:
     assert match_terminal_symbol("UT100", ["EURUSD", "US30"]) is None
 
 
-@pytest.mark.parametrize("raw_type", [-1, 2, True])
+@pytest.mark.parametrize("raw_type", [-1, 2, True, False, 0.0, "0", None])
 def test_positions_fail_closed_on_unknown_position_type(
     monkeypatch: pytest.MonkeyPatch,
     raw_type: object,
