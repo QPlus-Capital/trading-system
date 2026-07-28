@@ -47,6 +47,15 @@ argument, and no Stage 1-4 caller uses this helper, so this rebase does not alte
 reported research or operator figures. Nevertheless, the combined producer/helper behavior is new
 relative to the earlier issue #99 review and must be reviewed independently.
 
+The rebase onto `origin/main` at `494eafc5404bb9148c1df0887f7260b189cc36d6` incorporates merged
+PR #98 and creates another real behavioral interaction. Issue #99's corrected direction changes
+swap and therefore `net_r` in `stage1_trade_returns`; PR #98 changes the downstream
+`window_returns` contract so a fixed-basis candidate is scored instead of being dropped when
+cumulative PnL crosses `-basis`. A candidate reaching that boundary will now be retained with the
+corrected direction-dependent net stream. The nine-hour Stage-1 rerun remains explicitly deferred,
+so no selection result is asserted. The issue #99 patch itself remains range-diff equivalent, but
+the combined #98/#99 Stage-1 path was not covered by the earlier independent review.
+
 ## Coupled direction chain
 
 There is one producer and the following consumers:

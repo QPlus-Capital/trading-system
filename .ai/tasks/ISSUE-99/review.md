@@ -22,6 +22,15 @@ to the branch. The current operator caller omits the broker argument, so no exis
 from this rebase; still, the earlier review does not cover the combined boundary. Independent review
 must rerun before readiness.
 
+The rebase onto `origin/main` at `494eafc5404bb9148c1df0887f7260b189cc36d6` adds merged PR #98's
+fixed-basis `window_returns` behavior downstream of issue #99's direction-dependent Stage-1 net
+stream. This is a genuine behavioral composition: candidates formerly dropped at the cumulative
+`-basis` boundary are now scored using the corrected `swap_r/net_r` values. Registry
+F-035/F-036/F-038 and both quality configurations are complete unions, the mutation baseline is
+unchanged, and the issue #99 patch is range-diff equivalent; nevertheless, the earlier review does
+not cover the combined #98/#99 Stage-1 path. This finding is not self-resolved. Independent Claude
+review must rerun before readiness.
+
 ## Findings
 
 | ID | Severity | Finding | Disposition | Status |
