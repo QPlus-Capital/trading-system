@@ -40,6 +40,27 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
 - Research stages and trade artifacts do not import or call the live bridge. No Stage 1-4 result
   or trade CSV producer is reachable from this change.
 
+## Unfiltered-position consumer requirements
+
+Every consumer of unfiltered `positions()` was reconciled before changing ownership ordering:
+
+1. `LiveRunner._total_open_risk()` needs every **decodable** account position, including manual and
+   foreign-EA positions, because valid foreign exposure consumes the same equity and 2% open-risk
+   budget. Valid foreign positions therefore retain exact risk behavior. A foreign record with an
+   unsupported type cannot be priced reliably and is omitted with a warning after its independent
+   non-owned magic is read; it cannot trigger halt-and-flatten.
+2. `monitoring.dashboard._load_live()` uses unfiltered positions only for a read-only open-risk
+   display. It continues to receive every decodable account position. Omitting an unsupported
+   foreign record may make that display incomplete, but it cannot place, modify, or close an order.
+3. `Mt5Bridge.owned_positions()` feeds runner same-side, reversal, long-only flatten, safety
+   flatten, and other manage/close decisions. Those consumers need **only** `magic == MAGIC`; the
+   raw magic filter now runs before direction conversion. An unsupported owned record still raises
+   `Mt5SideError`.
+
+No consumer needs an invalid foreign record represented as an executable-looking BUY or SELL. The
+unfiltered surface remains exact for every legal MT5 position type, preserving the reviewed
+3,456-scenario legal-input differential and valid-foreign account-risk accounting.
+
 ## Critical dependencies
 
 - `live/mt5_bridge.py` is explicitly R3 in `.ai/quality/risk-classes.toml`.
@@ -66,18 +87,18 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
   the independent fake-terminal source. Partial or shape-only assertions are insufficient at this
   live boundary.
 - The review supplied four hand-built bridge mutants. Flat-account, invalid-side/no-stop, and
-  owned-list-completeness tests each fail against the exact mutated behavior. Runtime-subclass
+  owned-list-completeness tests each fail against the exact mutated behavior. Integral-protocol
   tests fail against the branch's exact-type converter. The changed runner logic is isolated in
-  `_apply_cycle_safety()` and `_owned_positions_for_flatten()` so the critical target measures the
-  review fix directly instead of admitting unrelated legacy branches from the large orchestration
-  methods.
+  `_apply_cycle_safety()` and `_owned_positions_for_flatten()`; the target also includes the
+  changed `_halt_and_flatten()` loop so measurement covers the implementation rather than only its
+  extracted decision helpers.
 
 ## Unknown or dynamic edges
 
 - MT5 is an external runtime API and Python type annotations cannot validate values received from
-  it. The tests model documented constants, C-extension-like integer/string subclasses, and
-  invalid enum/string/loose-equality values without importing or initializing the Windows terminal
-  package.
+  it. The tests model documented constants, Python/C-extension-like index-protocol integers,
+  string subclasses, invalid enum/string/loose-equality values, and mixed foreign/owned records
+  without importing or initializing the Windows terminal package.
 - The repository cannot prove what a future MT5 release may add. The converter deliberately
   treats every unrecognized future value as an error, which is the required fail-closed behavior.
 - No ambiguous enum-semantic question remains: the issue and official documentation identify the
@@ -102,6 +123,8 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
 - A test asserting only `Mt5Error` without proving terminal pricing/order calls stayed at zero.
 - Requiring exact built-in types for a C-extension field, rejecting a semantically valid integer
   or string subtype and disabling the whole positions surface.
+- Converting direction before checking independent magic ownership, allowing a malformed foreign
+  record to trigger destructive safety handling for an otherwise healthy owned book.
 - Treating an empty position sequence like terminal failure, causing a flat account to abort every
   runner cycle.
 - Returning before validating a stop-less position's side, leaving an ambiguous safety record.

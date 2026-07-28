@@ -147,3 +147,24 @@ and one optional P3:
 The fix is material live-runner behavior and therefore invalidates the earlier review for the
 changed runner path. A complete independent review must run again before either review gate can
 become green; this builder disposition does not mark the PR ready.
+
+## Complete independent re-review after the F-042 fix
+
+The next independent review reproduced the pre-fix broad-exception liquidation, ran ten
+consecutive faulting cycles, and compared 3,456 legal-input scenarios against `origin/main` with
+zero divergences. Those verified F-042 behaviors are not changed by this remediation. Its seven
+review points have these builder dispositions:
+
+| ID | Severity | Review point | Disposition | Status |
+|---|---|---|---|---|
+| F1 | P2 | A foreign/manual record whose type is not a plain `int` can make account-wide conversion raise and liquidate the owned book. | Accept the full integral index protocol with explicit bool rejection; read magic first and prevent an unsupported unowned record from reaching destructive safety handling. Red-first bridge and execute-cycle tests pin both halves. | resolved |
+| F2 | verified | The dedicated `Mt5SideError` fix is identical to main for routine faults across ten cycles. | Preserve `_apply_cycle_safety()` and its narrow catch unchanged; focused and full regression suites rerun. | resolved |
+| F3 | verified | Moving daily/trailing cut-offs before open-risk reconstruction fixes main's concurrent-fault outage. | Preserve the safety ordering and the existing cutoff-before-read test unchanged. | resolved |
+| F4 | P3 | The summary incorrectly says the mutation gate passed without a baseline change. | Correct evidence and PR summary: survivors tightened 410 to 409, one inherited survivor was killed, none added, and one target was added. | resolved |
+| F5 | P3 | Mutation policy omits the changed `_halt_and_flatten()` loop. | Add the exact method pattern to `live-runner-fail-closed`; accept no new unexplained survivor. | resolved |
+| F6 | P3 | Two runner tests raise base `Mt5Error` with side-conversion text. | Use `Mt5SideError` for the side-conversion fixture and neutral `positions_get` text for the general enumeration-failure fixture. | resolved |
+| F7 | required process | This material boundary fix invalidates the current independent-review coverage. | Keep both review gates non-zero and require another complete independent adversarial/live-money review. | resolved |
+
+F-047 generalizes F1: independent ownership metadata must be applied before an action-bearing enum
+can trigger destructive behavior. This section records builder dispositions only; it does not
+replace or self-approve the required independent re-review.

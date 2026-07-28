@@ -17,11 +17,12 @@ is resolved against the live terminal's symbol list at connect time.
 from __future__ import annotations
 
 import logging
+import operator
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, SupportsIndex, cast
 
 try:  # pragma: no cover - Windows-only dependency; pure helpers stay importable without it
     import MetaTrader5 as mt5
@@ -74,9 +75,17 @@ def _runtime_side(
     """Return the canonical side, rejecting every unsupported runtime value."""
     if position_types is not None:
         buy_type, sell_type = position_types
-        if isinstance(value, int) and not isinstance(value, bool) and value == buy_type:
+        if isinstance(value, bool):
+            raise Mt5SideError(
+                "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+            )
+        try:
+            position_type = operator.index(cast(SupportsIndex, value))
+        except TypeError:
+            position_type = None
+        if position_type == buy_type:
             return "BUY"
-        if isinstance(value, int) and not isinstance(value, bool) and value == sell_type:
+        if position_type == sell_type:
             return "SELL"
         raise Mt5SideError(
             "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
@@ -326,8 +335,18 @@ class Mt5Bridge:
             login=int(info.login),
         )
 
-    def positions(self, name: str | None = None) -> list[Position]:
-        """Return open positions, optionally filtered to one of our research names."""
+    def positions(
+        self,
+        name: str | None = None,
+        *,
+        owned_only: bool = False,
+    ) -> list[Position]:
+        """Return decodable positions, optionally restricted to this runner before conversion.
+
+        Every decodable account position remains visible to account-wide risk. An unsupported
+        foreign position is ignored after its independent magic value proves that the runner
+        neither owns nor may act on it. An unsupported owned position still fails closed.
+        """
         m = self._require()
         if name is not None:
             raw = m.positions_get(symbol=self.terminal_symbol(name))
@@ -337,10 +356,22 @@ class Mt5Bridge:
             raise Mt5Error(f"positions_get failed: {m.last_error()}")
         out: list[Position] = []
         for p in raw:
-            side = _runtime_side(
-                p.type,
-                position_types=(int(m.POSITION_TYPE_BUY), int(m.POSITION_TYPE_SELL)),
-            )
+            magic = int(p.magic)
+            if owned_only and magic != MAGIC:
+                continue
+            try:
+                side = _runtime_side(
+                    p.type,
+                    position_types=(int(m.POSITION_TYPE_BUY), int(m.POSITION_TYPE_SELL)),
+                )
+            except Mt5SideError:
+                if magic == MAGIC:
+                    raise
+                log.warning(
+                    "ignoring foreign position ticket %s with unsupported MT5 position type",
+                    int(p.ticket),
+                )
+                continue
             out.append(
                 Position(
                     ticket=int(p.ticket),
@@ -351,7 +382,7 @@ class Mt5Bridge:
                     sl=float(p.sl),
                     tp=float(p.tp),
                     profit=float(p.profit),
-                    magic=int(p.magic),
+                    magic=magic,
                 )
             )
         return out
@@ -364,7 +395,7 @@ class Mt5Bridge:
         risk still counts ALL exposure (see the runner) -- ownership limits what we *act on*,
         not what we *account for*.
         """
-        return [p for p in self.positions(name) if p.magic == MAGIC]
+        return self.positions(name, owned_only=True)
 
     def loss_for_order(
         self, name: str, side: Side, entry: float, sl: float, volume: float

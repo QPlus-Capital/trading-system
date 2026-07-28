@@ -7,6 +7,7 @@ replay, sizing, risk gate) without a terminal -- the wiring that must work on Mo
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -314,6 +315,88 @@ def test_transient_positions_read_failure_does_not_halt_or_flatten() -> None:
     assert stub.closed == []
 
 
+def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book() -> None:
+    class RawPositionBridge(StubBridge):
+        POSITION_TYPE_BUY = 0
+        POSITION_TYPE_SELL = 1
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.raw_positions = [
+                SimpleNamespace(
+                    ticket=20,
+                    symbol="GBPJPY",
+                    type=7,
+                    volume=0.1,
+                    price_open=200.0,
+                    sl=190.0,
+                    tp=220.0,
+                    profit=5.0,
+                    magic=999,
+                ),
+                SimpleNamespace(
+                    ticket=11,
+                    symbol="XAUUSD",
+                    type=self.POSITION_TYPE_BUY,
+                    volume=0.1,
+                    price_open=2000.0,
+                    sl=1980.0,
+                    tp=2060.0,
+                    profit=-10.0,
+                    magic=MAGIC,
+                ),
+                SimpleNamespace(
+                    ticket=12,
+                    symbol="XAUUSD",
+                    type=self.POSITION_TYPE_SELL,
+                    volume=0.1,
+                    price_open=2000.0,
+                    sl=2020.0,
+                    tp=1940.0,
+                    profit=-10.0,
+                    magic=MAGIC,
+                ),
+            ]
+            self.open_positions = [
+                Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+                Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+            ]
+
+        def _require(self) -> object:
+            return self
+
+        def terminal_symbol(self, name: str) -> str:
+            return name
+
+        def positions_get(self, **kwargs: object) -> list[SimpleNamespace]:
+            symbol = kwargs.get("symbol")
+            return [
+                position
+                for position in self.raw_positions
+                if symbol is None or position.symbol == symbol
+            ]
+
+        @staticmethod
+        def last_error() -> tuple[int, str]:
+            return 0, "synthetic"
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            return Mt5Bridge.positions(cast(Mt5Bridge, self), name)
+
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            return Mt5Bridge.owned_positions(cast(Mt5Bridge, self), name)
+
+    stub = RawPositionBridge()
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    runner.run_once()
+
+    assert not runner._halted
+    assert runner._halt_reason == ""
+    assert stub.closed == []
+    assert [position.ticket for position in stub.open_positions] == [11, 12]
+
+
 def test_daily_safety_cutoff_precedes_unverifiable_open_risk() -> None:
     class RejectingAccountPositionBridge(StubBridge):
         def __init__(self) -> None:
@@ -323,7 +406,7 @@ def test_daily_safety_cutoff_precedes_unverifiable_open_risk() -> None:
         def positions(self, name: str | None = None) -> list[Position]:
             if name is None:
                 self.account_position_reads += 1
-                raise Mt5Error(
+                raise Mt5SideError(
                     "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
                 )
             return [position for position in self.open_positions if position.symbol == name]
@@ -348,9 +431,7 @@ def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails(
     class PartiallyRejectingBridge(StubBridge):
         def owned_positions(self, name: str | None = None) -> list[Position]:
             if name == "XAUUSD":
-                raise Mt5Error(
-                    "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
-                )
+                raise Mt5Error("positions_get failed: synthetic enumeration fault")
             return [
                 position
                 for position in self.open_positions

@@ -87,6 +87,16 @@ class _RuntimePositionType(int):
     """Synthetic C-extension-like integer subtype."""
 
 
+class _IndexablePositionType:
+    """Synthetic integral runtime value implementing Python's index protocol."""
+
+    def __init__(self, value: int) -> None:
+        self._value = value
+
+    def __index__(self) -> int:
+        return self._value
+
+
 class _RuntimeSide(str):
     """Synthetic C-extension-like string subtype."""
 
@@ -379,6 +389,54 @@ def test_legal_position_types_preserve_position_sides(
 
     assert len(positions) == 1
     assert positions[0].side == expected
+    _assert_no_order_boundary_call(fake)
+
+
+@pytest.mark.parametrize(
+    ("raw_type", "expected"),
+    [
+        (_IndexablePositionType(_FakeMt5.POSITION_TYPE_BUY), "BUY"),
+        (_IndexablePositionType(_FakeMt5.POSITION_TYPE_SELL), "SELL"),
+    ],
+)
+def test_position_types_accept_the_integral_index_protocol(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_type: object,
+    expected: Side,
+) -> None:
+    fake = _FakeMt5([_raw_position(raw_type)])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert bridge.positions()[0].side == expected
+    _assert_no_order_boundary_call(fake)
+
+
+def test_foreign_unknown_type_cannot_poison_account_or_owned_positions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    own_buy = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    own_sell = SimpleNamespace(
+        **{
+            **vars(own_buy),
+            "ticket": 8,
+            "type": _FakeMt5.POSITION_TYPE_SELL,
+        }
+    )
+    foreign_unknown = SimpleNamespace(
+        **{
+            **vars(own_buy),
+            "ticket": 9,
+            "symbol": "GBPJPY",
+            "type": 7,
+            "magic": 999,
+        }
+    )
+    fake = _FakeMt5([foreign_unknown, own_buy, own_sell])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert [position.ticket for position in bridge.positions()] == [7, 8]
+    assert [position.ticket for position in bridge.owned_positions()] == [7, 8]
+    assert fake.positions_get_calls == [{}, {}]
     _assert_no_order_boundary_call(fake)
 
 

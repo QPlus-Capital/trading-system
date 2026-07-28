@@ -218,6 +218,7 @@ id = "live-runner-fail-closed"
 path = "live/runner.py"
 mutant_patterns = [
     "live.runner.x*LiveRunner*apply_cycle_safety__mutmut_*",
+    "live.runner.x*LiveRunner*halt_and_flatten__mutmut_*",
     "live.runner.x*LiveRunner*owned_positions_for_flatten__mutmut_*",
 ]
 

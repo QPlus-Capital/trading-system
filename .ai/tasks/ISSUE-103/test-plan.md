@@ -19,6 +19,8 @@
 | AC-12, INV-02 | `test_loss_to_stop_rejects_invalid_side_even_without_a_stop` | RED against review mutant: no-stop early return bypassed validation | GREEN: the full side error is raised before any pricing call |
 | AC-13, INV-08 | execute-mode conversion halt, transient `symbol_info`/`positions_get`, subsequent healthy-cycle, and safety-cutoff-order tests | RED: three transient-read tests did not raise because the broad catch halted and liquidated the two-position fixture; conversion coverage was signal-only and vacuous | GREEN: only `Mt5SideError` halts, alerts, and flattens the exact two owned positions; routine reads close nothing and remain retryable; a subsequent real breach still flattens |
 | AC-14, INV-08 | `test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails` | RED: first market lookup exception aborted the entire flatten method | GREEN: failure is alerted and the exact two retrievable later-market positions close |
+| AC-10, INV-02 | `test_position_types_accept_the_integral_index_protocol`; existing boolean complement cases | RED: two index-protocol integral values raised `Mt5SideError` | GREEN: BUY/SELL index values map exactly while `True` and `False` still raise |
+| AC-15, INV-09 | `test_foreign_unknown_type_cannot_poison_account_or_owned_positions`; `test_foreign_unknown_position_type_never_halts_or_flattens_owned_book` | RED: bridge conversion raised; execute mode halted and entered the flatten path | GREEN: the foreign record is omitted before it can poison owned conversion, the runner remains active, and tickets 11/12 remain open |
 | INV-01 | autouse MT5 boundary plus synthetic fake assertions | Existing safety fixture | GREEN: no real terminal import, initialization, connection, or order |
 | INV-05, INV-06 | production-path diff and baseline artifact SHA-256 comparison | Main baseline | GREEN: no research/report producer diff; both CSV hashes unchanged |
 
@@ -62,6 +64,13 @@ The conversion-halt fixture itself passed only after being made non-vacuous with
 two owned opposite-side positions. A dedicated `Mt5SideError` separates ambiguous side conversion
 from routine `Mt5Error` reads; the same four-test command is green after the fix.
 
+The next complete re-review supplied the F-047 RED state. Two non-`int` objects implementing
+`__index__` were rejected despite carrying legal MT5 values. A foreign GBPJPY record with magic 999
+and type 7 caused a healthy execute-mode runner to halt and enter flattening against its two owned
+XAUUSD positions. The three focused tests failed four cases before the fix. After raw ownership is
+read before conversion and `operator.index` defines integral semantics, all four pass; the existing
+`True`/`False` complement tests keep the boolean alias closed.
+
 ## Adversarial cases
 
 - Unknown positive and negative integer position types.
@@ -73,5 +82,7 @@ from routine `Mt5Error` reads; the same four-test command is green after the fix
   before those dependencies.
 - A conversion failure and two routine read failures against the same non-empty execute-mode book,
   proving only the semantic conversion failure liquidates.
+- An unsupported foreign/manual position before two valid owned positions, proving independent
+  magic ownership prevents a malformed unowned record from halting or flattening the owned book.
 - A transient failure followed by a healthy breached cycle, proving retryability does not disable
   the later hard stop.

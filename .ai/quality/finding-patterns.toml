@@ -503,3 +503,15 @@ why_tests_missed = "the only runner-consumer test used signal-only mode with no 
 regression = "execute-mode position-side rejection with two owned positions; transient symbol_info and positions_get failures with zero closes and no halt; subsequent healthy cycle still evaluates and executes must_flatten"
 generalized = "a destructive safety action must catch a dedicated semantic failure, never a transport exception shared with retryable reads; test permanent and transient faults with a non-empty executable book"
 workflow_change = "the side converter raises a dedicated Mt5SideError subtype and the safety consumer catches only that subtype; runner mutation coverage pins both liquidation and retry boundaries"
+
+[[finding]]
+id = "F-047"
+source = "PR #105 complete independent re-review after F-042"
+defect_class = "unowned-invalid-record-triggers-owned-book-liquidation"
+severity = "P2"
+affected = "live/mt5_bridge.py, live/runner.py"
+root_cause = "account-wide position conversion ran before ownership was known, so an unsupported type on a foreign/manual position raised the same semantic error as an owned position and triggered halt-and-flatten"
+why_tests_missed = "fixtures varied side representations only on owned positions and never combined an invalid foreign record with a healthy executable owned book"
+regression = "integral index-protocol position types; foreign unknown type omitted from account/owned position surfaces; execute-mode healthy cycle retains both owned tickets without halting"
+generalized = "classify ownership from an independent field before decoding an action-bearing enum; an unowned malformed record must not trigger destructive action on owned state"
+workflow_change = "bridge and runner critical mutation scopes pin bool rejection, index-protocol acceptance, raw ownership filtering, and the complete halt-and-flatten loop"

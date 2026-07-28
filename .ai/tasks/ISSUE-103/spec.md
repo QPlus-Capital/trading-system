@@ -27,12 +27,17 @@ pricing call, or order request can be produced from an invalid value.
 
 - One runtime converter accepts internal `"BUY"` / `"SELL"` strings and the terminal's explicit
   `POSITION_TYPE_BUY` / `POSITION_TYPE_SELL` values and returns the canonical internal `Side`.
-- The converter accepts Python `int` subclasses (including `IntEnum`) and `str` subclasses supplied
-  by extension/runtime boundaries, while explicitly excluding booleans from the integer enum
-  branch. Other `numbers.Integral` implementations are rejected in the closed direction.
+- The converter accepts every runtime position type implementing Python's integral index protocol
+  (`operator.index`), including `int`, `IntEnum`, C-extension integer scalars, and other integral
+  representations. Booleans remain explicitly rejected before indexing because they alias 0/1.
+  Internal side strings continue to accept `str` subclasses with exact BUY/SELL values.
 - The converter rejects booleans, unknown integers, unknown strings, and every other object with a
   clear `Mt5Error`; it never assigns a default executable direction.
-- `positions()` converts each raw MT5 position type before constructing or emitting any `Position`.
+- `positions()` reads `magic` before side conversion. It returns every decodable account position,
+  including manual/foreign exposure, but logs and omits a foreign record whose side is unsupported;
+  an unsupported owned record still fails closed.
+- `owned_positions()` applies `magic == MAGIC` to raw records before converting direction, so no
+  malformed unowned record can interrupt an owned manage/close/flatten path.
 - `loss_for_order()` validates its side before `order_calc_profit`.
 - `loss_to_stop()` validates a stopped position's side before `order_calc_profit`.
 - `place_order()` validates its side before reading a tick, selecting a filling mode, or calling
@@ -51,6 +56,8 @@ pricing call, or order request can be produced from an invalid value.
   daily/trailing breach then halts and flattens normally.
 - During a safety halt, a failed owned-position lookup for one market alerts and does not prevent
   every retrievable owned position in later markets from being closed.
+- A malformed position the runner does not own cannot halt the runner or flatten any owned
+  position. Valid foreign positions remain included in account-wide open-risk accounting.
 - Valid BUY/SELL pricing, entry requests, close requests, and position records remain exactly as
   they are on `origin/main`.
 
@@ -75,9 +82,9 @@ pricing call, or order request can be produced from an invalid value.
   are killed, the exact baseline is regenerated from the final Linux review-remediation report,
   and every builder-controlled R3 gate passes. The material remediation then receives a new full
   independent review before readiness.
-- AC-10: Python `int` subclasses (including `IntEnum`) and `str` subclasses map by their documented
-  values, booleans, other non-`int` numeric representations, and loose-equality impostors remain
-  rejected, and no rejected value reaches a terminal call.
+- AC-10: Every position type accepted by `operator.index` maps by its documented value, exact
+  BUY/SELL `str` subclasses map normally, booleans and loose-equality impostors remain rejected,
+  and no rejected owned value reaches a terminal call.
 - AC-11: A flat account returns `[]` from both position surfaces; two owned positions of opposite
   sides plus a foreign position return the exact two owned positions in terminal order.
 - AC-12: An invalid side with no stop raises before the no-stop return and before pricing.
@@ -87,6 +94,9 @@ pricing call, or order request can be produced from an invalid value.
   real daily/trailing breach. The daily/trailing cut-off remains before open-risk reconstruction.
 - AC-14: A failed owned-position lookup during flattening is alerted and isolated to that market;
   every retrievable owned position in the remaining markets is still closed.
+- AC-15: A foreign/manual position with an unsupported type is filtered using `magic` before owned
+  conversion and cannot halt or flatten a healthy execute-mode book; every valid foreign position
+  remains visible to account-wide risk.
 
 ## Invariants
 
@@ -106,6 +116,8 @@ pricing call, or order request can be produced from an invalid value.
 - INV-08: A position-side conversion error can neither bypass the daily/trailing cut-off nor
   truncate best-effort flattening of other markets without a critical log and alert; a routine
   terminal read error cannot liquidate a book whose limits have not breached.
+- INV-09: An invalid unowned record cannot trigger a destructive action, while an invalid owned
+  record still raises `Mt5SideError` and retains the verified halt behavior.
 
 ## Assumptions
 
@@ -137,10 +149,10 @@ boundaries even though the new behavior only rejects invalid inputs.
 
 ## Human decisions required
 
-Jan has already ratified fail-closed behavior for Python `int`/`IntEnum` and `str` subclasses with
-explicit boolean rejection, exact accepted values, dedicated conversion-failure handling, draft
-status, the requirement to kill rather than classify non-equivalent boundary mutants,
-F-040/F-041/F-042 registration, and the prohibition on touching the running live systems. Five
+Jan has ratified integral index-protocol acceptance with explicit boolean rejection, exact accepted
+values, raw ownership filtering, dedicated conversion-failure handling, draft status, the
+requirement to kill rather than classify non-equivalent boundary mutants, F-040/F-041/F-042/F-047
+registration, and the prohibition on touching the running live systems. Five
 semantically meaningful default-argument mutants were
 unobservable through Mutmut's unchanged trampoline defaults; the implementation therefore removes
 that untestable representation without changing the public defaults: the private order-type helper
