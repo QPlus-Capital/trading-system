@@ -76,3 +76,99 @@ against superseded wording, and an explicit register of the capabilities it assu
 have.*
 
 The pattern is registered for the review of every future governance change, not only this one.
+
+---
+
+## Complete independent re-review of `c3cbf6a`
+
+This is a whole-change re-review after the material remediation, not a review of the seven fixes in
+isolation. The comparison base is `origin/main` at
+`8b75ff061c924e2dc415d70ad90700f79a15540c`. The earlier seven defects were reproduced in the prior
+review and their textual fixes are present. The changed marker in
+`tests/test_engineering_docs.py` follows the intended draft-versus-ready rule and removes or weakens
+no assertion.
+
+**Result: NOT READY.** No P0 was found. Two P1 and two P2 findings remain. In particular, the six
+new guards do not bind the properties their names and docstrings claim to protect.
+
+### Re-review findings
+
+| ID | Severity | Finding | Concrete failure scenario | Required correction | Status |
+|---|---|---|---|---|---|
+| RR-F1 | P1 | `docs/engineering/workflow.md:289-304` does not make the draft-before-review contract executable and assigns its two load-bearing dependencies to the wrong issue. Constitution §11 (`docs/engineering/constitution.md:150-156`), `AGENTS.md:79-86`, `CLAUDE.md:40-46`, and workflow phase 4 require review on a draft PR. The active pre-Bash decision still blocks `gh pr create` before readiness, while the fallback says to review a branch. Because the constitution wins, the lower-precedence fallback cannot suspend §11. Moreover, rows 297-298 say #109 will activate draft creation and artifact scaling, but #109 explicitly makes both non-goals; #124 owns both changes. | The current issue is already in `Reviewing`, but `gh pr list --head claude/trading-dev-workflow-b2e46d --state all` returns `[]`. Inline PR review cannot be delivered, and the board definition "`Reviewing` = a pull request is open" is false. Landing #109 would leave both rows unresolved even though line 303 requires a row to leave with its dependency. | Point the first two rows to #124. Until #124 lands, either amend the higher-precedence constitution and both role contracts to state one explicit temporary branch-review procedure, or land #124 atomically with this contract. Add an executable check against `pr_readiness_decision` and the real artifact matrix, not an issue-number search. | resolved |
+| RR-F2 | P1 | All six guards in `tests/test_workflow_contract.py:37-149` are phrase-presence checks that pass under semantic violations of the property they claim to enforce. They therefore do not resolve earlier F7 and give false executable assurance for AC-07 through AC-10. | Executed against temporary mutated documents: (1) removing `Reviewing` from the resume rule passed; (2) saying the builder “opens a pull request and immediately marks it ready before independent review” passed; (3) adding “no other check may run” after “at least” passed; (4) saying the card “must never move back to Reviewing” passed; (5) deleting `Ready to Implement → Implementing` passed; and (6) replacing the activation table with only the heading and `#109, #110, #112` passed. All six guards reported success. | Parse and compare exact contract facts: the complete start/resume truth table including ownership; draft-before-review and ready-after-clean-review ordering; class gates as a lower bound with no ceiling; the positive review-fix transition; the exact required edge set plus terminal restrictions; and one activation record per unavailable capability with the correct owner and fallback. Each test must fail on the corresponding counterexample above. | resolved |
+| RR-F3 | P2 | The supposedly total transition table is internally inconsistent at `docs/engineering/workflow.md:270-287`. `any → Blocked` includes `Done`, contradicting “Done is terminal”; `Specifying → Backlog` gives Backlog a predecessor, contradicting “Backlog is the only status with no predecessor”; and the only `Implementing → Reviewing` trigger is opening/pushing a PR, although the active fallback performs review before a PR exists. | A literal agent can move a completed item back to `Blocked`, while another literal agent treats `Done` as terminal. During the current fallback, the card has no documented transition into `Reviewing`, yet issue #107 is in `Reviewing` with no PR. The board cannot be the asserted single source of truth. | Replace `any` with the exact allowed non-terminal sources, correct the Backlog statement (or remove `Specifying → Backlog`), and define the temporary branch-review transitions while that fallback exists. Test exact edges and forbidden edges; status-name source/target coverage is insufficient. | resolved |
+| RR-F4 | P2 | The resume boundary differs across the two operative documents. `AGENTS.md:62-65` requires a branch or PR created by a builder for this repository; `docs/engineering/workflow.md:136-140` allows any branch or PR “for this issue”. The guard at `tests/test_workflow_contract.py:37-58` tests neither ownership nor branch identity. | A stale, foreign, or manually created branch associated with an `Implementing` card is resumable under the workflow but must be refused under AGENTS. A literal builder has no single answer, and a wrong branch can be modified silently. | Use the same ownership/identity predicate in both documents and encode start, own interrupted branch, own review-fix branch, unrelated branch, stale branch, and mismatched issue/branch cases as a table-driven guard. | resolved |
+
+### Acceptance-criteria trace on re-review
+
+| Requirement | Result | Evidence |
+|---|---|---|
+| AC-01 | **Fail** | The six phase sections name actors and actions, but the documented `Reviewing` result is false under the active branch-review fallback, and the state table supplies no corresponding transition (RR-F1/RR-F3). |
+| AC-02 | **Pass** | Constitution §9 states that risk class scales gates, artifact files, PR sections, and review subagents, not only merge eligibility. |
+| AC-03 | **Pass** | Constitution §16 retains one issue per branch/worktree and squash-on-merge. |
+| AC-04 | **Pass in current text** | `AGENTS.md` requires `Ready to Implement`, `approved`, and `risk:Rn`, moves the card first, and then removes the permit. |
+| AC-05 | **Pass** | `CLAUDE.md` requires Jan's explicit approval and writes `approved` last. |
+| AC-06 | **Pass** | The existing marker change is a faithful update from “open PR” to “mark ready”; no assertion was removed or made conditional. The focused suite passes 153 tests. RR-F2 concerns the six newly added guards, not a weakening of this pre-existing marker. |
+| AC-07 | **Text present; executable guard fails** | Start and resume are disjoint in the current prose, but the two documents disagree on branch ownership and the named guard passes after removing one allowed resume state (RR-F2/RR-F4). |
+| AC-08 | **Fail** | The table is not a coherent total state machine: its terminal/predecessor claims contradict its own edges, and the active branch-review path has no transition (RR-F3). |
+| AC-09 | **Fail** | The activation register names #109 for two capabilities that #109 explicitly excludes; #124 is their actual activating change. Its fallback also contradicts the higher-precedence draft-review requirement (RR-F1). |
+| AC-10 | **Current prose passes; executable guards fail** | No current role summary says the builder opens a ready PR, and the Gates line uses “at least”. Both guards nevertheless pass semantically opposite wording (RR-F2). |
+
+### Invariant trace on re-review
+
+| Requirement | Result | Evidence |
+|---|---|---|
+| INV-01 | **Pass** | The immutable live-trade, risk-limit, Decimal/money, holdout, signal-parity, secret, English, authorship, Jan-authority, and no-autonomous-R3-merge rules remain inline. |
+| INV-02 | **Fail** | Constitution §11 requires review on a draft PR, while workflow's currently authoritative fallback requires branch review before the PR. The resume predicate also differs between AGENTS and workflow (RR-F1/RR-F4). Constitution precedence exposes rather than resolves the impossible lower-level instruction. |
+
+### Guard counterexamples
+
+The following mutations were applied only to temporary copies and the test module's document-path
+globals were redirected to those copies. No repository document was changed.
+
+| Guard | Semantic violation injected | Result |
+|---|---|---|
+| builder start/resume | Removed `Reviewing` from both resume rules | **Passed incorrectly** |
+| draft versus ready | Builder immediately marks the PR ready before review | **Passed incorrectly** |
+| gates are a minimum | Added “no other check may run” to the `at least` line | **Passed incorrectly** |
+| review loop | Replaced the positive transition with “must never move back to Reviewing” | **Passed incorrectly** |
+| total state machine | Removed `Ready to Implement → Implementing` | **Passed incorrectly** |
+| activation register | Replaced all rows/fallbacks with the three expected issue numbers | **Passed incorrectly** |
+
+### Independently verified gates
+
+| Check | Result |
+|---|---|
+| `uv run pytest -q tests/test_engineering_docs.py tests/test_claude_runtime_files.py tests/test_engineering_workflow_docs.py tests/test_github_templates.py tests/test_docs_language.py tests/test_workflow_contract.py` | exit 0; **153 passed** |
+| `uvx --from rust-just just check` | The unmodified Windows invocation could not find POSIX `sh`; rerun with `just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check`: exit 0; Ruff clean, mypy clean over 182 files, vulture clean, **1215 passed / 1 skipped** |
+| `uvx --from rust-just just … check-properties` with the same Windows shell override | exit 0; **21 passed twice** |
+| `uvx --from rust-just just … check-invariants` with the same Windows shell override | exit 0; **325 passed** |
+| `uvx --from rust-just just … check-security` with the same Windows shell override | exit 0; secret scan clean, pip-audit reports no known vulnerabilities, static security check clean |
+| `uv run python -m scripts.quality.validate_task 107` | exit 0; valid (**10 AC, 2 INV**) |
+| `uv run python -m scripts.quality.pr_ready 107 --base origin/main` | exit 0; reports **READY** from the pre-re-review artifact state |
+| The same validator and readiness commands after recording this re-review | exit 1 as intended; the four open P1/P2 findings are detected and readiness reports **NOT READY** |
+
+The formal readiness result does not override this review. It checks recorded gate rows and resolved
+finding syntax; it does not evaluate the semantic counterexamples above. This complete re-review
+therefore reopens blocking findings and the branch must remain unready.
+
+### Re-review dispositions
+
+All four findings are confirmed and resolved. Each was reproduced before being accepted.
+
+| ID | Disposition |
+|---|---|
+| RR-F1 | Confirmed, both halves. The activation register pointed at #109 for draft creation and artifact scaling; #109 makes both explicit non-goals and #124 owns them, an error introduced when #109 was split. Both rows now name #124. The precedence conflict is resolved by moving the transitional rule into `constitution.md` §11 itself, at the same rank as the paragraph it suspends — a lower-ranking document cannot suspend a higher-ranking one, so stating it in `workflow.md` left a literal reader unable to obey both. The board table no longer claims `Reviewing` means a pull request is open; it names both the draft and the branch handover. `test_the_transitional_review_rule_is_stated_at_constitution_precedence` binds it and goes red when the constitution loses the rule while the workflow still relies on it. |
+| RR-F2 | Confirmed, and it is the root finding. Every guard was a phrase-presence check. All six now parse the contract into facts — the resume rule as one identifiable unit rather than its neighbourhood, the transition table as an edge set compared against an enumerated required set, the activation register as rows with a capability, an owner and a usable fallback, and the ready-for-review ordering as a qualifier that must appear around every statement that marks a pull request ready. Each of the six counterexamples supplied by the review was executed against a mutated copy: **7 of 7 guards go red, 7 of 7 stay green on the real documents.** The proof is reproducible; it mutates temporary copies and redirects the module's document paths, and touches no repository file. |
+| RR-F3 | Confirmed. `any → Blocked` is replaced by the four exact permitted sources, so `Done` stays terminal by construction rather than by a sentence that the table contradicted. The claim that `Backlog` has no predecessor is replaced by naming its two real ones, because `Specifying → Backlog` exists by design. The `Implementing → Reviewing` trigger now covers both the draft pull request and the branch handover that the transitional rule requires, so the card has a documented way into `Reviewing` while that rule applies. `test_the_state_machine_declares_every_required_transition` compares against an enumerated edge set and rejects both `any` and any edge leaving `Done`; deleting one required edge makes it red, which the previous source/target coverage check could not detect. |
+| RR-F4 | Confirmed. The resume predicate is now identical in both operative documents: the card is in `Implementing` or `Reviewing`, **and** a branch exists in this repository whose name carries this issue number. Both documents additionally refuse a branch from a fork or from outside the repository. The guard reads the rule itself rather than the surrounding section — scanning the region is precisely what let the earlier version pass when the rule lost a status that happened to appear nearby. |
+
+**Root cause, and why it recurred.** Both this round and the previous one failed the same way: a
+protection was added and then verified by reading rather than by making it fire. That pattern is
+already registered as `F-040`, from the review of a sibling change, and it was registered **before**
+these guards were written. Registering a pattern does not prevent it; only running the counterexample
+does. The lasting change is therefore procedural rather than textual: a guard added to protect a
+contract is not finished until the counterexample it exists to catch has been executed against it and
+observed to fail. That is now recorded as the red-first evidence for every criterion in the test plan,
+not as a claim.
