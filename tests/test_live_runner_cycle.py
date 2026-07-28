@@ -488,9 +488,7 @@ def test_halt_and_flatten_logs_reason_and_failed_position_identity(
             raise Mt5Error("order_send failed: synthetic close fault")
 
     stub = RejectingCloseBridge()
-    stub.open_positions = [
-        Position(17, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)
-    ]
+    stub.open_positions = [Position(17, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
     runner = _runner(stub, mode=Mode.EXECUTE)
 
     with caplog.at_level(logging.ERROR, logger="live"):
