@@ -55,7 +55,8 @@ pricing call, or order request can be produced from an invalid value.
 - AC-08: The confirmed catch-all-side defect class is generalized in the finding registry and the
   converter plus all five boundaries enter the critical mutation scope.
 - AC-09: Every selected MT5 boundary mutant executes a test; all non-equivalent branch survivors
-  are killed, the exact Linux baseline is regenerated once, and all cumulative R3 gates pass.
+  are killed, the exact Linux baseline is regenerated once, and every builder-controlled R3 gate
+  passes. The material remediation then receives a new full independent review before readiness.
 
 ## Invariants
 
