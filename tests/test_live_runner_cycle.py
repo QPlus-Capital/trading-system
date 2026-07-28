@@ -4,6 +4,7 @@ These exercise the real orchestration path (day roll, safety cut-off, bar filter
 replay, sizing, risk gate) without a terminal -- the wiring that must work on Monday.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
@@ -217,6 +218,7 @@ def test_runner_halts_loudly_when_the_bridge_rejects_a_position_type() -> None:
         "SAFETY HALT: cannot verify open positions: invalid MT5 position type; expected "
         "POSITION_TYPE_BUY or POSITION_TYPE_SELL -- flattening & stopping"
     ]
+    assert runner._last_bar_time == {}
     assert stub.placed == []
     assert stub.closed == []
 
@@ -243,11 +245,15 @@ def test_daily_safety_cutoff_precedes_unverifiable_open_risk() -> None:
     runner.run_once()
 
     assert runner._halted
+    assert runner._halt_reason == "trailing stop: equity 90000 <= floor 95000"
+    assert runner._last_bar_time == {}
     assert stub.closed == [7]
     assert stub.account_position_reads == 0
 
 
-def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails() -> None:
+def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     class PartiallyRejectingBridge(StubBridge):
         def owned_positions(self, name: str | None = None) -> list[Position]:
             if name == "XAUUSD":
@@ -280,7 +286,8 @@ def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails() ->
         day_start_balance=stub.balance,
     )
 
-    runner._halt_and_flatten("synthetic daily limit")
+    with caplog.at_level(logging.ERROR, logger="live"):
+        runner._halt_and_flatten("synthetic daily limit")
 
     assert runner._halted
     assert runner._halt_reason == "synthetic daily limit"
@@ -290,6 +297,9 @@ def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails() ->
         "SAFETY HALT: synthetic daily limit -- flattening & stopping",
         "SAFETY HALT: could not enumerate owned XAUUSD positions; manual intervention required",
     ]
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.ERROR
+    ] == ["failed to enumerate owned XAUUSD positions during safety halt"]
 
 
 def test_loss_day_rolls_at_16_15_chicago_dst_aware() -> None:
