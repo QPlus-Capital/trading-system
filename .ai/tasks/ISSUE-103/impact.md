@@ -67,8 +67,10 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
   live boundary.
 - The review supplied four hand-built bridge mutants. Flat-account, invalid-side/no-stop, and
   owned-list-completeness tests each fail against the exact mutated behavior. Runtime-subclass
-  tests fail against the branch's exact-type converter. The runner safety and flatten methods now
-  enter the critical mutation target rather than relying on bridge-only coverage.
+  tests fail against the branch's exact-type converter. The changed runner logic is isolated in
+  `_apply_cycle_safety()` and `_owned_positions_for_flatten()` so the critical target measures the
+  review fix directly instead of admitting unrelated legacy branches from the large orchestration
+  methods.
 
 ## Unknown or dynamic edges
 

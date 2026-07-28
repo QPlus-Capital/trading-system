@@ -96,7 +96,10 @@ now passed independently to `positions`, `loss_for_order`, `place_order`, and `c
 Every boundary rejects it before terminal interaction.
 
 F-041 generalizes the review defect across external runtime representation and safety-consumer
-failure handling. Mutation policy includes both changed runner consumers in addition to every
-bridge boundary. Because these dispositions materially change `live/runner.py` and the live
-bridge, the complete independent doubly-rigorous review must run again; this file does not mark the
-findings independently verified or the PR ready.
+failure handling. Mutation policy includes the extracted `_apply_cycle_safety()` and
+`_owned_positions_for_flatten()` consumers in addition to every bridge boundary. A first broad
+runner measurement exposed 84 survivors in the surrounding legacy orchestration; none was
+classified. The changed logic was isolated into those two targetable helpers instead of admitting
+unrelated legacy survivors to the baseline. Because these dispositions materially change
+`live/runner.py` and the live bridge, the complete independent doubly-rigorous review must run
+again; this file does not mark the findings independently verified or the PR ready.
