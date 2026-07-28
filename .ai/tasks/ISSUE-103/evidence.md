@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: d08091a9d462a68281211e4a78b131ce8184e8a9
+HEAD: ef8d06595c1cba17c9ce5b3f2acb581ad975c26d
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -12,19 +12,19 @@ The only later commit permitted by readiness is this evidence file itself.
 
 | Gate | Command | Exit status | Result |
 |---|---|---:|---|
-| `format` | `uvx --from rust-just just check-fast origin/main` | 0 | Ruff format/check and strict mypy passed; 145 impacted tests passed. |
-| `docs-consistency` | full `just check` plus task validation | 0 | Engineering-document and gate-consistency tests passed inside the 1,260-test suite. |
-| `check` | `uvx --from rust-just just check` with `PYTHONUTF8=1` on Windows | 0 | Ruff, strict mypy over 181 files, Vulture, and pytest passed: 1,260 passed, 1 Windows-only mutation self-test skipped. |
-| `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | Both changed production files selected the bridge, runner, risk, monitoring, sizing, swap, and parity consumers; 145 tests passed. |
+| `format` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check-fast origin/main` | 0 | All four changed Python files are formatted; Ruff, strict mypy, and 152 impacted tests passed. |
+| `docs-consistency` | full `just check` plus task validation | 0 | Engineering-document and gate-consistency tests passed inside the 1,267-test suite. |
+| `check` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check` with `PYTHONUTF8=1` | 0 | Ruff, strict mypy over 181 files, Vulture, and pytest passed: 1,267 passed, 1 Windows-only mutation self-test skipped. |
+| `impacted-tests` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check-fast origin/main` | 0 | Both changed production files selected all configured bridge, runner, risk, monitoring, sizing, swap, and parity consumers; 152 tests passed. |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | 21 property tests passed twice at fixed Hypothesis seed `20260721`. |
-| `integration-tests` | focused bridge/runner suite and `check-fast` recommended command | 0 | 84 direct bridge/runner-cycle tests and 145 complete impacted tests passed using synthetic fakes only. |
-| `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-103 --base origin/main` | 0 | Task ISSUE-103 is valid with 14 acceptance criteria and 8 invariants. |
+| `integration-tests` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py` plus `check-fast` | 0 | 91 direct bridge/runner-cycle tests and 152 complete impacted tests passed using synthetic fakes only. |
+| `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-103 --base origin/main` | 0 | Task ISSUE-103 is valid with 15 acceptance criteria and 9 invariants. |
 | `adversarial-review` | `.ai/tasks/ISSUE-103/review.md` | 1 | The complete re-review found F1/F2/F3/F5; all are dispositioned with executable evidence, but the material P1 live-path fix requires one further complete independent review. |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 409 critical invariant tests passed; the suite directly exercises the MT5 bridge and runner safety cycle. |
-| `mutation-on-touched-critical` | Linux run `30362970416` against the existing exact baseline | 0 | 4,923 total, 4,514 killed, 409 survived, 0 no-tests, and every other unhealthy status 0. The gate passed without any baseline change, new survivor, or classification. |
+| `invariants` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check-invariants` | 0 | 416 critical invariant tests passed; the suite directly exercises the MT5 bridge and runner safety cycle. |
+| `mutation-on-touched-critical` | Linux Critical mutation run `30377331484` | 0 | 4,978 total, 4,569 killed, 409 survived, 0 no-tests, and every other unhealthy status 0. The refreshed exact baseline passed; 55 measured mutants and 55 kills were added, with no survivor or classification added. |
 | `parity-where-applicable` | legal-input fake-broker assertions and baseline trade-artifact hashes | 0 | Valid BUY/SELL position, pricing, entry, and close behavior remains exact; no research producer changed and both trade artifacts remain byte-identical. |
 | `live-money-review` | fake-only safety evidence plus `.ai/tasks/ISSUE-103/review.md` | 1 | Builder evidence is green, but the complete independent doubly-rigorous review must rerun after narrowing the destructive safety trigger. |
-| `human-decision-escalation` | task validation and spec audit | 0 | Jan's Python `int`/`IntEnum` and `str` type rule, dedicated conversion-failure behavior, draft status, and merge authority are explicit; halt persistence remains in #122. |
+| `human-decision-escalation` | task validation and spec audit | 0 | Jan's integral index-protocol rule with explicit bool rejection, independent raw-magic ownership filter, dedicated conversion-failure behavior, draft status, and merge authority are explicit; halt persistence remains in #122. |
 | `no-autonomous-merge` | PR #105 state audit | 0 | PR #105 remains open and draft; auto-merge is absent and no ready/merge action occurred. |
 
 ### Additional evidence
@@ -34,12 +34,13 @@ The only later commit permitted by readiness is this evidence file itself.
 | `red-current-code` | focused review tests before production changes | 1 | Six failures: two integer-subtype cases, two string-subtype cases, runner conversion failure escaped, and one failed market lookup aborted the flatten loop. |
 | `red-hand-mutants` | exact temporary `if not raw`, validation-after-no-stop, and `owned_positions()[:1]` mutations; three dedicated tests | 1 | All three tests failed independently: flat account raised, invalid stop-less side returned, and the second owned position disappeared. The intended source was restored immediately. |
 | `red-broad-exception` | focused execute-mode conversion/transient-read tests against the reviewed code | 1 | Three failures: transient `symbol_info` and `positions_get` errors were swallowed, liquidated tickets 11/12, and halted permanently; the next healthy `must_flatten` cycle could not run. |
+| `red-foreign-integral-ownership` | four focused tests before the final F1 remediation | 1 | Four failures: two index-protocol position values were rejected, a foreign invalid record poisoned both position surfaces, and the execute-mode runner halted and flattened its owned book. |
 | `loose-equality` | four `_LooselyEqual` boundary tests | 0 | Raw position, pricing, placement, and close all raise their full distinct error with zero terminal calls. This replaces the former test-plan overclaim with executable proof. |
-| `review-focused-green` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py` | 0 | 84 tests passed after the P1/P2 dispositions. |
+| `review-focused-green` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py` | 0 | 91 tests passed after all F1-F7 dispositions. |
 | `risk-classification` | `uv run python -m scripts.quality.classify $(git diff --name-only origin/main...HEAD)` | 0 | R3 because the live broker bridge, runner safety consumer, mutation policy, and invariant gate change. |
 | `finding-registry` | ID audit across fetched origin branches and registry tests | 0 | F-037/F-040/F-041 remain intact; F-042 was free and generalizes a broad transport exception triggering destructive safety action. |
-| `impact` | `uvx --from rust-just just impact origin/main` | 0 | `live/mt5_bridge.py` and `live/runner.py` select all configured direct/transitive consumers; 145 impacted tests passed and no unknown dynamic edge was reported. |
-| `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean, pip-audit reports no known vulnerabilities, and Ruff security checks passed. |
+| `impact` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command impact origin/main` | 0 | `live/mt5_bridge.py` and `live/runner.py` select all configured direct/transitive consumers; no unknown dynamic edge was reported. |
+| `security` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check-security` | 0 | Secret scan clean, pip-audit reports no known vulnerabilities, and Ruff security checks passed. |
 | `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-103 --base origin/main` | 1 | Correctly reports NOT READY on the pending `adversarial-review` and `live-money-review`; all builder-controlled gates pass and evidence binds the non-evidence HEAD. |
 
 ## Red-first proof
@@ -79,6 +80,21 @@ The invalid complement includes `True`, `False`, `0.0`, `"0"`, `None`, unknown i
 strings, and an object whose equality always returns `True`. Every rejected value is asserted to
 leave pricing, tick, filling, and order-send counters at zero.
 
+The final independent-review remediation added a fourth RED state. Before its implementation:
+
+- two synthetic runtime values implementing `__index__` were rejected despite representing the
+  documented BUY and SELL constants;
+- an unsupported foreign position raised before either the account-wide or owned position list
+  could be reconstructed;
+- in `Mode.EXECUTE`, that foreign GBPJPY record caused the healthy runner to halt and flatten its
+  two owned XAUUSD positions.
+
+The green oracle proves both directions of the ownership boundary. Legal foreign positions remain
+in `positions()` for account-wide risk; `owned_positions()` excludes them before side conversion.
+An unsupported foreign record is omitted with an exact warning and cannot halt or flatten the
+owned book. An unsupported owned record still raises `Mt5SideError`. `True` and `False` remain in
+the invalid fixture, so removal or weakening of the explicit bool exclusion fails.
+
 ## Mutation evidence
 
 The mutation sequence was deliberately fail-closed:
@@ -96,13 +112,32 @@ The mutation sequence was deliberately fail-closed:
 4. After F-042, final run
    [30362970416](https://github.com/QPlus-Capital/trading-system/actions/runs/30362970416)
    again measured 4,514/4,923 killed, 409 survived, and zero unhealthy outcomes. It passed the
-   existing exact baseline unchanged, proving the dedicated side exception and narrow catch add no
-   survivor or classification.
+   then-current exact baseline, proving the dedicated side exception and narrow catch add no
+   survivor or classification. The earlier PR summary was nevertheless wrong to describe the
+   baseline itself as unchanged: the preceding refresh had tightened 410 survivors to 409, killed
+   one inherited survivor, added none, and added one target.
+5. The first complete measurement of this final review fix, run
+   [30373748950](https://github.com/QPlus-Capital/trading-system/actions/runs/30373748950),
+   measured 4,972 mutants with 21 unexplained PR-specific survivors. No survivor was admitted.
+6. Exact account-risk visibility, foreign-record warning, halt reason, and failed-close identity
+   assertions killed 18 of those 21. Run
+   [30374897891](https://github.com/QPlus-Capital/trading-system/actions/runs/30374897891)
+   left only three: two provable no-op expressions and one unobservable Mutmut default.
+7. The code was made mutation-observable rather than classifying those three. Runtime narrowing
+   removes the value-preserving `typing.cast` and unreachable sentinel; the private position
+   decoder requires an explicit authoritative owner magic. Run
+   [30376536794](https://github.com/QPlus-Capital/trading-system/actions/runs/30376536794)
+   measured 4,569/4,978 killed with exactly the inherited 409 survivors and no unhealthy outcome.
+8. The baseline was regenerated once from that final report. Final run
+   [30377331484](https://github.com/QPlus-Capital/trading-system/actions/runs/30377331484)
+   passed independently on implementation HEAD `ef8d065`: 4,569/4,978 killed, 409 exact-name
+   survivors, and every unhealthy status zero.
 
-The final survivor set contains no new name and no new classification. It is one name tighter than
-main because the new consumer tests kill the formerly allowed
-`live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3`. The exact baseline now has 409 names
-and the retained report passes `check_baseline` with `issues=[]`.
+The current refresh adds 55 measured mutants and 55 kills relative to 4,923/4,514, while the
+survivor set remains exactly 409. The score improves from 0.9169 to 0.9178. No survivor or
+classification was added, `_halt_and_flatten()` is now in the measured runner target, and the
+explicit bool-exclusion mutants are killed. The retained report compares with the committed
+baseline using `check_baseline(...)=[]`.
 
 ## Numerical and artifact parity
 
@@ -129,11 +164,11 @@ running live runner was touched.
 
 ## Coverage and mutation
 
-The final deterministic suite has 1,260 passing tests, the impacted set has 145, the critical
-invariant suite has 409, and 21 properties pass twice at the fixed seed. Linux mutation has 4,514
-of 4,923 mutants killed, 409 exact-name inherited survivors, and zero unhealthy results. No
-baseline change was needed; no test, target, threshold, comparison rule, risk limit, or valid live
-behavior is weakened.
+The final deterministic suite has 1,267 passing tests, the impacted set has 152, the critical
+invariant suite has 416, and 21 properties pass twice at the fixed seed. Linux mutation has 4,569
+of 4,978 mutants killed, 409 exact-name inherited survivors, and zero unhealthy results. The
+baseline adds 55 measured mutants and 55 kills without adding a survivor or classification; no
+test, threshold, comparison rule, risk limit, or valid live behavior is weakened.
 
 ## Deferred checks
 
