@@ -49,3 +49,10 @@ F-037 are retained in ID order. A structural TOML comparison proves every mutati
 pattern from both main and the pre-rebase branch remains present; the mutation baseline is
 unchanged. Range-diff shows the live implementation and tests remain patch-equivalent. This rebase
 changes no behavior, so the earlier review continues to cover the implementation.
+
+Rebased again onto `origin/main` at `494eafc5404bb9148c1df0887f7260b189cc36d6` after PR #98.
+Merged F-035/F-036 and issue #103's F-037 are retained unchanged in ID order. Structural comparison
+again proves the mutation policy is the union of main and the pre-rebase branch, while the mutation
+baseline remains byte-unchanged. PR #98 changes Stage-1 research scoring and has no live bridge
+consumer or configuration overlap; range-diff confirms the issue #103 live implementation and tests
+remain patch-equivalent. No behavior changed, so the earlier review still covers this implementation.
