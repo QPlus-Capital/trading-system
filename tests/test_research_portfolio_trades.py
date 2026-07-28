@@ -119,3 +119,80 @@ def test_a_trade_resolved_inside_the_preroll_belongs_to_the_previous_window() ->
         )
         == []
     )
+
+
+def test_skipped_rows_never_truncate_later_authoritative_directions() -> None:
+    """Open and pre-roll rows are filters, not end-of-report sentinels."""
+    boundary = pd.Timestamp("2024-02-01", tz="UTC")
+    pos = pd.DataFrame(
+        {
+            "ts_opened": [
+                pd.Timestamp("2024-01-01", tz="UTC"),
+                pd.Timestamp("2024-01-02", tz="UTC"),
+                pd.Timestamp("2024-02-02", tz="UTC"),
+            ],
+            "ts_closed": [
+                pd.NaT,
+                pd.Timestamp("2024-01-20", tz="UTC"),
+                pd.Timestamp("2024-02-03", tz="UTC"),
+            ],
+            "realized_pnl": ["0 USD", "-10 USD", "25 USD"],
+            "avg_px_open": [100.0, 100.0, 100.0],
+            "avg_px_close": [100.0, 101.0, 102.0],
+            "entry": ["SELL", "SELL", "BUY"],
+            "side": ["SHORT", "FLAT", "FLAT"],
+        }
+    )
+
+    extracted = timed_trades_from_report(pos, "X", sl_pct=1.0, closed_from=boundary)
+
+    assert [(row["ts_closed"], row["is_long"]) for row in extracted] == [
+        (pd.Timestamp("2024-02-03", tz="UTC").value, True)
+    ]
+
+
+def test_naive_report_timestamp_is_compared_on_the_authoritative_utc_axis() -> None:
+    """Nautilus timestamps without tz metadata still represent UTC report instants."""
+    closed = pd.Timestamp("2024-02-03 12:00")
+    pos = _closed_position("BUY")
+    pos["ts_closed"] = [closed]
+
+    extracted = timed_trades_from_report(
+        pos,
+        "X",
+        sl_pct=1.0,
+        closed_from=pd.Timestamp("2024-02-01", tz="UTC"),
+    )
+
+    assert extracted[0]["ts_closed"] == closed.value
+    assert extracted[0]["is_long"] is True
+
+
+def test_trade_closing_exactly_at_window_start_is_attributed_to_that_window() -> None:
+    boundary = pd.Timestamp("2024-02-01", tz="UTC")
+    pos = _closed_position("SELL")
+    pos["ts_closed"] = [boundary]
+
+    extracted = timed_trades_from_report(pos, "X", sl_pct=1.0, closed_from=boundary)
+
+    assert [(row["ts_closed"], row["is_long"]) for row in extracted] == [
+        (boundary.value, False)
+    ]
+
+
+def test_report_money_and_stop_schedule_use_the_authoritative_open_record() -> None:
+    opened = pd.Timestamp("2024-01-01", tz="UTC")
+    pos = _closed_position("BUY")
+    pos["realized_pnl"] = ["1_234.5 USD"]
+    seen: list[int] = []
+
+    def stop_at_open(timestamp_ns: int) -> float:
+        seen.append(timestamp_ns)
+        return 1.25
+
+    extracted = timed_trades_from_report(pos, "X", sl_pct=stop_at_open)
+
+    assert seen == [opened.value]
+    assert extracted[0]["pnl_base"] == 1_234.5
+    assert extracted[0]["sl_pct"] == 1.25
+    assert extracted[0]["is_long"] is True
