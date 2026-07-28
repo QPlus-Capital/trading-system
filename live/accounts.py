@@ -1,4 +1,4 @@
-"""Live account profiles: which broker terminal each runner attaches to, and the identity guard.
+"""Environment-backed live account profiles and the identity guard.
 
 Two accounts run in parallel, each with its OWN MT5 terminal and fully isolated state
 (``reports/live/<name>/``):
@@ -7,54 +7,84 @@ Two accounts run in parallel, each with its OWN MT5 terminal and fully isolated 
 - ``ttp`` -- The Trading Pit CFD Prime $50k (USD), the real prop account; all code tooling
   (dashboard, reporting, fact sheet) points here.
 
-Safety model: the runner CONNECTS to this profile's ``terminal_path`` and then REFUSES to trade
-unless the *connected* account's login number and currency match the profile. So a runner can
-never place orders on the wrong account, even if the wrong terminal happens to be open.
-
-Instance layout: managed (prop) instances live under ``C:\\Users\\jancw\\MT5\\<name>\\`` -- each a
-copy of a base install, independent because MT5 keys its data folder off the install path. A copy
-is a FRESH terminal (login lives in %APPDATA%, not the install folder), so it must be logged into
-its account ONCE before a runner can attach. The demo keeps its original install. To add another
-account: copy an instance folder to ``MT5\\<new>\\``, log the account into it, enable Algo Trading,
-then add a ``LiveAccount`` below with that terminal64.exe path + the login.
+Safety model: ``get_account`` first requires the selected profile's login and terminal path from
+the process environment. The runner then connects to that path and refuses unless the connected
+account's login and currency match. Missing, malformed, or mismatching identity always fails closed.
 """
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
+from typing import NoReturn
 
 from live.mt5_bridge import AccountState
 
 
 @dataclass(frozen=True)
 class LiveAccount:
-    """One live account: its terminal, its isolated state dir, and the identity to guard on."""
+    """One account's code-owned metadata and required environment-backed connection identity."""
 
     name: str  # short id -> reports/live/<name>/ (state, logs)
-    expected_login: int | None  # broker account number; the runner asserts the connection matches
+    expected_login_env: str
     expected_currency: str  # "EUR" | "USD" -- also asserted against the live connection
     start_balance: float  # daily/trailing reference on the FIRST run (saved state wins afterwards)
-    terminal_path: str | None  # path to this account's terminal64.exe; None = the default terminal
+    terminal_path_env: str
     # per-account overrides on the base SYMBOL_MAP, for brokers that name a symbol differently
     symbol_overrides: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def expected_login(self) -> int:
+        """Return the required broker login, refusing absent or malformed configuration."""
+        raw = _required_environment(self.expected_login_env, kind="broker login")
+        if not raw.isascii() or not raw.isdigit() or int(raw) <= 0:
+            _refuse_environment(self.expected_login_env, kind="broker login")
+        return int(raw)
+
+    @property
+    def terminal_path(self) -> str:
+        """Return the required terminal path, refusing absent, padded, or placeholder values."""
+        raw = _required_environment(self.terminal_path_env, kind="terminal path")
+        if raw != raw.strip() or (raw.startswith("<") and raw.endswith(">")):
+            _refuse_environment(self.terminal_path_env, kind="terminal path")
+        return raw
+
+    def validate_environment(self) -> None:
+        """Resolve every required identity value before a terminal connection is attempted."""
+        _ = self.expected_login
+        _ = self.terminal_path
+
+
+def _required_environment(name: str, *, kind: str) -> str:
+    """Read one non-empty environment value without disclosing it on refusal."""
+    value = os.environ.get(name)
+    if value is None or not value:
+        _refuse_environment(name, kind=kind)
+    return value
+
+
+def _refuse_environment(name: str, *, kind: str) -> NoReturn:
+    """Refuse an unavailable safety input without putting its value in output."""
+    raise SystemExit(
+        f"REFUSED: required {kind} environment variable '{name}' is missing or malformed. "
+        "Not trading."
+    )
 
 
 MEX = LiveAccount(
     name="mex",
-    expected_login=90480097,  # MEXAtlantic-Demo
+    expected_login_env="MT5_MEX_LOGIN",
     expected_currency="EUR",
     start_balance=100_000.0,
-    # The demo keeps its ORIGINAL install (already logged in). A fresh copy under MT5\ would need a
-    # one-time manual login -- not worth it for the shadow account. Prop instances go under MT5\.
-    terminal_path=r"C:\Program Files\MetaTrader 5\terminal64.exe",
+    terminal_path_env="MT5_MEX_TERMINAL_PATH",
 )
 
 TTP = LiveAccount(
     name="ttp",
-    expected_login=504071681,  # The Trading Pit CFD Prime $50k
+    expected_login_env="MT5_TTP_LOGIN",
     expected_currency="USD",
     start_balance=50_000.0,  # CFD Prime $50k, 1-phase
-    terminal_path=r"C:\Users\jancw\MT5\ttp\terminal64.exe",  # its instance under the MT5\ root
+    terminal_path_env="MT5_TTP_TERMINAL_PATH",
     symbol_overrides={"USTEC": "USTEC"},  # TTP names the Nasdaq USTEC (MEX calls it UT100)
 )
 
@@ -62,30 +92,29 @@ ACCOUNTS: dict[str, LiveAccount] = {a.name: a for a in (MEX, TTP)}
 
 
 def get_account(name: str) -> LiveAccount:
-    """Look up an account profile by name, or exit with a clear message."""
+    """Return a fully configured profile, or refuse before any terminal connection."""
     if name not in ACCOUNTS:
         raise SystemExit(f"unknown account '{name}'; choose from {sorted(ACCOUNTS)}")
-    return ACCOUNTS[name]
+    profile = ACCOUNTS[name]
+    profile.validate_environment()
+    return profile
 
 
 def guard_account(state: AccountState, profile: LiveAccount, *, execute: bool) -> None:
-    """Refuse (SystemExit) unless the live connection is really the expected account.
+    """Refuse unless the live connection is the required account in every run mode.
 
     The single most important safeguard for running two accounts in parallel: it makes it
     impossible for, say, the TTP runner to place orders on the MEX terminal (or vice versa).
     """
-    if profile.expected_login is not None and state.login != profile.expected_login:
+    _ = execute  # Public compatibility; identity is mandatory in both execution modes.
+    expected_login = profile.expected_login
+    if state.login != expected_login:
         raise SystemExit(
-            f"REFUSED: connected to account {state.login}, but profile '{profile.name}' expects "
-            f"{profile.expected_login} -- wrong terminal open? Not trading."
+            f"REFUSED: connected account does not match profile '{profile.name}' -- "
+            "wrong terminal open? Not trading."
         )
     if state.currency != profile.expected_currency:
         raise SystemExit(
             f"REFUSED: account currency {state.currency} != expected {profile.expected_currency} "
             f"for profile '{profile.name}' -- wrong account? Not trading."
-        )
-    if execute and profile.expected_login is None:
-        raise SystemExit(
-            f"REFUSED: profile '{profile.name}' has no expected_login set. Fill it in "
-            "live/accounts.py before placing REAL orders (guard vs. the wrong account)."
         )

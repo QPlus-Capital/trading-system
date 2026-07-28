@@ -15,23 +15,23 @@ report:
 
 # Live TTP account — signal-only (safe, no orders)
 live-ttp:
-    uv run python -m live.run --account ttp
+    uv run --env-file .env python -m live.run --account ttp
 
 # Live TTP account — REAL orders
 live-ttp-execute:
-    uv run python -m live.run --account ttp --mode execute
+    uv run --env-file .env python -m live.run --account ttp --mode execute
 
 # Live MEX demo account — signal-only
 live-demo:
-    uv run python -m live.run --account mex
+    uv run --env-file .env python -m live.run --account mex
 
 # GO/NO-GO pre-flight for the TTP account
 preflight:
-    uv run python -m live.preflight --account ttp
+    uv run --env-file .env python -m live.preflight --account ttp
 
 # Live-vs-backtest monitoring dashboard
 monitor:
-    uv run streamlit run monitoring/dashboard.py
+    uv run --env-file .env streamlit run monitoring/dashboard.py
 
 # Quality gates — run before every commit (same as CI)
 # Standard static quality gates (the CI Standard Quality job invokes this recipe verbatim)
@@ -80,7 +80,7 @@ check-security:
 
 # Critical invariant suite; separate CI visibility, never a substitute for the full tests
 check-invariants:
-    uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_quality_classify.py tests/test_quality_pr_ready.py
+    uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_quality_classify.py tests/test_quality_pr_ready.py
 
 # Validate the PR template and bind its task reference to current readiness evidence
 check-pr-evidence body_file="" range="origin/main":

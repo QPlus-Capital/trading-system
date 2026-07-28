@@ -41,16 +41,17 @@ Both `nautilus_trader` (backtest engine) and `MetaTrader5` (live bridge) are pin
 step. To bump a version later, run `uv lock --upgrade-package <name> && uv sync` and
 commit the updated `uv.lock`.
 
-## 5. Configure secrets (optional)
+## 5. Configure live account identity and secrets
 
 ```bash
 cp .env.example .env
 ```
 
-The live MT5 bridge needs **no** broker credentials in code — it attaches to an
-already-logged-in MetaTrader 5 terminal. `.env` is only for the optional Telegram
-notification token. It is gitignored and must never be committed; store any real
-credentials in the shared password manager.
+The live MT5 bridge needs no broker password in code: it attaches to an already-logged-in terminal.
+Fill all four required `MT5_*_LOGIN` / `MT5_*_TERMINAL_PATH` placeholders in `.env`; the account
+guard refuses missing, malformed, or mismatching identity. Telegram values remain optional. `.env`
+is gitignored and must never be committed; store every real account value in the shared password
+manager. The live-facing `just` recipes load this file explicitly through `uv run --env-file .env`.
 
 ## 6. Verify the setup
 

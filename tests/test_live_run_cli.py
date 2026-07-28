@@ -44,6 +44,8 @@ class _StubBridge:
 def test_start_balance_feeds_the_day_start_not_the_trailing_reference(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.setenv("MT5_TTP_LOGIN", "1")
+    monkeypatch.setenv("MT5_TTP_TERMINAL_PATH", r"C:\MT5\test\terminal64.exe")
     monkeypatch.setattr(runmod, "Mt5Bridge", _StubBridge)
     monkeypatch.setattr(runmod, "LiveRunner", _SpyRunner)
     monkeypatch.setattr(runmod, "guard_account", lambda *a, **k: None)
@@ -56,3 +58,23 @@ def test_start_balance_feeds_the_day_start_not_the_trailing_reference(
     assert cap["risk"].start_balance == ACCOUNTS["ttp"].start_balance
     # ...and the CLI value reaches the runner only as the loss day's opening balance.
     assert cap["day_start_balance"] == 49_000.0
+
+
+def test_missing_account_environment_refuses_before_bridge_connection(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    class _ConnectionSpy(_StubBridge):
+        connected = False
+
+        def connect(self, path: str | None = None) -> None:
+            _ConnectionSpy.connected = True
+
+    monkeypatch.delenv("MT5_TTP_LOGIN", raising=False)
+    monkeypatch.setenv("MT5_TTP_TERMINAL_PATH", r"C:\MT5\test\terminal64.exe")
+    monkeypatch.setattr(runmod, "Mt5Bridge", _ConnectionSpy)
+    monkeypatch.setattr(runmod, "_LIVE_ROOT", tmp_path)
+
+    with pytest.raises(SystemExit, match="MT5_TTP_LOGIN"):
+        runmod.main(["--account", "ttp", "--once", "--start-balance", "49000"])
+
+    assert _ConnectionSpy.connected is False

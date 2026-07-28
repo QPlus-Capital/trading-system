@@ -12,6 +12,12 @@ from live.mt5_bridge import AccountState
 from monitoring import dashboard
 
 
+@pytest.fixture(autouse=True)
+def _configured_fake_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("MT5_TTP_LOGIN", "123")
+    monkeypatch.setenv("MT5_TTP_TERMINAL_PATH", r"C:\MT5\fake\terminal64.exe")
+
+
 def _deal(ticket: int, profit: str) -> dict[str, Any]:
     return {
         "ticket": ticket,

@@ -9,6 +9,19 @@ execution_platform = "linux"
 python = "3.13"
 
 [[targets]]
+id = "live-account-identity"
+path = "live/accounts.py"
+mutant_patterns = [
+    "live.accounts.x*LiveAccount*expected_login__mutmut_*",
+    "live.accounts.x*LiveAccount*terminal_path__mutmut_*",
+    "live.accounts.x*LiveAccount*validate_environment__mutmut_*",
+    "live.accounts.x__required_environment__mutmut_*",
+    "live.accounts.x__refuse_environment__mutmut_*",
+    "live.accounts.x_get_account__mutmut_*",
+    "live.accounts.x_guard_account__mutmut_*",
+]
+
+[[targets]]
 id = "live-risk-control"
 path = "live/risk_control.py"
 mutant_patterns = [
