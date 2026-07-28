@@ -2,10 +2,10 @@
 
 ## HEAD
 
-HEAD: ffd6beff9d14fecdf2e60db927848338b37e19de
+HEAD: 9242d703cb55885875a2f9f60fabb1c679cfc1d3
 
 `origin/main` was merged into the branch first, so this evidence binds a tree that already contains
-the merged PR #96. Comparisons below use the merge base (`origin/main...HEAD`), not the two-dot form,
+every pull request merged up to `8b75ff0` (#96, #97, #98, #100, #116, #119). Comparisons below use the merge base (`origin/main...HEAD`), not the two-dot form,
 which would otherwise report PR #96's files as changes of this task.
 
 ## Commands
@@ -15,11 +15,11 @@ which would otherwise report PR #96's files as changes of this task.
 | `red-first` | `uv run pytest -q tests/test_workflow_contract.py` against the pre-fix documents (`git stash`) | 1 | RED: **6 failed** — no transition table, the resume rule named no status and did not exempt the permit, both role summaries still opened a ready pull request, the Gates step read "no more, no less", the review loop had no way back to `Reviewing`, and no activation register existed |
 | `format` | `uvx --from rust-just just check-fast` | 0 | GREEN: format, Ruff and mypy passed; 63 focused tests |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_claude_runtime_files.py tests/test_engineering_workflow_docs.py tests/test_github_templates.py tests/test_docs_language.py tests/test_workflow_contract.py` | 0 | GREEN: **153 passed**, including the six new contract guards |
-| `check` | `uvx --from rust-just just check` | 0 | GREEN: Ruff, mypy, vulture and **1197 passed**, 1 skipped (mutmut needs fork/WSL on Windows); re-run at this HEAD after the F-039 renumber |
+| `check` | `uvx --from rust-just just check` | 0 | GREEN: Ruff, mypy, vulture and **1215 passed**, 1 skipped (mutmut needs fork/WSL on Windows); re-run at this HEAD after the F-039 renumber |
 | `impacted-tests` | `uvx --from rust-just just check-fast` | 0 | GREEN: impact selected the engineering-doc and contract suites; 63 passed |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | GREEN: **21 properties passed twice** with seed 20260721 |
-| `integration-tests` | full pytest within `check` | 0 | GREEN: 1197 passed with no live terminal or account interaction |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | GREEN: **313** critical live-risk, parity, sizing, research-integrity and workflow tests passed |
+| `integration-tests` | full pytest within `check` | 0 | GREEN: 1215 passed with no live terminal or account interaction |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | GREEN: **325** critical live-risk, parity, sizing, research-integrity and workflow tests passed |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task 107` | 0 | GREEN: valid, 10 acceptance criteria and 2 invariants; all seven review findings resolved |
 | `adversarial-review` | `.ai/tasks/107/review.md` | 0 | GREEN: independent Codex review in fresh context; **7 findings (4 P1, 3 P2), all confirmed and resolved**, 12 counterexamples attempted. See Deferred checks — a re-review is owed. |
 | `parity-where-applicable` | `git diff --quiet origin/main...HEAD -- core research live monitoring scripts .claude .github justfile pyproject.toml uv.lock` | 0 | GREEN: this change touches no trading, quality-tool, hook, CI, recipe or dependency path |
