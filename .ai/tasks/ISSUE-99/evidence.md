@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: a0b1615580813f064df470118e6ba451174df169
+HEAD: 26a22d0b10c35f797887bb7e627a761e85dcf4d8
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -39,6 +39,7 @@ The only later commit permitted by readiness is this evidence file itself.
 | `outcome-fallback-audit` | `rg` over `research/portfolio/sizing.py` for the removed outcome expressions | 0 | No `won = pnl`, `is_long = won`, or optional-`is_long` fallback remains. `swap_analysis.py` was not changed. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | Two production files, eleven direct and thirteen transitive test paths, critical escalation for direction and H4 diagnostics, and no unknown/dynamic edges. |
 | `security` | `uvx --from rust-just just check-security` | 0 | Post-#98 rebase secret scan clean; pip-audit reports no known vulnerabilities; Ruff security checks pass. |
+| `post-119-rebase` | `git rebase origin/main` plus baseline/scope audit | 0 | Rebased onto `main@1815baa`; branch carries #119's `4,568`-mutant, 417-survivor exact baseline unchanged. No survivor was classified and no baseline file is in the branch diff. |
 | `rebase-semantic-integration` | `uv run pytest -q` with seven exact #96/#99 H4/direction node IDs | 0 | Seven cross-boundary tests passed: explicit BUY/SELL controls low/high marking, missing direction fails closed, and chronological peaks never use a later close or a pre-entry close. |
 | `rebase-h4-sizing-suite` | `uv run pytest -q tests/test_research_h4_path.py tests/test_research_sizing.py` | 0 | All 57 combined H4/sizing tests passed on the rebased implementation. |
 | `rebase-config-union` | TOML parse and identifier-set comparison against `origin/main` and pre-rebase `cb77cc87` | 0 | Mutation targets and critical-dependency edges contain both sides' complete sets; `git diff --exit-code origin/main...HEAD -- .ai/quality/mutation-baseline.toml` is clean. |
@@ -76,7 +77,7 @@ Claude's P2 was separately proven RED before the review fix. A synchronized-H4 c
 ValueError`. After removing the fallback, the same stream raises
 `synchronized H4 reconstruction requires an explicit is_long column`. Every valid sizing, H4, and
 fact-sheet fixture now supplies the categorical field explicitly. The final focused impact run
-passes 418 tests; the full suite remains 1,186 tests. No Stage-3/4 artifact was regenerated because
+passes 418 tests; the post-#119 full suite passes 1,197 tests. No Stage-3/4 artifact was regenerated because
 all valid producer streams already contain `is_long`, so the review hardening changes only malformed
 input behavior and leaves the numerical comparison below unchanged.
 
@@ -175,8 +176,9 @@ the corrected direction.
 
 GitHub Actions has a $0 budget and its quota is exhausted until 2026-08-01. The required Linux
 Critical mutation workflow therefore cannot start. Windows cannot run Mutmut's fork-based critical
-job; the full suite correctly skips that one Linux-only self-test. No mutation score, survivor
-classification, or baseline result is invented. On quota reset, push an empty commit, run the
+job; the full suite correctly skips that one Linux-only self-test. The branch inherits #119's
+`4,568`-mutant, 417-survivor exact-name baseline unchanged. No branch-specific mutation score,
+survivor classification, or baseline result is invented. On quota reset, push an empty commit, run the
 Critical mutation workflow, reconcile the exact baseline if required, update this evidence, rerun
 `pr-ready`, and only then consider marking the PR ready.
 
