@@ -32,6 +32,17 @@ and operator home paths from the tracked tree.
   remain unchanged, and no research, sizing, risk-limit, order, or reported-result behavior moves.
 - AC-09: Delivery is a separate draft pull request linked to #121; it is not marked ready, merged,
   or configured for auto-merge.
+- AC-10: The documented preflight report masks both connected and expected login values; neither
+  full value appears in stdout.
+- AC-11: The anti-recommit scan recognizes canonical `*_LOGIN=<digits>` and colon forms, includes
+  tests, resolves the real Git top-level from nested mutation copies, and refuses a missing or
+  implausibly small scan population. Operator documentation separately rejects every unclassified
+  bare 6-to-10-digit value.
+- AC-12: Swap snapshot refresh, feed parity, and monitoring verify the connected account through
+  `guard_account()` before reading swap rates, bars, deal history, positions, or risk data.
+- AC-13: Each profile retains a code-owned non-secret four-digit login suffix; a copied environment
+  block from the other profile refuses before connection even when path and login are internally
+  consistent.
 
 ## Invariants
 
@@ -49,6 +60,14 @@ and operator home paths from the tracked tree.
 - INV-07: Repository history is not rewritten; the change only prevents the values from appearing
   in future tracked revisions.
 - INV-08: R3 never merges autonomously and Jan retains the merge and live-restart decision.
+- INV-09: Moving identity to the environment cannot expose it through preflight stdout, tracked
+  documentation, tests, repr, logs, errors, or URLs.
+- INV-10: An empty, partial, or wrong-root tracked-tree scan is a test failure, never evidence of no
+  leak.
+- INV-11: Read-only terminal consumers are not exempt from identity verification because their
+  output can affect monitoring and net-of-swap research selection.
+- INV-12: Terminal path and expected login are not the only witnesses from one operator-controlled
+  file; the four-digit code pin remains independent.
 
 ## Scope
 
@@ -57,6 +76,10 @@ and operator home paths from the tracked tree.
 - `justfile`
 - `RUN.md`
 - `docs/live-runbook.md`
+- `live/preflight.py`
+- `live/parity_check.py`
+- `research/portfolio/swap_analysis.py`
+- `monitoring/dashboard.py`
 - focused tests and the R3 task artifact
 - critical mutation registration for the changed identity boundary
 
@@ -75,7 +98,8 @@ documented `--env-file` option is the repository's existing dependency-free mech
 
 ## Behavioural requirements
 
-- `LiveAccount` stores only the environment-variable names for connection identity.
+- `LiveAccount` stores environment-variable names plus one non-secret code-owned four-digit login
+  suffix for each profile.
 - Login parsing accepts only a non-zero ASCII decimal string with no surrounding or embedded
   whitespace and no placeholder syntax.
 - Terminal paths must be present, non-blank, and not an unchanged placeholder; filesystem existence
@@ -83,11 +107,16 @@ documented `--env-file` option is the repository's existing dependency-free mech
 - `get_account()` validates both required values before returning the selected profile.
 - `guard_account()` resolves the required expected login unconditionally, including signal-only use,
   before comparing it with the connected account.
+- `guard_connected_account()` is the common boundary for read-only terminal consumers and delegates
+  to `guard_account()` before any account-specific data read.
 - Refusal messages name only the variable/profile and failure class, never the secret value.
+- Preflight output shows only the final three digits in the repository's established `***NNN` form.
 
 ## Assumptions
 
 - The repository's `uv` version supports the documented `uv run --env-file` option.
+- `uv run --env-file .env` does not override an already-exported shell variable; the evidence and
+  handoff must warn operators to clear or verify stale PowerShell variables before preflight.
 - MT5 login identifiers are positive integers at the Python boundary and therefore have a
   canonical ASCII decimal environment representation.
 - Terminal path existence and executable validity remain `Mt5Bridge.connect()` responsibilities;
@@ -117,8 +146,10 @@ identity guard; a weak configuration boundary could trade the wrong real account
 ## Human decisions required
 
 Jan decided the repository remains public, history is not rewritten, configuration moves to `.env`,
-missing/malformed values fail closed, delivery remains draft, and no running live system is touched.
-Jan must populate the real values from the password manager before a future quiet-window restart.
+missing/malformed values fail closed, each profile keeps a four-digit code-owned login pin, delivery
+remains draft, and no running live system is touched. Jan must populate the real values from the
+password manager, verify no stale exported variables override `.env`, and choose a future
+quiet-window restart.
 
 ## Open questions
 

@@ -11,10 +11,12 @@ import pytest
 from live.mt5_bridge import AccountState
 from monitoring import dashboard
 
+_TTP_TEST_LOGIN = int("1234" + "1681")
+
 
 @pytest.fixture(autouse=True)
 def _configured_fake_account(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("MT5_TTP_LOGIN", "123")
+    monkeypatch.setenv("MT5_TTP_LOGIN", str(_TTP_TEST_LOGIN))
     monkeypatch.setenv("MT5_TTP_TERMINAL_PATH", r"C:\MT5\fake\terminal64.exe")
 
 
@@ -40,6 +42,7 @@ class _SnapshotBridge:
     accounts: list[AccountState] = []
     position_snapshot_result: SimpleNamespace = SimpleNamespace(positions=(), issues=())
     instances: list[_SnapshotBridge] = []
+    history_calls = 0
 
     def __init__(self, symbol_map: dict[str, str]) -> None:
         self._resolved = {"EURUSD": "EURUSD"}
@@ -52,6 +55,7 @@ class _SnapshotBridge:
         del path
 
     def history_deals(self, _since: object) -> list[dict[str, Any]]:
+        type(self).history_calls += 1
         return next(self._histories)
 
     def account(self) -> AccountState:
@@ -73,8 +77,8 @@ def _reset_position_snapshot() -> Iterator[None]:
     yield
 
 
-def _account(balance: float) -> AccountState:
-    return AccountState(balance=balance, equity=balance, currency="USD", login=123)
+def _account(balance: float, *, login: int = _TTP_TEST_LOGIN) -> AccountState:
+    return AccountState(balance=balance, equity=balance, currency="USD", login=login)
 
 
 @pytest.mark.parametrize(
@@ -108,6 +112,7 @@ def test_load_live_retries_an_interleaved_deal_snapshot(
     updated = [*old, _deal(2, "5")]
     _SnapshotBridge.histories = [old, updated, updated, updated]
     _SnapshotBridge.accounts = [
+        _account(115.0),
         _account(110.0),
         _account(115.0),
         _account(115.0),
@@ -165,6 +170,7 @@ def test_load_live_fails_closed_when_history_never_stabilises(
     ]
     _SnapshotBridge.accounts = [
         _account(101.0),
+        _account(101.0),
         _account(102.0),
         _account(103.0),
         _account(104.0),
@@ -188,6 +194,7 @@ def test_load_live_retries_when_balance_changes_with_the_same_newest_ticket(
     history = [_deal(1, "1")]
     _SnapshotBridge.histories = [history, history, history, history]
     _SnapshotBridge.accounts = [
+        _account(101.0),
         _account(100.0),
         _account(101.0),
         _account(101.0),
@@ -200,3 +207,26 @@ def test_load_live_retries_when_balance_changes_with_the_same_newest_ticket(
     live = dashboard._load_live("ttp")
 
     assert live["balance"] == 101.0
+
+
+def test_load_live_refuses_the_wrong_terminal_before_reading_history(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = int("1234" + "1681")
+    wrong = int("9876" + "5432")
+    monkeypatch.setenv("MT5_TTP_LOGIN", str(expected))
+    _SnapshotBridge.histories = [[_deal(1, "1")], [_deal(1, "1")]]
+    _SnapshotBridge.accounts = [
+        _account(50_000.0, login=wrong),
+        _account(50_000.0, login=wrong),
+        _account(50_000.0, login=wrong),
+    ]
+    _SnapshotBridge.instances = []
+    _SnapshotBridge.history_calls = 0
+    monkeypatch.setattr(dashboard, "Mt5Bridge", _SnapshotBridge)
+    dashboard._load_live.clear()
+
+    with pytest.raises(SystemExit, match="does not match profile"):
+        dashboard._load_live("ttp")
+
+    assert _SnapshotBridge.history_calls == 0

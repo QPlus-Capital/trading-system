@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
-from typing import NoReturn
+from typing import NoReturn, Protocol
 
 from live.mt5_bridge import AccountState
 
@@ -27,6 +27,7 @@ class LiveAccount:
 
     name: str  # short id -> reports/live/<name>/ (state, logs)
     expected_login_env: str
+    expected_login_suffix: str  # code-owned non-secret witness against profile-block copy/paste
     expected_currency: str  # "EUR" | "USD" -- also asserted against the live connection
     start_balance: float  # daily/trailing reference on the FIRST run (saved state wins afterwards)
     terminal_path_env: str
@@ -39,7 +40,10 @@ class LiveAccount:
         raw = _required_environment(self.expected_login_env, kind="broker login")
         if not raw.isascii() or not raw.isdigit() or int(raw) <= 0:
             _refuse_environment(self.expected_login_env, kind="broker login")
-        return int(raw)
+        login = int(raw)
+        if f"{login:04d}"[-4:] != self.expected_login_suffix:
+            _refuse_environment(self.expected_login_env, kind="broker login")
+        return login
 
     @property
     def terminal_path(self) -> str:
@@ -74,6 +78,7 @@ def _refuse_environment(name: str, *, kind: str) -> NoReturn:
 MEX = LiveAccount(
     name="mex",
     expected_login_env="MT5_MEX_LOGIN",
+    expected_login_suffix="0097",
     expected_currency="EUR",
     start_balance=100_000.0,
     terminal_path_env="MT5_MEX_TERMINAL_PATH",
@@ -82,6 +87,7 @@ MEX = LiveAccount(
 TTP = LiveAccount(
     name="ttp",
     expected_login_env="MT5_TTP_LOGIN",
+    expected_login_suffix="1681",
     expected_currency="USD",
     start_balance=50_000.0,  # CFD Prime $50k, 1-phase
     terminal_path_env="MT5_TTP_TERMINAL_PATH",
@@ -89,6 +95,13 @@ TTP = LiveAccount(
 )
 
 ACCOUNTS: dict[str, LiveAccount] = {a.name: a for a in (MEX, TTP)}
+
+
+class AccountReader(Protocol):
+    """Minimal connected-bridge surface needed by the shared identity guard."""
+
+    def account(self) -> AccountState:
+        """Return the terminal's current account identity and balances."""
 
 
 def get_account(name: str) -> LiveAccount:
@@ -118,3 +131,10 @@ def guard_account(state: AccountState, profile: LiveAccount, *, execute: bool) -
             f"REFUSED: account currency {state.currency} != expected {profile.expected_currency} "
             f"for profile '{profile.name}' -- wrong account? Not trading."
         )
+
+
+def guard_connected_account(bridge: AccountReader, profile: LiveAccount) -> AccountState:
+    """Read and verify one connected terminal before any account-specific data is consumed."""
+    state = bridge.account()
+    guard_account(state, profile, execute=False)
+    return state

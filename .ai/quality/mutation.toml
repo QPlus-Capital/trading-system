@@ -19,7 +19,13 @@ mutant_patterns = [
     "live.accounts.x__refuse_environment__mutmut_*",
     "live.accounts.x_get_account__mutmut_*",
     "live.accounts.x_guard_account__mutmut_*",
+    "live.accounts.x_guard_connected_account__mutmut_*",
 ]
+
+[[targets]]
+id = "live-preflight-redaction"
+path = "live/preflight.py"
+mutant_patterns = ["live.preflight.x__masked_login__mutmut_*"]
 
 [[targets]]
 id = "live-risk-control"

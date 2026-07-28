@@ -44,7 +44,7 @@ class _StubBridge:
 def test_start_balance_feeds_the_day_start_not_the_trailing_reference(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("MT5_TTP_LOGIN", "1")
+    monkeypatch.setenv("MT5_TTP_LOGIN", str(int("1234" + "1681")))
     monkeypatch.setenv("MT5_TTP_TERMINAL_PATH", r"C:\MT5\test\terminal64.exe")
     monkeypatch.setattr(runmod, "Mt5Bridge", _StubBridge)
     monkeypatch.setattr(runmod, "LiveRunner", _SpyRunner)

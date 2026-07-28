@@ -13,6 +13,10 @@
 | AC-07 | inspect `justfile` and documented command | RED: commands omit `--env-file` | GREEN: every live-facing recipe loads `.env` explicitly |
 | AC-08 | existing live account/CLI tests plus diff audit | RED: no environment-backed parity proof | GREEN: metadata and valid fake wiring unchanged |
 | AC-09 | PR state inspection | RED: no delivery exists | GREEN: separate draft, no auto-merge, no merge |
+| AC-10, INV-09 | execute preflight with distinct fake connected/expected values and capture stdout | RED: both full values printed | GREEN: neither full value appears; both `***NNN` masks appear |
+| AC-11, INV-10 | canonical regex fixtures, nested-root scan, tests sentinel, plausible count, and documentation number classification | RED: canonical forms were missed, tests excluded, and nested scans partial | GREEN: exact canonical forms match and scan population is explicit |
+| AC-12, INV-11 | wrong-login fakes through swap refresh, parity main, and dashboard `_load_live` | RED: swap pull executes and parity/dashboard return without refusal | GREEN: refusal precedes swap, bar, and history calls |
+| AC-13, INV-12 | copy MEX login into the complete TTP environment block | RED: `get_account("ttp")` accepts the self-consistent copy | GREEN: suffix mismatch refuses before bridge construction |
 | INV-01 | missing/malformed/wrong identity complement | RED: missing identity passes | GREEN: no case reaches an allowed guard result |
 | INV-02 | fake bridge connect counter | RED: missing identity is not checked before connection | GREEN: missing configuration leaves counter at zero |
 | INV-03 | capture every refusal | RED: old mismatch message contains both full login values | GREEN: no raw environment or login value appears |
@@ -32,12 +36,19 @@ Then add the remaining environment-backed constructor, malformed-input, reposito
 entrypoint tests before implementation. Record the actual failing command and failure count in
 `evidence.md`.
 
+The independent review supplied two further RED executions. The F1-F4 focused command produced nine
+failures: three canonical login forms were missed, tests and the repository root were absent from
+the scan, both preflight identities leaked, and all three wrong-terminal consumers proceeded. The
+separate F5 test showed a complete MEX-to-TTP environment-block copy was accepted. These are the
+recorded pre-remediation oracles.
+
 ## Focused green proof
 
-- `uv run pytest -q tests/test_live_accounts.py tests/test_live_run_cli.py`
+- `uv run pytest -q tests/test_live_accounts.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_research_swap_analysis.py tests/test_monitoring_dashboard.py`
 - configured match, mismatch, missing, malformed, signal-only, and no-connect paths
-- repository-wide tracked-content scan
+- repository-wide tracked-content scan, including nested-root and non-vacuity proof
 - no refusal output contains a supplied value
+- no wrong-account consumer reaches its first account-specific data read
 
 ## R3 gates
 

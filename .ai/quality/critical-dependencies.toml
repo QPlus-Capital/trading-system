@@ -5,12 +5,22 @@ source = "live/accounts.py"
 tests = [
   "tests/test_live_accounts.py",
   "tests/test_live_run_cli.py",
+  "tests/test_live_parity_check.py",
+  "tests/test_monitoring_dashboard.py",
+  "tests/test_research_swap_analysis.py",
 ]
 possibly_affected = [
   "tests/test_live_runner_cycle.py",
-  "tests/test_monitoring_dashboard.py",
 ]
-reason = "required environment identity must refuse before terminal connection and stay authoritative in every live consumer"
+reason = "required environment identity and its code-owned suffix must refuse before terminal connection and stay authoritative in every live, monitoring, parity, and swap-snapshot consumer"
+
+[[edges]]
+source = "live/preflight.py"
+tests = [
+  "tests/test_live_accounts.py",
+]
+possibly_affected = []
+reason = "the documented pre-start check must not disclose either connected or expected account identity"
 
 [[edges]]
 source = "research/portfolio/curves.py"

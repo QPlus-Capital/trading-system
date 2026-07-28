@@ -64,7 +64,7 @@ def _profit_factor(pnl: np.ndarray) -> float:
 
 def main() -> None:
     """Run the 9 backtests, apply live swap rates, and report the impact on the edge."""
-    from live.accounts import get_account
+    from live.accounts import get_account, guard_connected_account
     from live.mt5_bridge import SYMBOL_MAP, Mt5Bridge
 
     cfg = load_config_module(_REPO_ROOT / "live" / "config" / "rsi_wpr_bb.py")
@@ -78,6 +78,7 @@ def main() -> None:
     bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **ttp.symbol_overrides})
     bridge.connect(path=ttp.terminal_path)
     try:
+        guard_connected_account(bridge, ttp)
         specs = pull_swap_specs(bridge, names)
     finally:
         bridge.shutdown()

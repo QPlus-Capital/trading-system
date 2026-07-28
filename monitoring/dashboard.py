@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 from core.paths import REPO_ROOT
-from live.accounts import ACCOUNTS
+from live.accounts import ACCOUNTS, get_account, guard_connected_account
 from live.mt5_bridge import SYMBOL_MAP, AccountState, Mt5Bridge
 from live.runner import position_risk, risk_per_trade_from_live_config
 
@@ -93,10 +93,11 @@ def _load_live(account_name: str) -> dict[str, Any]:
     Builds the bridge with THIS account's symbol overrides (e.g. TTP names Nasdaq ``USTEC``,
     the base map names it ``UT100``), so symbols resolve on whichever terminal we attach to.
     """
-    profile = ACCOUNTS[account_name]
+    profile = get_account(account_name)
     bridge = Mt5Bridge(symbol_map={**SYMBOL_MAP, **profile.symbol_overrides})
     bridge.connect(path=profile.terminal_path)
     try:
+        guard_connected_account(bridge, profile)
         # #29: the FULL history, always. Each trade's risk basis is the balance as it stood at
         # that trade's open, reconstructed backwards from the current balance -- so the ledger
         # has to reach back past the display window, whose only job is what gets drawn.

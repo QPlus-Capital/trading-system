@@ -12,10 +12,10 @@
 | Consumer | Identity/path use | Required behavior |
 |---|---|---|
 | `live/run.py::main` | selects the profile, connects to `terminal_path`, calls `guard_account`, and passes `expected_login` into `LiveRunner` | complete environment validation before bridge construction/connection; matching identity unchanged |
-| `live/preflight.py::main/_checks` | connects to the selected path and displays the login comparison | required environment before connection; comparison remains authoritative |
-| `live/parity_check.py::main` | connects to the TTP path for read-only feed parity | required environment before connection |
-| `research/portfolio/swap_analysis.py::pull_snapshot` | connects to the TTP path to refresh the broker snapshot | required environment before connection |
-| `monitoring/dashboard.py::_load_live` | indexes `ACCOUNTS`, reads the terminal path and symbol overrides | path must fail closed when absent; monitoring remains read-only |
+| `live/preflight.py::main/_checks` | connects to the selected path and displays the login comparison | required environment before connection; both identities masked in stdout |
+| `live/parity_check.py::main` | connects to the TTP path for read-only feed parity | shared identity guard before any live bar read |
+| `research/portfolio/swap_analysis.py::main` | connects to the TTP path to refresh the broker snapshot | shared identity guard before any swap-rate read |
+| `monitoring/dashboard.py::_load_live` | resolves the profile, connects, then reads deals, account, positions, and risk | shared identity guard before any account-specific history or position read |
 | `live/run.py::LiveRunner(...)` | receives the resolved login for its repeated per-cycle account guard | a valid integer remains unchanged; no optional `None` from configured profiles |
 | CLI choice construction in `live/run.py` and `live/preflight.py` | iterates/sorts account names | `ACCOUNTS` mapping shape and keys remain unchanged |
 
@@ -31,27 +31,28 @@
 
 ## Coupled safety quantity
 
-The selected account name, environment key, parsed login, terminal path, currency, runner login
-guard, and bridge connection order form one coupled identity boundary. The implementation changes
-the producer once, validates both required environment values in `get_account()`, and preserves the
-same resolved values for every consumer. A missing identity cannot be represented as an optional
-`None` and cannot reach the connection or runner.
+The selected account name, environment key, parsed login, code-owned suffix, terminal path,
+currency, runner login guard, read-only consumer guards, and bridge connection order form one
+coupled identity boundary. The implementation validates both required environment values and the
+independent suffix in `get_account()`, then routes every connected account through the same guard.
+A missing, malformed, copied, or mismatching identity cannot reach account-specific consumption.
 
 ## Tracked-content impact
 
 - The current `live/accounts.py` login literals are removed.
 - The current operator-specific paths in `live/accounts.py` and `docs/live-runbook.md` are removed.
-- The repository-wide guard enumerates tracked files with `git ls-files`, scans production and
-  documentation text, and excludes synthetic test fixtures rather than using a hard-coded historic
-  secret as its oracle.
+- The repository-wide guard resolves `git rev-parse --show-toplevel`, enumerates tracked files with
+  `git ls-files`, includes tests, asserts sentinel paths and a plausible count, matches the
+  canonical environment form, and scans operator documentation for unclassified bare long numbers.
 - Git history remains untouched by explicit decision.
 
 ## Numeric and trading impact
 
-With correct environment values, no signal, price, quantity, risk limit, position, order request,
-research artifact, portfolio trade, or reported number changes. With missing/malformed values the
-only movement is earlier refusal. No Stage 1-4 rerun is required; both trade CSVs are unaffected
-because no research producer or configuration changes.
+With correct environment values and matching suffixes, no signal, price, quantity, risk limit,
+position, order request, research artifact, portfolio trade, or reported number changes. Wrong
+terminal selection now refuses parity, monitoring, and swap refresh before data consumption; this
+prevents a wrong swap snapshot from moving later net-of-swap selection. No Stage 1-4 rerun is
+required and both trade CSVs remain unaffected.
 
 ## Documentation impact
 
@@ -88,5 +89,8 @@ runner. CLI tests replace bridge and runner classes with in-memory fakes before 
 ## Unknown or dynamic edges
 
 The real environment values and terminal locations are intentionally unavailable to the codebase.
-Their correctness is an operator/password-manager responsibility; missing or malformed values fail
-closed rather than being guessed.
+Four-digit code pins reject cross-profile copies; full correctness remains an operator/password-
+manager responsibility.
+
+uv gives an already-exported shell variable precedence over `.env`. A stale PowerShell
+`MT5_*_LOGIN` can therefore override the file silently; evidence and handoff call this out.
