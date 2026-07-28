@@ -363,8 +363,11 @@ def window_returns(
     Windows are treated as covering the interval up to the NEXT window's start, not merely up to
     their own end. With the study's contiguous windows the two are identical; where a step larger
     than the test length leaves a gap, a position carried into that gap and closed there would
-    otherwise belong to no window at all -- its PnL would still move the next window's opening
-    equity while the trade itself vanished from every count.
+    otherwise belong to no window at all and would vanish from every count.
+
+    Cumulative outcomes never decide whether a later window exists. Constant-basis Stage 1 has no
+    compounding account to exhaust: a loss greater than ``basis`` is retained as a return below
+    ``-100%`` and penalized by the ranking like every other observation.
     """
     ordered = sorted(closed)
     starts = [int(pd.Timestamp(w.test_start).value) for w in windows]
@@ -375,16 +378,6 @@ def window_returns(
         # the instant, so it must not be counted twice; at the final boundary there is no next
         # window, and an exclusive bound would drop a position closing exactly on test_end from
         # every result while its PnL still sat in the account.
-        equity = basis + sum(pnl for ts, pnl in ordered if ts < start_ns)
-        if equity <= 0:
-            # The account is gone. Reporting a flat window would let every later window average
-            # in as harmless, which flatters exactly the strategy whose losses caused this. The
-            # denominator below stays the constant basis; this only asks whether there was still
-            # an account to trade, and a run that lost more than it started with had none.
-            raise RuntimeError(
-                f"account exhausted before window {window.label}: equity {equity:,.0f} "
-                "-- post-ruin windows have no meaningful return and must not be averaged in"
-            )
         inside = [
             pnl for ts, pnl in ordered if start_ns <= ts and (ts <= end_ns if last else ts < end_ns)
         ]
