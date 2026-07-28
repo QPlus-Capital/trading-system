@@ -158,11 +158,9 @@ def _synchronized_h4_minima(
     )
     entry = trades["entry"].to_numpy(dtype=float)
     exit_ = trades["exit"].to_numpy(dtype=float)
-    if "is_long" in trades.columns:
-        is_long = trades["is_long"].to_numpy(dtype=bool)
-    else:
-        won = pnl > 0
-        is_long = won == (exit_ > entry)
+    if "is_long" not in trades.columns:
+        raise ValueError("synchronized H4 reconstruction requires an explicit is_long column")
+    is_long = trades["is_long"].to_numpy(dtype=bool)
 
     opens_at: dict[int, list[int]] = defaultdict(list)
     closes_at: dict[int, list[int]] = defaultdict(list)

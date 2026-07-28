@@ -50,7 +50,8 @@ def _positions(
             "realized_pnl": [pnl] * len(opened),
             "avg_px_open": [40_000.0] * len(opened),
             "avg_px_close": [40_100.0 if side == "LONG" else 39_900.0] * len(opened),
-            "side": [side] * len(opened),
+            "entry": ["BUY" if side == "LONG" else "SELL"] * len(opened),
+            "side": ["FLAT"] * len(opened),
         }
     )
 
