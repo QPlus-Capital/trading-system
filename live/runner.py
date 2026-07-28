@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 from core.paths import REPO_ROOT
 from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
-from live.mt5_bridge import Bar, Mt5Bridge, Mt5Error, Position, Side, SymbolInfo
+from live.mt5_bridge import Bar, Mt5Bridge, Mt5SideError, Position, Side, SymbolInfo
 from live.notify import Notifier
 from live.risk_control import RiskController, position_volume
 
@@ -403,17 +403,18 @@ class LiveRunner:
             )
 
     def _apply_cycle_safety(self, equity: float) -> bool:
-        """Apply hard stops, then refresh open risk; halt on an unverifiable position read."""
+        """Apply hard stops, then refresh open risk; halt on an invalid position side."""
         flat = self._risk.must_flatten(equity)
         if flat.allowed:
             self._halt_and_flatten(flat.reason)
             return True
 
         # A bridge-side type rejection is itself a safety halt: proceeding would make the
-        # open-risk input unverifiable, while merely retrying would silently disable controls.
+        # open-risk input unverifiable. Routine terminal read failures remain retryable and must
+        # never liquidate a healthy book merely because the bridge uses one general error type.
         try:
             self._risk.open_risk = self._total_open_risk()
-        except Mt5Error as exc:
+        except Mt5SideError as exc:
             self._halt_and_flatten(f"cannot verify open positions: {exc}")
             return True
         return False

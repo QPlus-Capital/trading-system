@@ -12,6 +12,7 @@ from live.mt5_bridge import (
     MAGIC,
     Mt5Bridge,
     Mt5Error,
+    Mt5SideError,
     Position,
     Side,
     base_symbol,
@@ -175,7 +176,7 @@ def test_positions_fail_closed_on_unknown_position_type(
     fake = _FakeMt5([_raw_position(raw_type)])
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.positions()
 
     assert str(error.value) == (
@@ -237,7 +238,7 @@ def test_loose_equality_cannot_emit_a_position_side(
     fake = _FakeMt5([_raw_position(_LooselyEqual())])
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.positions()
 
     assert str(error.value) == (
@@ -254,7 +255,7 @@ def test_loss_for_order_fails_before_pricing_invalid_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.loss_for_order("EURUSD", cast(Side, invalid_side), entry=1.2, sl=1.1, volume=0.1)
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
@@ -267,7 +268,7 @@ def test_loose_equality_cannot_reach_order_pricing(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.loss_for_order(
             "EURUSD",
             cast(Side, _LooselyEqual()),
@@ -286,7 +287,7 @@ def test_loss_to_stop_fails_before_pricing_invalid_position_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.loss_to_stop(_position(cast(Side, "HOLD")))
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
@@ -300,7 +301,7 @@ def test_loss_to_stop_rejects_invalid_side_even_without_a_stop(
     bridge = _bridge_with_fake(monkeypatch, fake)
     position = replace(_position(cast(Side, "HOLD")), sl=0.0)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.loss_to_stop(position)
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
@@ -313,7 +314,7 @@ def test_place_order_fails_before_terminal_calls_for_invalid_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.place_order("EURUSD", cast(Side, "HOLD"), 0.1)
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
@@ -326,7 +327,7 @@ def test_loose_equality_cannot_reach_order_placement(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.place_order("EURUSD", cast(Side, _LooselyEqual()), 0.1)
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
@@ -339,7 +340,7 @@ def test_close_position_fails_before_terminal_calls_for_invalid_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.close_position(_position(cast(Side, "HOLD")))
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
@@ -352,7 +353,7 @@ def test_loose_equality_cannot_reach_position_close(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error) as error:
+    with pytest.raises(Mt5SideError) as error:
         bridge.close_position(_position(cast(Side, _LooselyEqual())))
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"

@@ -491,3 +491,15 @@ why_tests_missed = "fixtures used only exact int/str values, non-empty single-po
 regression = "runtime subtype and loose-equality bridge tests; flat and complete owned-position tests; invalid stop-less side test; runner safety-ordering, loud-halt, and partial-lookup flatten tests"
 generalized = "external runtime values must be accepted by documented semantics while excluding bool aliases, and every read failure must be driven through the real safety consumer to prove it cannot bypass or truncate a halt"
 workflow_change = "critical mutation now covers the bridge guards plus the runner safety-cycle and flatten consumers, with independent fake-broker assertions on both rejection and complete valid behavior"
+
+[[finding]]
+id = "F-042"
+source = "PR #105 complete independent re-review"
+defect_class = "broad-bridge-exception-triggers-unconditional-liquidation"
+severity = "P1"
+affected = "live/runner.py, live/mt5_bridge.py"
+root_cause = "the runner used the bridge's general Mt5Error to distinguish an ambiguous position side from routine terminal read failures, so one transient symbol or position read liquidated a healthy book and permanently halted the session"
+why_tests_missed = "the only runner-consumer test used signal-only mode with no open positions, making both the no-close assertion and the single alert vacuous; no test injected a transient read followed by a healthy safety cycle"
+regression = "execute-mode position-side rejection with two owned positions; transient symbol_info and positions_get failures with zero closes and no halt; subsequent healthy cycle still evaluates and executes must_flatten"
+generalized = "a destructive safety action must catch a dedicated semantic failure, never a transport exception shared with retryable reads; test permanent and transient faults with a non-empty executable book"
+workflow_change = "the side converter raises a dedicated Mt5SideError subtype and the safety consumer catches only that subtype; runner mutation coverage pins both liquidation and retry boundaries"

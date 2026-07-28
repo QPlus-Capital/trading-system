@@ -114,3 +114,36 @@ allowed `live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3`.
 
 This is builder evidence only. The dispositions remain pending the newly requested complete
 independent review, so `adversarial-review` and `live-money-review` remain non-zero in readiness.
+
+## Complete independent re-review dispositions
+
+The complete independent re-review verified the five earlier P2 dispositions with 11 of 11
+hand-built mutants killed, 181 legal-input scenarios identical to `origin/main`, and no invalid
+input producing an order that main would not have produced. It then found one P1, two blocking P2s,
+and one optional P3:
+
+1. **F1 P1 — a general bridge error liquidated healthy positions. Resolved, pending re-review.**
+   `_apply_cycle_safety()` caught the bridge's general `Mt5Error`, which also represents transient
+   `symbol_info` and `positions_get` failures. The converter now raises a dedicated
+   `Mt5SideError`; only that semantic ambiguity triggers halt-and-flatten. Routine read errors
+   propagate to `run_forever()`'s existing logged retry without changing halt state or touching the
+   book. F-042 permanently records the defect class.
+2. **F2 P2 — the runner fixture made liquidation assertions vacuous. Resolved, pending
+   re-review.** The conversion test now runs in `Mode.EXECUTE` with two owned opposite-side
+   positions and requires both exact tickets to close. Separate one-shot `symbol_info` and
+   account-wide `positions_get` faults require zero closes and no halt; a subsequent healthy cycle
+   at a real trailing breach must still close both tickets.
+3. **F3 P2 — scope and parity evidence omitted the destructive behavior change. Resolved.** The
+   spec, test plan, and evidence distinguish semantic conversion failure, routine read retry, and
+   actual limit-triggered flattening. They no longer describe the runner patch as only failure
+   ordering.
+4. **F5 P3 — `integer runtime subclasses` was broader than the implementation. Resolved by
+   narrowing documentation.** The accepted set is explicitly Python `int` subclasses including
+   `IntEnum`, plus `str` subclasses, with `bool` excluded. Other `numbers.Integral`
+   implementations remain rejected in the safe direction.
+5. **Out of scope — halt persistence.** No code or policy was changed. Issue #122 remains the
+   owner because clearing rules differ by halt cause and require Jan's decision.
+
+The fix is material live-runner behavior and therefore invalidates the earlier review for the
+changed runner path. A complete independent review must run again before either review gate can
+become green; this builder disposition does not mark the PR ready.

@@ -17,7 +17,7 @@
 | AC-10, INV-02 | runtime integer/string subtype tests and four loose-equality boundary tests | RED: four subtype cases raised instead of reaching the documented BUY/SELL action | GREEN: runtime subtypes preserve the exact legal action; loose-equality impostors raise their boundary's full error with zero terminal calls |
 | AC-11, INV-03 | flat-account test and extended owned-position completeness test | RED against review mutants: empty sequence raised; two owned positions were truncated to one | GREEN: both empty surfaces return `[]`; the exact two owned positions survive in terminal order and the foreign position is excluded |
 | AC-12, INV-02 | `test_loss_to_stop_rejects_invalid_side_even_without_a_stop` | RED against review mutant: no-stop early return bypassed validation | GREEN: the full side error is raised before any pricing call |
-| AC-13, INV-08 | runner loud-halt and safety-cutoff-order tests | RED: conversion failure escaped with `_halted=False`; the old ordering could prevent the daily/trailing cut-off | GREEN: conversion failure halts and alerts; a breached account flattens before the failing account-wide position read |
+| AC-13, INV-08 | execute-mode conversion halt, transient `symbol_info`/`positions_get`, subsequent healthy-cycle, and safety-cutoff-order tests | RED: three transient-read tests did not raise because the broad catch halted and liquidated the two-position fixture; conversion coverage was signal-only and vacuous | GREEN: only `Mt5SideError` halts, alerts, and flattens the exact two owned positions; routine reads close nothing and remain retryable; a subsequent real breach still flattens |
 | AC-14, INV-08 | `test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails` | RED: first market lookup exception aborted the entire flatten method | GREEN: failure is alerted and the exact two retrievable later-market positions close |
 | INV-01 | autouse MT5 boundary plus synthetic fake assertions | Existing safety fixture | GREEN: no real terminal import, initialization, connection, or order |
 | INV-05, INV-06 | production-path diff and baseline artifact SHA-256 comparison | Main baseline | GREEN: no research/report producer diff; both CSV hashes unchanged |
@@ -54,6 +54,14 @@ tests. Final run `30355260718` reports 4,923 total, 4,514 killed, 409 survived, 
 outcomes. It adds no survivor or classification and kills the formerly allowed
 `live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3`.
 
+The complete independent re-review supplied a further RED state for F-042. With two owned positions
+in execute mode, three focused tests failed: a transient `symbol_info` error and a transient
+account-wide `positions_get` error were swallowed by `_apply_cycle_safety`, both liquidated the
+book and halted permanently, and the intended next-cycle `must_flatten` check could not execute.
+The conversion-halt fixture itself passed only after being made non-vacuous with execute mode and
+two owned opposite-side positions. A dedicated `Mt5SideError` separates ambiguous side conversion
+from routine `Mt5Error` reads; the same four-test command is green after the fix.
+
 ## Adversarial cases
 
 - Unknown positive and negative integer position types.
@@ -63,3 +71,7 @@ outcomes. It adds no survivor or classification and kills the formerly allowed
 - BUY and SELL at all five call sites, checking exact legal request parity.
 - Invalid values when no symbol/tick/filling information is available, proving validation occurs
   before those dependencies.
+- A conversion failure and two routine read failures against the same non-empty execute-mode book,
+  proving only the semantic conversion failure liquidates.
+- A transient failure followed by a healthy breached cycle, proving retryability does not disable
+  the later hard stop.

@@ -17,6 +17,7 @@ from live.mt5_bridge import (
     Bar,
     Mt5Bridge,
     Mt5Error,
+    Mt5SideError,
     Position,
     Side,
     SymbolInfo,
@@ -192,17 +193,24 @@ def test_run_once_halts_below_trailing_floor() -> None:
 def test_runner_halts_loudly_when_the_bridge_rejects_a_position_type() -> None:
     class RejectingPositionBridge(StubBridge):
         def positions(self, name: str | None = None) -> list[Position]:
-            raise Mt5Error(
-                "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
-            )
+            if name is None:
+                raise Mt5SideError(
+                    "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+                )
+            return [position for position in self.open_positions if position.symbol == name]
 
     stub = RejectingPositionBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+    ]
     notifier = _RecordingNotifier()
     runner = LiveRunner(
         cast(Mt5Bridge, stub),
         [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
+        mode=Mode.EXECUTE,
         notifier=cast(Notifier, notifier),
         day_start_balance=stub.balance,
     )
@@ -220,6 +228,89 @@ def test_runner_halts_loudly_when_the_bridge_rejects_a_position_type() -> None:
     ]
     assert runner._last_bar_time == {}
     assert stub.placed == []
+    assert stub.closed == [11, 12]
+
+
+def test_transient_symbol_info_failure_does_not_halt_or_flatten() -> None:
+    class OneShotSymbolInfoFailureBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_symbol_info = True
+
+        def symbol_info(self, name: str) -> SymbolInfo:
+            if self.fail_symbol_info:
+                self.fail_symbol_info = False
+                raise Mt5Error("symbol_info failed for XAUUSD: synthetic transient fault")
+            return super().symbol_info(name)
+
+    stub = OneShotSymbolInfoFailureBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+    ]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with pytest.raises(Mt5Error, match="synthetic transient fault"):
+        runner.run_once()
+
+    assert not runner._halted
+    assert runner._halt_reason == ""
+    assert stub.closed == []
+
+
+def test_healthy_cycle_after_transient_read_still_evaluates_must_flatten() -> None:
+    class OneShotSymbolInfoFailureBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_symbol_info = True
+
+        def symbol_info(self, name: str) -> SymbolInfo:
+            if self.fail_symbol_info:
+                self.fail_symbol_info = False
+                raise Mt5Error("symbol_info failed for XAUUSD: synthetic transient fault")
+            return super().symbol_info(name)
+
+    stub = OneShotSymbolInfoFailureBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+    ]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with pytest.raises(Mt5Error, match="synthetic transient fault"):
+        runner.run_once()
+    stub.equity = 90_000.0
+    runner.run_once()
+
+    assert runner._halted
+    assert runner._halt_reason == "trailing stop: equity 90000 <= floor 95000"
+    assert stub.closed == [11, 12]
+
+
+def test_transient_positions_read_failure_does_not_halt_or_flatten() -> None:
+    class OneShotPositionsFailureBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_positions = True
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            if name is None and self.fail_positions:
+                self.fail_positions = False
+                raise Mt5Error("positions_get failed: synthetic transient fault")
+            return super().positions(name)
+
+    stub = OneShotPositionsFailureBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+    ]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with pytest.raises(Mt5Error, match="synthetic transient fault"):
+        runner.run_once()
+
+    assert not runner._halted
+    assert runner._halt_reason == ""
     assert stub.closed == []
 
 

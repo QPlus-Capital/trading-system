@@ -20,13 +20,16 @@ pricing call, or order request can be produced from an invalid value.
   modes, account identity, monitoring, research, or reported results.
 - Do not change the valid BUY/SELL requests, prices, return values, or public data structures.
 - Do not address monitoring deal-type reconstruction; issues #102 and #104 own that scope.
+- Do not persist or alter clearing of the runner halt state; pre-existing issue #122 owns that
+  policy and requires Jan's per-cause decision.
 
 ## Behavioural requirements
 
 - One runtime converter accepts internal `"BUY"` / `"SELL"` strings and the terminal's explicit
   `POSITION_TYPE_BUY` / `POSITION_TYPE_SELL` values and returns the canonical internal `Side`.
-- The converter accepts integer and string subclasses supplied by extension/runtime boundaries,
-  while explicitly excluding booleans from the integer enum branch.
+- The converter accepts Python `int` subclasses (including `IntEnum`) and `str` subclasses supplied
+  by extension/runtime boundaries, while explicitly excluding booleans from the integer enum
+  branch. Other `numbers.Integral` implementations are rejected in the closed direction.
 - The converter rejects booleans, unknown integers, unknown strings, and every other object with a
   clear `Mt5Error`; it never assigns a default executable direction.
 - `positions()` converts each raw MT5 position type before constructing or emitting any `Position`.
@@ -40,8 +43,12 @@ pricing call, or order request can be produced from an invalid value.
   position in terminal order rather than merely the first.
 - `loss_to_stop()` validates direction before the no-stop early return because an unverifiable
   side cannot become safe merely by also lacking a stop.
-- The daily/trailing safety cut-off executes before open-risk reconstruction. If reconstruction
-  rejects an external position representation, the runner halts and alerts instead of retrying.
+- The daily/trailing safety cut-off executes before open-risk reconstruction. A dedicated
+  `Mt5SideError` from ambiguous side conversion halts, alerts, and execute-mode flattens; a routine
+  `Mt5Error` from a transient symbol or position read propagates to the polling retry without
+  halting or touching open positions.
+- After a transient read failure, the next healthy cycle still evaluates `must_flatten`; a real
+  daily/trailing breach then halts and flattens normally.
 - During a safety halt, a failed owned-position lookup for one market alerts and does not prevent
   every retrievable owned position in later markets from being closed.
 - Valid BUY/SELL pricing, entry requests, close requests, and position records remain exactly as
@@ -68,13 +75,16 @@ pricing call, or order request can be produced from an invalid value.
   are killed, the exact baseline is regenerated from the final Linux review-remediation report,
   and every builder-controlled R3 gate passes. The material remediation then receives a new full
   independent review before readiness.
-- AC-10: Integer/string runtime subclasses map by their documented values, booleans and loose-
-  equality impostors remain rejected, and no rejected value reaches a terminal call.
+- AC-10: Python `int` subclasses (including `IntEnum`) and `str` subclasses map by their documented
+  values, booleans, other non-`int` numeric representations, and loose-equality impostors remain
+  rejected, and no rejected value reaches a terminal call.
 - AC-11: A flat account returns `[]` from both position surfaces; two owned positions of opposite
   sides plus a foreign position return the exact two owned positions in terminal order.
 - AC-12: An invalid side with no stop raises before the no-stop return and before pricing.
-- AC-13: A bridge-side position conversion failure halts and alerts the runner; a daily/trailing
-  breach is evaluated before any account-wide open-position read can fail.
+- AC-13: A bridge-side position conversion failure halts, alerts, and execute-mode flattens every
+  retrievable owned position; routine `symbol_info` and `positions_get` failures close nothing,
+  leave the runner unhalted for retry, and do not prevent a later healthy cycle from evaluating a
+  real daily/trailing breach. The daily/trailing cut-off remains before open-risk reconstruction.
 - AC-14: A failed owned-position lookup during flattening is alerted and isolated to that market;
   every retrievable owned position in the remaining markets is still closed.
 
@@ -93,8 +103,9 @@ pricing call, or order request can be produced from an invalid value.
   research producer or configuration changes.
 - INV-07: The branch remains a draft, never merges autonomously, and requires Jan's approval after
   Linux mutation evidence and Claude's independent live-money review.
-- INV-08: A position-read exception can neither bypass the daily/trailing cut-off nor truncate
-  best-effort flattening of other markets without a critical log and alert.
+- INV-08: A position-side conversion error can neither bypass the daily/trailing cut-off nor
+  truncate best-effort flattening of other markets without a critical log and alert; a routine
+  terminal read error cannot liquidate a book whose limits have not breached.
 
 ## Assumptions
 
@@ -126,10 +137,11 @@ boundaries even though the new behavior only rejects invalid inputs.
 
 ## Human decisions required
 
-Jan has already ratified fail-closed behavior, runtime-compatible integer/string subclasses with
-explicit boolean rejection, exact accepted values, draft status, the requirement to kill rather
-than classify non-equivalent boundary mutants, F-040/F-041 registration, and the prohibition on
-touching the running live systems. Five semantically meaningful default-argument mutants were
+Jan has already ratified fail-closed behavior for Python `int`/`IntEnum` and `str` subclasses with
+explicit boolean rejection, exact accepted values, dedicated conversion-failure handling, draft
+status, the requirement to kill rather than classify non-equivalent boundary mutants,
+F-040/F-041/F-042 registration, and the prohibition on touching the running live systems. Five
+semantically meaningful default-argument mutants were
 unobservable through Mutmut's unchanged trampoline defaults; the implementation therefore removes
 that untestable representation without changing the public defaults: the private order-type helper
 requires explicit `opposite`, while public defaults reference immutable module constants. Jan

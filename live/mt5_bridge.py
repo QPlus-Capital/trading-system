@@ -62,6 +62,10 @@ class Mt5Error(RuntimeError):
     """Raised when a MetaTrader 5 call fails (init, login, data, or order)."""
 
 
+class Mt5SideError(Mt5Error):
+    """Raised when a runtime side cannot be converted without ambiguity."""
+
+
 def _runtime_side(
     value: object,
     *,
@@ -74,14 +78,14 @@ def _runtime_side(
             return "BUY"
         if isinstance(value, int) and not isinstance(value, bool) and value == sell_type:
             return "SELL"
-        raise Mt5Error(
+        raise Mt5SideError(
             "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
         )
     if isinstance(value, str) and value == "BUY":
         return "BUY"
     if isinstance(value, str) and value == "SELL":
         return "SELL"
-    raise Mt5Error("invalid order side; expected BUY or SELL")
+    raise Mt5SideError("invalid order side; expected BUY or SELL")
 
 
 def _order_type(m: Any, value: object, *, opposite: bool) -> int:
