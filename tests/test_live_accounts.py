@@ -76,8 +76,13 @@ def test_guard_refuses_when_the_login_environment_is_missing(
     monkeypatch.delenv(_LOGIN_ENV, raising=False)
     monkeypatch.setenv(_PATH_ENV, _PATH)
 
-    with pytest.raises(SystemExit, match=_LOGIN_ENV):
+    with pytest.raises(SystemExit) as exc_info:
         guard_account(_state(_LOGIN, "USD"), _PROFILE, execute=True)
+
+    assert str(exc_info.value) == (
+        "REFUSED: required broker login environment variable 'TEST_MT5_LOGIN' is missing or "
+        "malformed. Not trading."
+    )
 
 
 def test_guard_passes_on_the_expected_environment_account(
@@ -98,7 +103,10 @@ def test_guard_refuses_wrong_environment_login_without_disclosing_values(
         guard_account(_state(connected_login, "USD"), _PROFILE, execute=True)
 
     message = str(exc_info.value)
-    assert "does not match" in message
+    assert message == (
+        "REFUSED: connected account does not match profile 'test' -- wrong terminal open? "
+        "Not trading."
+    )
     assert str(_LOGIN) not in message
     assert str(connected_login) not in message
 
@@ -106,8 +114,13 @@ def test_guard_refuses_wrong_environment_login_without_disclosing_values(
 def test_guard_refuses_wrong_currency(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure(monkeypatch)
 
-    with pytest.raises(SystemExit, match="currency"):
+    with pytest.raises(SystemExit) as exc_info:
         guard_account(_state(_LOGIN, "EUR"), _PROFILE, execute=True)
+
+    assert str(exc_info.value) == (
+        "REFUSED: account currency EUR != expected USD for profile 'test' -- wrong account? "
+        "Not trading."
+    )
 
 
 def test_guard_refuses_signal_only_without_login(monkeypatch: pytest.MonkeyPatch) -> None:
