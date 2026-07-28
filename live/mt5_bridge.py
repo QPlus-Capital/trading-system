@@ -343,13 +343,13 @@ class Mt5Bridge:
 
     def positions(self, name: str | None = None) -> list[Position]:
         """Return every decodable account position for account-wide risk and monitoring."""
-        return self._positions(name, owned_only=False)
+        return self._positions(name, owner_magic=None)
 
     def _positions(
         self,
         name: str | None,
         *,
-        owned_only: bool,
+        owner_magic: int | None,
     ) -> list[Position]:
         """Return decodable positions, optionally restricted to this runner before conversion.
 
@@ -367,7 +367,7 @@ class Mt5Bridge:
         out: list[Position] = []
         for p in raw:
             magic = int(p.magic)
-            if owned_only and magic != MAGIC:
+            if owner_magic is not None and magic != owner_magic:
                 continue
             try:
                 side = _runtime_side(
@@ -405,7 +405,7 @@ class Mt5Bridge:
         risk still counts ALL exposure (see the runner) -- ownership limits what we *act on*,
         not what we *account for*.
         """
-        return self._positions(name, owned_only=True)
+        return self._positions(name, owner_magic=MAGIC)
 
     def loss_for_order(
         self, name: str, side: Side, entry: float, sl: float, volume: float
