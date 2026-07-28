@@ -54,8 +54,8 @@ pricing call, or order request can be produced from an invalid value.
   choices, fields, and results.
 - AC-08: The confirmed catch-all-side defect class is generalized in the finding registry and the
   converter plus all five boundaries enter the critical mutation scope.
-- AC-09: All locally executable cumulative R3 gates pass; the Linux Critical mutation gate is
-  recorded as blocked by the Actions quota until 2026-08-01, so readiness remains NOT READY.
+- AC-09: Every selected MT5 boundary mutant executes a test; all non-equivalent branch survivors
+  are killed, the exact Linux baseline is regenerated once, and all cumulative R3 gates pass.
 
 ## Invariants
 
@@ -91,7 +91,8 @@ synthetic-only verification boundary.
 - One bounded production change in `live/mt5_bridge.py`.
 - Focused synthetic tests in `tests/test_live_mt5_bridge.py`.
 - A generalized finding-registry entry and focused mutation patterns for the affected boundaries.
-- Complete `.ai/tasks/ISSUE-103/` evidence and a blocked draft pull request.
+- Complete `.ai/tasks/ISSUE-103/` evidence and a draft pull request pending independent review.
+- One wholesale mutation-baseline refresh from the final Linux report.
 
 ## Risk class
 
@@ -101,6 +102,10 @@ boundaries even though the new behavior only rejects invalid inputs.
 
 ## Human decisions required
 
-Jan has already ratified fail-closed behavior, exact accepted values, BUILD-ONLY draft status, and
-the prohibition on touching the running live systems. Jan retains the go-live and merge decision
-after the quota reset and independent Claude review.
+Jan has already ratified fail-closed behavior, exact accepted values, draft status, the requirement
+to kill rather than classify non-equivalent boundary mutants, F-040 registration, and the
+prohibition on touching the running live systems. Five semantically meaningful default-argument
+mutants were unobservable through Mutmut's unchanged trampoline defaults; the implementation
+therefore removes that untestable representation without changing the public defaults: the private
+order-type helper now requires explicit `opposite`, while public defaults reference immutable
+module constants. Jan retains the go-live and merge decision after a new full independent review.

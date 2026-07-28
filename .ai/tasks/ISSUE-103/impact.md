@@ -41,10 +41,24 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
   module's `mt5` object with a complete in-memory fake and leave `_connected` local to the test
   bridge.
 - The critical mutation policy already copies and mutates `live/mt5_bridge.py`; its target will be
-  extended from deal export to the side converter and the five affected methods. The Linux result
-  cannot be generated until Actions quota resets.
+  extended from deal export to the side converter and the five affected methods. The final Linux
+  report is the sole source for the wholesale exact-name baseline refresh.
 - `live/runner.py`, `live/risk_control.py`, signals, account profiles, and live configuration are
   read-only consumers and remain unchanged.
+
+## Mutation-testability impact
+
+- The former mutation report selected two `owned_positions` mutants with `no tests`; the method is
+  now exercised through its real `positions(name)` dependency, including symbol-filter forwarding
+  and magic ownership.
+- Mutmut's trampoline retains the original wrapper defaults, so five meaningful default-argument
+  mutations could not affect a call even when the source mutation would. They are not equivalent
+  and are not classified. `_order_type` now requires an explicit `opposite` argument, and the
+  unchanged public deviation/comment defaults refer to module constants, removing only the
+  untestable syntax.
+- Complete valid `Position`, pricing, entry-request, and close-request values are asserted against
+  the independent fake-terminal source. Partial or shape-only assertions are insufficient at this
+  live boundary.
 
 ## Unknown or dynamic edges
 

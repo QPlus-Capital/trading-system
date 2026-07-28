@@ -467,3 +467,15 @@ why_tests_missed = "synthetic reports invented side=LONG/SHORT and byte-identity
 regression = "test_closed_position_uses_entry_side_for_direction; test_unrecognized_entry_side_fails_closed; test_extracted_entry_side_drives_long_low_and_short_high; real per-market BUY/SELL reconciliation"
 generalized = "a stable wrong value is invisible to drift gates: categorical correctness must be asserted against an independent authoritative source, not a previous artifact"
 workflow_change = "producer tests mirror the real closed-record schema and high-risk categorical artifacts require independent distribution/source reconciliation"
+
+[[finding]]
+id = "F-040"
+source = "PR #105 Linux mutation run 30339340183"
+defect_class = "live-action-boundary-guard-not-behaviourally-pinned"
+severity = "P2"
+affected = "live/mt5_bridge.py, tests/test_live_mt5_bridge.py"
+root_cause = "the new fail-closed guard was tested only for partial error text and absence of invalid-path calls, while complete valid positions, pricing inputs, order requests, defaults, filters, and broker failures remained unasserted"
+why_tests_missed = "happy-path fixtures checked selected fields with explicit optional arguments, and owned_positions had no mutation-selected coverage at all"
+regression = "exact invalid-side messages; complete Position and broker-request equality; stop-boundary pricing; owned-position filter forwarding and ownership; broker failure-message tests"
+generalized = "a live boundary guard needs both complement rejection and an independent exact assertion on the valid action emitted through the fake broker; every selected boundary must execute under mutation"
+workflow_change = "the MT5 critical suite now pins complete position, pricing, placement, close, filter, default, and failure behaviour, and permits no untested selected mutant"

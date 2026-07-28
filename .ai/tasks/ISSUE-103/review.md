@@ -56,3 +56,11 @@ again proves the mutation policy is the union of main and the pre-rebase branch,
 baseline remains byte-unchanged. PR #98 changes Stage-1 research scoring and has no live bridge
 consumer or configuration overlap; range-diff confirms the issue #103 live implementation and tests
 remain patch-equivalent. No behavior changed, so the earlier review still covers this implementation.
+
+## Mutation-remediation review status
+
+The post-#100 rebase and mutation remediation are a material change to the reviewed patch. They add
+complete fake-broker behavioural coverage, execute the previously uncovered `owned_positions`
+boundary, and replace untestable literal defaults with behavior-identical explicit/module-constant
+forms. The earlier independent review does not cover this combined implementation. A new full
+independent live-money review is required; the builder does not resolve or waive that requirement.

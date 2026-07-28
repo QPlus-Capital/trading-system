@@ -38,6 +38,8 @@ MAGIC = 770077
 # module does not expose these ``SYMBOL_FILLING_*`` names, so the bit values are hard-coded.
 _SYMBOL_FILLING_FOK = 1
 _SYMBOL_FILLING_IOC = 2
+_DEFAULT_ORDER_DEVIATION = 20
+_DEFAULT_ORDER_COMMENT = "qplus"
 
 # Our research name -> the broker's base symbol name (before any account suffix).
 SYMBOL_MAP: dict[str, str] = {
@@ -82,7 +84,7 @@ def _runtime_side(
     raise Mt5Error("invalid order side; expected BUY or SELL")
 
 
-def _order_type(m: Any, value: object, *, opposite: bool = False) -> int:
+def _order_type(m: Any, value: object, *, opposite: bool) -> int:
     """Return the MT5 order type for a validated side, optionally opposing it."""
     side = _runtime_side(value)
     buy_order = (side == "BUY") != opposite
@@ -377,7 +379,7 @@ class Mt5Bridge:
         cost 0.206% instead of the intended 0.18%. This is not a theoretical correction.
         """
         m = self._require()
-        order_type = _order_type(m, side)
+        order_type = _order_type(m, side, opposite=False)
         profit = m.order_calc_profit(order_type, self.terminal_symbol(name), volume, entry, sl)
         if profit is None:
             return None
@@ -401,7 +403,7 @@ class Mt5Bridge:
         if position.sl <= 0:
             return None  # unbounded downside -> the caller charges the worst case
         m = self._require()
-        order_type = _order_type(m, side)
+        order_type = _order_type(m, side, opposite=False)
         profit = m.order_calc_profit(
             order_type, position.symbol, position.volume, position.price_open, position.sl
         )
@@ -468,12 +470,12 @@ class Mt5Bridge:
         *,
         sl: float | None = None,
         tp: float | None = None,
-        deviation: int = 20,
-        comment: str = "qplus",
+        deviation: int = _DEFAULT_ORDER_DEVIATION,
+        comment: str = _DEFAULT_ORDER_COMMENT,
     ) -> int:
         """Send a market order; return the resulting deal/order ticket. Raises on rejection."""
         m = self._require()
-        order_type = _order_type(m, side)
+        order_type = _order_type(m, side, opposite=False)
         sym = self.terminal_symbol(name)
         tick = m.symbol_info_tick(sym)
         if tick is None:
@@ -525,7 +527,12 @@ class Mt5Bridge:
                 f"retcode={result.retcode} ({result.comment})"
             )
 
-    def close_position(self, position: Position, *, deviation: int = 20) -> None:
+    def close_position(
+        self,
+        position: Position,
+        *,
+        deviation: int = _DEFAULT_ORDER_DEVIATION,
+    ) -> None:
         """Close an open position with an opposing market order. Raises on rejection."""
         m = self._require()
         order_type = _order_type(m, position.side, opposite=True)

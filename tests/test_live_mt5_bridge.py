@@ -1,5 +1,6 @@
 """Tests for the MT5 bridge without connecting to a terminal."""
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
 from types import SimpleNamespace
@@ -29,31 +30,52 @@ class _FakeMt5:
     ORDER_FILLING_IOC = 41
     TRADE_RETCODE_DONE = 50
 
-    def __init__(self, positions: list[SimpleNamespace] | None = None) -> None:
+    def __init__(
+        self,
+        positions: list[SimpleNamespace] | None = None,
+        *,
+        positions_get_fails: bool = False,
+    ) -> None:
         self.raw_positions = positions or []
+        self.positions_get_fails = positions_get_fails
+        self.positions_get_calls: list[dict[str, object]] = []
         self.order_calc_profit_calls: list[tuple[object, ...]] = []
+        self.order_calc_profit_result: float | None = -25.0
         self.order_send_calls: list[dict[str, object]] = []
+        self.order_send_result: SimpleNamespace | None = SimpleNamespace(
+            retcode=self.TRADE_RETCODE_DONE,
+            order=123,
+            comment="done",
+        )
         self.tick_calls = 0
+        self.tick_symbols: list[object] = []
+        self.tick_result: SimpleNamespace | None = SimpleNamespace(ask=1.25, bid=1.2)
         self.symbol_info_calls = 0
+        self.symbol_info_symbols: list[object] = []
 
-    def positions_get(self, **_kwargs: object) -> list[SimpleNamespace]:
+    def positions_get(self, **kwargs: object) -> list[SimpleNamespace] | None:
+        self.positions_get_calls.append(kwargs)
+        if self.positions_get_fails:
+            return None
         return self.raw_positions
 
-    def order_calc_profit(self, *args: object) -> float:
+    def order_calc_profit(self, *args: object) -> float | None:
         self.order_calc_profit_calls.append(args)
-        return -25.0
+        return self.order_calc_profit_result
 
-    def symbol_info_tick(self, _symbol: str) -> SimpleNamespace:
+    def symbol_info_tick(self, symbol: object) -> SimpleNamespace | None:
         self.tick_calls += 1
-        return SimpleNamespace(ask=1.25, bid=1.2)
+        self.tick_symbols.append(symbol)
+        return self.tick_result
 
-    def symbol_info(self, _symbol: str) -> SimpleNamespace:
+    def symbol_info(self, symbol: object) -> SimpleNamespace:
         self.symbol_info_calls += 1
+        self.symbol_info_symbols.append(symbol)
         return SimpleNamespace(filling_mode=2)
 
-    def order_send(self, request: dict[str, object]) -> SimpleNamespace:
+    def order_send(self, request: dict[str, object]) -> SimpleNamespace | None:
         self.order_send_calls.append(request)
-        return SimpleNamespace(retcode=self.TRADE_RETCODE_DONE, order=123, comment="done")
+        return self.order_send_result
 
     @staticmethod
     def last_error() -> tuple[int, str]:
@@ -138,9 +160,12 @@ def test_positions_fail_closed_on_unknown_position_type(
     fake = _FakeMt5([_raw_position(raw_type)])
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error, match="invalid MT5 position type"):
+    with pytest.raises(Mt5Error) as error:
         bridge.positions()
 
+    assert str(error.value) == (
+        "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+    )
     _assert_no_order_boundary_call(fake)
 
 
@@ -152,9 +177,10 @@ def test_loss_for_order_fails_before_pricing_invalid_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error, match="invalid order side"):
+    with pytest.raises(Mt5Error) as error:
         bridge.loss_for_order("EURUSD", cast(Side, invalid_side), entry=1.2, sl=1.1, volume=0.1)
 
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
     _assert_no_order_boundary_call(fake)
 
 
@@ -164,9 +190,10 @@ def test_loss_to_stop_fails_before_pricing_invalid_position_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error, match="invalid order side"):
+    with pytest.raises(Mt5Error) as error:
         bridge.loss_to_stop(_position(cast(Side, "HOLD")))
 
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
     _assert_no_order_boundary_call(fake)
 
 
@@ -176,9 +203,10 @@ def test_place_order_fails_before_terminal_calls_for_invalid_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error, match="invalid order side"):
+    with pytest.raises(Mt5Error) as error:
         bridge.place_order("EURUSD", cast(Side, "HOLD"), 0.1)
 
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
     _assert_no_order_boundary_call(fake)
 
 
@@ -188,9 +216,10 @@ def test_close_position_fails_before_terminal_calls_for_invalid_side(
     fake = _FakeMt5()
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    with pytest.raises(Mt5Error, match="invalid order side"):
+    with pytest.raises(Mt5Error) as error:
         bridge.close_position(_position(cast(Side, "HOLD")))
 
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
     _assert_no_order_boundary_call(fake)
 
 
@@ -214,6 +243,115 @@ def test_legal_position_types_preserve_position_sides(
     assert len(positions) == 1
     assert positions[0].side == expected
     _assert_no_order_boundary_call(fake)
+
+
+def test_positions_preserve_every_authoritative_terminal_field(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5([_raw_position(_FakeMt5.POSITION_TYPE_BUY)])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert bridge.positions("EURUSD") == [
+        Position(
+            ticket=7,
+            symbol="EURUSD",
+            side="BUY",
+            volume=0.1,
+            price_open=1.23,
+            sl=1.1,
+            tp=1.4,
+            profit=5.0,
+            magic=MAGIC,
+        )
+    ]
+    assert fake.positions_get_calls == [{"symbol": "EURUSD"}]
+
+
+def test_positions_failure_names_the_terminal_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5(positions_get_fails=True)
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.positions()
+
+    assert str(error.value) == "positions_get failed: (0, 'synthetic')"
+    assert fake.positions_get_calls == [{}]
+    _assert_no_order_boundary_call(fake)
+
+
+def test_owned_positions_forward_the_filter_and_exclude_foreign_magic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    own = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    foreign = SimpleNamespace(**{**vars(own), "ticket": 8, "magic": MAGIC + 1})
+    fake = _FakeMt5([own, foreign])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    positions = bridge.owned_positions("EURUSD")
+
+    assert positions == [
+        Position(
+            ticket=7,
+            symbol="EURUSD",
+            side="BUY",
+            volume=0.1,
+            price_open=1.23,
+            sl=1.1,
+            tp=1.4,
+            profit=5.0,
+            magic=MAGIC,
+        )
+    ]
+    assert fake.positions_get_calls == [{"symbol": "EURUSD"}]
+
+
+def test_buy_side_reaches_terminal_pricing_without_becoming_sell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert bridge.loss_for_order("EURUSD", "BUY", entry=1.2, sl=1.1, volume=0.1) == 25.0
+    assert fake.order_calc_profit_calls == [
+        (fake.ORDER_TYPE_BUY, "EURUSD", 0.1, 1.2, 1.1)
+    ]
+
+
+def test_non_loss_is_never_invented_as_one_unit_of_risk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    fake.order_calc_profit_result = 0.25
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert bridge.loss_for_order("EURUSD", "SELL", entry=1.2, sl=1.1, volume=0.1) == 0.0
+    assert bridge.loss_to_stop(_position("SELL")) == 0.0
+
+
+def test_zero_stop_is_unbounded_without_terminal_pricing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+    position = replace(_position("BUY"), sl=0.0)
+
+    assert bridge.loss_to_stop(position) is None
+    assert fake.order_calc_profit_calls == []
+
+
+def test_one_price_unit_stop_is_priced_at_the_exact_distance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+    position = replace(_position("BUY"), sl=1.0)
+
+    assert bridge.loss_to_stop(position) == 25.0
+    assert fake.order_calc_profit_calls == [
+        (fake.ORDER_TYPE_BUY, "EURUSD", 0.1, 1.23, 1.0)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -263,6 +401,81 @@ def test_legal_order_sides_preserve_pricing_and_entry_requests(
     ]
 
 
+def test_default_entry_request_reaches_the_broker_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert bridge.place_order("EURUSD", "BUY", 0.1) == 123
+
+    assert fake.tick_symbols == ["EURUSD"]
+    assert fake.symbol_info_symbols == ["EURUSD"]
+    assert fake.order_send_calls == [
+        {
+            "action": fake.TRADE_ACTION_DEAL,
+            "symbol": "EURUSD",
+            "volume": 0.1,
+            "type": fake.ORDER_TYPE_BUY,
+            "price": 1.25,
+            "sl": 0.0,
+            "tp": 0.0,
+            "deviation": 20,
+            "magic": MAGIC,
+            "comment": "qplus",
+            "type_time": fake.ORDER_TIME_GTC,
+            "type_filling": fake.ORDER_FILLING_IOC,
+        }
+    ]
+
+
+def test_entry_tick_failure_names_the_symbol_before_any_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    fake.tick_result = None
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.place_order("EURUSD", "SELL", 0.1)
+
+    assert str(error.value) == "no tick for EURUSD: (0, 'synthetic')"
+    assert fake.tick_symbols == ["EURUSD"]
+    assert fake.order_send_calls == []
+
+
+def test_entry_send_none_names_the_symbol_and_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    fake.order_send_result = None
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.place_order("EURUSD", "SELL", 0.1)
+
+    assert str(error.value) == "order_send returned None for EURUSD: (0, 'synthetic')"
+    assert len(fake.order_send_calls) == 1
+    assert fake.order_send_calls[0]["type"] == fake.ORDER_TYPE_SELL
+    assert fake.order_send_calls[0]["price"] == 1.2
+
+
+def test_entry_rejection_reports_the_broker_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    fake.order_send_result = SimpleNamespace(retcode=99, order=0, comment="synthetic reject")
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.place_order("EURUSD", "BUY", 0.1)
+
+    assert str(error.value) == (
+        "order rejected for EURUSD: retcode=99 (synthetic reject)"
+    )
+    assert len(fake.order_send_calls) == 1
+
+
 @pytest.mark.parametrize(
     ("side", "order_type", "price"),
     [
@@ -296,6 +509,78 @@ def test_legal_position_sides_preserve_close_requests(
             "type_filling": fake.ORDER_FILLING_IOC,
         }
     ]
+
+
+def test_default_close_request_reaches_the_broker_exactly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    bridge.close_position(_position("BUY"))
+
+    assert fake.tick_symbols == ["EURUSD"]
+    assert fake.symbol_info_symbols == ["EURUSD"]
+    assert fake.order_send_calls == [
+        {
+            "action": fake.TRADE_ACTION_DEAL,
+            "symbol": "EURUSD",
+            "volume": 0.1,
+            "type": fake.ORDER_TYPE_SELL,
+            "position": 7,
+            "price": 1.2,
+            "deviation": 20,
+            "magic": MAGIC,
+            "comment": "qplus-close",
+            "type_time": fake.ORDER_TIME_GTC,
+            "type_filling": fake.ORDER_FILLING_IOC,
+        }
+    ]
+
+
+def test_close_tick_failure_names_the_symbol_before_any_send(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    fake.tick_result = None
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.close_position(_position("SELL"))
+
+    assert str(error.value) == "no tick for EURUSD: (0, 'synthetic')"
+    assert fake.tick_symbols == ["EURUSD"]
+    assert fake.order_send_calls == []
+
+
+def test_close_send_none_names_the_symbol_and_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    fake.order_send_result = None
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.close_position(_position("SELL"))
+
+    assert str(error.value) == "close order_send returned None for EURUSD: (0, 'synthetic')"
+    assert len(fake.order_send_calls) == 1
+    assert fake.order_send_calls[0]["type"] == fake.ORDER_TYPE_BUY
+    assert fake.order_send_calls[0]["price"] == 1.25
+
+
+def test_close_rejection_reports_the_broker_result(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    fake.order_send_result = SimpleNamespace(retcode=99, order=0, comment="synthetic reject")
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.close_position(_position("BUY"))
+
+    assert str(error.value) == "close rejected for EURUSD: retcode=99 (synthetic reject)"
+    assert len(fake.order_send_calls) == 1
 
 
 def test_history_deals_exports_ticket_and_fee(monkeypatch: pytest.MonkeyPatch) -> None:
