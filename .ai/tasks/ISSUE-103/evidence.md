@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 5b16f9c52c946d2be2d25733f4b4f4fc3529112d
+HEAD: 5d35026e07c7e97493fb44a61e8d895316435fc7
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -37,6 +37,7 @@ The only later commit permitted by readiness is this evidence file itself.
 | `registry-and-policy` | policy union audit plus `uv run pytest -q tests/test_finding_registry.py tests/test_quality_mutation.py` | 0 | Finding F-037 is unique; mutation policy retains main's history-deal pattern plus all issue-103 boundaries; mutation baseline unchanged. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | Exactly one changed production file; eight direct and two transitive test files; no unknown/dynamic edge or additional possible test discovered. |
 | `security` | `uvx --from rust-just just check-security` | 0 | Post-#98 rebase: secret scan clean, pip-audit found no known vulnerabilities, and Ruff security checks passed. |
+| `post-119-rebase` | `git rebase origin/main` plus baseline/scope audit | 0 | Rebased onto `main@1815baa`; branch carries #119's `4,568`-mutant, 417-survivor exact baseline unchanged. No survivor was classified and no baseline file is in the branch diff. |
 | `rebase-integrity` | `git range-diff 8263206..03662f2 8851b91..HEAD`; TOML structural-union audit; mutation-baseline diff | 0 | Live/test patches remain equivalent; F-035/F-037 are unique and ordered; every mutation target/pattern from main and the old branch remains; `.ai/quality/mutation-baseline.toml` is unchanged. No behavior changed. |
 | `post-98-rebase-integrity` | `git range-diff 8851b91..acb4581 494eafc..HEAD`; TOML structural-union audit; mutation-baseline diff | 0 | Live/test patches remain equivalent; F-035/F-036/F-037 are unique and ordered; every mutation target/pattern from main and the old branch remains; `.ai/quality/mutation-baseline.toml` is unchanged. No behavior changed. |
 | `artifact-hashes` | `Get-FileHash -Algorithm SHA256 reports/research/run_20260724_1146/{portfolio_trades.csv,full_history_trades.csv}` | 0 | `portfolio_trades.csv` remains `b5a0a9bb6d19ccee85c35aa6570a3bd67ea8fd885665d92901e5f14113f45129`; `full_history_trades.csv` remains `27592d20dda0fb3b31eb06de69d4d760d0f16cd961f2872e4f6376acb3dd90dc`. |
@@ -80,17 +81,17 @@ order. Neither running live runner was touched.
 
 ## Coverage and mutation
 
-The rebased invariant suite has 313 passing tests, the complete deterministic suite has 1,207, and
+The post-#119 invariant suite has 316 passing tests, the complete deterministic suite has 1,210, and
 21 properties pass twice with the fixed seed. Range-diff shows the bridge/test implementation patch
 is unchanged, so the prior 25-test bridge and 108-test impact evidence remains applicable. Coverage
 includes all five issue-defined runtime boundaries, both legal directions, unknown integer/string
 values, and Python's boolean/integer alias.
 
 The critical mutation policy now includes the shared side converter, centralized order-type
-mapping, and all five boundary methods while retaining the existing history-deal target. Linux
-Critical mutation is **blocked by infrastructure — Actions quota exhausted until 2026-08-01**.
-The measured baseline is intentionally unchanged until a real Linux run can regenerate and
-reconcile it.
+mapping, and all five boundary methods while retaining the existing history-deal target. The branch
+inherits #119's measured `4,568`-mutant, 417-survivor baseline unchanged. Linux Critical mutation is
+**blocked by infrastructure — Actions quota exhausted until 2026-08-01**; no branch-specific
+survivor classification or baseline regeneration is claimed.
 
 ## Deferred checks
 
