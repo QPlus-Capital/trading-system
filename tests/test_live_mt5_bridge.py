@@ -314,9 +314,7 @@ def test_buy_side_reaches_terminal_pricing_without_becoming_sell(
     bridge = _bridge_with_fake(monkeypatch, fake)
 
     assert bridge.loss_for_order("EURUSD", "BUY", entry=1.2, sl=1.1, volume=0.1) == 25.0
-    assert fake.order_calc_profit_calls == [
-        (fake.ORDER_TYPE_BUY, "EURUSD", 0.1, 1.2, 1.1)
-    ]
+    assert fake.order_calc_profit_calls == [(fake.ORDER_TYPE_BUY, "EURUSD", 0.1, 1.2, 1.1)]
 
 
 def test_non_loss_is_never_invented_as_one_unit_of_risk(
@@ -349,9 +347,7 @@ def test_one_price_unit_stop_is_priced_at_the_exact_distance(
     position = replace(_position("BUY"), sl=1.0)
 
     assert bridge.loss_to_stop(position) == 25.0
-    assert fake.order_calc_profit_calls == [
-        (fake.ORDER_TYPE_BUY, "EURUSD", 0.1, 1.23, 1.0)
-    ]
+    assert fake.order_calc_profit_calls == [(fake.ORDER_TYPE_BUY, "EURUSD", 0.1, 1.23, 1.0)]
 
 
 @pytest.mark.parametrize(
@@ -470,9 +466,7 @@ def test_entry_rejection_reports_the_broker_result(
     with pytest.raises(Mt5Error) as error:
         bridge.place_order("EURUSD", "BUY", 0.1)
 
-    assert str(error.value) == (
-        "order rejected for EURUSD: retcode=99 (synthetic reject)"
-    )
+    assert str(error.value) == ("order rejected for EURUSD: retcode=99 (synthetic reject)")
     assert len(fake.order_send_calls) == 1
 
 
