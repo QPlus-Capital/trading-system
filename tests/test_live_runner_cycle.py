@@ -480,6 +480,31 @@ def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails(
     ] == ["failed to enumerate owned XAUUSD positions during safety halt"]
 
 
+def test_halt_and_flatten_logs_reason_and_failed_position_identity(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class RejectingCloseBridge(StubBridge):
+        def close_position(self, position: Position, **kw: object) -> None:
+            raise Mt5Error("order_send failed: synthetic close fault")
+
+    stub = RejectingCloseBridge()
+    stub.open_positions = [
+        Position(17, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)
+    ]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with caplog.at_level(logging.ERROR, logger="live"):
+        runner._halt_and_flatten("synthetic trailing limit")
+
+    assert runner._halted
+    assert runner._halt_reason == "synthetic trailing limit"
+    assert stub.closed == []
+    assert [record.getMessage() for record in caplog.records] == [
+        "SAFETY HALT: synthetic trailing limit -- flattening all positions and stopping.",
+        "failed to flatten XAUUSD ticket 17",
+    ]
+
+
 def test_loss_day_rolls_at_16_15_chicago_dst_aware() -> None:
     from live.runner import loss_day
 

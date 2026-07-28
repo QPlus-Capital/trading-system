@@ -1,5 +1,6 @@
 """Tests for the MT5 bridge without connecting to a terminal."""
 
+import logging
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -413,6 +414,7 @@ def test_position_types_accept_the_integral_index_protocol(
 
 def test_foreign_unknown_type_cannot_poison_account_or_owned_positions(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     own_buy = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
     own_sell = SimpleNamespace(
@@ -434,8 +436,37 @@ def test_foreign_unknown_type_cannot_poison_account_or_owned_positions(
     fake = _FakeMt5([foreign_unknown, own_buy, own_sell])
     bridge = _bridge_with_fake(monkeypatch, fake)
 
-    assert [position.ticket for position in bridge.positions()] == [7, 8]
+    with caplog.at_level(logging.WARNING, logger="live"):
+        assert [position.ticket for position in bridge.positions()] == [7, 8]
     assert [position.ticket for position in bridge.owned_positions()] == [7, 8]
+    assert fake.positions_get_calls == [{}, {}]
+    assert [record.getMessage() for record in caplog.records] == [
+        "ignoring foreign position ticket 9 with unsupported MT5 position type"
+    ]
+    _assert_no_order_boundary_call(fake)
+
+
+def test_positions_keep_legal_foreign_positions_visible_to_account_risk(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owned = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    foreign = SimpleNamespace(
+        **{
+            **vars(owned),
+            "ticket": 9,
+            "symbol": "GBPJPY",
+            "type": _FakeMt5.POSITION_TYPE_SELL,
+            "magic": 999,
+        }
+    )
+    fake = _FakeMt5([foreign, owned])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert [(position.ticket, position.side) for position in bridge.positions()] == [
+        (9, "SELL"),
+        (7, "BUY"),
+    ]
+    assert [position.ticket for position in bridge.owned_positions()] == [7]
     assert fake.positions_get_calls == [{}, {}]
     _assert_no_order_boundary_call(fake)
 
