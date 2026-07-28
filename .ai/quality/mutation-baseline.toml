@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "PR #94 review adds a versioned source opening balance and source-relative P-11 replay. Scale-invariance, zero-observed-breach, compounded-return, schema, boundary, persistence, tail, dominance, count-consistency, and real-verdict tests kill every observed mutant that changes a statistic, breach flag, gate, or serialized value. The measured total changes from 4,358 to 4,406 and the score rises from 0.9101 to 0.9108. Remaining P-11 survivors change only fail-closed exception text, a zero-balance branch that is equivalent under the inclusive limit comparison, or exact CDF equality to a conservatively higher result by at most one Decimal ULP."
+change_explanation = "PRs #96, #97, and #98 merged while the Linux mutation gate had no native-Windows substitute and the organisation Actions allowance was exhausted. Run 30333581031 on main@494eafc measured 4,568 mutants: 4,151 killed and 417 survived. Wholesale regeneration raises the exact total from 4,406 to 4,568, removes 29 baseline survivors now killed by #96, and exact-name classifies 53 newly generated survivors confined to #96 path-risk/sizing code; #97 and #98 add no unexplained survivor. This tightens the survivor ratchet: every measured survivor is named, any additional survivor fails closed, and no target, comparison rule, or configured threshold is relaxed."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -30,9 +30,9 @@ targets = [
 ]
 
 [summary]
-total = 4406
-killed = 4013
-survived = 393
+total = 4568
+killed = 4151
+survived = 417
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -45,7 +45,9 @@ caught_by_type_check = 0
 [[survivor_groups]]
 classification = "equivalent"
 reason = "Removing ensure_ascii=True is equivalent because json.dumps defaults ensure_ascii to True."
-names = ["research.forward_test_registry.x__digest_canonical__mutmut_7"]
+names = [
+    "research.forward_test_registry.x__digest_canonical__mutmut_7",
+]
 
 [[survivor_groups]]
 classification = "meaningful"
@@ -134,7 +136,9 @@ names = [
 [[survivor_groups]]
 classification = "meaningful"
 reason = "Existing focused tests do not distinguish this flat-PnL mutation; retained as a measured test-strength gap."
-names = ["research.portfolio.risk.x_flat_base_pnl__mutmut_2"]
+names = [
+    "research.portfolio.risk.x_flat_base_pnl__mutmut_2",
+]
 
 [[survivor_groups]]
 classification = "meaningful"
@@ -236,7 +240,6 @@ names = [
     "research.portfolio.sizing.x__daily_diagnostics__mutmut_59",
     "research.portfolio.sizing.x__daily_diagnostics__mutmut_61",
     "research.portfolio.sizing.x__daily_diagnostics__mutmut_7",
-    "research.portfolio.sizing.x__daily_diagnostics__mutmut_83",
     "research.portfolio.sizing.x__daily_diagnostics__mutmut_85",
     "research.portfolio.sizing.x__daily_diagnostics__mutmut_87",
     "research.portfolio.sizing.x__daily_diagnostics__mutmut_89",
@@ -247,45 +250,6 @@ classification = "equivalent"
 reason = "Validated H4/trade columns already have numeric dtypes, and NumPy infers the same int64, float64, and bool arrays when these redundant dtype arguments are removed."
 names = [
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_21",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_228",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_230",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_25",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_33",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_37",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_44",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_46",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_48",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_52",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_59",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_94",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_96",
-]
-
-[[survivor_groups]]
-classification = "equivalent"
-reason = "The replay timeline is sorted and unique, the final-loop continue and break both terminate iteration, regular H4 bars expire at their recorded end, and Decimal('1e-12') equals Decimal('1E-12'); these mutations cannot change a mark."
-names = [
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_116",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_148",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_152",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_153",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_188",
-]
-
-[[survivor_groups]]
-classification = "irrelevant"
-reason = "These mutations alter only the truncated missing-observation error detail after the fail-closed decision; they cannot create a usable diagnostic or a selection pass."
-names = [
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_224",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_225",
-]
-
-[[survivor_groups]]
-classification = "irrelevant"
-reason = "Production Stage-3 trades carry explicit is_long values; these fallback-only zero-PnL direction and isolated bar-end timeline mutations do not change the validated production path."
-names = [
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_63",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_90",
 ]
 
 [[survivor_groups]]
@@ -318,7 +282,9 @@ names = [
 [[survivor_groups]]
 classification = "meaningful"
 reason = "Existing focused tests do not distinguish this drawdown-throttle mutation; retained as a measured test-strength gap."
-names = ["research.portfolio.sizing.x_throttle__mutmut_1"]
+names = [
+    "research.portfolio.sizing.x_throttle__mutmut_1",
+]
 
 [[survivor_groups]]
 classification = "meaningful"
@@ -357,7 +323,9 @@ names = [
 [[survivor_groups]]
 classification = "meaningful"
 reason = "Existing focused tests do not distinguish this regression-delta mutation; retained as a measured test-strength gap."
-names = ["research.regression.x__delta__mutmut_1"]
+names = [
+    "research.regression.x__delta__mutmut_1",
+]
 
 [[survivor_groups]]
 classification = "meaningful"
@@ -531,12 +499,16 @@ names = [
 [[survivor_groups]]
 classification = "equivalent"
 reason = "The function rejects empty input and validates every element as Decimal, so omitting the explicit Decimal zero start from sum preserves the exact mean."
-names = ["research.forward_decision.x_bootstrap_mean_bounds__mutmut_76"]
+names = [
+    "research.forward_decision.x_bootstrap_mean_bounds__mutmut_76",
+]
 
 [[survivor_groups]]
 classification = "equivalent"
 reason = "The un-clipped effective-trial formula has a maximum of 41 at rho_bar zero, so changing the redundant min cap from 41 to 42 cannot change the result."
-names = ["research.engine.characterize.x_effective_trial_count__mutmut_23"]
+names = [
+    "research.engine.characterize.x_effective_trial_count__mutmut_23",
+]
 
 [[survivor_groups]]
 classification = "equivalent"
@@ -634,7 +606,9 @@ names = [
 [[survivor_groups]]
 classification = "irrelevant"
 reason = "The mutation additionally validates trailing_floor, which the P-10 scenario schema and bootstrap do not consume; valid P-09 diagnostics behave identically and the mutation can only reject an otherwise unused invalid field."
-names = ["research.portfolio.scenarios.x__validated_diagnostics__mutmut_37"]
+names = [
+    "research.portfolio.scenarios.x__validated_diagnostics__mutmut_37",
+]
 
 [[survivor_groups]]
 classification = "equivalent"
@@ -663,12 +637,6 @@ names = [
     "research.portfolio.path_risk.x_clopper_pearson_upper__mutmut_33",
     "research.portfolio.path_risk.x_clopper_pearson_upper__mutmut_7",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_10",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_133",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_134",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_135",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_138",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_139",
-    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_140",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_15",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_2",
     "research.portfolio.path_risk.x_replay_scenario_path__mutmut_20",
@@ -685,10 +653,78 @@ names = [
 
 [[survivor_groups]]
 classification = "equivalent"
-reason = "At a zero path opening balance, the unmutated `<= 0` branch and the mutated `< 0` fallthrough both set both daily breach flags: the fallthrough compares zero loss to zero inclusive limits. Negative balances still take the fail-closed branch."
-names = ["research.portfolio.path_risk.x_replay_scenario_path__mutmut_69"]
+reason = "At exact Decimal CDF equality, changing `cdf > alpha` to `cdf >= alpha` returns the adjacent higher representable probability instead of the exact root. The result differs by at most one 60-digit Decimal ULP and is strictly more conservative, so it cannot understate either gate probability."
+names = [
+    "research.portfolio.path_risk.x_clopper_pearson_upper__mutmut_64",
+]
 
 [[survivor_groups]]
-classification = "equivalent"
-reason = "At exact Decimal CDF equality, changing `cdf > alpha` to `cdf >= alpha` returns the adjacent higher representable probability instead of the exact root. The result differs by at most one 60-digit Decimal ULP and is strictly more conservative, so it cannot understate either gate probability."
-names = ["research.portfolio.path_risk.x_clopper_pearson_upper__mutmut_64"]
+classification = "meaningful"
+reason = "PR #96 changed chronological per-day drawdown/HWM replay and generated these newly measured survivors. Existing focused tests do not distinguish them; they are retained as exact-name meaningful gaps from Linux run 30333581031, and any additional survivor fails closed."
+names = [
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_104",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_105",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_106",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_107",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_163",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_164",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_165",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_168",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_169",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_170",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_173",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_174",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_175",
+    "research.portfolio.path_risk.x_replay_scenario_path__mutmut_74",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "PR #96 changed chronological daily diagnostics and generated this newly measured survivor. Existing focused tests do not distinguish it; it is retained as an exact-name meaningful gap from Linux run 30333581031, and any additional survivor fails closed."
+names = [
+    "research.portfolio.sizing.x__daily_diagnostics__mutmut_91",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "PR #96 changed chronological synchronized-H4 peak/trough replay and generated these newly measured survivors. Existing focused tests do not distinguish them; they are retained as exact-name meaningful gaps from Linux run 30333581031, and any additional survivor fails closed."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_11",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_122",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_126",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_128",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_13",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_141",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_143",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_154",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_17",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_174",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_175",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_20",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_203",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_22",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_23",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_24",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_255",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_259",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_260",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_29",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_30",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_31",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_316",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_317",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_320",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_322",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_324",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_326",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_53",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_57",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_65",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_69",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_76",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_78",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_80",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_84",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_91",
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_95",
+]
