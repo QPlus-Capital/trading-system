@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 1b547eeb731d88c02f74d250b1595cb82d5e07c9
+HEAD: c07122b23b9dffa65e365cea2c35877f93530696
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -14,13 +14,13 @@ The only later commit permitted by readiness is this evidence file itself.
 |---|---|---:|---|
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | The new Python harness is Ruff-formatted; lint, strict mypy over 181 files, impact, and both focused tests pass. |
 | `docs-consistency` | `uv run pytest -q tests/test_docs_architecture_map.py tests/test_docs_language.py tests/test_engineering_docs.py tests/test_engineering_workflow_docs.py tests/test_gate_consistency.py` | 0 | 143 documentation, language, engineering-policy, and gate-consistency tests pass. |
-| `check` | `uvx --from rust-just just check` | 0 | Ruff, strict mypy, Vulture, and 1,193 tests pass; the one Linux-only mutation self-test is skipped on Windows. |
+| `check` | `uvx --from rust-just just check` | 0 | Post-#119 rebase: Ruff, strict mypy over 181 files, Vulture, and 1,196 tests pass; the one Linux-only mutation self-test is skipped on Windows. |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | Impact selected the new harness and both parity tests pass. |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | 21 deterministic properties pass twice at Hypothesis seed `20260721`. |
 | `integration-tests` | `uv run pytest -q tests/test_signal_adapter_parity.py tests/test_import_boundaries.py tests/test_live_parity_check.py tests/test_live_runner.py tests/test_live_runner_cycle.py tests/test_strategies_rsi_wpr_bb.py` | 0 | 110 adapter, structural, live-cycle, feed-parity, and Nautilus end-to-end tests pass. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-62 --base origin/main` | 0 | Task schema and traceability are valid with six acceptance criteria and six invariants. |
 | `adversarial-review` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-62 --base origin/main` | 0 | Twelve counterexamples are recorded with no unresolved finding; independent Claude review remains external. |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 315 critical-invariant tests pass and the new adapter harness is in the recipe. |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | Post-#119 rebase: 318 critical-invariant tests pass and the new adapter harness is in the recipe. |
 | `mutation-on-touched-critical` | GitHub Actions `Critical mutation` | 1 | **blocked by infrastructure — Actions quota exhausted until 2026-08-01**. No workflow can start under the configured $0 budget; no mutation result is claimed. |
 | `parity-where-applicable` | `uv run pytest -q tests/test_signal_adapter_parity.py tests/test_import_boundaries.py tests/test_live_parity_check.py` | 0 | Both real adapters agree on all 199 bars; structural construction and feed/data parity remain green. |
 | `live-money-review` | `.ai/tasks/ISSUE-62/review.md` plus production/live diff audit | 0 | No production or live byte changes; the fake bridge refuses every terminal access and no runner process was invoked. |
@@ -36,6 +36,7 @@ The only later commit permitted by readiness is this evidence file itself.
 | `focused-parity` | `uv run pytest -q tests/test_signal_adapter_parity.py` | 0 | Both permanent tests pass, including the deliberately divergent counterexample. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | R3; no production file, one direct test, and no transitive, unknown, or dynamic edge. |
 | `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean, no known dependency vulnerabilities, and Ruff security checks pass. |
+| `post-119-rebase` | `git rebase origin/main` plus baseline/scope audit | 0 | Rebased onto `main@1815baa`; branch carries #119's `4,568`-mutant, 417-survivor exact baseline unchanged. No survivor was classified and no baseline file is in the branch diff. |
 | `no-production-drift` | `git diff --exit-code origin/main...HEAD -- core live research monitoring pyproject.toml uv.lock` | 0 | Production, dependency, signal, runner, research, and monitoring bytes are identical to main. |
 | `baseline-artifacts` | `Get-FileHash -Algorithm SHA256 reports/research/run_20260727_issue91/{portfolio_trades.csv,full_history_trades.csv}` | 0 | Stored baseline hashes remain `b5a0a9bb...45129` and `27592d20...90dc`; no producer changed and no stage rerun is required. |
 | `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-62 --base origin/main` | 1 | NOT READY solely because the required Linux mutation gate has non-zero infrastructure-blocked evidence. |
@@ -86,7 +87,8 @@ The fake bridge raises on every attribute access.
 The critical dependency map binds the harness to the signal engine and both adapters, while
 `check-invariants` runs it on every critical suite. No production mutation target changed.
 Windows cannot execute Mutmut's fork-based Linux gate, and GitHub Actions cannot start it under the
-exhausted quota. No survivor count, score, or baseline disposition is invented.
+exhausted quota. The branch inherits #119's `4,568`-mutant, 417-survivor exact-name baseline
+unchanged; no survivor count, score, classification, or baseline disposition is invented here.
 
 ## Deferred checks
 
