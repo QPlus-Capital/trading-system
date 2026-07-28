@@ -12,6 +12,7 @@ from typing import cast
 
 import pytest
 from core.strategies.rsi_wpr_bb_signals import SignalParams
+from live import mt5_bridge as bridge_module
 from live.mt5_bridge import (
     MAGIC,
     AccountState,
@@ -315,64 +316,55 @@ def test_transient_positions_read_failure_does_not_halt_or_flatten() -> None:
     assert stub.closed == []
 
 
-def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book() -> None:
-    class RawPositionBridge(StubBridge):
+def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_positions = [
+        SimpleNamespace(
+            ticket=20,
+            symbol="GBPJPY",
+            type=7,
+            volume=0.1,
+            price_open=200.0,
+            sl=190.0,
+            tp=220.0,
+            profit=5.0,
+            magic=999,
+        ),
+        SimpleNamespace(
+            ticket=11,
+            symbol="XAUUSD",
+            type=0,
+            volume=0.1,
+            price_open=2000.0,
+            sl=1980.0,
+            tp=2060.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+        SimpleNamespace(
+            ticket=12,
+            symbol="XAUUSD",
+            type=1,
+            volume=0.1,
+            price_open=2000.0,
+            sl=2020.0,
+            tp=1940.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+    ]
+
+    class RawTerminal:
         POSITION_TYPE_BUY = 0
         POSITION_TYPE_SELL = 1
 
-        def __init__(self) -> None:
-            super().__init__()
-            self.raw_positions = [
-                SimpleNamespace(
-                    ticket=20,
-                    symbol="GBPJPY",
-                    type=7,
-                    volume=0.1,
-                    price_open=200.0,
-                    sl=190.0,
-                    tp=220.0,
-                    profit=5.0,
-                    magic=999,
-                ),
-                SimpleNamespace(
-                    ticket=11,
-                    symbol="XAUUSD",
-                    type=self.POSITION_TYPE_BUY,
-                    volume=0.1,
-                    price_open=2000.0,
-                    sl=1980.0,
-                    tp=2060.0,
-                    profit=-10.0,
-                    magic=MAGIC,
-                ),
-                SimpleNamespace(
-                    ticket=12,
-                    symbol="XAUUSD",
-                    type=self.POSITION_TYPE_SELL,
-                    volume=0.1,
-                    price_open=2000.0,
-                    sl=2020.0,
-                    tp=1940.0,
-                    profit=-10.0,
-                    magic=MAGIC,
-                ),
-            ]
-            self.open_positions = [
-                Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
-                Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
-            ]
-
-        def _require(self) -> object:
-            return self
-
-        def terminal_symbol(self, name: str) -> str:
-            return name
-
-        def positions_get(self, **kwargs: object) -> list[SimpleNamespace]:
+        @staticmethod
+        def positions_get(**kwargs: object) -> list[SimpleNamespace]:
             symbol = kwargs.get("symbol")
             return [
                 position
-                for position in self.raw_positions
+                for position in raw_positions
                 if symbol is None or position.symbol == symbol
             ]
 
@@ -380,11 +372,25 @@ def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book() -> N
         def last_error() -> tuple[int, str]:
             return 0, "synthetic"
 
+    terminal = RawTerminal()
+    monkeypatch.setattr(bridge_module, "mt5", terminal)
+    position_bridge = Mt5Bridge({"XAUUSD": "XAUUSD"})
+    position_bridge._connected = True
+    position_bridge._resolved["XAUUSD"] = "XAUUSD"
+
+    class RawPositionBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.open_positions = [
+                Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+                Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+            ]
+
         def positions(self, name: str | None = None) -> list[Position]:
-            return Mt5Bridge.positions(cast(Mt5Bridge, self), name)
+            return position_bridge.positions(name)
 
         def owned_positions(self, name: str | None = None) -> list[Position]:
-            return Mt5Bridge.owned_positions(cast(Mt5Bridge, self), name)
+            return position_bridge.owned_positions(name)
 
     stub = RawPositionBridge()
     runner = _runner(stub, mode=Mode.EXECUTE)
