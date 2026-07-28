@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "After PR #116 merged, PR #100 was rebased and Linux Critical mutation run 30341283390 measured 4,646 mutants: 4,236 killed and 410 survived, with every unhealthy status zero. Against PR #100 pre-test run 30339335275, behavioural tests killed 17 of the 24 branch-specific survivors (nine trade-direction and eight synchronized-H4 mutations); the remaining one trade-direction survivor and six synchronized-H4 survivors are proven equivalent and individually classified, with the money-parser cleanup deferred consistently to issue #120. The same tests also killed one pre-existing main survivor, while thirteen other stale synchronized-H4 names disappeared under the branch refactor, so the exact survivor set tightens from 417 to 410 even after adding the trade-direction-extraction target. No test, target, threshold, or comparison rule is weakened."
+change_explanation = "After PRs #116 and #100 merged, PR #105 was rebased and Linux Critical mutation run 30345100067 measured 4,909 mutants: 4,499 killed and 410 survived, with zero no-tests or unhealthy outcomes. The former PR #105 run 30339340183 reported 38 branch-specific survivors and two selected owned_positions mutants with no tests. New fake-broker behavioural tests killed 33 of those 38 survivors and both no-test mutants. The five remaining semantically meaningful default-argument mutants were not classified: the private order-side helper now requires an explicit opposite argument, and unchanged public defaults reference module constants, removing the Mutmut trampoline blind spot without changing a valid broker request. No survivor was added or classified for this change; the measured 410-name survivor set is exactly the current main set. Wholesale regeneration raises the exact total from 4,646 to 4,909 for the expanded MT5 order-boundary scope while preserving every target and tightening execution from two no-tests to zero. No test, threshold, target, comparison rule, risk limit, or live behavior is weakened."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -31,8 +31,8 @@ targets = [
 ]
 
 [summary]
-total = 4646
-killed = 4236
+total = 4909
+killed = 4499
 survived = 410
 no_tests = 0
 skipped = 0
