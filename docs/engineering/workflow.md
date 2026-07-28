@@ -20,7 +20,7 @@ Its `Status` field is the single source of truth for where a change stands.
 | `Specifying` | Claude is working the idea into a specification with Jan. | Claude |
 | `Ready to Implement` | Approved by Jan. Codex **may** build it — not "build it now". | Claude, after Jan's explicit approval |
 | `Implementing` | Codex is building. | Codex |
-| `Reviewing` | A pull request is open. | Codex, when it opens the PR |
+| `Reviewing` | The change is with the independent reviewer — on the draft pull request, or on the pushed branch while the branch-review rule below applies. | Codex, at handover |
 | `Blocked` | Waiting on a decision only Jan can make (constitution §13). | Any agent |
 | `Done` | Merged. | Project automation (item closed) |
 
@@ -136,10 +136,13 @@ cannot require it.
 | Case | Condition | Then |
 |---|---|---|
 | **Start** | card in `Ready to Implement`, `approved` present, `risk:Rn` present | move the card to `Implementing`, **then** remove `approved` |
-| **Resume** | a branch or PR for this issue already exists, and the card is in `Implementing` or `Reviewing` | continue on it **without** a permit — the first start already consumed it |
+| **Resume** | the card is in `Implementing` or `Reviewing`, **and** a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for **this** issue number | continue on it **without** a permit — the first start already consumed it |
 
-Anything else is a refusal, reporting the actual status. A card in `Backlog`, `Specifying` or
-`Blocked` is never built, branch or no branch.
+Anything else is a refusal, reporting the actual status. In particular: a card in `Backlog`,
+`Specifying` or `Blocked` is never built, branch or no branch; a branch whose name does not carry
+this issue number is never resumed; and a branch from a fork or from outside this repository is
+never resumed, whatever the card says. Ownership is decided by the branch name and its origin, not
+by the card alone — the card cannot tell you who wrote the code.
 
 The order in the start case matters: removing the permit before the status move would destroy it if
 the move then failed. The resume case exists because it is the normal state after an interruption or
@@ -271,20 +274,24 @@ contract; the phases above explain it.
 |---|---|---|
 | — → `Backlog` | project automation | an issue is opened |
 | `Backlog` → `Specifying` | Claude | Jan asks for the idea to be worked out |
-| `Specifying` → `Blocked` | Claude | a decision only Jan can make is open |
 | `Blocked` → `Specifying` | Claude | Jan decided |
 | `Specifying` → `Backlog` | Claude | Jan defers the idea; the specification is kept |
 | `Specifying` → `Ready to Implement` | Claude | Jan approves; `approved` is written last |
 | `Ready to Implement` → `Specifying` | Claude | an approved issue must change; `approved` is removed first |
 | `Ready to Implement` → `Implementing` | Codex | build starts; `approved` is removed afterwards |
-| `Implementing` → `Reviewing` | Codex | the draft pull request is opened |
+| `Implementing` → `Reviewing` | Codex | the change is handed over for review — by opening the draft pull request, or, while the branch-review rule below applies, by pushing the branch and saying so |
 | `Reviewing` → `Implementing` | Claude | a blocking finding |
 | `Implementing` → `Reviewing` | Codex | the review fix is pushed |
 | `Implementing` → `Specifying` | Codex | the specification is wrong, incomplete or unbuildable |
-| any → `Blocked` | any agent | a business, trading, methodology, live-money, architecture or risk decision is open |
+| `Specifying` → `Blocked` | Claude | a decision only Jan can make is open |
+| `Ready to Implement` → `Blocked` | any agent | a decision only Jan can make is open |
+| `Implementing` → `Blocked` | any agent | a decision only Jan can make is open |
+| `Reviewing` → `Blocked` | any agent | a decision only Jan can make is open |
 | `Reviewing` → `Done` | project automation | the pull request merged and closed the issue |
 
-`Done` is terminal. `Backlog` is the only status with no predecessor.
+`Done` is terminal: no transition leaves it, and none enters `Blocked` from it. Every other status
+has at least one exit, and every status except `Backlog` has at least one predecessor listed above.
+`Backlog` is entered from issue creation and from a deferred specification.
 
 ## Not yet active
 
@@ -294,8 +301,8 @@ written.
 
 | Part of this contract | Lands with | Until then |
 |---|---|---|
-| The draft pull request carries the review | [#109](https://github.com/QPlus-Capital/trading-system/issues/109) | The pre-Bash hook blocks `gh pr create` until the readiness check passes, so the independent review runs on the **branch** and the pull request is opened afterwards. |
-| Artifact files scale by risk class | [#109](https://github.com/QPlus-Capital/trading-system/issues/109) | `task-artifacts.toml` requires all five files for every class, `spec.md` included. Write them. |
+| The draft pull request carries the review | [#124](https://github.com/QPlus-Capital/trading-system/issues/124) | The pre-Bash hook blocks `gh pr create` until the readiness check passes, so the independent review runs on the **pushed branch** and the pull request is opened afterwards. Constitution §11 states this transitional rule itself, so it is not a lower document overriding a higher one. |
+| Artifact files scale by risk class | [#124](https://github.com/QPlus-Capital/trading-system/issues/124) | `task-artifacts.toml` requires all five files for every class, `spec.md` included. Write them. |
 | Board transitions performed by tooling | [#110](https://github.com/QPlus-Capital/trading-system/issues/110) | Agents call `gh` directly and are responsible for the ordering rules themselves. |
 | The `methodology-reviewer` subagent | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | The general code reviewer carries the constitution §4 methodology invariants, as it does today. |
 | Findings named `Blocker` / `Defect` / `Suspected defect` / `Note` | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | Severities are `P0`–`P3`, as the constitution §12 states. |

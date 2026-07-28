@@ -59,14 +59,16 @@ consumes the permit and resuming therefore cannot demand it.
   `approved` is present, and a `risk:Rn` label is present. Then move the card to `Implementing` and
   **only afterwards** remove `approved` — the reverse order would destroy the permit if the status
   update failed.
-- **Resuming.** When a branch or pull request for this issue already exists and was created by a
-  builder for this repository, resume it **without** a permit, provided the card is in
-  `Implementing` or `Reviewing`. That is the normal state after an interruption or after a review
-  sent the change back, and demanding the already-consumed permit there would lock you out of your
-  own branch.
+- **Resuming.** Resume **without** a permit when the card is in `Implementing` or `Reviewing` **and**
+  a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for this
+  issue number. That is the normal state after an interruption or after a review sent the change
+  back, and demanding the already-consumed permit there would lock you out of your own branch.
 
 Any other combination is a refusal: report the actual status and stop. A card in `Backlog`,
-`Specifying` or `Blocked` is never built, with or without a branch.
+`Specifying` or `Blocked` is never built, with or without a branch. A branch whose name does not
+carry this issue number is never resumed, and neither is a branch from a fork or from outside this
+repository — ownership is decided by the branch name and its origin, not by the card, because the
+card cannot tell you who wrote the code.
 
 1. **Specify** — the specification is the issue body; Claude wrote it and Jan approved it. Do not
    restate it in a file and do not extend it. If it is wrong, incomplete, or unbuildable, do not

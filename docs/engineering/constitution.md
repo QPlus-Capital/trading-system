@@ -155,6 +155,14 @@ at the line it concerns. A pull request is marked **ready for review** only afte
 remediation are complete — that is the point the readiness check gates, and it is the only state Jan
 is asked to merge from.
 
+**Transitional rule, until [#124](https://github.com/QPlus-Capital/trading-system/issues/124)
+lands.** The readiness gate currently blocks the *creation* of a pull request rather than the
+ready-for-review transition, so a draft cannot yet carry a review that has not happened. Until that
+gate moves, the independent review is performed on the **pushed branch** and the pull request is
+opened afterwards. This rule is stated here, at the same precedence as the paragraph it suspends,
+because a lower-ranking document cannot suspend this one. It is removed by the change that makes the
+draft path executable.
+
 The evidence — gates run and their outcomes, tests added, before/after results for regression tests,
 and the adversarial review with its dispositions — is recorded in the task artifacts, not asserted in
 prose. A narrative description never substitutes for missing evidence.
