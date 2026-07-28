@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "PR #105 independent-review remediation adds runtime-subtype, flat-account, stop-less validation, owned-position completeness, and runner-consumer safety guards. Linux run 30353847656 first proved every bridge review mutant killed; its intentionally broad runner target exposed 84 unrelated legacy orchestration survivors, none classified or admitted. The changed consumer logic was isolated into two directly targetable helpers. Run 30354605318 then exposed seven helper survivors, all killed by exact halt-reason, immediate-cycle-return, alert, and error-log assertions. Final Linux run 30355260718 measured 4,923 mutants: 4,514 killed, 409 survived, and zero no-tests or unhealthy outcomes. No new survivor was added or classified. The expanded test selection also kills the formerly allowed live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, tightening the exact survivor ratchet from 410 to 409 while adding the live-runner-fail-closed target. No test, threshold, target, comparison rule, risk limit, or valid live behavior is weakened."
+change_explanation = "PR #105 final independent-review remediation accepts every operator.index-compatible MT5 position type except bool, applies raw magic ownership before side conversion, and adds _halt_and_flatten to the live-runner-fail-closed mutation surface. Initial complete run 30373748950 exposed 21 PR-specific survivors. Behavioural tests killed 18; the remaining two provable no-op expressions and one Mutmut-default artefact were removed from the executable representation rather than classified. Final Linux run 30376536794 measured 4,978 mutants: 4,569 killed, the same 409 inherited exact-name survivors, and zero no-tests or unhealthy outcomes. No survivor or classification was added. This follows the prior tightening from 410 to 409 survivors, where one inherited survivor was killed, none added, and one target added; it corrects the former summary that wrongly called that baseline unchanged. The current refresh increases both total and killed by 55, improves the score, and weakens no test, threshold, target, comparison rule, risk limit, or valid live behavior."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -32,8 +32,8 @@ targets = [
 ]
 
 [summary]
-total = 4923
-killed = 4514
+total = 4978
+killed = 4569
 survived = 409
 no_tests = 0
 skipped = 0
