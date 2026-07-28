@@ -103,3 +103,14 @@ classified. The changed logic was isolated into those two targetable helpers ins
 unrelated legacy survivors to the baseline. Because these dispositions materially change
 `live/runner.py` and the live bridge, the complete independent doubly-rigorous review must run
 again; this file does not mark the findings independently verified or the PR ready.
+
+## Post-disposition mutation status
+
+Linux run `30355260718` is the final builder measurement: 4,514 of 4,923 mutants killed, 409
+survived, zero no-tests and zero other unhealthy outcomes. All four reviewer-supplied bridge
+mutants and all seven extracted runner-helper survivors are killed. No PR-specific survivor is
+classified. The survivor set tightens by one because the added consumer tests kill the previously
+allowed `live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3`.
+
+This is builder evidence only. The dispositions remain pending the newly requested complete
+independent review, so `adversarial-review` and `live-money-review` remain non-zero in readiness.

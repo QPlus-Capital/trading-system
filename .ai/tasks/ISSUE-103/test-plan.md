@@ -47,6 +47,13 @@ failed independently. Restoring the intended code makes all nine guards green. T
 object tests satisfy the previously overclaimed adversarial case and pass only because unsupported
 comparison semantics never enter side selection.
 
+Linux run `30354605318` then selected the two extracted runner helpers and exposed seven survivors:
+three missing halt-reason/immediate-return assertions and four missing exact error-log assertions.
+All seven were reconstructed from their exact Mutmut bodies and killed by the focused runner
+tests. Final run `30355260718` reports 4,923 total, 4,514 killed, 409 survived, and zero unhealthy
+outcomes. It adds no survivor or classification and kills the formerly allowed
+`live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3`.
+
 ## Adversarial cases
 
 - Unknown positive and negative integer position types.

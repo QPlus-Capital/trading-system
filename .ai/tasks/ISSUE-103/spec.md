@@ -65,8 +65,9 @@ pricing call, or order request can be produced from an invalid value.
 - AC-08: The confirmed catch-all-side defect class is generalized in the finding registry and the
   converter plus all five boundaries enter the critical mutation scope.
 - AC-09: Every selected MT5 boundary mutant executes a test; all non-equivalent branch survivors
-  are killed, the exact Linux baseline is regenerated once, and every builder-controlled R3 gate
-  passes. The material remediation then receives a new full independent review before readiness.
+  are killed, the exact baseline is regenerated from the final Linux review-remediation report,
+  and every builder-controlled R3 gate passes. The material remediation then receives a new full
+  independent review before readiness.
 - AC-10: Integer/string runtime subclasses map by their documented values, booleans and loose-
   equality impostors remain rejected, and no rejected value reaches a terminal call.
 - AC-11: A flat account returns `[]` from both position surfaces; two owned positions of opposite

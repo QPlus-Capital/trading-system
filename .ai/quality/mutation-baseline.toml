@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "After PRs #116 and #100 merged, PR #105 was rebased and Linux Critical mutation run 30345100067 measured 4,909 mutants: 4,499 killed and 410 survived, with zero no-tests or unhealthy outcomes. The former PR #105 run 30339340183 reported 38 branch-specific survivors and two selected owned_positions mutants with no tests. New fake-broker behavioural tests killed 33 of those 38 survivors and both no-test mutants. The five remaining semantically meaningful default-argument mutants were not classified: the private order-side helper now requires an explicit opposite argument, and unchanged public defaults reference module constants, removing the Mutmut trampoline blind spot without changing a valid broker request. No survivor was added or classified for this change; the measured 410-name survivor set is exactly the current main set. Wholesale regeneration raises the exact total from 4,646 to 4,909 for the expanded MT5 order-boundary scope while preserving every target and tightening execution from two no-tests to zero. No test, threshold, target, comparison rule, risk limit, or live behavior is weakened."
+change_explanation = "PR #105 independent-review remediation adds runtime-subtype, flat-account, stop-less validation, owned-position completeness, and runner-consumer safety guards. Linux run 30353847656 first proved every bridge review mutant killed; its intentionally broad runner target exposed 84 unrelated legacy orchestration survivors, none classified or admitted. The changed consumer logic was isolated into two directly targetable helpers. Run 30354605318 then exposed seven helper survivors, all killed by exact halt-reason, immediate-cycle-return, alert, and error-log assertions. Final Linux run 30355260718 measured 4,923 mutants: 4,514 killed, 409 survived, and zero no-tests or unhealthy outcomes. No new survivor was added or classified. The expanded test selection also kills the formerly allowed live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, tightening the exact survivor ratchet from 410 to 409 while adding the live-runner-fail-closed target. No test, threshold, target, comparison rule, risk limit, or valid live behavior is weakened."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -24,6 +24,7 @@ targets = [
     "selection-protocol",
     "result-regression",
     "mt5-deal-export",
+    "live-runner-fail-closed",
     "monitoring-deal-reconstruction",
     "monitoring-stable-snapshot",
     "forward-cohort-identity",
@@ -31,9 +32,9 @@ targets = [
 ]
 
 [summary]
-total = 4909
-killed = 4499
-survived = 410
+total = 4923
+killed = 4514
+survived = 409
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -97,7 +98,6 @@ names = [
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_13",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_14",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_18",
-    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_7",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_9",
 ]
