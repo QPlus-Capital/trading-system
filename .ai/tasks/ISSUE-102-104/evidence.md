@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 20df6cfb9d3acb4a0c657f7fc5a7d02c22ebda19
+HEAD: 159d65ff343a0be2d32174e9aaabf9d6d50ef66f
 
 Only this evidence file may change after the tested HEAD.
 
@@ -14,13 +14,13 @@ Only this evidence file may change after the tested HEAD.
 |---|---|---:|---|
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | Three changed Python files were already formatted; Ruff, strict mypy, impact analysis, and 74 focused tests passed. |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_gate_consistency.py tests/test_docs_language.py` | 0 | 139 tests passed. |
-| `check` | `uvx --from rust-just just check` | 0 | Ruff, strict mypy over 180 files, Vulture, and 1,194 tests passed; one Linux-only mutation self-test skipped on Windows. |
+| `check` | `uvx --from rust-just just check` | 0 | Post-#119 rebase: Ruff, strict mypy over 180 files, Vulture, and 1,205 tests passed; one Linux-only mutation self-test skipped on Windows. |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | Impact selected and passed 74 direct/transitive monitoring and property tests. |
-| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Twenty properties passed twice at fixed Hypothesis seed `20260721`. |
+| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Post-#119 rebase: 21 properties passed twice at fixed Hypothesis seed `20260721`. |
 | `integration-tests` | `uv run pytest -q tests/test_monitoring_deals.py tests/test_monitoring_risk_view.py tests/test_monitoring_dashboard.py tests/test_monitoring_dashboard_copy.py` | 0 | 54 tests passed through the real deal, basis, risk-view, and dashboard consumers. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-102-104 --base origin/main` | 0 | Task artifact valid with 12 acceptance criteria and 9 invariants. |
 | `adversarial-review` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-102-104 --base origin/main` | 0 | Builder preflight records 18 counterexamples and one P3 human-decision question; independent Claude review remains required before ready state. |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 306 critical invariant tests passed, including live risk, signal parity, H4 path, result integrity, and readiness guards. |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | Post-#119 rebase: 316 critical invariant tests passed, including live risk, signal parity, H4 path, result integrity, and readiness guards. |
 | `mutation-on-touched-critical` | GitHub Actions `Critical mutation` | 1 | Blocked by infrastructure — Actions quota exhausted until 2026-08-01. The Linux gate did not run and no result is claimed. |
 | `parity-where-applicable` | `git diff --exit-code origin/main...HEAD -- live core research` plus SHA-256 comparison of both reference trade CSVs | 0 | No live, signal, or research producer changed; both trade hashes match the registered baseline exactly. |
 | `live-money-review` | source diff, 54 synthetic monitoring integration tests, and `just check-invariants` | 0 | No runner/MT5 initialization or live path edit; unsupported history fails closed before an operator direction is emitted. |
@@ -35,6 +35,7 @@ Only this evidence file may change after the tested HEAD.
 | `red-first` | `uv run pytest -q tests/test_monitoring_deals.py tests/test_monitoring_risk_view.py` before implementation | 1 | RED: 6 failed and 26 passed. Unknown type `13` and `True` did not raise; INOUT emitted one row instead of two; OUT_BY emitted none; scale-in volume remained `0.1` instead of `0.3`; and the reversal opening boundary was absent. |
 | `impact` | `uvx --from rust-just just impact origin/main` | 0 | One production file; two direct and two transitive monitoring test modules plus property tests; no unknown or dynamic edges. |
 | `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean, pip-audit found no known vulnerability, and Ruff security checks passed. |
+| `post-119-rebase` | `git rebase origin/main` plus baseline/scope audit | 0 | Rebased onto `main@1815baa`; branch carries #119's `4,568`-mutant, 417-survivor exact baseline unchanged. No survivor was classified and no baseline file is in the branch diff. |
 | `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-102-104 --base origin/main` | 1 | NOT READY solely on `mutation-on-touched-critical (1)`; task artifacts, R3 declaration, and HEAD-bound evidence all pass. |
 
 ## Numerical and artifact regression
@@ -55,12 +56,13 @@ profit factor, expectancy, and per-market rows. Aggregate ledger money remains e
 ## Coverage and mutation
 
 Red-first tests covered every requested guard. Final focused integration ran 54 tests, conservative
-impact ran 74, properties ran 20 twice, the full suite ran 1,194, and critical invariants ran 306.
+impact ran 74, properties now run 21 twice, the post-#119 full suite ran 1,205, and critical
+invariants ran 316.
 The existing `monitoring-deal-reconstruction` mutation target now includes the strict converter,
 entry/volume checks, opposite-side mapping, and row builder.
 
-The Linux Critical mutation workflow did not run. Its exact-survivor baseline therefore was not
-regenerated and no mutation score is claimed.
+The branch now inherits #119's measured `4,568`-mutant, 417-survivor exact-name baseline from main.
+It was not regenerated or extended here, and no branch-specific mutation result or score is claimed.
 
 ## Deferred checks
 
