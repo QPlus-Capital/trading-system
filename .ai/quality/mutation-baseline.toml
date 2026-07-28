@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "PRs #96, #97, and #98 merged while the Linux mutation gate had no native-Windows substitute and the organisation Actions allowance was exhausted. Run 30333581031 on main@494eafc measured 4,568 mutants: 4,151 killed and 417 survived. Wholesale regeneration raises the exact total from 4,406 to 4,568, removes 29 baseline survivors now killed by #96, and exact-name classifies 53 newly generated survivors confined to #96 path-risk/sizing code; #97 and #98 add no unexplained survivor. This tightens the survivor ratchet: every measured survivor is named, any additional survivor fails closed, and no target, comparison rule, or configured threshold is relaxed."
+change_explanation = "After PR #116 merged, PR #100 was rebased and Linux Critical mutation run 30341283390 measured 4,646 mutants: 4,236 killed and 410 survived, with every unhealthy status zero. Against PR #100 pre-test run 30339335275, behavioural tests killed 17 of the 24 branch-specific survivors (nine trade-direction and eight synchronized-H4 mutations); the remaining one trade-direction survivor and six synchronized-H4 survivors are proven equivalent and individually classified, with the money-parser cleanup deferred consistently to issue #120. The same tests also killed one pre-existing main survivor, while thirteen other stale synchronized-H4 names disappeared under the branch refactor, so the exact survivor set tightens from 417 to 410 even after adding the trade-direction-extraction target. No test, target, threshold, or comparison rule is weakened."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -11,6 +11,7 @@ targets = [
     "portfolio-drawdown",
     "portfolio-risk",
     "portfolio-accounting",
+    "trade-direction-extraction",
     "portfolio-resample",
     "portfolio-scenarios",
     "loss-day-path-risk",
@@ -30,9 +31,9 @@ targets = [
 ]
 
 [summary]
-total = 4568
-killed = 4151
-survived = 417
+total = 4646
+killed = 4236
+survived = 410
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -70,35 +71,35 @@ names = [
 classification = "meaningful"
 reason = "Existing focused tests do not distinguish these live admission mutations; retained as measured test-strength gaps."
 names = [
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_1",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_12",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_26",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_29",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_30",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_31",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_32",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_33",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_34",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_41",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_43",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_47",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_53",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_57",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_58",
-    "live.risk_control.xǁRiskControllerǁcheck_open__mutmut_7",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_1",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_12",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_26",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_29",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_30",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_31",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_32",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_33",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_34",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_41",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_43",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_47",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_53",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_57",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_58",
+    "live.risk_control.x\u01c1RiskController\u01c1check_open__mutmut_7",
 ]
 
 [[survivor_groups]]
 classification = "meaningful"
 reason = "Existing focused tests do not distinguish these live flattening mutations; retained as measured test-strength gaps."
 names = [
-    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_1",
-    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_13",
-    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_14",
-    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_18",
-    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3",
-    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_7",
-    "live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_9",
+    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_1",
+    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_13",
+    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_14",
+    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_18",
+    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3",
+    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_7",
+    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_9",
 ]
 
 [[survivor_groups]]
@@ -376,12 +377,12 @@ names = [
 classification = "meaningful"
 reason = "Focused bridge tests do not distinguish these remaining history-deal export mutations; retained as measured test-strength gaps."
 names = [
-    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_3",
-    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_4",
-    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_51",
-    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_54",
-    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_57",
-    "live.mt5_bridge.xǁMt5Bridgeǁhistory_deals__mutmut_7",
+    "live.mt5_bridge.x\u01c1Mt5Bridge\u01c1history_deals__mutmut_3",
+    "live.mt5_bridge.x\u01c1Mt5Bridge\u01c1history_deals__mutmut_4",
+    "live.mt5_bridge.x\u01c1Mt5Bridge\u01c1history_deals__mutmut_51",
+    "live.mt5_bridge.x\u01c1Mt5Bridge\u01c1history_deals__mutmut_54",
+    "live.mt5_bridge.x\u01c1Mt5Bridge\u01c1history_deals__mutmut_57",
+    "live.mt5_bridge.x\u01c1Mt5Bridge\u01c1history_deals__mutmut_7",
 ]
 
 [[survivor_groups]]
@@ -690,33 +691,20 @@ classification = "meaningful"
 reason = "PR #96 changed chronological synchronized-H4 peak/trough replay and generated these newly measured survivors. Existing focused tests do not distinguish them; they are retained as exact-name meaningful gaps from Linux run 30333581031, and any additional survivor fails closed."
 names = [
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_11",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_122",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_126",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_128",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_13",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_141",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_143",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_154",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_17",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_174",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_175",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_20",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_203",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_22",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_23",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_24",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_255",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_259",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_260",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_29",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_30",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_31",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_316",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_317",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_320",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_322",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_324",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_326",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_53",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_57",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_65",
@@ -725,6 +713,54 @@ names = [
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_78",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_80",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_84",
-    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_91",
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_95",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The authoritative Nautilus Money string contains no digit separator, and Python float() accepts underscores natively; removing this replacement therefore cannot alter the parsed value. Repository-wide cleanup of the four identical parsing idioms is scoped to issue #120."
+names = [
+    "research.portfolio.trades.x_timed_trades_from_report__mutmut_27",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The observed array is initialized to zero, assigned only literal True, and consumed only by scalar truth tests; NumPy default float64 values 0.0/1.0 have exactly the same observable truth values as bool False/True, and this internal array is never returned."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_124",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "np.zeros without a dtype already defaults to float64, so removing dtype=np.float64 produces the same chronological-drawdown array type, bytes, and values."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_139",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Decimal(\"1e-12\") and Decimal(\"1E-12\") denote the identical Decimal value and exponent; changing only the exponent marker case cannot alter the zero-span comparison or any result."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_152",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "This guard is true only on the final element of ordered_times; continue and break both leave no later iteration and execute no further code in the current iteration, so control flow and outputs are identical."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_253",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "interval_end is ordered_times[cursor + 1] from a sorted set and is therefore strictly greater than timestamp; changing <= to < cannot change this always-false comparison on any valid execution."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_258",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "The private function receives FloatArray opening and close equity inputs, and np.minimum therefore already produces float64 minimum values; later assignments are also floats, so np.asarray without the redundant dtype preserves the same type, bytes, and values."
+names = [
+    "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_318",
 ]
