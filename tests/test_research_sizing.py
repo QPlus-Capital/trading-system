@@ -228,8 +228,11 @@ def test_h4_reconstruction_fails_closed_without_explicit_direction() -> None:
     )
     closes = {"X": np.array([99.0])}
     h4 = {"X": pd.DataFrame({"timestamp_ns": [opened], "low": [90], "high": [101], "close": [99]})}
-    with pytest.raises(ValueError, match="requires an explicit is_long column"):
+    with pytest.raises(ValueError) as exc_info:
         simulate(trades, closes, day, day, 100_000.0, 0.06, flat(1.0), h4_prices=h4)
+    assert str(exc_info.value) == (
+        "synchronized H4 reconstruction requires an explicit is_long column"
+    )
 
 
 def test_a_morning_close_updates_the_balance_before_an_evening_open() -> None:

@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from research.portfolio.curves import interval_loss_days, load_h4_prices, to_day
 from research.portfolio.risk import AccountProfile, FlatRisk, evaluate_policy
-from research.portfolio.sizing import DailyDiagnostics, flat, simulate
+from research.portfolio.sizing import DailyDiagnostics, _synchronized_h4_minima, flat, simulate
 from research.portfolio.trades import timed_trades_from_report
 
 _HOUR_NS = 3_600_000_000_000
@@ -626,6 +626,128 @@ def test_wholly_missing_h4_lifetime_evidence_fails_closed() -> None:
 
     with pytest.raises(ValueError, match="no H4 observation overlaps B trade 1"):
         _run(trades, bars)
+
+
+def test_missing_h4_error_names_only_the_first_five_unobserved_trades() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = _ts("2025-04-10 09:00")
+    trades = pd.DataFrame(
+        [_trade(f"M{index}", opened, closed) for index in range(6)]
+    )
+    day = to_day(opened)
+
+    with pytest.raises(ValueError) as exc_info:
+        _synchronized_h4_minima(
+            trades,
+            np.ones(len(trades)),
+            {},
+            np.array([day], dtype=np.int64),
+            np.array([100_000.0]),
+            np.array([100_000.0]),
+            100_000.0,
+        )
+
+    assert str(exc_info.value) == (
+        "no H4 observation overlaps "
+        "M0 trade 0, M1 trade 1, M2 trade 2, M3 trade 3, M4 trade 4"
+    )
+
+
+def test_a_sparse_h4_bar_expires_at_its_own_interval_end() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = opened + 8 * _HOUR_NS
+    trades = pd.DataFrame([_trade("X", opened, closed)])
+    bars = {"X": _h4((opened, "99", "100.2", "99"))}
+
+    _realized, _equity, _sizes, diagnostics = _run(trades, bars)
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(99_800.0)
+
+
+@pytest.mark.parametrize(
+    ("start_balance", "expected_drawdown"),
+    [(0.0, 0.0), (1.0, -0.5)],
+)
+def test_chronological_drawdown_guards_zero_but_not_positive_equity(
+    start_balance: float,
+    expected_drawdown: float,
+) -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = opened + 4 * _HOUR_NS
+    day = to_day(opened)
+    trades = pd.DataFrame(
+        [
+            {
+                **_trade(
+                    "X",
+                    opened,
+                    closed,
+                    pnl_base=-0.5,
+                    entry=100.0,
+                    exit_=99.0,
+                ),
+                "is_long": True,
+            }
+        ]
+    )
+
+    _minimum, drawdown = _synchronized_h4_minima(
+        trades,
+        np.array([1.0]),
+        {"X": _h4((opened, "99", "100", "99"))},
+        np.array([day], dtype=np.int64),
+        np.array([start_balance]),
+        np.array([start_balance - 0.5]),
+        start_balance,
+    )
+
+    assert drawdown.tolist() == pytest.approx([expected_drawdown])
+
+
+def test_overlapping_h4_rows_do_not_expire_the_newer_interval_early() -> None:
+    opened = _ts("2025-04-10 05:00")
+    overlap = opened + 2 * _HOUR_NS
+    closed = opened + 8 * _HOUR_NS
+    trades = pd.DataFrame([_trade("X", opened, closed)])
+    bars = {
+        "X": _h4(
+            (opened, "99", "100.2", "99"),
+            (overlap, "98", "100.4", "99"),
+        )
+    }
+
+    _realized, _equity, _sizes, diagnostics = _run(trades, bars)
+
+    assert diagnostics.minimum_equity[0] == pytest.approx(99_600.0)
+
+
+def test_an_inactive_sparse_interval_does_not_invent_intermediate_h4_marks() -> None:
+    opened = _ts("2025-04-10 05:00")
+    closed = opened + 4 * _HOUR_NS
+    later_bar = opened + 48 * _HOUR_NS
+    first_day = to_day(opened)
+    last_day = to_day(later_bar)
+    trades = pd.DataFrame(
+        [_trade("X", opened, closed, pnl_base=-10.0, entry=100.0, exit_=99.0)]
+    )
+    day_count = last_day - first_day + 1
+
+    _minimum, drawdown = _synchronized_h4_minima(
+        trades,
+        np.array([1.0]),
+        {
+            "X": _h4(
+                (opened, "99", "100", "99"),
+                (later_bar, "99", "100", "99"),
+            )
+        },
+        np.arange(first_day, last_day + 1, dtype=np.int64),
+        np.full(day_count, 90.0),
+        np.full(day_count, 90.0),
+        100.0,
+    )
+
+    assert drawdown.tolist() == pytest.approx([-0.1, 0.0, -0.1])
 
 
 def test_synthetic_retired_structure_replaces_impossible_whole_day_breach() -> None:
