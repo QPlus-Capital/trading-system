@@ -96,12 +96,35 @@ source = "core/strategies/rsi_wpr_bb_signals.py"
 tests = [
   "tests/test_strategies_rsi_wpr_bb.py",
   "tests/test_live_parity_check.py",
+  "tests/test_signal_adapter_parity.py",
 ]
 possibly_affected = [
   "tests/test_live_runner.py",
   "tests/test_research_continuous_integration.py",
 ]
 reason = "the pure signal engine must remain identical across backtest and live adapters"
+
+[[edges]]
+source = "core/strategies/rsi_wpr_bb.py"
+tests = [
+  "tests/test_signal_adapter_parity.py",
+]
+possibly_affected = [
+  "tests/test_strategies_rsi_wpr_bb.py",
+  "tests/test_research_continuous_integration.py",
+]
+reason = "the Nautilus adapter must emit the same raw signal sequence as the live adapter"
+
+[[edges]]
+source = "live/runner.py"
+tests = [
+  "tests/test_signal_adapter_parity.py",
+]
+possibly_affected = [
+  "tests/test_live_runner.py",
+  "tests/test_live_runner_cycle.py",
+]
+reason = "the live replay adapter must emit the same raw signal sequence as the Nautilus adapter"
 
 [[edges]]
 source = "research/forward_test_registry.py"
