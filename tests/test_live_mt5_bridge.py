@@ -98,6 +98,13 @@ class _IndexablePositionType:
         return self._value
 
 
+class _BrokenIndexPositionType:
+    """Advertises the index protocol but cannot produce an integral value."""
+
+    def __index__(self) -> int:
+        raise TypeError("synthetic invalid index")
+
+
 class _RuntimeSide(str):
     """Synthetic C-extension-like string subtype."""
 
@@ -179,7 +186,10 @@ def test_match_terminal_symbol_none_when_absent() -> None:
     assert match_terminal_symbol("UT100", ["EURUSD", "US30"]) is None
 
 
-@pytest.mark.parametrize("raw_type", [-1, 2, True, False, 0.0, "0", None])
+@pytest.mark.parametrize(
+    "raw_type",
+    [-1, 2, True, False, 0.0, "0", None, _BrokenIndexPositionType()],
+)
 def test_positions_fail_closed_on_unknown_position_type(
     monkeypatch: pytest.MonkeyPatch,
     raw_type: object,

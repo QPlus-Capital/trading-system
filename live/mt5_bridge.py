@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal, SupportsIndex, cast
+from typing import Any, Literal, SupportsIndex
 
 try:  # pragma: no cover - Windows-only dependency; pure helpers stay importable without it
     import MetaTrader5 as mt5
@@ -79,10 +79,16 @@ def _runtime_side(
             raise Mt5SideError(
                 "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
             )
+        if not isinstance(value, SupportsIndex):
+            raise Mt5SideError(
+                "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+            )
         try:
-            position_type = operator.index(cast(SupportsIndex, value))
-        except TypeError:
-            position_type = None
+            position_type = operator.index(value)
+        except TypeError as exc:
+            raise Mt5SideError(
+                "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+            ) from exc
         if position_type == buy_type:
             return "BUY"
         if position_type == sell_type:
@@ -335,11 +341,15 @@ class Mt5Bridge:
             login=int(info.login),
         )
 
-    def positions(
+    def positions(self, name: str | None = None) -> list[Position]:
+        """Return every decodable account position for account-wide risk and monitoring."""
+        return self._positions(name, owned_only=False)
+
+    def _positions(
         self,
-        name: str | None = None,
+        name: str | None,
         *,
-        owned_only: bool = False,
+        owned_only: bool,
     ) -> list[Position]:
         """Return decodable positions, optionally restricted to this runner before conversion.
 
@@ -395,7 +405,7 @@ class Mt5Bridge:
         risk still counts ALL exposure (see the runner) -- ownership limits what we *act on*,
         not what we *account for*.
         """
-        return self.positions(name, owned_only=True)
+        return self._positions(name, owned_only=True)
 
     def loss_for_order(
         self, name: str, side: Side, entry: float, sl: float, volume: float
