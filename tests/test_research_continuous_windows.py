@@ -1,4 +1,4 @@
-"""#32 window attribution: which window owns a trade, and what a ruined account reports.
+"""#32 window attribution and constant-basis scoring across every result.
 
 Both rules decide what the study's per-window numbers MEAN, so they are pinned here rather than
 left to the shape of the production windows -- which happen to be contiguous and would hide the
@@ -25,9 +25,9 @@ def _ns(when: str) -> int:
 def test_a_trade_resolving_in_a_gap_still_belongs_to_a_window() -> None:
     """A step longer than the test length leaves an interval no window covers.
 
-    A position carried into it and closed there moved the account, so it must appear in the
+    A position carried into it and closed there is observed evidence, so it must appear in the
     counts. Bounding a window by its own end instead of by the next window's start dropped the
-    trade from every result while its PnL still shifted the next window's opening equity.
+    trade from every result.
     """
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-10-01", "2021-04-01")]
     closed = [(_ns("2020-08-15"), 500.0)]  # inside the gap
@@ -64,40 +64,34 @@ def test_every_window_is_measured_against_the_same_constant_basis() -> None:
     )
 
 
-def test_an_exhausted_account_is_not_reported_as_a_flat_window() -> None:
-    """Post-ruin windows averaged in as 0% would flatter the strategy that caused the ruin.
-
-    The denominator is constant, but whether an account still EXISTS is not: losing more than the
-    basis ends the run, and later windows are then arithmetic on a bankrupt account.
-    """
+def test_fixed_basis_scores_after_cumulative_losses_exceed_the_basis() -> None:
+    """Large fixed-size losses remain negative evidence; they never delete a later window."""
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
-    closed = [(_ns("2020-03-01"), -100_000.0)]  # the account is gone
-    with pytest.raises(RuntimeError, match="account exhausted"):
-        window_returns(closed, windows, basis=100_000.0)
-
-
-def test_positive_fractional_equity_is_not_treated_as_exhausted() -> None:
-    """Only zero or negative opening equity ends the run, not a positive small balance."""
-    windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
-    closed = [(_ns("2020-03-01"), -99.5)]
+    closed = [
+        (_ns("2020-03-01"), -60.0),
+        (_ns("2020-04-01"), -50.0),
+        (_ns("2020-09-01"), -20.0),
+    ]
 
     first, second = window_returns(closed, windows, basis=100.0)
 
-    assert first[0] == pytest.approx(-0.995)
-    assert second == (0.0, [])
+    assert first[0] == pytest.approx(-1.10)
+    assert first[1] == [pytest.approx(-0.60), pytest.approx(-0.50)]
+    assert second[0] == pytest.approx(-0.20)
+    assert second[1] == [pytest.approx(-0.20)]
 
 
-def test_exhaustion_error_preserves_the_window_and_post_ruin_reason() -> None:
-    """A hard failure must identify both the affected window and why averaging is invalid."""
+@pytest.mark.parametrize("prior_loss", [-99.5, -100.0, -150.0])
+def test_prior_loss_depth_never_changes_a_later_fixed_basis_score(prior_loss: float) -> None:
+    """The same later trade has the same score on every fixed-basis history."""
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
-    closed = [(_ns("2020-03-01"), -100.0)]
-    expected = (
-        f"account exhausted before window {windows[1].label}: equity 0 "
-        "-- post-ruin windows have no meaningful return and must not be averaged in"
-    )
+    closed = [(_ns("2020-03-01"), prior_loss), (_ns("2020-09-01"), 10.0)]
 
-    with pytest.raises(RuntimeError, match=f"^{expected}$"):
-        window_returns(closed, windows, basis=100.0)
+    first, second = window_returns(closed, windows, basis=100.0)
+
+    assert first[0] == pytest.approx(prior_loss / 100.0)
+    assert second[0] == pytest.approx(0.10)
+    assert second[1] == [pytest.approx(0.10)]
 
 
 def test_overlapping_windows_are_refused_before_any_run() -> None:
@@ -230,8 +224,8 @@ def test_a_close_on_an_inner_boundary_belongs_to_the_later_window() -> None:
     assert len(second[1]) == 1
 
 
-def test_a_losing_close_on_an_inner_boundary_does_not_reduce_opening_equity() -> None:
-    """The boundary close belongs to the later window and cannot bankrupt it before attribution."""
+def test_a_losing_close_on_an_inner_boundary_belongs_to_the_later_window() -> None:
+    """A negative boundary result is attributed once, using the same fixed basis."""
     windows = [_window("2020-01-01", "2020-07-01"), _window("2020-07-01", "2021-01-01")]
     closed = [(_ns("2020-07-01"), -100.0)]
 

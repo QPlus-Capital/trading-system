@@ -28,6 +28,23 @@ possibly_affected = [
 reason = "synchronized H4 daily diagnostics govern Stage-3/4 drawdown and breach decisions"
 
 [[edges]]
+source = "research/portfolio/trades.py"
+tests = [
+  "tests/test_research_portfolio_trades.py",
+  "tests/test_research_stage1_swap.py",
+  "tests/test_research_h4_path.py",
+  "tests/test_research_stages.py",
+]
+possibly_affected = [
+  "tests/test_research_sizing.py",
+  "tests/test_research_risk.py",
+  "tests/test_research_scenarios.py",
+  "tests/test_research_path_risk.py",
+  "tests/test_research_factsheet.py",
+]
+reason = "one extracted direction drives Stage-1/3 swap, synchronized H4 extrema, scenarios, and path-risk evidence"
+
+[[edges]]
 source = "research/portfolio/scenarios.py"
 tests = [
   "tests/test_research_scenarios.py",
@@ -96,12 +113,35 @@ source = "core/strategies/rsi_wpr_bb_signals.py"
 tests = [
   "tests/test_strategies_rsi_wpr_bb.py",
   "tests/test_live_parity_check.py",
+  "tests/test_signal_adapter_parity.py",
 ]
 possibly_affected = [
   "tests/test_live_runner.py",
   "tests/test_research_continuous_integration.py",
 ]
 reason = "the pure signal engine must remain identical across backtest and live adapters"
+
+[[edges]]
+source = "core/strategies/rsi_wpr_bb.py"
+tests = [
+  "tests/test_signal_adapter_parity.py",
+]
+possibly_affected = [
+  "tests/test_strategies_rsi_wpr_bb.py",
+  "tests/test_research_continuous_integration.py",
+]
+reason = "the Nautilus adapter must emit the same raw signal sequence as the live adapter"
+
+[[edges]]
+source = "live/runner.py"
+tests = [
+  "tests/test_signal_adapter_parity.py",
+]
+possibly_affected = [
+  "tests/test_live_runner.py",
+  "tests/test_live_runner_cycle.py",
+]
+reason = "the live replay adapter must emit the same raw signal sequence as the Nautilus adapter"
 
 [[edges]]
 source = "research/forward_test_registry.py"

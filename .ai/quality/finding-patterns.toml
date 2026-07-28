@@ -421,6 +421,42 @@ generalized = "path-dependent denominators must be timestamped and updated only 
 workflow_change = "drawdown mutation and property guards now exercise peak/trough order in both deterministic H4 and sampled-day replay"
 
 [[finding]]
+id = "F-035"
+source = "issue #60 constitution audit"
+defect_class = "canonical-component-overwritten-by-derived-value"
+severity = "P1"
+affected = "research/portfolio/stats.py"
+root_cause = "the broker-aware helper stored gross R and then overwrote that column with gross plus swap instead of preserving the cost decomposition"
+why_tests_missed = "tests covered R recovery and swap pricing separately but never invoked the helper's broker-aware branch and asserted all three column identities"
+regression = "test_market_trades_preserves_gross_and_separate_swap; test_market_trades_records_zero_swap_when_broker_has_no_market_spec"
+generalized = "when a derived financial quantity combines canonical components, preserve each component and assert the algebraic identity at the real orchestration boundary"
+workflow_change = "broker-aware return helpers now require behavioural gross/separate-cost/net schema guards"
+
+[[finding]]
+id = "F-036"
+source = "issue #58 constant-basis audit"
+defect_class = "coupled-accounting-model-not-updated-at-every-consumer"
+severity = "P1"
+affected = "research/engine/continuous.py"
+root_cause = "Stage 1 changed sizing and returns to a constant basis but retained a compounding running-equity viability check"
+why_tests_missed = "the constant-basis test varied prior profits only, while separate tests ratified the obsolete ruin behavior instead of crossing the negative basis boundary"
+regression = "test_fixed_basis_scores_after_cumulative_losses_exceed_the_basis; test_prior_loss_depth_never_changes_a_later_fixed_basis_score"
+generalized = "when an accounting basis changes, enumerate sizing, denominators, path statistics, boundary guards, error rows, and downstream completeness as one coupled quantity"
+workflow_change = "constant-basis scoring tests now cross both exact and beyond-basis cumulative losses and require later evidence to remain scored"
+
+[[finding]]
+id = "F-038"
+source = "issue #99 real-artifact direction reconciliation"
+defect_class = "stable-wrong-categorical-value-hidden-by-drift-gates"
+severity = "P1"
+affected = "research/portfolio/trades.py"
+root_cause = "closed-position state side=FLAT was mistaken for opening direction even though the independent entry-side field carries BUY or SELL"
+why_tests_missed = "synthetic reports invented side=LONG/SHORT and byte-identity checks only proved the all-false artifact was reproducible"
+regression = "test_closed_position_uses_entry_side_for_direction; test_unrecognized_entry_side_fails_closed; test_extracted_entry_side_drives_long_low_and_short_high; real per-market BUY/SELL reconciliation"
+generalized = "a stable wrong value is invisible to drift gates: categorical correctness must be asserted against an independent authoritative source, not a previous artifact"
+workflow_change = "producer tests mirror the real closed-record schema and high-risk categorical artifacts require independent distribution/source reconciliation"
+
+[[finding]]
 id = "F-039"
 source = "issue #107 Codex independent review of the workflow contract"
 defect_class = "procedural-contract-verified-by-reading-not-by-execution"
