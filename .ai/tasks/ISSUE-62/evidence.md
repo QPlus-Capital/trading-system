@@ -21,7 +21,7 @@ The only later commit permitted by readiness is this evidence file itself.
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-62 --base origin/main` | 0 | Task schema and traceability are valid with six acceptance criteria and six invariants. |
 | `adversarial-review` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-62 --base origin/main` | 0 | Twelve counterexamples are recorded with no unresolved finding; independent Claude review remains external. |
 | `invariants` | `uvx --from rust-just just check-invariants` | 0 | Post-#119 rebase: 318 critical-invariant tests pass and the new adapter harness is in the recipe. |
-| `mutation-on-touched-critical` | GitHub Actions `Critical mutation` | 1 | **blocked by infrastructure — Actions quota exhausted until 2026-08-01**. No workflow can start under the configured $0 budget; no mutation result is claimed. |
+| `mutation-on-touched-critical` | GitHub Actions `Critical mutation` run `30339330010` | 0 | Linux mutation passed on HEAD `ea9e18f`: 4,151 of 4,568 mutants killed and 417 survived, exactly matching main's refreshed baseline; this change adds no surviving mutant. |
 | `parity-where-applicable` | `uv run pytest -q tests/test_signal_adapter_parity.py tests/test_import_boundaries.py tests/test_live_parity_check.py` | 0 | Both real adapters agree on all 199 bars; structural construction and feed/data parity remain green. |
 | `live-money-review` | `.ai/tasks/ISSUE-62/review.md` plus production/live diff audit | 0 | No production or live byte changes; the fake bridge refuses every terminal access and no runner process was invoked. |
 | `human-decision-escalation` | `.ai/tasks/ISSUE-62/spec.md` build-only decision audit | 0 | Jan's quota/build-only decision is preserved: draft only until mutation and independent review complete. |
@@ -92,8 +92,6 @@ unchanged; no survivor count, score, classification, or baseline disposition is 
 
 ## Deferred checks
 
-The Linux Critical mutation gate is **blocked by infrastructure — Actions quota exhausted until
-2026-08-01**. On quota reset, push an empty commit to retrigger CI and mutation, reconcile the
-mutation baseline only if the measured run requires it, update evidence, rerun `pr-ready`, obtain
-independent Claude review, and only then consider marking the pull request ready. The draft pull
-request must not merge or enable auto-merge.
+The Linux Critical mutation gate completed successfully in Actions run `30339330010`; no mutation
+validation remains deferred. Independent Claude review and Jan's decision remain required. The
+draft pull request must not be marked ready, merged, or configured for auto-merge.
