@@ -82,6 +82,21 @@ class _FakeMt5:
         return 0, "synthetic"
 
 
+class _RuntimePositionType(int):
+    """Synthetic C-extension-like integer subtype."""
+
+
+class _RuntimeSide(str):
+    """Synthetic C-extension-like string subtype."""
+
+
+class _LooselyEqual:
+    """Unsupported value that compares equal to every legal runtime side."""
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+
 def _bridge_with_fake(monkeypatch: pytest.MonkeyPatch, fake: _FakeMt5) -> Mt5Bridge:
     monkeypatch.setattr(bridge_module, "mt5", fake)
     bridge = Mt5Bridge({"EURUSD": "EURUSD"})
@@ -169,6 +184,68 @@ def test_positions_fail_closed_on_unknown_position_type(
     _assert_no_order_boundary_call(fake)
 
 
+@pytest.mark.parametrize(
+    ("raw_type", "expected"),
+    [
+        (_RuntimePositionType(_FakeMt5.POSITION_TYPE_BUY), "BUY"),
+        (_RuntimePositionType(_FakeMt5.POSITION_TYPE_SELL), "SELL"),
+    ],
+)
+def test_positions_accept_integer_subtypes_from_the_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_type: int,
+    expected: Side,
+) -> None:
+    fake = _FakeMt5([_raw_position(raw_type)])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert bridge.positions()[0].side == expected
+    _assert_no_order_boundary_call(fake)
+
+
+@pytest.mark.parametrize(
+    ("side", "expected_order_type"),
+    [
+        (_RuntimeSide("BUY"), _FakeMt5.ORDER_TYPE_BUY),
+        (_RuntimeSide("SELL"), _FakeMt5.ORDER_TYPE_SELL),
+    ],
+)
+def test_order_boundaries_accept_string_subtypes_from_the_runtime(
+    monkeypatch: pytest.MonkeyPatch,
+    side: str,
+    expected_order_type: int,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert (
+        bridge.loss_for_order(
+            "EURUSD",
+            cast(Side, side),
+            entry=1.2,
+            sl=1.1,
+            volume=0.1,
+        )
+        == 25.0
+    )
+    assert fake.order_calc_profit_calls == [(expected_order_type, "EURUSD", 0.1, 1.2, 1.1)]
+
+
+def test_loose_equality_cannot_emit_a_position_side(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5([_raw_position(_LooselyEqual())])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.positions()
+
+    assert str(error.value) == (
+        "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+    )
+    _assert_no_order_boundary_call(fake)
+
+
 @pytest.mark.parametrize("invalid_side", ["", "buy", "HOLD", " BUY"])
 def test_loss_for_order_fails_before_pricing_invalid_side(
     monkeypatch: pytest.MonkeyPatch,
@@ -179,6 +256,25 @@ def test_loss_for_order_fails_before_pricing_invalid_side(
 
     with pytest.raises(Mt5Error) as error:
         bridge.loss_for_order("EURUSD", cast(Side, invalid_side), entry=1.2, sl=1.1, volume=0.1)
+
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
+    _assert_no_order_boundary_call(fake)
+
+
+def test_loose_equality_cannot_reach_order_pricing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.loss_for_order(
+            "EURUSD",
+            cast(Side, _LooselyEqual()),
+            entry=1.2,
+            sl=1.1,
+            volume=0.1,
+        )
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
     _assert_no_order_boundary_call(fake)
@@ -197,6 +293,20 @@ def test_loss_to_stop_fails_before_pricing_invalid_position_side(
     _assert_no_order_boundary_call(fake)
 
 
+def test_loss_to_stop_rejects_invalid_side_even_without_a_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+    position = replace(_position(cast(Side, "HOLD")), sl=0.0)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.loss_to_stop(position)
+
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
+    _assert_no_order_boundary_call(fake)
+
+
 def test_place_order_fails_before_terminal_calls_for_invalid_side(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -210,6 +320,19 @@ def test_place_order_fails_before_terminal_calls_for_invalid_side(
     _assert_no_order_boundary_call(fake)
 
 
+def test_loose_equality_cannot_reach_order_placement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.place_order("EURUSD", cast(Side, _LooselyEqual()), 0.1)
+
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
+    _assert_no_order_boundary_call(fake)
+
+
 def test_close_position_fails_before_terminal_calls_for_invalid_side(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -218,6 +341,19 @@ def test_close_position_fails_before_terminal_calls_for_invalid_side(
 
     with pytest.raises(Mt5Error) as error:
         bridge.close_position(_position(cast(Side, "HOLD")))
+
+    assert str(error.value) == "invalid order side; expected BUY or SELL"
+    _assert_no_order_boundary_call(fake)
+
+
+def test_loose_equality_cannot_reach_position_close(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5()
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5Error) as error:
+        bridge.close_position(_position(cast(Side, _LooselyEqual())))
 
     assert str(error.value) == "invalid order side; expected BUY or SELL"
     _assert_no_order_boundary_call(fake)
@@ -281,12 +417,34 @@ def test_positions_failure_names_the_terminal_error(
     _assert_no_order_boundary_call(fake)
 
 
+def test_positions_returns_empty_list_when_the_account_is_flat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5([])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert bridge.positions() == []
+    assert bridge.owned_positions() == []
+    assert fake.positions_get_calls == [{}, {}]
+    _assert_no_order_boundary_call(fake)
+
+
 def test_owned_positions_forward_the_filter_and_exclude_foreign_magic(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    own = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
-    foreign = SimpleNamespace(**{**vars(own), "ticket": 8, "magic": MAGIC + 1})
-    fake = _FakeMt5([own, foreign])
+    own_buy = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    own_sell = SimpleNamespace(
+        **{
+            **vars(own_buy),
+            "ticket": 8,
+            "type": _FakeMt5.POSITION_TYPE_SELL,
+            "price_open": 1.3,
+            "sl": 1.4,
+            "tp": 1.1,
+        }
+    )
+    foreign = SimpleNamespace(**{**vars(own_buy), "ticket": 9, "magic": MAGIC + 1})
+    fake = _FakeMt5([own_buy, own_sell, foreign])
     bridge = _bridge_with_fake(monkeypatch, fake)
 
     positions = bridge.owned_positions("EURUSD")
@@ -302,7 +460,18 @@ def test_owned_positions_forward_the_filter_and_exclude_foreign_magic(
             tp=1.4,
             profit=5.0,
             magic=MAGIC,
-        )
+        ),
+        Position(
+            ticket=8,
+            symbol="EURUSD",
+            side="SELL",
+            volume=0.1,
+            price_open=1.3,
+            sl=1.4,
+            tp=1.1,
+            profit=5.0,
+            magic=MAGIC,
+        ),
     ]
     assert fake.positions_get_calls == [{"symbol": "EURUSD"}]
 

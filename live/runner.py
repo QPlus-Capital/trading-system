@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 from core.paths import REPO_ROOT
 from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
-from live.mt5_bridge import Bar, Mt5Bridge, Position, Side, SymbolInfo
+from live.mt5_bridge import Bar, Mt5Bridge, Mt5Error, Position, Side, SymbolInfo
 from live.notify import Notifier
 from live.risk_control import RiskController, position_volume
 
@@ -61,6 +61,7 @@ def loss_day(now_utc: datetime) -> date:
     """
     local = now_utc.astimezone(_CHICAGO)
     return local.date() + timedelta(days=1) if local.time() >= _DAILY_RESET else local.date()
+
 
 _H4_SECONDS = 4 * 3600  # an H4 bar with open time t is closed once server time >= t + 4h
 
@@ -382,13 +383,19 @@ class LiveRunner:
             self._day = today
             self._persist()
 
-        # Recompute total open risk from the live positions (source of truth).
-        self._risk.open_risk = self._total_open_risk()
-
         # Safety cut-off first.
         flat = self._risk.must_flatten(account.equity)
         if flat.allowed:
             self._halt_and_flatten(flat.reason)
+            return
+
+        # Recompute total open risk from the live positions (source of truth). A bridge-side
+        # type rejection is itself a safety halt: proceeding would make the open-risk input
+        # unverifiable, while merely retrying would silently disable this cycle's controls.
+        try:
+            self._risk.open_risk = self._total_open_risk()
+        except Mt5Error as exc:
+            self._halt_and_flatten(f"cannot verify open positions: {exc}")
             return
 
         now_epoch = now.timestamp()  # server epoch, for deciding which bars have closed (M5)
@@ -666,7 +673,19 @@ class LiveRunner:
         self._notify.alert(f"SAFETY HALT: {reason} -- flattening & stopping")
         if self._mode is Mode.EXECUTE:
             for spec in self._markets:
-                for pos in self._bridge.owned_positions(spec.name):  # never flatten manual trades
+                try:
+                    positions = self._bridge.owned_positions(spec.name)
+                except Exception:
+                    log.exception(
+                        "failed to enumerate owned %s positions during safety halt",
+                        spec.name,
+                    )
+                    self._notify.alert(
+                        f"SAFETY HALT: could not enumerate owned {spec.name} positions; "
+                        "manual intervention required"
+                    )
+                    continue
+                for pos in positions:  # never flatten manual trades
                     try:
                         self._bridge.close_position(pos)
                     except Exception:

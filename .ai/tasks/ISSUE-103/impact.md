@@ -29,6 +29,12 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
   `live.runner._act`.
 - `close_position()` is called for reversals, long-only sell flattening, explicit flattening, and
   risk-controller flatten-all actions in `live.runner`.
+- `LiveRunner.run_once()` currently reconstructs open risk before evaluating `must_flatten()`.
+  A rejected external position type therefore raises before the daily/trailing cut-off. The
+  cut-off must execute first; a later reconstruction failure becomes a safety halt and alert.
+- `LiveRunner._halt_and_flatten()` currently catches close failures per position but not an
+  `owned_positions()` lookup failure per market. Lookup failure must be isolated and alerted so
+  later markets still receive best-effort flattening.
 - Legal values therefore retain the exact existing request path. Invalid values now terminate at
   the bridge boundary instead of becoming executable direction.
 - Research stages and trade artifacts do not import or call the live bridge. No Stage 1-4 result
@@ -43,8 +49,8 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
 - The critical mutation policy already copies and mutates `live/mt5_bridge.py`; its target will be
   extended from deal export to the side converter and the five affected methods. The final Linux
   report is the sole source for the wholesale exact-name baseline refresh.
-- `live/runner.py`, `live/risk_control.py`, signals, account profiles, and live configuration are
-  read-only consumers and remain unchanged.
+- `live/runner.py` is the only changed consumer. `live/risk_control.py`, signals, account profiles,
+  and live configuration remain unchanged.
 
 ## Mutation-testability impact
 
@@ -59,12 +65,17 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
 - Complete valid `Position`, pricing, entry-request, and close-request values are asserted against
   the independent fake-terminal source. Partial or shape-only assertions are insufficient at this
   live boundary.
+- The review supplied four hand-built bridge mutants. Flat-account, invalid-side/no-stop, and
+  owned-list-completeness tests each fail against the exact mutated behavior. Runtime-subclass
+  tests fail against the branch's exact-type converter. The runner safety and flatten methods now
+  enter the critical mutation target rather than relying on bridge-only coverage.
 
 ## Unknown or dynamic edges
 
 - MT5 is an external runtime API and Python type annotations cannot validate values received from
-  it. The tests model documented constants plus invalid enum/string values without importing or
-  initializing the Windows terminal package.
+  it. The tests model documented constants, C-extension-like integer/string subclasses, and
+  invalid enum/string/loose-equality values without importing or initializing the Windows terminal
+  package.
 - The repository cannot prove what a future MT5 release may add. The converter deliberately
   treats every unrecognized future value as an error, which is the required fail-closed behavior.
 - No ambiguous enum-semantic question remains: the issue and official documentation identify the
@@ -87,3 +98,12 @@ invalid boundary with a synthetic terminal that counts pricing and order calls.
 - Duplicating side validation per method so one copy can drift.
 - Reversing the valid close order or bid/ask price while hardening the invalid path.
 - A test asserting only `Mt5Error` without proving terminal pricing/order calls stayed at zero.
+- Requiring exact built-in types for a C-extension field, rejecting a semantically valid integer
+  or string subtype and disabling the whole positions surface.
+- Treating an empty position sequence like terminal failure, causing a flat account to abort every
+  runner cycle.
+- Returning before validating a stop-less position's side, leaving an ambiguous safety record.
+- Evaluating open-risk reconstruction before the daily/trailing stop, so an external read error
+  prevents the hard cut-off from running.
+- Catching close errors inside a flatten loop while leaving per-market enumeration outside the
+  handler, so one failed lookup silently prevents later markets from flattening.

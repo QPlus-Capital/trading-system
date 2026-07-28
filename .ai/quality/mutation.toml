@@ -214,6 +214,14 @@ mutant_patterns = [
 ]
 
 [[targets]]
+id = "live-runner-fail-closed"
+path = "live/runner.py"
+mutant_patterns = [
+    "live.runner.x*LiveRunner*run_once__mutmut_*",
+    "live.runner.x*LiveRunner*halt_and_flatten__mutmut_*",
+]
+
+[[targets]]
 id = "monitoring-deal-reconstruction"
 path = "monitoring/deals.py"
 mutant_patterns = [

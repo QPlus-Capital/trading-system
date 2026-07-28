@@ -25,6 +25,8 @@ pricing call, or order request can be produced from an invalid value.
 
 - One runtime converter accepts internal `"BUY"` / `"SELL"` strings and the terminal's explicit
   `POSITION_TYPE_BUY` / `POSITION_TYPE_SELL` values and returns the canonical internal `Side`.
+- The converter accepts integer and string subclasses supplied by extension/runtime boundaries,
+  while explicitly excluding booleans from the integer enum branch.
 - The converter rejects booleans, unknown integers, unknown strings, and every other object with a
   clear `Mt5Error`; it never assigns a default executable direction.
 - `positions()` converts each raw MT5 position type before constructing or emitting any `Position`.
@@ -34,6 +36,14 @@ pricing call, or order request can be produced from an invalid value.
   `order_send`.
 - `close_position()` validates its position side before reading a tick, selecting a filling mode,
   or calling `order_send`.
+- A flat account returns an empty position list, and ownership filtering returns every owned
+  position in terminal order rather than merely the first.
+- `loss_to_stop()` validates direction before the no-stop early return because an unverifiable
+  side cannot become safe merely by also lacking a stop.
+- The daily/trailing safety cut-off executes before open-risk reconstruction. If reconstruction
+  rejects an external position representation, the runner halts and alerts instead of retrying.
+- During a safety halt, a failed owned-position lookup for one market alerts and does not prevent
+  every retrievable owned position in later markets from being closed.
 - Valid BUY/SELL pricing, entry requests, close requests, and position records remain exactly as
   they are on `origin/main`.
 
@@ -57,6 +67,15 @@ pricing call, or order request can be produced from an invalid value.
 - AC-09: Every selected MT5 boundary mutant executes a test; all non-equivalent branch survivors
   are killed, the exact Linux baseline is regenerated once, and every builder-controlled R3 gate
   passes. The material remediation then receives a new full independent review before readiness.
+- AC-10: Integer/string runtime subclasses map by their documented values, booleans and loose-
+  equality impostors remain rejected, and no rejected value reaches a terminal call.
+- AC-11: A flat account returns `[]` from both position surfaces; two owned positions of opposite
+  sides plus a foreign position return the exact two owned positions in terminal order.
+- AC-12: An invalid side with no stop raises before the no-stop return and before pricing.
+- AC-13: A bridge-side position conversion failure halts and alerts the runner; a daily/trailing
+  breach is evaluated before any account-wide open-position read can fail.
+- AC-14: A failed owned-position lookup during flattening is alerted and isolated to that market;
+  every retrievable owned position in the remaining markets is still closed.
 
 ## Invariants
 
@@ -73,6 +92,8 @@ pricing call, or order request can be produced from an invalid value.
   research producer or configuration changes.
 - INV-07: The branch remains a draft, never merges autonomously, and requires Jan's approval after
   Linux mutation evidence and Claude's independent live-money review.
+- INV-08: A position-read exception can neither bypass the daily/trailing cut-off nor truncate
+  best-effort flattening of other markets without a critical log and alert.
 
 ## Assumptions
 
@@ -89,8 +110,9 @@ synthetic-only verification boundary.
 
 ## Expected artifacts
 
-- One bounded production change in `live/mt5_bridge.py`.
-- Focused synthetic tests in `tests/test_live_mt5_bridge.py`.
+- Bounded production changes in `live/mt5_bridge.py` and the safety consumers in `live/runner.py`.
+- Focused synthetic tests in `tests/test_live_mt5_bridge.py` and
+  `tests/test_live_runner_cycle.py`.
 - A generalized finding-registry entry and focused mutation patterns for the affected boundaries.
 - Complete `.ai/tasks/ISSUE-103/` evidence and a draft pull request pending independent review.
 - One wholesale mutation-baseline refresh from the final Linux report.
@@ -103,10 +125,11 @@ boundaries even though the new behavior only rejects invalid inputs.
 
 ## Human decisions required
 
-Jan has already ratified fail-closed behavior, exact accepted values, draft status, the requirement
-to kill rather than classify non-equivalent boundary mutants, F-040 registration, and the
-prohibition on touching the running live systems. Five semantically meaningful default-argument
-mutants were unobservable through Mutmut's unchanged trampoline defaults; the implementation
-therefore removes that untestable representation without changing the public defaults: the private
-order-type helper now requires explicit `opposite`, while public defaults reference immutable
-module constants. Jan retains the go-live and merge decision after a new full independent review.
+Jan has already ratified fail-closed behavior, runtime-compatible integer/string subclasses with
+explicit boolean rejection, exact accepted values, draft status, the requirement to kill rather
+than classify non-equivalent boundary mutants, F-040/F-041 registration, and the prohibition on
+touching the running live systems. Five semantically meaningful default-argument mutants were
+unobservable through Mutmut's unchanged trampoline defaults; the implementation therefore removes
+that untestable representation without changing the public defaults: the private order-type helper
+requires explicit `opposite`, while public defaults reference immutable module constants. Jan
+retains the go-live and merge decision after a new full independent review.

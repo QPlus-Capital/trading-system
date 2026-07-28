@@ -70,16 +70,16 @@ def _runtime_side(
     """Return the canonical side, rejecting every unsupported runtime value."""
     if position_types is not None:
         buy_type, sell_type = position_types
-        if type(value) is int and value == buy_type:
+        if isinstance(value, int) and not isinstance(value, bool) and value == buy_type:
             return "BUY"
-        if type(value) is int and value == sell_type:
+        if isinstance(value, int) and not isinstance(value, bool) and value == sell_type:
             return "SELL"
         raise Mt5Error(
             "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
         )
-    if type(value) is str and value == "BUY":
+    if isinstance(value, str) and value == "BUY":
         return "BUY"
-    if type(value) is str and value == "SELL":
+    if isinstance(value, str) and value == "SELL":
         return "SELL"
     raise Mt5Error("invalid order side; expected BUY or SELL")
 

@@ -64,3 +64,39 @@ complete fake-broker behavioural coverage, execute the previously uncovered `own
 boundary, and replace untestable literal defaults with behavior-identical explicit/module-constant
 forms. The earlier independent review does not cover this combined implementation. A new full
 independent live-money review is required; the builder does not resolve or waive that requirement.
+
+## Independent review after mutation remediation
+
+The independent reviewer reported no P0/P1 and five blocking P2 findings. The builder dispositions
+below record remediation evidence, not a replacement review:
+
+1. **P2 — exact built-in runtime types reject valid extension representations. Resolved.**
+   `_runtime_side` now accepts integer/string subclasses with `isinstance`, explicitly excludes
+   `bool`, and still rejects the existing invalid complement. Two integer-subtype and two
+   string-subtype cases were RED before the fix. Loose-equality impostors are rejected at raw
+   position, pricing, placement, and close boundaries with the full distinct error and zero
+   terminal calls.
+2. **P2 — flat-account `positions_get()` behavior was mutation-unpinned. Resolved.** Both
+   `positions()` and `owned_positions()` now have a direct empty-sequence oracle. Replacing
+   `raw is None` with `not raw` makes that test RED.
+3. **P2 — no-stop early return could move ahead of side validation. Resolved.** An invalid side
+   with `sl=0` must raise before pricing. Moving validation below the early return makes the test
+   RED; the fail-closed ordering remains unchanged.
+4. **P2 — bridge rejection was not covered through runner safety consumers. Resolved in the
+   builder patch, pending fresh review.** The daily/trailing cut-off now precedes open-risk
+   reconstruction. A later `Mt5Error` from position reconstruction halts and alerts. During an
+   execute-mode halt, a failed per-market ownership lookup is alerted and isolated so retrievable
+   positions in later markets still close. The former code failed both consumer tests.
+5. **P2 — owned-position completeness was not pinned. Resolved.** The fixture now contains two
+   owned opposite-side positions and one foreign position and asserts the exact ordered pair.
+   Appending `[:1]` makes the test RED.
+
+The test-plan overclaim is also resolved: a custom object whose equality always returns `True` is
+now passed independently to `positions`, `loss_for_order`, `place_order`, and `close_position`.
+Every boundary rejects it before terminal interaction.
+
+F-041 generalizes the review defect across external runtime representation and safety-consumer
+failure handling. Mutation policy includes both changed runner consumers in addition to every
+bridge boundary. Because these dispositions materially change `live/runner.py` and the live
+bridge, the complete independent doubly-rigorous review must run again; this file does not mark the
+findings independently verified or the PR ready.

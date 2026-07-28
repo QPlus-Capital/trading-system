@@ -10,7 +10,17 @@ from typing import cast
 
 import pytest
 from core.strategies.rsi_wpr_bb_signals import SignalParams
-from live.mt5_bridge import MAGIC, AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
+from live.mt5_bridge import (
+    MAGIC,
+    AccountState,
+    Bar,
+    Mt5Bridge,
+    Mt5Error,
+    Position,
+    Side,
+    SymbolInfo,
+)
+from live.notify import Notifier
 from live.risk_control import RiskController, RiskLimits
 from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, loss_day, size_order
 
@@ -115,9 +125,7 @@ class StubBridge:
             raise self.modify_error
         self.modified.append((position.ticket, sl, tp))
         self.open_positions = [
-            Position(
-                p.ticket, p.symbol, p.side, p.volume, p.price_open, sl, tp, p.profit
-            )
+            Position(p.ticket, p.symbol, p.side, p.volume, p.price_open, sl, tp, p.profit)
             if p.ticket == position.ticket
             else p
             for p in self.open_positions
@@ -126,6 +134,18 @@ class StubBridge:
     def close_position(self, position: Position, **kw: object) -> None:
         self.closed.append(position.ticket)
         self.open_positions = [p for p in self.open_positions if p.ticket != position.ticket]
+
+
+class _RecordingNotifier:
+    def __init__(self) -> None:
+        self.alerts: list[str] = []
+        self.signals: list[str] = []
+
+    def alert(self, text: str) -> None:
+        self.alerts.append(text)
+
+    def signal(self, text: str) -> None:
+        self.signals.append(text)
 
 
 def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
@@ -166,6 +186,110 @@ def test_run_once_halts_below_trailing_floor() -> None:
     runner2 = _runner(stub2, mode=Mode.EXECUTE)
     runner2.run_once()
     assert runner2._halted and stub2.closed == [8]  # EXECUTE flattens for real
+
+
+def test_runner_halts_loudly_when_the_bridge_rejects_a_position_type() -> None:
+    class RejectingPositionBridge(StubBridge):
+        def positions(self, name: str | None = None) -> list[Position]:
+            raise Mt5Error(
+                "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+            )
+
+    stub = RejectingPositionBridge()
+    notifier = _RecordingNotifier()
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        notifier=cast(Notifier, notifier),
+        day_start_balance=stub.balance,
+    )
+
+    runner.run_once()
+
+    assert runner._halted
+    assert runner._halt_reason == (
+        "cannot verify open positions: invalid MT5 position type; expected "
+        "POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+    )
+    assert notifier.alerts == [
+        "SAFETY HALT: cannot verify open positions: invalid MT5 position type; expected "
+        "POSITION_TYPE_BUY or POSITION_TYPE_SELL -- flattening & stopping"
+    ]
+    assert stub.placed == []
+    assert stub.closed == []
+
+
+def test_daily_safety_cutoff_precedes_unverifiable_open_risk() -> None:
+    class RejectingAccountPositionBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.account_position_reads = 0
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            if name is None:
+                self.account_position_reads += 1
+                raise Mt5Error(
+                    "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+                )
+            return [position for position in self.open_positions if position.symbol == name]
+
+    stub = RejectingAccountPositionBridge()
+    stub.equity = 90_000.0
+    stub.open_positions = [Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    runner.run_once()
+
+    assert runner._halted
+    assert stub.closed == [7]
+    assert stub.account_position_reads == 0
+
+
+def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails() -> None:
+    class PartiallyRejectingBridge(StubBridge):
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            if name == "XAUUSD":
+                raise Mt5Error(
+                    "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+                )
+            return [
+                position
+                for position in self.open_positions
+                if position.symbol == name and position.magic == MAGIC
+            ]
+
+    stub = PartiallyRejectingBridge()
+    stub.open_positions = [
+        Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(8, "EURUSD", "BUY", 0.1, 1.2, 1.1, 1.4, -5.0, MAGIC),
+        Position(9, "EURUSD", "SELL", 0.1, 1.3, 1.4, 1.1, -4.0, MAGIC),
+    ]
+    notifier = _RecordingNotifier()
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [
+            MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0),
+            MarketSpec(name="EURUSD", stop_loss_pct=1.0, take_profit_pct=3.0),
+        ],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        mode=Mode.EXECUTE,
+        notifier=cast(Notifier, notifier),
+        day_start_balance=stub.balance,
+    )
+
+    runner._halt_and_flatten("synthetic daily limit")
+
+    assert runner._halted
+    assert runner._halt_reason == "synthetic daily limit"
+    assert stub.closed == [8, 9]
+    assert [position.ticket for position in stub.open_positions] == [7]
+    assert notifier.alerts == [
+        "SAFETY HALT: synthetic daily limit -- flattening & stopping",
+        "SAFETY HALT: could not enumerate owned XAUUSD positions; manual intervention required",
+    ]
 
 
 def test_loss_day_rolls_at_16_15_chicago_dst_aware() -> None:
@@ -443,7 +567,12 @@ def test_broker_pricing_shrinks_a_volume_that_would_over_risk() -> None:
 
     # The broker actually loses twice that per lot (conversion / asymmetric tick value).
     priced = size_order(
-        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        "BUY",
+        2000.0,
+        1.0,
+        3.0,
+        info,
+        risk_amount=400.0,
         loss_fn=lambda _s, _e, _sl, vol: vol * 40.0,
     )
     assert priced is not None
@@ -455,17 +584,30 @@ def test_sizing_refuses_when_even_the_minimum_lot_over_risks() -> None:
     # Never silently accept more than the intended risk.
     stub = StubBridge()
     info = stub.symbol_info("XAUUSD")
-    assert size_order(
-        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
-        loss_fn=lambda _s, _e, _sl, vol: vol * 1_000_000.0,
-    ) is None
+    assert (
+        size_order(
+            "BUY",
+            2000.0,
+            1.0,
+            3.0,
+            info,
+            risk_amount=400.0,
+            loss_fn=lambda _s, _e, _sl, vol: vol * 1_000_000.0,
+        )
+        is None
+    )
 
 
 def test_unpriceable_candidates_keep_the_arithmetic_volume() -> None:
     stub = StubBridge()
     info = stub.symbol_info("XAUUSD")
     sized = size_order(
-        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        "BUY",
+        2000.0,
+        1.0,
+        3.0,
+        info,
+        risk_amount=400.0,
         loss_fn=lambda _s, _e, _sl, _v: None,
     )
     assert sized is not None and sized.volume == 20.0
@@ -521,9 +663,7 @@ def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk() -> None:
 def test_a_priceable_foreign_position_is_charged_into_open_risk() -> None:
     # Same situation, but the terminal CAN price it -> its stop-risk joins the total normally.
     stub = StubBridge()
-    stub.open_positions = [
-        Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)
-    ]
+    stub.open_positions = [Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)]
     stub.terminal_risk = 500.0
     runner = _runner(stub)
     runner.run_once()
