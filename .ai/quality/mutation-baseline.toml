@@ -33,6 +33,7 @@ targets = [
     "forward-cohort-identity",
     "forward-decision",
 ]
+policy_fingerprint = "8de06896bfc2c92e7cab3509478f847a03c112f8a5a989f2dc6c811162bd308a" # pragma: allowlist secret
 
 [summary]
 total = 5171
