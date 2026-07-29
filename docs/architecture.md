@@ -275,6 +275,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `scripts/quality/mutation.py` | Runs focused Linux mutation scopes and enforces the TOML survivor ratchet |
 | `scripts/quality/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
 | `scripts/quality/pr_body.py` | Binds required PR sections to one current, ready task artifact |
+| `scripts/quality/workflow_contract.py` | Renders workflow documents from the authoritative TOML contract and rejects drift |
 | `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `scripts/quality/hooks/pre_bash.py` | Collects Git/task metadata and emits Claude Code hook responses |
 
@@ -323,7 +324,7 @@ flowchart TD
 | `live/config/` | frozen live configs (promotion == adding one) | yes |
 | `core/config/broker/` | pulled swap snapshots per broker | yes |
 | `docs/` | methodology (the spec), runbook, this file | yes |
-| `.ai/quality/` | TOML risk, finding, task-schema, critical-dependency, and mutation models | yes |
+| `.ai/quality/` | TOML risk, workflow, finding, task-schema, critical-dependency, and mutation models | yes |
 | `.ai/tasks/` | concise task specifications, test traceability, review, and evidence | yes |
 | `.ai/impact/test-map.json` | local conservative changed-file test-impact recommendation | no |
 | `.claude/skills/` | Claude Code workflow procedures with trigger frontmatter | yes |

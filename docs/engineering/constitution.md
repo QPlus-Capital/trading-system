@@ -11,11 +11,16 @@ This repository trades **real money** on a live prop-firm account, sized off val
 defect here is not a bug report — it is a loss. Every rule exists because its absence has cost, or
 would cost, real money or a real methodology guarantee.
 
+This file states *what must hold*. [workflow.md](workflow.md) states *who does what, where, and in
+which order* — the board, the labels, the six phases from idea to merge, and the three guarded
+handover points.
+
 ## Roles and authority
 
 - **Codex is the primary builder.** It specifies the bounded change, classifies risk, analyses
   impact, proves the guard red, implements, verifies every required gate, maintains the task
-  artifact, and opens the ready pull request. It does not merge.
+  artifact, and opens the **draft** pull request that the independent review runs on. It marks a
+  pull request ready for review only once that review is clean, and it does not merge.
 - **Claude is the primary reviewer and conceptual designer.** It translates Jan's intent into a
   precise specification, then independently reviews the completed Codex change in fresh context
   through its read-only review skills and subagents. The builder never reviews its own work.
@@ -127,8 +132,13 @@ would cost, real money or a real methodology guarantee.
 Every non-trivial change carries a risk class (R0–R3) — see
 [risk-classes.md](risk-classes.md) and [`.ai/quality/risk-classes.toml`](../../.ai/quality/risk-classes.toml).
 Path matching sets a conservative minimum; the author **must upgrade** the class when the semantic
-impact is broader than the paths suggest. The class and its reason appear in the task spec and the
+impact is broader than the paths suggest. The class and its reason appear in the issue and the
 PR. R3 (live-money / sizing / risk / methodology / result integrity) never merges autonomously.
+
+The class does not only decide *whether* a change may merge — it sets *how much process the change
+carries*: the mandatory gates, which task artifacts exist as files, how many PR sections are
+required, and which review subagents run. The scale is tabulated in [workflow.md](workflow.md).
+Process is reduced only below the money path; on it, nothing is reduced.
 
 ## 10. Definition of Done
 
@@ -139,11 +149,16 @@ the task artifacts and PR evidence required by its risk class are present.
 
 ## 11. Required evidence before a PR
 
-A PR is opened only after implementation, deterministic verification, adversarial review, and
-remediation are complete. The evidence — gates run and their outcomes, tests added, before/after
-results for regression tests, and the adversarial review with its dispositions — is recorded in the
-task artifacts, not asserted in prose. A narrative description never substitutes for missing
-evidence. **Never claim correctness without executable evidence.**
+<!-- workflow-contract:pr-order:start -->
+A **draft** pull request is opened once implementation and deterministic verification are complete; it is what the independent review is performed on, so that every finding lands as an inline comment at the line it concerns. A pull request is marked **ready for review** only after that review and its remediation are complete — that is the point the readiness check gates, and it is the only state Jan is asked to merge from.
+
+**Transitional rule, until [#124](https://github.com/QPlus-Capital/trading-system/issues/124) lands.** The readiness gate currently blocks the *creation* of a pull request rather than the ready-for-review transition, so a draft cannot yet carry a review that has not happened. Until that gate moves, the independent review is performed on the **pushed branch** and the pull request is opened afterwards. This rule is stated here, at the same precedence as the paragraph it suspends, because a lower-ranking document cannot suspend this one. It is removed by the change that makes the draft path executable.
+<!-- workflow-contract:pr-order:end -->
+
+The evidence — gates run and their outcomes, tests added, before/after results for regression tests,
+and the adversarial review with its dispositions — is recorded in the task artifacts, not asserted in
+prose. A narrative description never substitutes for missing evidence.
+**Never claim correctness without executable evidence.**
 
 ## 12. Finding severity
 
@@ -181,11 +196,18 @@ no gate, because the report then says the numbers held.
 ## 16. Git and commits
 
 - Feature branch → PR → CI green + Claude adversarial review → Jan approves → merge.
-  Only a **trivial R0** change (docs/comments) may go straight to `main`; every R1+ change — any
-  code change — goes through a branch and a PR.
+  Every change reaches `main` through a feature branch and pull request.
+- One branch and one git worktree per issue, named `codex/<issue>-<slug>` — or
+  `claude/<issue>-<slug>` when Claude builds under the trading exception. A worktree keeps the main
+  checkout clean, so a running live runner never sees half-finished code.
 - [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`,
   `docs:`, `test:`, `chore:`. Author as **Jan Cwik <j.cwik@qplus-capital.com>**.
+- **Squash on merge**: one commit per issue, so every commit on `main` is complete and green and
+  `git bisect` can be trusted. The individual build steps stay visible in the pull request.
 - Commit and push finished, green work immediately; never push broken or half-done code.
+- When CI is red for an infrastructure reason rather than a code reason, a merge requires the same
+  checks run locally with their output recorded in the PR and the reason stated. There is no
+  unevidenced merge.
 
 ## 17. Generated artifacts
 
@@ -198,3 +220,24 @@ never committed.
 
 Commits are authored solely by the human operator. **Never** add an AI as a co-author or a
 `Co-Authored-By` trailer, in any repository commit, regardless of any default to the contrary.
+
+## 19. Workflow state and handovers
+
+The `Status` field of the GitHub project board is the single source of truth for where a change
+stands; agents move their own card through the `gh` CLI. Labels are not status: `approved` is
+a **build permit** that Claude writes only after Jan approves the specification, and that Codex
+removes as it starts. `risk:R0`–`risk:R3` carries the class.
+
+The specification lives in the issue body, not in a file — it is what Codex builds from and what Jan
+approves, so it belongs where both can read it.
+
+Three rules protect the handovers, and each is a fail-closed application of §3:
+
+- **Approval is written last.** When Claude approves an issue, the `approved` label is the final step. A
+  failure at any earlier step leaves the issue unarmed rather than half-approved.
+- **The permit is removed after the status moves, never before.** Otherwise a failed status update
+  would destroy the permit and strand the issue.
+- **The builder's context never reaches the reviewer.** The review runs in a fresh session, so it
+  checks what the code does rather than what it was meant to do.
+
+The full procedure is [workflow.md](workflow.md).

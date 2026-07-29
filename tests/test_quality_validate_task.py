@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -61,6 +65,67 @@ _R1_EVIDENCE_ROWS = """| Gate | Command | Exit status | Result |
 | `impacted-tests` | `verify impacted-tests` | 0 | pass |
 """
 
+_LEGACY_UNRESOLVED_TEST_PLAN_REFERENCES = frozenset(
+    {
+        (
+            ".ai/tasks/_templates/test-plan.md",
+            "test_invariant",
+        ),
+        (
+            ".ai/tasks/_templates/test-plan.md",
+            "test_name",
+        ),
+        (
+            ".ai/tasks/ISSUE-62/test-plan.md",
+            "test_gate_consistency",
+        ),
+        (
+            ".ai/tasks/ISSUE-91/test-plan.md",
+            "test_drawdown_uses_an_observable_h4_high_before_a_later_minimum",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_artifact_hashes_use_lineage_convention_and_detect_drift",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_candidate_missing_one_market_is_absent_everywhere",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_continuous_payload_reuses_stage1_net_trade_rows",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_daily_artifact_feeds_p04_block_selector_directly",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_daily_artifact_uses_prop_day_and_includes_zero_trade_days",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_exact_daily_window_and_market_window_invariants",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_generated_candidate_artifacts_remain_gitignored",
+        ),
+        (
+            ".ai/tasks/P-03/test-plan.md",
+            "test_production_candidate_definitions_are_formal_trials_only",
+        ),
+        (
+            ".ai/tasks/P-05/test-plan.md",
+            "test_edge_publishes_lineage_bound_spa_evidence",
+        ),
+        (
+            ".ai/tasks/P-05/test-plan.md",
+            "test_spa_loader_reads_the_persisted_daily_matrix_without_recomputation",
+        ),
+    }
+)
+
 
 def _task(tmp_path: Path, *, spec: str = _SPEC, test_plan: str = _TEST_PLAN) -> Path:
     task = tmp_path / "task"
@@ -78,6 +143,60 @@ def _task(tmp_path: Path, *, spec: str = _SPEC, test_plan: str = _TEST_PLAN) -> 
     for name, content in files.items():
         (task / name).write_text(content, encoding="utf-8")
     return task
+
+
+def test_every_task_plan_test_reference_collects() -> None:
+    """Full and bare acceptance-map references resolve, except an exact shrinking legacy set."""
+    references: list[str] = []
+    shorthand: list[str] = []
+    bare_references: list[tuple[str, str]] = []
+    for plan in sorted((REPO_ROOT / ".ai" / "tasks").glob("*/test-plan.md")):
+        text = plan.read_text(encoding="utf-8")
+        references.extend(re.findall(r"`(tests/[A-Za-z0-9_./-]+\.py::[A-Za-z0-9_:\[\].-]+)`", text))
+        shorthand.extend(re.findall(r"`(::test_[^`]+)`", text))
+        without_full_ids = re.sub(
+            r"`tests/[A-Za-z0-9_./-]+\.py::[A-Za-z0-9_:\[\].-]+`",
+            "",
+            text,
+        )
+        bare_references.extend(
+            (plan.relative_to(REPO_ROOT).as_posix(), name)
+            for name in re.findall(r"`(test_[A-Za-z0-9_]+)`", without_full_ids)
+        )
+    assert not shorthand, (
+        "task test plans must use complete pytest node ids, not path-relative shorthand: "
+        f"{shorthand}"
+    )
+
+    collected_names: set[str] = set()
+    for path in (REPO_ROOT / "tests").glob("test_*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        collected_names.update(
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        )
+    unresolved = {(path, name) for path, name in bare_references if name not in collected_names}
+    assert unresolved == _LEGACY_UNRESOLVED_TEST_PLAN_REFERENCES, (
+        "bare task-plan references must resolve; only the explicit shrinking legacy set is "
+        "temporarily allowed:\n"
+        f"new={sorted(unresolved - _LEGACY_UNRESOLVED_TEST_PLAN_REFERENCES)!r}\n"
+        f"now-resolved={sorted(_LEGACY_UNRESOLVED_TEST_PLAN_REFERENCES - unresolved)!r}"
+    )
+
+    assert references, "at least one task test plan must cite an executable pytest node id"
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *sorted(set(references))],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        "a task test plan cites a pytest node id that does not collect:\n"
+        f"{result.stdout}\n{result.stderr}"
+    )
 
 
 def _messages(task: Path) -> str:

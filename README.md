@@ -71,8 +71,7 @@ backtested and approved, so it is always unambiguous which strategies are live.
 
 Two-person team, lightweight by design:
 
-- Feature branches + pull requests are the norm. Only a **trivial R0** change (docs or
-  comments) may go straight to `main`; every code change goes through a branch and a PR.
+- Every change reaches `main` through a feature branch and pull request.
 - [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
   `chore:`, `docs:`, `refactor:`, `test:` …).
 - Codex is the primary builder; Claude is the primary conceptual designer and independent reviewer.
