@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 from core.paths import REPO_ROOT
 from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
-from live.mt5_bridge import Bar, Mt5Bridge, Position, Side, SymbolInfo
+from live.mt5_bridge import MAGIC, Bar, Mt5Bridge, Mt5SideError, Position, Side, SymbolInfo
 from live.notify import Notifier
 from live.risk_control import RiskController, position_volume
 
@@ -61,6 +61,7 @@ def loss_day(now_utc: datetime) -> date:
     """
     local = now_utc.astimezone(_CHICAGO)
     return local.date() + timedelta(days=1) if local.time() >= _DAILY_RESET else local.date()
+
 
 _H4_SECONDS = 4 * 3600  # an H4 bar with open time t is closed once server time >= t + 4h
 
@@ -382,13 +383,7 @@ class LiveRunner:
             self._day = today
             self._persist()
 
-        # Recompute total open risk from the live positions (source of truth).
-        self._risk.open_risk = self._total_open_risk()
-
-        # Safety cut-off first.
-        flat = self._risk.must_flatten(account.equity)
-        if flat.allowed:
-            self._halt_and_flatten(flat.reason)
+        if self._apply_cycle_safety(account.equity):
             return
 
         now_epoch = now.timestamp()  # server epoch, for deciding which bars have closed (M5)
@@ -407,6 +402,23 @@ class LiveRunner:
                 self._day,
             )
 
+    def _apply_cycle_safety(self, equity: float) -> bool:
+        """Apply hard stops, then refresh open risk; halt on an invalid position side."""
+        flat = self._risk.must_flatten(equity)
+        if flat.allowed:
+            self._halt_and_flatten(flat.reason)
+            return True
+
+        # A bridge-side type rejection is itself a safety halt: proceeding would make the
+        # open-risk input unverifiable. Routine terminal read failures remain retryable and must
+        # never liquidate a healthy book merely because the bridge uses one general error type.
+        try:
+            self._risk.open_risk = self._total_open_risk()
+        except Mt5SideError as exc:
+            self._halt_and_flatten(f"cannot verify open positions: {exc}")
+            return True
+        return False
+
     def _position_risk(self, pos: Position, info: SymbolInfo) -> float:
         """Money at risk entry->stop, priced by the TERMINAL when it can (#6).
 
@@ -417,22 +429,39 @@ class LiveRunner:
         return priced if priced is not None else position_risk(pos, info)
 
     def _total_open_risk(self) -> float:
-        """Total entry->stop risk of EVERY position on the account -- not just our markets.
+        """Total entry-to-stop risk of every decodable account position.
 
         A manual or foreign-EA position on an unconfigured symbol contributes its PnL to the
         equity this runner trades against, so its stop-risk must count against the open-risk cap
         too; visiting only ``self._markets`` let check_open admit new trades past the 2% cap.
         The terminal prices any symbol (#6/#19); the tick arithmetic needs our SymbolInfo and is
-        only available for configured markets. Exposure we cannot price at all fails CLOSED:
-        ``inf`` blocks every new entry until the operator resolves the position, and touches
-        nothing (the ownership filter still keeps us from managing it).
+        only available for configured markets. Any raw record that cannot be decoded, or exposure
+        that cannot be priced at all, fails closed: ``inf`` blocks every new entry until the
+        operator resolves it. An undecodable owned side remains a semantic safety halt so the
+        runner can close every other retrievable owned position.
         """
+        snapshot = self._bridge.position_snapshot()
+        unverifiable = next(
+            (issue for issue in snapshot.issues if issue.magic == MAGIC or issue.magic is None),
+            None,
+        )
+        if unverifiable is not None:
+            raise Mt5SideError(unverifiable.reason)
+        for issue in snapshot.issues:
+            log.critical(
+                "cannot decode account position ticket %s on %s -> blocking new entries "
+                "until it is resolved",
+                issue.ticket,
+                issue.symbol,
+            )
+        if snapshot.issues:
+            return math.inf
         infos: dict[str, SymbolInfo] = {}
         for spec in self._markets:
             info = self._bridge.symbol_info(spec.name)
             infos[info.name] = info  # keyed by TERMINAL symbol, which is what positions carry
         total = 0.0
-        for pos in self._bridge.positions():
+        for pos in snapshot.positions:
             if pos.sl <= 0:  # H5: unbounded downside -> loud warning + worst-case charge below
                 log.warning(
                     "open position %s (%s) has NO stop-loss -> charged at worst case",
@@ -453,7 +482,7 @@ class LiveRunner:
                 pos.ticket,
                 pos.symbol,
             )
-            return float("inf")
+            return math.inf
         return total
 
     def _process_market(self, spec: MarketSpec, equity: float, now_epoch: float) -> None:
@@ -666,11 +695,37 @@ class LiveRunner:
         self._notify.alert(f"SAFETY HALT: {reason} -- flattening & stopping")
         if self._mode is Mode.EXECUTE:
             for spec in self._markets:
-                for pos in self._bridge.owned_positions(spec.name):  # never flatten manual trades
+                positions = self._owned_positions_for_flatten(spec.name)
+                if positions is None:
+                    continue
+                for pos in positions:  # never flatten manual trades
                     try:
                         self._bridge.close_position(pos)
                     except Exception:
                         log.exception("failed to flatten %s ticket %s", spec.name, pos.ticket)
+
+    def _owned_positions_for_flatten(self, name: str) -> list[Position] | None:
+        """Return retrievable owned positions and alert for each undecodable raw record."""
+        try:
+            snapshot = self._bridge.owned_position_snapshot(name)
+        except Exception:
+            log.exception("failed to enumerate owned %s positions during safety halt", name)
+            self._notify.alert(
+                f"SAFETY HALT: could not enumerate owned {name} positions; "
+                "manual intervention required"
+            )
+            return None
+        for issue in snapshot.issues:
+            log.error(
+                "could not decode owned %s position ticket %s during safety halt",
+                name,
+                issue.ticket,
+            )
+            self._notify.alert(
+                f"SAFETY HALT: could not decode owned {name} position ticket {issue.ticket}; "
+                "manual intervention required"
+            )
+        return list(snapshot.positions)
 
     # -- loop --
 

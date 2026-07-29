@@ -4,13 +4,27 @@ These exercise the real orchestration path (day roll, safety cut-off, bar filter
 replay, sizing, risk gate) without a terminal -- the wiring that must work on Monday.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
 from core.strategies.rsi_wpr_bb_signals import SignalParams
-from live.mt5_bridge import MAGIC, AccountState, Bar, Mt5Bridge, Position, Side, SymbolInfo
+from live import mt5_bridge as bridge_module
+from live.mt5_bridge import (
+    MAGIC,
+    AccountState,
+    Bar,
+    Mt5Bridge,
+    Mt5Error,
+    Mt5SideError,
+    Position,
+    Side,
+    SymbolInfo,
+)
+from live.notify import Notifier
 from live.risk_control import RiskController, RiskLimits
 from live.runner import _H4_SECONDS, LiveRunner, MarketSpec, Mode, loss_day, size_order
 
@@ -70,8 +84,14 @@ class StubBridge:
     def positions(self, name: str | None = None) -> list[Position]:
         return list(self.open_positions)
 
+    def position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+        return SimpleNamespace(positions=tuple(self.positions(name)), issues=())
+
     def owned_positions(self, name: str | None = None) -> list[Position]:
         return [p for p in self.positions(name) if p.magic == MAGIC]
+
+    def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+        return SimpleNamespace(positions=tuple(self.owned_positions(name)), issues=())
 
     def latest_bars(self, name: str, n: int) -> list[Bar]:
         return self.bars[-n:]
@@ -115,9 +135,7 @@ class StubBridge:
             raise self.modify_error
         self.modified.append((position.ticket, sl, tp))
         self.open_positions = [
-            Position(
-                p.ticket, p.symbol, p.side, p.volume, p.price_open, sl, tp, p.profit
-            )
+            Position(p.ticket, p.symbol, p.side, p.volume, p.price_open, sl, tp, p.profit)
             if p.ticket == position.ticket
             else p
             for p in self.open_positions
@@ -126,6 +144,18 @@ class StubBridge:
     def close_position(self, position: Position, **kw: object) -> None:
         self.closed.append(position.ticket)
         self.open_positions = [p for p in self.open_positions if p.ticket != position.ticket]
+
+
+class _RecordingNotifier:
+    def __init__(self) -> None:
+        self.alerts: list[str] = []
+        self.signals: list[str] = []
+
+    def alert(self, text: str) -> None:
+        self.alerts.append(text)
+
+    def signal(self, text: str) -> None:
+        self.signals.append(text)
 
 
 def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
@@ -139,6 +169,73 @@ def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
         # they state the loss day's opening balance the way an operator would.
         day_start_balance=stub.balance,
     )
+
+
+def _raw_position(
+    ticket: int,
+    symbol: str,
+    type_: object,
+    magic: object,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        ticket=ticket,
+        symbol=symbol,
+        type=type_,
+        volume=0.1,
+        price_open=2000.0,
+        sl=1980.0,
+        tp=2060.0,
+        profit=-10.0,
+        magic=magic,
+    )
+
+
+def _wire_raw_position_bridge(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_positions: list[SimpleNamespace],
+) -> StubBridge:
+    class RawTerminal:
+        POSITION_TYPE_BUY = 0
+        POSITION_TYPE_SELL = 1
+
+        @staticmethod
+        def positions_get(**kwargs: object) -> list[SimpleNamespace]:
+            symbol = kwargs.get("symbol")
+            return [
+                position
+                for position in raw_positions
+                if symbol is None or position.symbol == symbol
+            ]
+
+        @staticmethod
+        def last_error() -> tuple[int, str]:
+            return 0, "synthetic"
+
+    monkeypatch.setattr(bridge_module, "mt5", RawTerminal())
+    real_bridge = Mt5Bridge({"XAUUSD": "XAUUSD"})
+    real_bridge._connected = True
+    real_bridge._resolved["XAUUSD"] = "XAUUSD"
+
+    class RawPositionBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.open_positions = [
+                Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)
+            ]
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            return real_bridge.positions(name)
+
+        def position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, real_bridge.position_snapshot(name))
+
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            return real_bridge.owned_positions(name)
+
+        def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, real_bridge.owned_position_snapshot(name))
+
+    return RawPositionBridge()
 
 
 def test_run_once_full_cycle_no_signal_no_orders() -> None:
@@ -166,6 +263,575 @@ def test_run_once_halts_below_trailing_floor() -> None:
     runner2 = _runner(stub2, mode=Mode.EXECUTE)
     runner2.run_once()
     assert runner2._halted and stub2.closed == [8]  # EXECUTE flattens for real
+
+
+def test_runner_halts_loudly_and_flattens_retrievable_positions_from_real_bridge(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_positions = [
+        SimpleNamespace(
+            ticket=11,
+            symbol="XAUUSD",
+            type=0,
+            volume=0.1,
+            price_open=2000.0,
+            sl=1980.0,
+            tp=2060.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+        SimpleNamespace(
+            ticket=13,
+            symbol="XAUUSD",
+            type=7,
+            volume=0.1,
+            price_open=2000.0,
+            sl=1980.0,
+            tp=2060.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+    ]
+
+    class RawTerminal:
+        POSITION_TYPE_BUY = 0
+        POSITION_TYPE_SELL = 1
+
+        @staticmethod
+        def positions_get(**kwargs: object) -> list[SimpleNamespace]:
+            symbol = kwargs.get("symbol")
+            return [
+                position
+                for position in raw_positions
+                if symbol is None or position.symbol == symbol
+            ]
+
+        @staticmethod
+        def last_error() -> tuple[int, str]:
+            return 0, "synthetic"
+
+    monkeypatch.setattr(bridge_module, "mt5", RawTerminal())
+    position_bridge = Mt5Bridge({"XAUUSD": "XAUUSD"})
+    position_bridge._connected = True
+    position_bridge._resolved["XAUUSD"] = "XAUUSD"
+
+    class RawPositionBridge(StubBridge):
+        def positions(self, name: str | None = None) -> list[Position]:
+            return position_bridge.positions(name)
+
+        def position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.position_snapshot(name))
+
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            return position_bridge.owned_positions(name)
+
+        def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.owned_position_snapshot(name))
+
+    stub = RawPositionBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+    ]
+    notifier = _RecordingNotifier()
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        mode=Mode.EXECUTE,
+        notifier=cast(Notifier, notifier),
+        day_start_balance=stub.balance,
+    )
+
+    runner.run_once()
+
+    assert runner._halted
+    assert runner._halt_reason == (
+        "cannot verify open positions: invalid MT5 position type; expected "
+        "POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+    )
+    assert notifier.alerts[0] == (
+        "SAFETY HALT: cannot verify open positions: invalid MT5 position type; expected "
+        "POSITION_TYPE_BUY or POSITION_TYPE_SELL -- flattening & stopping"
+    )
+    assert runner._last_bar_time == {}
+    assert stub.placed == []
+    assert stub.closed == [11]
+    assert notifier.alerts[-1] == (
+        "SAFETY HALT: could not decode owned XAUUSD position ticket 13; "
+        "manual intervention required"
+    )
+
+
+def test_transient_symbol_info_failure_does_not_halt_or_flatten() -> None:
+    class OneShotSymbolInfoFailureBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_symbol_info = True
+
+        def symbol_info(self, name: str) -> SymbolInfo:
+            if self.fail_symbol_info:
+                self.fail_symbol_info = False
+                raise Mt5Error("symbol_info failed for XAUUSD: synthetic transient fault")
+            return super().symbol_info(name)
+
+    stub = OneShotSymbolInfoFailureBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+    ]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with pytest.raises(Mt5Error, match="synthetic transient fault"):
+        runner.run_once()
+
+    assert not runner._halted
+    assert runner._halt_reason == ""
+    assert stub.closed == []
+
+
+def test_healthy_cycle_after_transient_read_still_evaluates_must_flatten() -> None:
+    class OneShotSymbolInfoFailureBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_symbol_info = True
+
+        def symbol_info(self, name: str) -> SymbolInfo:
+            if self.fail_symbol_info:
+                self.fail_symbol_info = False
+                raise Mt5Error("symbol_info failed for XAUUSD: synthetic transient fault")
+            return super().symbol_info(name)
+
+    stub = OneShotSymbolInfoFailureBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+    ]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with pytest.raises(Mt5Error, match="synthetic transient fault"):
+        runner.run_once()
+    stub.equity = 90_000.0
+    runner.run_once()
+
+    assert runner._halted
+    assert runner._halt_reason == "trailing stop: equity 90000 <= floor 95000"
+    assert stub.closed == [11, 12]
+
+
+def test_transient_positions_read_failure_does_not_halt_or_flatten() -> None:
+    class OneShotPositionsFailureBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.fail_positions = True
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            if name is None and self.fail_positions:
+                self.fail_positions = False
+                raise Mt5Error("positions_get failed: synthetic transient fault")
+            return super().positions(name)
+
+    stub = OneShotPositionsFailureBridge()
+    stub.open_positions = [
+        Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+    ]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with pytest.raises(Mt5Error, match="synthetic transient fault"):
+        runner.run_once()
+
+    assert not runner._halted
+    assert runner._halt_reason == ""
+    assert stub.closed == []
+
+
+def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw_positions = [
+        SimpleNamespace(
+            ticket=20,
+            symbol="GBPJPY",
+            type=7,
+            volume=0.1,
+            price_open=200.0,
+            sl=190.0,
+            tp=220.0,
+            profit=5.0,
+            magic=999,
+        ),
+        SimpleNamespace(
+            ticket=11,
+            symbol="XAUUSD",
+            type=0,
+            volume=0.1,
+            price_open=2000.0,
+            sl=1980.0,
+            tp=2060.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+        SimpleNamespace(
+            ticket=12,
+            symbol="XAUUSD",
+            type=1,
+            volume=0.1,
+            price_open=2000.0,
+            sl=2020.0,
+            tp=1940.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+    ]
+
+    class RawTerminal:
+        POSITION_TYPE_BUY = 0
+        POSITION_TYPE_SELL = 1
+
+        @staticmethod
+        def positions_get(**kwargs: object) -> list[SimpleNamespace]:
+            symbol = kwargs.get("symbol")
+            return [
+                position
+                for position in raw_positions
+                if symbol is None or position.symbol == symbol
+            ]
+
+        @staticmethod
+        def last_error() -> tuple[int, str]:
+            return 0, "synthetic"
+
+    terminal = RawTerminal()
+    monkeypatch.setattr(bridge_module, "mt5", terminal)
+    position_bridge = Mt5Bridge({"XAUUSD": "XAUUSD"})
+    position_bridge._connected = True
+    position_bridge._resolved["XAUUSD"] = "XAUUSD"
+
+    class RawPositionBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.open_positions = [
+                Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+                Position(12, "XAUUSD", "SELL", 0.1, 2000.0, 2020.0, 1940.0, -10.0, MAGIC),
+            ]
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            return position_bridge.positions(name)
+
+        def position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.position_snapshot(name))
+
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            return position_bridge.owned_positions(name)
+
+        def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.owned_position_snapshot(name))
+
+    stub = RawPositionBridge()
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    runner.run_once()
+
+    assert not runner._halted
+    assert runner._halt_reason == ""
+    assert stub.closed == []
+    assert [position.ticket for position in stub.open_positions] == [11, 12]
+
+
+@pytest.mark.parametrize("order", ["owned_first", "foreign_first"])
+def test_an_undecodable_owned_side_halts_whatever_the_enumeration_order(
+    monkeypatch: pytest.MonkeyPatch,
+    order: str,
+) -> None:
+    foreign = _raw_position(20, "GBPJPY", 7, 999)
+    owned = _raw_position(21, "XAUUSD", 7, MAGIC)
+    raw = [owned, foreign] if order == "owned_first" else [foreign, owned]
+
+    stub = _wire_raw_position_bridge(monkeypatch, raw)
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    runner.run_once()
+
+    assert runner._halted, (
+        f"order={order}: halted={runner._halted}, reason={runner._halt_reason!r}, "
+        f"open_risk={runner._risk.open_risk}"
+    )
+
+
+def test_a_position_whose_magic_cannot_be_decoded_is_treated_as_unverifiable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unreadable_magic = _raw_position(22, "XAUUSD", 0, "not-an-int")
+
+    stub = _wire_raw_position_bridge(monkeypatch, [unreadable_magic])
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    runner.run_once()
+
+    assert runner._halted, (
+        f"halted={runner._halted}, reason={runner._halt_reason!r}, "
+        f"open_risk={runner._risk.open_risk}"
+    )
+
+
+@pytest.mark.parametrize("stop", [190.0, 0.0])
+def test_foreign_unknown_position_type_blocks_new_risk_without_halting(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    stop: float,
+) -> None:
+    raw_positions = [
+        SimpleNamespace(
+            ticket=20,
+            symbol="GBPJPY",
+            type=7,
+            volume=1.0,
+            price_open=200.0,
+            sl=stop,
+            tp=180.0,
+            profit=0.0,
+            magic=999,
+        )
+    ]
+
+    class RawTerminal:
+        POSITION_TYPE_BUY = 0
+        POSITION_TYPE_SELL = 1
+
+        @staticmethod
+        def positions_get(**kwargs: object) -> list[SimpleNamespace]:
+            symbol = kwargs.get("symbol")
+            return [
+                position
+                for position in raw_positions
+                if symbol is None or position.symbol == symbol
+            ]
+
+        @staticmethod
+        def last_error() -> tuple[int, str]:
+            return 0, "synthetic"
+
+    monkeypatch.setattr(bridge_module, "mt5", RawTerminal())
+    position_bridge = Mt5Bridge({"XAUUSD": "XAUUSD"})
+    position_bridge._connected = True
+    position_bridge._resolved["XAUUSD"] = "XAUUSD"
+
+    class RawPositionBridge(StubBridge):
+        def positions(self, name: str | None = None) -> list[Position]:
+            return position_bridge.positions(name)
+
+        def position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.position_snapshot(name))
+
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            return position_bridge.owned_positions(name)
+
+        def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.owned_position_snapshot(name))
+
+    stub = RawPositionBridge()
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    monkeypatch.setattr(runner, "_replay_signal", lambda closed: (True, False))
+
+    with caplog.at_level(logging.CRITICAL, logger="live"):
+        runner.run_once()
+
+    assert runner._risk.open_risk == float("inf")
+    assert not runner._halted
+    assert stub.placed == []
+    assert stub.closed == []
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.CRITICAL
+    ] == [
+        "cannot decode account position ticket 20 on GBPJPY -> blocking new entries until it is "
+        "resolved"
+    ]
+
+
+def test_trailing_breach_flattens_each_retrievable_owned_raw_position(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    raw_positions = [
+        SimpleNamespace(
+            ticket=11,
+            symbol="XAUUSD",
+            type=0,
+            volume=0.1,
+            price_open=2000.0,
+            sl=1980.0,
+            tp=2060.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+        SimpleNamespace(
+            ticket=13,
+            symbol="XAUUSD",
+            type=7,
+            volume=0.1,
+            price_open=2000.0,
+            sl=1980.0,
+            tp=2060.0,
+            profit=-10.0,
+            magic=MAGIC,
+        ),
+    ]
+
+    class RawTerminal:
+        POSITION_TYPE_BUY = 0
+        POSITION_TYPE_SELL = 1
+
+        @staticmethod
+        def positions_get(**kwargs: object) -> list[SimpleNamespace]:
+            symbol = kwargs.get("symbol")
+            return [
+                position
+                for position in raw_positions
+                if symbol is None or position.symbol == symbol
+            ]
+
+        @staticmethod
+        def last_error() -> tuple[int, str]:
+            return 0, "synthetic"
+
+    monkeypatch.setattr(bridge_module, "mt5", RawTerminal())
+    position_bridge = Mt5Bridge({"XAUUSD": "XAUUSD"})
+    position_bridge._connected = True
+    position_bridge._resolved["XAUUSD"] = "XAUUSD"
+
+    class RawPositionBridge(StubBridge):
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            return position_bridge.owned_positions(name)
+
+        def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.owned_position_snapshot(name))
+
+    stub = RawPositionBridge()
+    stub.equity = 90_000.0
+    stub.open_positions = [Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
+    notifier = _RecordingNotifier()
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0)],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        mode=Mode.EXECUTE,
+        notifier=cast(Notifier, notifier),
+        day_start_balance=stub.balance,
+    )
+
+    with caplog.at_level(logging.ERROR, logger="live"):
+        runner.run_once()
+
+    assert runner._halted
+    assert runner._halt_reason == "trailing stop: equity 90000 <= floor 95000"
+    assert stub.closed == [11]
+    assert notifier.alerts[-1] == (
+        "SAFETY HALT: could not decode owned XAUUSD position ticket 13; "
+        "manual intervention required"
+    )
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.ERROR
+    ] == ["could not decode owned XAUUSD position ticket 13 during safety halt"]
+
+
+def test_daily_safety_cutoff_precedes_unverifiable_open_risk() -> None:
+    class RejectingAccountPositionBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.account_position_reads = 0
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            if name is None:
+                self.account_position_reads += 1
+                raise Mt5SideError(
+                    "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+                )
+            return [position for position in self.open_positions if position.symbol == name]
+
+    stub = RejectingAccountPositionBridge()
+    stub.equity = 90_000.0
+    stub.open_positions = [Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    runner.run_once()
+
+    assert runner._halted
+    assert runner._halt_reason == "trailing stop: equity 90000 <= floor 95000"
+    assert runner._last_bar_time == {}
+    assert stub.closed == [7]
+    assert stub.account_position_reads == 0
+
+
+def test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class PartiallyRejectingBridge(StubBridge):
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            if name == "XAUUSD":
+                raise Mt5Error("positions_get failed: synthetic enumeration fault")
+            return [
+                position
+                for position in self.open_positions
+                if position.symbol == name and position.magic == MAGIC
+            ]
+
+    stub = PartiallyRejectingBridge()
+    stub.open_positions = [
+        Position(7, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC),
+        Position(8, "EURUSD", "BUY", 0.1, 1.2, 1.1, 1.4, -5.0, MAGIC),
+        Position(9, "EURUSD", "SELL", 0.1, 1.3, 1.4, 1.1, -4.0, MAGIC),
+    ]
+    notifier = _RecordingNotifier()
+    runner = LiveRunner(
+        cast(Mt5Bridge, stub),
+        [
+            MarketSpec(name="XAUUSD", stop_loss_pct=1.0, take_profit_pct=3.0),
+            MarketSpec(name="EURUSD", stop_loss_pct=1.0, take_profit_pct=3.0),
+        ],
+        SignalParams(),
+        RiskController(RiskLimits(), stub.balance),
+        mode=Mode.EXECUTE,
+        notifier=cast(Notifier, notifier),
+        day_start_balance=stub.balance,
+    )
+
+    with caplog.at_level(logging.ERROR, logger="live"):
+        runner._halt_and_flatten("synthetic daily limit")
+
+    assert runner._halted
+    assert runner._halt_reason == "synthetic daily limit"
+    assert stub.closed == [8, 9]
+    assert [position.ticket for position in stub.open_positions] == [7]
+    assert notifier.alerts == [
+        "SAFETY HALT: synthetic daily limit -- flattening & stopping",
+        "SAFETY HALT: could not enumerate owned XAUUSD positions; manual intervention required",
+    ]
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.ERROR
+    ] == ["failed to enumerate owned XAUUSD positions during safety halt"]
+
+
+def test_halt_and_flatten_logs_reason_and_failed_position_identity(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class RejectingCloseBridge(StubBridge):
+        def close_position(self, position: Position, **kw: object) -> None:
+            raise Mt5Error("order_send failed: synthetic close fault")
+
+    stub = RejectingCloseBridge()
+    stub.open_positions = [Position(17, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)]
+    runner = _runner(stub, mode=Mode.EXECUTE)
+
+    with caplog.at_level(logging.ERROR, logger="live"):
+        runner._halt_and_flatten("synthetic trailing limit")
+
+    assert runner._halted
+    assert runner._halt_reason == "synthetic trailing limit"
+    assert stub.closed == []
+    assert [record.getMessage() for record in caplog.records] == [
+        "SAFETY HALT: synthetic trailing limit -- flattening all positions and stopping.",
+        "failed to flatten XAUUSD ticket 17",
+    ]
 
 
 def test_loss_day_rolls_at_16_15_chicago_dst_aware() -> None:
@@ -255,6 +921,47 @@ def test_open_risk_prefers_the_terminals_price_and_falls_back_to_arithmetic() ->
     assert runner._total_open_risk() == 20.0  # terminal_risk is None -> fallback
     stub.terminal_risk = 33.0  # the broker prices the same stop differently (conversion)
     assert runner._total_open_risk() == 33.0  # the terminal's number wins
+
+
+def test_open_risk_accumulates_every_priced_and_fallback_position() -> None:
+    class PerPositionRiskBridge(StubBridge):
+        def loss_to_stop(self, position: Position) -> float | None:
+            return {1: 10.0, 2: 20.0, 3: None}[position.ticket]
+
+    stub = PerPositionRiskBridge()
+    stub.open_positions = [
+        Position(1, "XAUUSD", "BUY", 1.0, 2000.0, 1990.0, 2030.0, 0.0, MAGIC),
+        Position(3, "XAUUSD", "BUY", 1.0, 2000.0, 1970.0, 2090.0, 0.0, MAGIC),
+        Position(2, "XAUUSD", "SELL", 1.0, 2000.0, 2010.0, 1970.0, 0.0, MAGIC),
+    ]
+    runner = _runner(stub)
+
+    assert runner._total_open_risk() == 60.0
+
+
+@pytest.mark.parametrize(
+    ("stop", "expected_warning"),
+    [
+        (0.0, ["open position 1 (XAUUSD) has NO stop-loss -> charged at worst case"]),
+        (0.9, []),
+    ],
+)
+def test_open_risk_warns_only_when_the_stop_is_non_positive(
+    caplog: pytest.LogCaptureFixture,
+    stop: float,
+    expected_warning: list[str],
+) -> None:
+    stub = StubBridge()
+    stub.terminal_risk = 10.0
+    stub.open_positions = [
+        Position(1, "XAUUSD", "BUY", 1.0, 1.2, stop, 1.4, 0.0, MAGIC),
+    ]
+    runner = _runner(stub)
+
+    with caplog.at_level(logging.WARNING, logger="live"):
+        assert runner._total_open_risk() == 10.0
+
+    assert [record.getMessage() for record in caplog.records] == expected_warning
 
 
 def test_rejected_order_leaves_the_bar_unmarked_and_retries_next_cycle(
@@ -443,7 +1150,12 @@ def test_broker_pricing_shrinks_a_volume_that_would_over_risk() -> None:
 
     # The broker actually loses twice that per lot (conversion / asymmetric tick value).
     priced = size_order(
-        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        "BUY",
+        2000.0,
+        1.0,
+        3.0,
+        info,
+        risk_amount=400.0,
         loss_fn=lambda _s, _e, _sl, vol: vol * 40.0,
     )
     assert priced is not None
@@ -455,17 +1167,30 @@ def test_sizing_refuses_when_even_the_minimum_lot_over_risks() -> None:
     # Never silently accept more than the intended risk.
     stub = StubBridge()
     info = stub.symbol_info("XAUUSD")
-    assert size_order(
-        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
-        loss_fn=lambda _s, _e, _sl, vol: vol * 1_000_000.0,
-    ) is None
+    assert (
+        size_order(
+            "BUY",
+            2000.0,
+            1.0,
+            3.0,
+            info,
+            risk_amount=400.0,
+            loss_fn=lambda _s, _e, _sl, vol: vol * 1_000_000.0,
+        )
+        is None
+    )
 
 
 def test_unpriceable_candidates_keep_the_arithmetic_volume() -> None:
     stub = StubBridge()
     info = stub.symbol_info("XAUUSD")
     sized = size_order(
-        "BUY", 2000.0, 1.0, 3.0, info, risk_amount=400.0,
+        "BUY",
+        2000.0,
+        1.0,
+        3.0,
+        info,
+        risk_amount=400.0,
         loss_fn=lambda _s, _e, _sl, _v: None,
     )
     assert sized is not None and sized.volume == 20.0
@@ -504,7 +1229,9 @@ def test_an_explicit_day_start_is_used_and_the_hwm_banks_the_balance() -> None:
     assert runner._risk.hwm_balance == 104_000.0  # HWM banks the balance -> raises the floor
 
 
-def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk() -> None:
+def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Codex round-5 P1: open risk only visited configured markets, so a manual position on any
     OTHER symbol contributed its PnL to equity while its stop-risk never entered the total --
     check_open could admit new trades past the 2% cap. Unpriceable exposure must fail closed."""
@@ -513,17 +1240,22 @@ def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk() -> None:
         Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)  # not configured
     ]
     runner = _runner(stub)  # terminal_risk None -> the terminal cannot price it either
-    runner.run_once()
+    with caplog.at_level(logging.CRITICAL, logger="live"):
+        runner.run_once()
     assert runner._risk.open_risk == float("inf")  # fail closed
     assert not runner._risk.check_open(1.0, stub.equity).allowed  # nothing new gets in
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.CRITICAL
+    ] == [
+        "cannot price position 9 on unconfigured symbol GBPJPY -> blocking new entries until it "
+        "is closed or priceable"
+    ]
 
 
 def test_a_priceable_foreign_position_is_charged_into_open_risk() -> None:
     # Same situation, but the terminal CAN price it -> its stop-risk joins the total normally.
     stub = StubBridge()
-    stub.open_positions = [
-        Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)
-    ]
+    stub.open_positions = [Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)]
     stub.terminal_risk = 500.0
     runner = _runner(stub)
     runner.run_once()
