@@ -135,7 +135,7 @@ def test_load_live_surfaces_an_undecodable_position_as_unpriceable(
 ) -> None:
     history = [_deal(1, "1")]
     _SnapshotBridge.histories = [history, history]
-    _SnapshotBridge.accounts = [_account(101.0), _account(101.0)]
+    _SnapshotBridge.accounts = [_account(101.0), _account(101.0), _account(101.0)]
     _SnapshotBridge.position_snapshot_result = SimpleNamespace(
         positions=(),
         issues=(
