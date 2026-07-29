@@ -30,12 +30,9 @@ non-goals, numbered `AC-nn` and `INV-nn`, affected modules, risk class with its 
 plan, open decisions. Describe **what**, never how. An open business, trading, methodology,
 live-money, architecture, or risk decision moves the card to `Blocked` and ends the phase.
 
-**Approval.** Present the complete issue body to Jan in the conversation — for R3 also the risk
-itself: limits touched, worst case if it is wrong, whether a running runner is affected. Only after
-Jan's explicit approval, and in this order: write the body, add `risk:Rn`, move the card to
-`Ready to Implement`, then add `approved` **last**, so a failure anywhere leaves the issue
-unapproved. Report only that the issue is approved — never a prompt or a call to action; when it is
-built is Jan's decision.
+<!-- workflow-contract:approval-order:start -->
+**Approval.** Present the complete issue body to Jan in the conversation — for R3 also the risk itself: limits touched, worst case if it is wrong, whether a running runner is affected. Only after Jan's explicit approval, and in this order: write the final issue body, add risk:Rn, move the card to Ready to Implement, add approved. The `approved` label is written **last**, so a failure anywhere leaves the issue unapproved. Report only that the issue is approved — never a prompt or a call to action; when it is built is Jan's decision.
+<!-- workflow-contract:approval-order:end -->
 
 **Review.** In a fresh session only, on the draft pull request. Run the read-only subagents selected
 by risk class and by the paths touched. Deliver the findings as a real pull-request review: one

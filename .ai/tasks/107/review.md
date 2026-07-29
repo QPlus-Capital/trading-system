@@ -286,3 +286,23 @@ Independent review is required again because R3-F1 changes the load-bearing guar
 
 **Review status:** implementation complete; a fresh complete Claude review is owed. These
 dispositions record builder work, not self-review.
+
+---
+
+## Builder dispositions after the fourth independent review
+
+The fourth review executed 33 semantic attacks against the seven prose parsers. Twenty-seven
+violations passed with every repository gate green. Jan decided the parser approach was exhausted:
+facts become data and the documents become generated views. The builder has not reviewed this
+material fix; Claude must run the next complete independent review.
+
+| ID | Disposition |
+|---|---|
+| C-01 / C-05 | Confirmed and replaced structurally. `.ai/quality/workflow-contract.toml` owns statuses and meanings, complete transition records, Start/Resume condition-action records, activation owner/fallback records, the gate lower bound, ready ordering, approval order and the #124 transitional rule. `scripts/quality/workflow_contract.py` renders the corresponding Markdown. Generated blocks are compared byte-for-byte with regenerated output; the remaining document skeleton is bound by an exact digest. Extra rows, duplicate rows, second tables and neighbouring contradictory paragraphs therefore become drift instead of additional prose for a parser to ignore. The original seven counterexamples remain committed, and the nine new oracle cases were red-first against `5166b22` (**9 failed, 7 passed**) before all 16 became green under regeneration. |
+| C-02 | Confirmed. `test_no_role_document_says_builder_opens_ready_pull_request` restores the permanent negative protection across constitution, AGENTS and CLAUDE after stripping Markdown emphasis, while the positive draft/clean-review/readiness ordering remains represented in TOML. Reverting either the constitution or AGENTS role summary to the confirmed round-one wording is a committed oracle case. |
+| C-03 | Confirmed. F-039 now names only current executable guards. `test_every_finding_registry_regression_reference_resolves` checks every registry `regression` entry against an existing test function, test file or `just` recipe; four older prose-only/stale entries were bound to their actual current tests as part of making that invariant true. |
+| C-07 | Confirmed. Full pytest node ids still collect. Every backticked bare `test_name` is now resolved against the collected test-function set. The 14 pre-existing exceptions (two template placeholders and twelve stale historical task references) are one exact shrinking allowlist: a new stale name fails, and a listed name becoming valid also fails until the allowlist shrinks. |
+| C-08 | Confirmed. AGENTS now states the temporary #124 pushed-branch handover itself: prepare evidence, push, move to `Reviewing`, complete the branch review, then open the draft only after review/readiness while the transition applies. The generated workflow build sequence and ready-order paragraph use the same TOML transitional record. The permanent post-#124 draft-first path remains explicit, so no contract fact changed. |
+
+**Review status:** implementation complete but not self-approved. This is a material R3 remediation;
+a fresh complete Claude review is required before any pull request is opened or marked ready.

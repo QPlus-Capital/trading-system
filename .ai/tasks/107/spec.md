@@ -18,7 +18,8 @@ as permits, so that `implement #101` is a complete instruction to the builder.
 - No file is moved; the folder consolidation is issue #108.
 - No skill or subagent is renamed, merged, added or removed; that is #111 and #112.
 - Finding severities keep the names `P0`–`P3`; renaming them is #112.
-- No tooling is written; that is #110.
+- No general workflow automation is written; board transitions remain #110. Jan's fourth-review
+  decision adds only the narrow TOML loader/renderer needed to make this contract executable.
 - No risk-model or gate configuration changes; that is #109.
 
 ## Behavioural requirements
@@ -74,6 +75,9 @@ None.
 - `docs/engineering/constitution.md` (§9, §16, new §19, header pointer)
 - `CLAUDE.md` (new section on workflow duties)
 - `AGENTS.md` (rewritten development protocol)
+- `.ai/quality/workflow-contract.toml` (machine-authoritative workflow facts)
+- `scripts/quality/workflow_contract.py` (narrow renderer/drift check for the four documents)
+- executable contract, finding-registry, and task-reference guards
 
 ## Risk class
 
@@ -86,3 +90,9 @@ every later change is built and reviewed against.
 None outstanding. Every design decision in this change was made by Jan during the workflow design
 session: board columns, label set, specification location, process scaling, approval gate, branch
 scheme, merge strategy, and the infrastructure-red merge rule.
+
+After the fourth independent review, Jan additionally decided that prose must stop being parsed back
+into facts. The existing facts move unchanged into `.ai/quality/workflow-contract.toml`; generated
+tables and ordered lists become views of that data. This explicitly and narrowly supersedes the
+original "no tooling" non-goal. It does not activate board automation or create a general
+documentation framework.

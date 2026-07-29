@@ -14,6 +14,7 @@ finished change. **Codex** builds. The builder never reviews its own work.
 GitHub Project [QPlus Capital – Trading System](https://github.com/orgs/QPlus-Capital/projects/1).
 Its `Status` field is the single source of truth for where a change stands.
 
+<!-- workflow-contract:statuses:start -->
 | Status | Meaning | Who sets it |
 |---|---|---|
 | `Backlog` | A raw idea. One sentence is enough. | Project automation (auto-add) |
@@ -23,6 +24,7 @@ Its `Status` field is the single source of truth for where a change stands.
 | `Reviewing` | The change is with the independent reviewer — on the draft pull request, or on the pushed branch while the branch-review rule below applies. | Codex, at handover |
 | `Blocked` | Waiting on a decision only Jan can make (constitution §13). | Any agent |
 | `Done` | Merged. | Project automation (item closed) |
+<!-- workflow-contract:statuses:end -->
 
 Agents move cards through the `gh` CLI. Two built-in project automations do the rest and cost no
 Actions minutes: *item added → `Backlog`*, and *item closed → `Done`*.
@@ -110,12 +112,14 @@ needed; or *"later"*, which returns the card to `Backlog` with the specification
 
 On approval, in this order:
 
+<!-- workflow-contract:approval-order:start -->
 ```
 1  write the final issue body
 2  add risk:Rn
 3  move the card to Ready to Implement
 4  add approved          ← last
 ```
+<!-- workflow-contract:approval-order:end -->
 
 `approved` is added last on purpose. If any earlier step fails, the issue is **not** approved and
 Codex will not build it — the constitution's fail-closed rule (§3) applied to the workflow itself.
@@ -133,10 +137,12 @@ Jan says `implement #101`. Nothing more is ever required.
 **Guard first — two disjoint rules**, because starting consumes the permit and resuming therefore
 cannot require it.
 
+<!-- workflow-contract:builder-guard:start -->
 | Case | Condition | Then |
 |---|---|---|
 | **Start** | card in `Ready to Implement`, `approved` present, `risk:Rn` present | move the card to `Implementing`, **then** remove `approved` |
 | **Resume** | the card is in `Implementing` or `Reviewing`, **and** a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for **this** issue number | continue on it **without** a permit — the first start already consumed it |
+<!-- workflow-contract:builder-guard:end -->
 
 Anything else is a refusal, reporting the actual status. In particular: a card in `Backlog`,
 `Specifying` or `Blocked` is never built, branch or no branch; a branch whose name does not carry
@@ -153,6 +159,7 @@ builder out of its own branch.
 when Claude builds under the exception). Several issues can run in parallel, the main checkout stays
 clean, and a running live runner never sees half-finished code.
 
+<!-- workflow-contract:build-sequence:start -->
 ```
 1  Impact          what depends on this? which tests are affected?
 2  Test plan       every AC-nn and INV-nn → exactly one named test
@@ -161,14 +168,13 @@ clean, and a running live runner never sees half-finished code.
 5  Prove GREEN
 6  Gates           at least those of the risk class, plus any scoped check that applies
 7  Evidence        command, exit code, result
-8  Open a draft PR with "Closes #101"
+8  Handover        until #124: push the branch for review; after #124: open the draft PR
 9  Card            → Reviewing
 ```
+<!-- workflow-contract:build-sequence:end -->
 
-The pull request is opened as a **draft**. A draft is what the review is performed on, so every
-finding lands as an inline comment at the line it concerns. Marking it *ready for review* is a later,
-separate act — it happens only once the review is clean, and it is the step the readiness check
-gates.
+The review surface and pull-request timing are stated in phase 4. Their generated rule incorporates
+the temporary branch handover, so this phase does not restate a second ordering.
 
 Step 3 carries the whole system: a test that was never red proves nothing.
 
@@ -214,8 +220,9 @@ the card **back to `Reviewing`** — otherwise the board would report building w
 running, and the status field would stop being the truth it is declared to be. The **entire** review
 then runs again, not only the changed place: a fix can break something elsewhere.
 
-Once the review is clean, Codex marks the pull request **ready for review**. That transition is what
-the readiness check gates, and it is the signal that the change is Jan's to judge.
+<!-- workflow-contract:ready-order:start -->
+Until #124 lands, the independent review runs on the pushed branch. Once that review is clean and the readiness check passes for current HEAD, Codex opens the pull request as a **draft** and then marks it **ready for review**. After the transition lands, the draft pull request opens at the initial handover and carries the review. In both procedures, ready-for-review comes only after the clean independent review and is the signal that the change is Jan's to judge.
+<!-- workflow-contract:ready-order:end -->
 
 **Codex fixes every finding**, including trivial ones. If Claude fixed them it would afterwards be
 reviewing its own code, and the separation between builder and reviewer would no longer hold.
@@ -270,6 +277,7 @@ worktree removed.
 Prose describes one transition at a time, which is how a missing one hides. The table is the
 contract; the phases above explain it.
 
+<!-- workflow-contract:transitions:start -->
 | From → To | Who | When |
 |---|---|---|
 | — → `Backlog` | project automation | an issue is opened |
@@ -288,6 +296,7 @@ contract; the phases above explain it.
 | `Implementing` → `Blocked` | any agent | a decision only Jan can make is open |
 | `Reviewing` → `Blocked` | any agent | a decision only Jan can make is open |
 | `Reviewing` → `Done` | project automation | the pull request merged and closed the issue |
+<!-- workflow-contract:transitions:end -->
 
 `Done` is terminal: no transition leaves it, and none enters `Blocked` from it. Every other status
 has at least one exit, and every status except `Backlog` has at least one predecessor listed above.
@@ -299,6 +308,7 @@ Three parts of this contract describe tooling the repository does not have yet. 
 the rule in the right-hand column is authoritative — so the procedure above is always executable as
 written.
 
+<!-- workflow-contract:activations:start -->
 | Part of this contract | Lands with | Until then |
 |---|---|---|
 | The draft pull request carries the review | [#124](https://github.com/QPlus-Capital/trading-system/issues/124) | The pre-Bash hook blocks `gh pr create` until the readiness check passes, so the independent review runs on the **pushed branch** and the pull request is opened afterwards. Constitution §11 states this transitional rule itself, so it is not a lower document overriding a higher one. |
@@ -306,6 +316,7 @@ written.
 | Board transitions performed by tooling | [#110](https://github.com/QPlus-Capital/trading-system/issues/110) | Agents call `gh` directly and are responsible for the ordering rules themselves. |
 | The `methodology-reviewer` subagent | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | The general code reviewer carries the constitution §4 methodology invariants, as it does today. |
 | Findings named `Blocker` / `Defect` / `Suspected defect` / `Note` | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | Severities are `P0`–`P3`, as the constitution §12 states. |
+<!-- workflow-contract:activations:end -->
 
 A row leaves this table in the same change that lands its dependency. An empty table means the
 contract and the repository have converged.

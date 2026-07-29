@@ -8,6 +8,8 @@ calibrated against are present -- so the registry cannot silently become empty o
 
 from __future__ import annotations
 
+import ast
+import re
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -72,3 +74,40 @@ def test_representative_defect_classes_are_recorded() -> None:
     assert not missing, (
         f"the registry must document the representative defect classes; missing: {missing}"
     )
+
+
+def test_every_finding_registry_regression_reference_resolves() -> None:
+    """A confirmed finding may not outlive the executable protection it names."""
+    test_names: set[str] = set()
+    for path in (_ROOT / "tests").glob("test_*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        test_names.update(
+            node.name
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name.startswith("test_")
+        )
+
+    justfile = (_ROOT / "justfile").read_text(encoding="utf-8")
+    for finding in _findings():
+        regression = str(finding["regression"])
+        file_tokens = re.findall(r"(?:tests/)?(test_[A-Za-z0-9_]+\.py)", regression)
+        without_files = re.sub(r"(?:tests/)?test_[A-Za-z0-9_]+\.py", "", regression)
+        name_tokens = re.findall(r"\b(test_[A-Za-z0-9_]+)\b", without_files)
+        command_tokens = re.findall(r"\bjust ([A-Za-z0-9_-]+)\b", regression)
+
+        missing_files = [token for token in file_tokens if not (_ROOT / "tests" / token).is_file()]
+        missing_names = [token for token in name_tokens if token not in test_names]
+        missing_commands = [
+            token
+            for token in command_tokens
+            if not re.search(rf"(?m)^{re.escape(token)}(?:\s[^:]*)?:", justfile)
+        ]
+        assert not (missing_files or missing_names or missing_commands), (
+            f"finding {finding['id']} names stale regression protection: "
+            f"files={missing_files}, tests={missing_names}, commands={missing_commands}"
+        )
+        assert file_tokens or name_tokens or command_tokens, (
+            f"finding {finding['id']} regression must name an existing test, test file, or just "
+            "recipe"
+        )

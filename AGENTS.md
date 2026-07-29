@@ -20,8 +20,9 @@ diagrams, and the one-line-per-file module map.
 
 Codex specifies the bounded change from Jan's request or Claude's design, classifies its risk,
 analyses impact, writes red-first tests, implements, runs every required gate, maintains the task
-artifact, and opens the **draft** pull request the independent review runs on. Mark it ready for
-review only once that review is clean. Do not merge.
+artifact, and hands the finished branch to independent review. It opens the **draft** pull request
+at the point the active workflow permits, and marks it ready for review only once that review is
+clean. Do not merge.
 
 ## This repository trades real money
 
@@ -55,14 +56,11 @@ review subagents run.
 **0. Check the permit — before anything else.** Two disjoint guards, because the first start
 consumes the permit and resuming therefore cannot demand it.
 
-- **Starting new work.** Refuse unless the board card is in `Ready to Implement`, the label
-  `approved` is present, and a `risk:Rn` label is present. Then move the card to `Implementing` and
-  **only afterwards** remove `approved` — the reverse order would destroy the permit if the status
-  update failed.
-- **Resuming.** Resume **without** a permit when the card is in `Implementing` or `Reviewing` **and**
-  a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for this
-  issue number. That is the normal state after an interruption or after a review sent the change
-  back, and demanding the already-consumed permit there would lock you out of your own branch.
+<!-- workflow-contract:builder-guard:start -->
+- **Starting new work.** Refuse unless card in `Ready to Implement`, `approved` present, `risk:Rn` present. Then move the card to `Implementing`, **then** remove `approved`.
+
+- **Resuming.** When the card is in `Implementing` or `Reviewing`, **and** a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for **this** issue number, continue on it **without** a permit — the first start already consumed it.
+<!-- workflow-contract:builder-guard:end -->
 
 Any other combination is a refusal: report the actual status and stop. A card in `Backlog`,
 `Specifying` or `Blocked` is never built, with or without a branch. A branch whose name does not
@@ -78,14 +76,11 @@ card cannot tell you who wrote the code.
 3. **Design tests, then implement** — map every `AC-nn` and `INV-nn` to exactly one named test, add
    the red-first behavioural guard, record its failure, implement the smallest bounded change, and
    keep `just check` green. Clean up nothing on the side; the non-goals bound the diff.
-4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's
-   fresh reviewer path; resolve every blocking finding with executable proof. You fix every finding,
-   including trivial ones, so the reviewer never reviews its own code.
-5. **Open a draft PR** — with `Closes #<issue>` in the body, once implementation and deterministic
-   verification are complete. Then move the card to `Reviewing`. The draft is what the independent
-   review is performed on, so findings land inline at the lines they concern.
-6. **Mark it ready for review** — only after the review is clean and the readiness check passes for
-   current HEAD. Do not merge or enable autonomous merge.
+<!-- workflow-contract:review-handover:start -->
+4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's fresh reviewer path. Until #124 lands, push the branch, move the card to `Reviewing`, and hand over the branch; the review happens before a pull request exists. Resolve every blocking finding with executable proof.
+5. **Open a draft PR** — while the #124 transitional rule applies, do this only after the branch review is clean and the readiness check passes. After #124 lands, open it at the initial review handover. Include `Closes #<issue>` in the body.
+6. **Mark it ready for review** — only after the review is clean and the readiness check passes for current HEAD. Do not merge or enable autonomous merge.
+<!-- workflow-contract:review-handover:end -->
 
 Work in **one git worktree per issue** on branch `codex/<issue>-<slug>`, so the main checkout stays
 clean and a running live runner never sees half-finished code.
