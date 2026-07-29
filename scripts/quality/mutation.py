@@ -285,18 +285,19 @@ def _health_issues(report: MutationReport) -> list[str]:
 
 
 def check_baseline(report: MutationReport, baseline: MutationBaseline) -> list[str]:
-    """Return every critical baseline regression; an empty list is the only pass."""
+    """Return every critical baseline regression; an empty list is the only pass.
+
+    The mutant total is reported but not compared. It counts how much mutable production code
+    exists, so it moves whenever a branch adds or removes a line and cannot move in response to
+    a defect. What binds is the reviewed survivor set, the mutation score, the target set, and
+    the per-status health of the run.
+    """
     issues = _health_issues(report)
     if report.scope != "critical":
         issues.append(f"baseline applies to critical scope, not {report.scope!r}")
     if report.targets != baseline.targets:
         issues.append(
             f"critical targets changed: expected {baseline.targets!r}, observed {report.targets!r}"
-        )
-    if report.summary.total != baseline.summary.total:
-        issues.append(
-            f"mutation total changed: expected {baseline.summary.total}, "
-            f"observed {report.summary.total}; update the baseline with an explanation"
         )
     allowed = {item.name for item in baseline.survivors}
     observed = {name for name, status in report.mutants.items() if status == "survived"}
@@ -313,6 +314,23 @@ def check_baseline(report: MutationReport, baseline: MutationBaseline) -> list[s
             f"mutation score regressed: {report.summary.score:.4f} < {baseline.summary.score:.4f}"
         )
     return issues
+
+
+def summary_lines(
+    scope: str, report: MutationReport, baseline: MutationBaseline, result_path: Path
+) -> list[str]:
+    """Return the operator-facing summary of one run, independent of its verdict."""
+    lines = [
+        f"Mutation {scope}: {report.summary.killed}/{report.summary.total} killed, "
+        f"{report.summary.survived} survived; report {result_path}"
+    ]
+    if scope == "critical":
+        lines.append(
+            f"Mutant total: observed {report.summary.total}, baseline "
+            f"{baseline.summary.total}. The total tracks how much mutable code exists and "
+            f"does not gate; refresh the baseline when it drifts far enough to be misleading."
+        )
+    return lines
 
 
 def _check_fast(report: MutationReport, baseline: MutationBaseline) -> list[str]:
@@ -441,10 +459,8 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
     issues = (
         check_baseline(report, baseline) if scope == "critical" else _check_fast(report, baseline)
     )
-    print(
-        f"Mutation {scope}: {report.summary.killed}/{report.summary.total} killed, "
-        f"{report.summary.survived} survived; report {result_path}"
-    )
+    for line in summary_lines(scope, report, baseline, result_path):
+        print(line)
     if issues:
         print("Mutation gate FAILED:")
         for issue in issues:
