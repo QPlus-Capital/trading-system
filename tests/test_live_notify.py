@@ -1,6 +1,7 @@
 """Tests for the live Notifier (file channel; beep/telegram are off by default)."""
 
 import logging
+import sys
 import urllib.request
 from pathlib import Path
 
@@ -76,7 +77,7 @@ def test_beep_is_opt_in_and_runs_only_when_requested_on_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[bool] = []
-    monkeypatch.setattr(notify.sys, "platform", "win32")
+    monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(Notifier, "_do_beep", lambda _self, urgent: calls.append(urgent))
     monkeypatch.setattr(Notifier, "_send_telegram", lambda _self, _text: None)
 
@@ -91,7 +92,7 @@ def test_beep_is_opt_in_and_runs_only_when_requested_on_windows(
 
 def test_beep_request_is_ignored_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[bool] = []
-    monkeypatch.setattr(notify.sys, "platform", "linux")
+    monkeypatch.setattr(sys, "platform", "linux")
     monkeypatch.setattr(Notifier, "_do_beep", lambda _self, urgent: calls.append(urgent))
     monkeypatch.setattr(Notifier, "_send_telegram", lambda _self, _text: None)
 
