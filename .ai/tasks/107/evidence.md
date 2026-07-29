@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: fd2efe4f26d862277f4e004732fffeaaede8c659
+HEAD: 75438f76488ddacc0a2a9b6273526a48a9e84425
 
 This is the implementation commit. The only later commit is this evidence file, which
 `pr_ready` explicitly accepts as evidence-only freshness.
@@ -23,20 +23,20 @@ All `just` commands use the repository's required Windows shell override:
 | `impacted-tests` | `just check-fast origin/main` | 0 | GREEN: **135 focused tests passed** |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_claude_runtime_files.py tests/test_engineering_workflow_docs.py tests/test_github_templates.py tests/test_docs_language.py tests/test_workflow_contract.py tests/test_finding_registry.py tests/test_quality_validate_task.py tests/test_docs_architecture_map.py` | 0 | GREEN: **201 passed** |
 | `workflow-render-drift` | `uv run python -m scripts.quality.workflow_contract` | 0 | GREEN: generated blocks and all four non-generated document skeleton digests match |
-| `check` | `just check` on clean implementation HEAD `fd2efe4` | 0 | GREEN: Ruff, strict mypy over 183 files, Vulture, and **1240 passed / 1 expected Windows Mutmut skip**; 98 existing warnings |
+| `check` | `just check` on clean merged HEAD `75438f7` | 0 | GREEN: Ruff, strict mypy over 183 files, Vulture, and **1316 passed / 1 expected Windows Mutmut skip**; 98 existing warnings |
 | `property-tests-where-applicable` | `just check-properties` | 0 | GREEN: **21 properties passed twice** with seed 20260721 |
-| `integration-tests` | full pytest within `just check` | 0 | GREEN: 1240 passed; no live terminal or account interaction |
-| `invariants` | `just check-invariants` | 0 | GREEN: **325 passed**; 12 existing warnings |
+| `integration-tests` | full pytest within `just check` | 0 | GREEN: 1316 passed; no live terminal or account interaction |
+| `invariants` | `just check-invariants` | 0 | GREEN: **433 passed**; 12 existing warnings |
 | `security` | `just check-security` | 0 | GREEN: secret scan clean, pip-audit reports no known vulnerabilities, static security check clean |
 | `impact` | `just impact` | 0 | GREEN: R3; only `scripts/quality/workflow_contract.py` is production code; seven focused suites selected; no critical-path escalation |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task 107` | 0 | GREEN: task valid, **10 AC / 2 INV** |
 | `parity-where-applicable` | `git diff --quiet origin/main...HEAD -- core research live monitoring .claude .github justfile pyproject.toml uv.lock` | 0 | GREEN: no trading, runner, hook, CI, recipe, or dependency path changed |
 | `live-money-review` | `git diff --name-only origin/main...HEAD -- core research live monitoring` plus changed-path inspection | 0 | GREEN: zero trading production paths changed; no runner or terminal was contacted |
 | `human-decision-escalation` | issue #107 review instructions and task spec | 0 | GREEN: Jan's accepted TOML renderer and exact record guards remain intact; Jan explicitly removed the obsolete trivial-R0 direct-to-main exception after branch protection became active without bypass actors |
-| `no-autonomous-merge` | constitution/role-document guards and repository state | 0 | GREEN: no merge, auto-merge, PR creation, or ready transition occurred |
+| `no-autonomous-merge` | constitution/role-document guards and pull request #127 state | 0 | GREEN: pull request #127 is a draft; no ready transition, merge, or auto-merge occurred |
 | `mutation-on-touched-critical` | `git diff --quiet origin/main...HEAD -- core research live monitoring` | 0 | GREEN, vacuous: issue #107 touches no configured critical mutation target or trading production file, so there is no touched mutant set to measure and no deferred mutation blocker |
 | `adversarial-review` | Claude's seventh complete independent review in `.ai/tasks/107/review.md` | 0 | GREEN on 2026-07-29: no findings; all seven independent mutations were caught — transition deleted, transition invented, transition actor changed, approval-edge trigger rewritten, status actor changed, status deleted, activation deleted |
-| `pr-ready` | `uv run python -m scripts.quality.pr_ready 107 --base origin/main` | 0 | GREEN: READY on implementation HEAD `fd2efe4`; the later evidence-only commit is accepted by the freshness check |
+| `pr-ready` | `uv run python -m scripts.quality.pr_ready 107 --base origin/main` | 0 | GREEN: READY on merged implementation HEAD `75438f7`; the later evidence-only commit is accepted by the freshness check |
 
 ## Coverage and mutation
 
@@ -83,6 +83,14 @@ and rejects the old exception.
 The critical mutation gate is vacuous, not deferred: the full branch diff contains no file under
 `core`, `research`, `live`, or `monitoring`, and no mutation baseline, target, pattern, threshold, or
 survivor classification changed.
+
+Before opening the pull request, `origin/main` advanced through issue #103. The branch merged current
+`main`; the sole textual conflict was the append-only finding registry. F-039 and every main entry
+were retained in ID order. The six new main entries whose prose-only regression descriptions did
+not satisfy #107's executable-reference invariant were rebound to the existing tests that implement
+those protections. The focused registry, workflow-contract, and engineering-document suite passed
+90/90 before the merge commit; the full merged suite and all R3 gates then passed with the counts
+above.
 
 ## Deferred checks
 
