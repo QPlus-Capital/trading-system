@@ -100,6 +100,7 @@ also_copy = [
     ".ai",
     "docs",
     ".env.example",
+    "RUN.md",
     "justfile",
 ]
 mutate_only_covered_lines = false
