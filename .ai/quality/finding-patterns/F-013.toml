@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #70 (mutation workflow launcher)"
+defect_class = "package-executable-name-confusion"
+severity = "P2"
+affected = ".github/workflows/mutation.yml"
+root_cause = "the workflow passed the package name rust-just to uvx although the package exposes only the executable just, so CI never entered mutation-critical"
+why_tests_missed = "the recipe and Python orchestrator were tested, but the workflow's exact launcher command was not"
+regression = "test_mutation_workflow_invokes_the_just_executable"
+generalized = "for package runners, test the exact package-to-executable mapping used by CI rather than assuming both names match"
+workflow_change = "mutation workflow uses and guards uvx --from rust-just just"

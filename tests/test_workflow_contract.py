@@ -46,8 +46,7 @@ _REQUIRED_STATUSES = frozenset(
         ("Implementing", "Codex is building.", "Codex"),
         (
             "Reviewing",
-            "The change is with the independent reviewer — on the draft pull request, or on the "
-            "pushed branch while the branch-review rule below applies.",
+            "The change is with the independent reviewer on the draft pull request.",
             "Codex, at handover",
         ),
         (
@@ -91,8 +90,7 @@ _REQUIRED_TRANSITIONS = frozenset(
             "Implementing",
             "Reviewing",
             "Codex",
-            "the change is handed over for review — by opening the draft pull request, or, while "
-            "the branch-review rule below applies, by pushing the branch and saying so",
+            "the draft pull request is opened and handed over for review",
         ),
         ("Reviewing", "Implementing", "Claude", "a blocking finding"),
         ("Implementing", "Reviewing", "Codex", "the review fix is pushed"),
@@ -136,8 +134,6 @@ _REQUIRED_TRANSITIONS = frozenset(
 )
 _REQUIRED_ACTIVATIONS = frozenset(
     {
-        ("The draft pull request carries the review", 124),
-        ("Artifact files scale by risk class", 124),
         ("Board transitions performed by tooling", 110),
         ("The `methodology-reviewer` subagent", 112),
         ("Findings named `Blocker` / `Defect` / `Suspected defect` / `Note`", 112),
@@ -163,7 +159,6 @@ def test_workflow_contract_toml_is_valid_and_complete() -> None:
     assert contract.ready_for_review.requires_readiness_check
     assert contract.approval_steps[-1].action == "add approved"
     assert contract.approval_steps[-1].approved_written_last
-    assert contract.transitional_review.activation_issue > 0
 
 
 def test_declared_statuses_exactly_match_required_records() -> None:
@@ -200,8 +195,8 @@ def test_workflow_contract_rejects_a_malformed_document_digest(tmp_path: Path) -
     """Digest chunking avoids secret false positives without weakening integrity validation."""
     source = CONTRACT_PATH.read_text(encoding="utf-8")
     malformed = source.replace(
-        "workflow = [174, 222",
-        "workflow = [999, 222",
+        "workflow = [237, 111",
+        "workflow = [999, 111",
         1,
     )
     path = tmp_path / "workflow-contract.toml"
@@ -298,8 +293,8 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
     elif name == "ready-before-review-with-synonym":
         _replace_once(
             workflow,
-            "Once that review is clean and the readiness check passes for current HEAD, Codex "
-            "opens the pull request as a **draft** and then marks it **ready for review**.",
+            "Once the independent review is clean and the readiness check passes for current "
+            "HEAD, Codex marks it **ready for review**.",
             "Before review begins, Codex changes the pull request from draft to "
             "**ready for review**.",
         )
@@ -325,21 +320,19 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
             "the pull request merged and closed the issue |",
         )
     elif name == "activation-points-to-wrong-issue":
-        owner = "[#124](https://github.com/QPlus-Capital/trading-system/issues/124)"
+        owner = "[#110](https://github.com/QPlus-Capital/trading-system/issues/110)"
         text = workflow.read_text(encoding="utf-8")
-        assert text.count(owner) >= 2
-        wrong_owner = owner.replace("#124", "#109").replace("/124", "/109")
+        assert text.count(owner) >= 1
+        wrong_owner = owner.replace("#110", "#109").replace("/110", "/109")
         workflow.write_text(
-            text.replace(owner, wrong_owner, 2),
+            text.replace(owner, wrong_owner, 1),
             encoding="utf-8",
         )
     elif name == "constitution-forbids-branch-review":
         _replace_once(
             constitution,
-            "the independent review is performed on the **pushed branch** and the pull request is "
-            "opened afterwards.",
-            "the **pushed branch** must never be reviewed; the independent review waits until "
-            "after the pull request is opened.",
+            "only after that review and its remediation are complete",
+            "before that review and its remediation are complete",
         )
     elif name == "third-force-builder-guard-row":
         _replace_once(
@@ -365,13 +358,13 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
     elif name == "duplicate-activation-row-before-real-row":
         _replace_once(
             workflow,
-            "| The draft pull request carries the review | "
-            "[#124](https://github.com/QPlus-Capital/trading-system/issues/124) |",
-            "| The draft pull request carries the review | "
+            "| Board transitions performed by tooling | "
+            "[#110](https://github.com/QPlus-Capital/trading-system/issues/110) |",
+            "| Board transitions performed by tooling | "
             "[#109](https://github.com/QPlus-Capital/trading-system/issues/109) | "
-            "Open a ready pull request before review. |\n"
-            "| The draft pull request carries the review | "
-            "[#124](https://github.com/QPlus-Capital/trading-system/issues/124) |",
+            "Let agents guess the transition. |\n"
+            "| Board transitions performed by tooling | "
+            "[#110](https://github.com/QPlus-Capital/trading-system/issues/110) |",
         )
     elif name == "second-state-transition-table":
         _replace_once(

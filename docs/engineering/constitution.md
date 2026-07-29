@@ -151,8 +151,6 @@ the task artifacts and PR evidence required by its risk class are present.
 
 <!-- workflow-contract:pr-order:start -->
 A **draft** pull request is opened once implementation and deterministic verification are complete; it is what the independent review is performed on, so that every finding lands as an inline comment at the line it concerns. A pull request is marked **ready for review** only after that review and its remediation are complete — that is the point the readiness check gates, and it is the only state Jan is asked to merge from.
-
-**Transitional rule, until [#124](https://github.com/QPlus-Capital/trading-system/issues/124) lands.** The readiness gate currently blocks the *creation* of a pull request rather than the ready-for-review transition, so a draft cannot yet carry a review that has not happened. Until that gate moves, the independent review is performed on the **pushed branch** and the pull request is opened afterwards. This rule is stated here, at the same precedence as the paragraph it suspends, because a lower-ranking document cannot suspend this one. It is removed by the change that makes the draft path executable.
 <!-- workflow-contract:pr-order:end -->
 
 The evidence — gates run and their outcomes, tests added, before/after results for regression tests,
@@ -181,8 +179,8 @@ code and documented.
 ## 14. Confirmed review defects become permanent protection
 
 A confirmed reviewer finding (Claude or a read-only adversarial review subagent) is not just fixed. It is: reproduced
-with a failing test, fixed, root-caused, and recorded in the finding registry
-(`.ai/quality/finding-patterns.toml`) as a **generalized** pattern. A defect class that recurs is a
+with a failing test, fixed, root-caused, and recorded as one content-addressed file in the finding
+registry (`.ai/quality/finding-patterns/`) as a **generalized** pattern. A defect class that recurs is a
 failure of the workflow, not just of the code, and strengthens a skill, hook, check, or this file.
 
 ## 15. Prohibited quality-gate bypasses

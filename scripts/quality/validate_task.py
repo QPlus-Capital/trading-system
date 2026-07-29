@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.quality.classify import REPO_ROOT, changed_paths
+from scripts.quality.classify import REPO_ROOT, changed_paths, classify_paths, load_model
 
 SCHEMA_PATH = REPO_ROOT / ".ai" / "quality" / "task-artifacts.toml"
 TASK_ROOT = REPO_ROOT / ".ai" / "tasks"
@@ -27,7 +27,6 @@ _SECTION = re.compile(
 )
 _CRITICAL = {"P0", "P1", "P2"}
 _SEVERITIES = {"P0", "P1", "P2", "P3"}
-_RISK = re.compile(r"\bR([0-3])\b")
 _NO_FINDINGS = re.compile(
     r"^\s*no findings;\s*(?P<count>\d+)\s+counterexamples attempted\.?\s*$",
     re.IGNORECASE | re.MULTILINE,
@@ -36,9 +35,29 @@ _NO_FINDINGS = re.compile(
 
 @dataclass(frozen=True)
 class TaskSchema:
-    required_files: tuple[str, ...]
+    required_files: dict[str, tuple[str, ...]]
     sections: dict[str, tuple[str, ...]]
     resolved_review_statuses: frozenset[str]
+
+    def required_files_for(self, risk_class: str) -> tuple[str, ...]:
+        """Return the exact task files required for one risk class."""
+
+        try:
+            return self.required_files[risk_class]
+        except KeyError as exc:
+            raise ValueError(f"unknown risk class: {risk_class}") from exc
+
+    @property
+    def all_required_files(self) -> tuple[str, ...]:
+        """Return the stable union used when materializing a staged task snapshot."""
+
+        return tuple(
+            dict.fromkeys(
+                name
+                for risk_class in ("R0", "R1", "R2", "R3")
+                for name in self.required_files_for(risk_class)
+            )
+        )
 
 
 @dataclass(frozen=True)
@@ -72,14 +91,28 @@ class EvidenceRecord:
 def load_schema(path: Path = SCHEMA_PATH) -> TaskSchema:
     """Load and minimally validate the task-artifact TOML schema."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    required = tuple(str(name) for name in data["required_files"])
+    if data.get("version") != 2:
+        raise ValueError("task schema version must be 2")
+    raw_required = data.get("required_files")
+    if not isinstance(raw_required, dict):
+        raise ValueError("task schema requires a required_files table")
+    required = {
+        risk_class: tuple(str(name) for name in raw_required.get(risk_class, ()))
+        for risk_class in ("R0", "R1", "R2", "R3")
+    }
     sections = {
         str(name): tuple(str(section) for section in values)
         for name, values in data.get("sections", {}).items()
     }
     statuses = frozenset(str(value).strip().lower() for value in data["resolved_review_statuses"])
-    if not required or not statuses:
-        raise ValueError("task schema requires files and resolved review statuses")
+    if not statuses or set(required["R2"]) != {"review.md", "evidence.md"}:
+        raise ValueError("task schema requires R2 review and evidence plus resolved statuses")
+    if required["R3"] != ("impact.md", "test-plan.md", "review.md", "evidence.md"):
+        raise ValueError("task schema requires the four ordered R3 artifacts")
+    if required["R0"] or required["R1"]:
+        raise ValueError("R0 and R1 must not require task artifacts")
+    if "spec.md" in {name for names in required.values() for name in names}:
+        raise ValueError("spec.md must not be part of the task-artifact schema")
     return TaskSchema(required, sections, statuses)
 
 
@@ -162,11 +195,6 @@ def evidence_records(text: str) -> tuple[EvidenceRecord, ...]:
     return tuple(records)
 
 
-def _declared_risk(spec: str) -> str | None:
-    match = _RISK.search(_sections(spec).get("risk class", ""))
-    return f"R{match.group(1)}" if match is not None else None
-
-
 def _review_ran(text: str) -> bool:
     findings = _sections(text).get("findings", "")
     has_finding = any(
@@ -197,12 +225,19 @@ def _critical_review_issues(text: str, resolved: frozenset[str]) -> list[Validat
     return issues
 
 
-def validate_task_dir(task_dir: Path, schema_path: Path = SCHEMA_PATH) -> ValidationResult:
+def validate_task_dir(
+    task_dir: Path,
+    schema_path: Path = SCHEMA_PATH,
+    *,
+    risk_class: str = "R3",
+    require_completed_review: bool = True,
+) -> ValidationResult:
     """Validate one task directory; return every finding rather than stopping at the first."""
     schema = load_schema(schema_path)
     issues: list[ValidationIssue] = []
     content: dict[str, str] = {}
-    for name in schema.required_files:
+    required_files = schema.required_files_for(risk_class)
+    for name in required_files:
         path = task_dir / name
         if not path.is_file():
             issues.append(ValidationIssue("missing-file", f"missing required task file: {name}"))
@@ -226,26 +261,16 @@ def validate_task_dir(task_dir: Path, schema_path: Path = SCHEMA_PATH) -> Valida
                     ValidationIssue("empty-section", f"{name} has an empty section: {section}")
                 )
 
-    spec = content.get("spec.md", "")
-    acceptance = tuple(dict.fromkeys(match.upper() for match in _AC.findall(spec)))
-    invariants = tuple(dict.fromkeys(match.upper() for match in _INV.findall(spec)))
-    if spec and not acceptance:
-        issues.append(ValidationIssue("missing-ac", "spec.md must define at least one AC-* ID"))
-    if spec and not invariants:
-        issues.append(ValidationIssue("missing-inv", "spec.md must define at least one INV-* ID"))
-
     test_plan = content.get("test-plan.md", "")
     mapped = _traceability_rows(test_plan)
-    for requirement_id in (*acceptance, *invariants):
-        row = mapped.get(requirement_id)
-        if row is None:
-            issues.append(
-                ValidationIssue(
-                    "unmapped-requirement",
-                    f"{requirement_id} has no mapped test in test-plan.md",
-                )
-            )
-        elif len(row) < 4 or not all(cell.strip() for cell in row[1:4]):
+    acceptance = tuple(key for key in mapped if _AC.fullmatch(key))
+    invariants = tuple(key for key in mapped if _INV.fullmatch(key))
+    if test_plan and not acceptance:
+        issues.append(ValidationIssue("missing-ac", "test-plan.md must map at least one AC-* ID"))
+    if test_plan and not invariants:
+        issues.append(ValidationIssue("missing-inv", "test-plan.md must map at least one INV-* ID"))
+    for requirement_id, row in mapped.items():
+        if len(row) < 4 or not all(cell.strip() for cell in row[1:4]):
             issues.append(
                 ValidationIssue(
                     "incomplete-trace",
@@ -255,8 +280,9 @@ def validate_task_dir(task_dir: Path, schema_path: Path = SCHEMA_PATH) -> Valida
 
     review = content.get("review.md")
     if review is not None:
-        issues.extend(_critical_review_issues(review, schema.resolved_review_statuses))
-        if _declared_risk(spec) == "R3" and not _review_ran(review):
+        if require_completed_review:
+            issues.extend(_critical_review_issues(review, schema.resolved_review_statuses))
+        if require_completed_review and risk_class == "R3" and not _review_ran(review):
             issues.append(
                 ValidationIssue(
                     "missing-adversarial-review",
@@ -277,9 +303,19 @@ def validate_task_dir(task_dir: Path, schema_path: Path = SCHEMA_PATH) -> Valida
     return ValidationResult(task_dir, tuple(issues), acceptance, invariants)
 
 
-def validate_task(task_id: str, task_root: Path = TASK_ROOT) -> ValidationResult:
+def validate_task(
+    task_id: str,
+    task_root: Path = TASK_ROOT,
+    *,
+    risk_class: str = "R3",
+    require_completed_review: bool = True,
+) -> ValidationResult:
     """Validate ``.ai/tasks/<task_id>``."""
-    return validate_task_dir(task_root / task_id)
+    return validate_task_dir(
+        task_root / task_id,
+        risk_class=risk_class,
+        require_completed_review=require_completed_review,
+    )
 
 
 def discover_task_id(paths: Sequence[str]) -> str | None:
@@ -301,13 +337,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--task-id", dest="task_id_option", default="")
     parser.add_argument("--base", default="origin/main")
     args = parser.parse_args(argv)
+    paths = changed_paths(args.base)
+    risk_class = classify_paths(paths, load_model()).risk_class
     task_id = args.task_id_option.strip() or args.task_id
     if task_id is None:
-        task_id = discover_task_id(changed_paths(args.base))
+        task_id = discover_task_id(paths)
+    required = load_schema().required_files_for(risk_class)
+    if not required:
+        print(f"Task artifacts: valid for {risk_class} (none required).")
+        return 0
     if task_id is None:
         print("Task artifact: NOT VALID (cannot discover exactly one changed task ID)")
         return 1
-    result = validate_task(task_id)
+    result = validate_task(
+        task_id,
+        risk_class=risk_class,
+        require_completed_review=False,
+    )
     if result.ok:
         print(
             f"Task {task_id}: valid "

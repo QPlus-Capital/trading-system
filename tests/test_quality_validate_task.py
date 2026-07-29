@@ -135,7 +135,8 @@ def _task(tmp_path: Path, *, spec: str = _SPEC, test_plan: str = _TEST_PLAN) -> 
         "impact.md": "# Impact\n\n## Direct impact\nNone.\n\n## Transitive impact\nNone.\n\n"
         "## Critical dependencies\nNone.\n\n## Unknown or dynamic edges\nNone.\n",
         "test-plan.md": test_plan,
-        "review.md": "# Review\n\n## Findings\nNo findings.\n\n## Dispositions\nNone.\n",
+        "review.md": "# Review\n\n## Findings\nNo findings; 1 counterexamples attempted\n\n"
+        "## Dispositions\nNone.\n",
         "evidence.md": "# Evidence\n\n## HEAD\nHEAD: abc123\n\n## Commands\n"
         f"{_R1_EVIDENCE_ROWS}\n"
         "## Coverage and mutation\nDeferred.\n\n## Deferred checks\nNone.\n",
@@ -216,11 +217,17 @@ def test_changed_task_discovery_requires_exactly_one_artifact() -> None:
 def test_cli_reports_the_discovered_task_id(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    monkeypatch.setattr(task_validator, "changed_paths", lambda _base: [".ai/tasks/67/spec.md"])
+    monkeypatch.setattr(
+        task_validator,
+        "changed_paths",
+        lambda _base: [".ai/tasks/67/evidence.md", "scripts/quality/pr_ready.py"],
+    )
     monkeypatch.setattr(
         task_validator,
         "validate_task",
-        lambda task_id: ValidationResult(Path(task_id), (), ("AC-01",), ("INV-01",)),
+        lambda task_id, risk_class, require_completed_review: ValidationResult(
+            Path(task_id), (), ("AC-01",), ("INV-01",)
+        ),
     )
     assert task_validator.main(["--base", "origin/main"]) == 0
     assert "Task 67: valid" in capsys.readouterr().out
@@ -231,46 +238,65 @@ def test_the_versioned_templates_satisfy_the_schema() -> None:
 
 
 def test_a_missing_required_section_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("## Goal\nGoal.\n\n", ""))
+    task = _task(tmp_path)
+    impact = task / "impact.md"
+    impact.write_text(
+        impact.read_text(encoding="utf-8").replace("## Direct impact\nNone.\n\n", ""),
+        encoding="utf-8",
+    )
     result = validate_task_dir(task)
     assert not result.ok
-    assert "Goal" in _messages(task)
+    assert "Direct impact" in _messages(task)
 
 
 def test_an_empty_required_section_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("## Goal\nGoal.", "## Goal\n"))
+    task = _task(tmp_path)
+    impact = task / "impact.md"
+    impact.write_text(
+        impact.read_text(encoding="utf-8").replace(
+            "## Direct impact\nNone.",
+            "## Direct impact\n",
+        ),
+        encoding="utf-8",
+    )
     result = validate_task_dir(task)
     assert not result.ok
-    assert "Goal" in _messages(task)
+    assert "Direct impact" in _messages(task)
 
 
-def test_a_spec_without_an_acceptance_id_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("AC-01", "criterion"))
+def test_a_test_plan_without_an_acceptance_id_fails(tmp_path: Path) -> None:
+    task = _task(tmp_path, test_plan=_TEST_PLAN.replace("AC-01", "criterion"))
     result = validate_task_dir(task)
     assert not result.ok
     assert "AC-*" in _messages(task)
 
 
-def test_an_unmapped_acceptance_criterion_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path, test_plan=_TEST_PLAN.replace("AC-01", "AC-99"))
+def test_an_incomplete_acceptance_trace_fails(tmp_path: Path) -> None:
+    task = _task(
+        tmp_path,
+        test_plan=_TEST_PLAN.replace(
+            "| AC-01 | `test_guard` | RED: guard absent | GREEN: guard rejects |",
+            "| AC-01 | `test_guard` | | |",
+        ),
+    )
     result = validate_task_dir(task)
     assert not result.ok
     assert "AC-01" in _messages(task)
 
 
 def test_an_id_outside_the_requirement_column_does_not_count_as_mapped(tmp_path: Path) -> None:
-    misplaced = _TEST_PLAN.replace("| AC-01 | `test_guard`", "| AC-99 | `test-AC-01-guard`")
+    misplaced = _TEST_PLAN.replace("| AC-01 | `test_guard`", "| criterion | `test-AC-01-guard`")
     task = _task(tmp_path, test_plan=misplaced)
     result = validate_task_dir(task)
     assert not result.ok
-    assert "AC-01" in _messages(task)
+    assert "AC-*" in _messages(task)
 
 
 def test_an_unmapped_invariant_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path, test_plan=_TEST_PLAN.replace("INV-01", "INV-99"))
+    task = _task(tmp_path, test_plan=_TEST_PLAN.replace("INV-01", "criterion"))
     result = validate_task_dir(task)
     assert not result.ok
-    assert "INV-01" in _messages(task)
+    assert "INV-*" in _messages(task)
 
 
 def test_an_unresolved_p1_fails(tmp_path: Path) -> None:
@@ -289,14 +315,29 @@ def test_an_unresolved_p1_fails(tmp_path: Path) -> None:
 
 
 def test_an_empty_r3_review_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\nNo findings.\n\n## Dispositions\nNone.\n",
+        encoding="utf-8",
+    )
     result = validate_task_dir(task)
     assert not result.ok
     assert "counterexamples" in _messages(task).lower()
 
 
+def test_draft_schema_validation_allows_an_honest_pending_review(tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\nIndependent review has not run.\n\n"
+        "## Dispositions\nPending independent review.\n",
+        encoding="utf-8",
+    )
+    assert validate_task_dir(task, require_completed_review=False).ok
+    assert not validate_task_dir(task, require_completed_review=True).ok
+
+
 def test_an_r3_no_findings_review_records_counterexamples(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    task = _task(tmp_path)
     (task / "review.md").write_text(
         "# Review\n\n## Findings\nNo findings; 3 counterexamples attempted\n\n"
         "## Dispositions\nNone required.\n",
@@ -306,7 +347,7 @@ def test_an_r3_no_findings_review_records_counterexamples(tmp_path: Path) -> Non
 
 
 def test_an_r3_no_findings_review_requires_a_counterexample(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    task = _task(tmp_path)
     (task / "review.md").write_text(
         "# Review\n\n## Findings\nNo findings; 0 counterexamples attempted\n\n"
         "## Dispositions\nNone required.\n",
@@ -318,7 +359,7 @@ def test_an_r3_no_findings_review_requires_a_counterexample(tmp_path: Path) -> N
 
 
 def test_an_r3_review_rejects_a_malformed_finding_row(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    task = _task(tmp_path)
     (task / "review.md").write_text(
         "# Review\n\n## Findings\n| P3 |\n\n## Dispositions\nNone.\n",
         encoding="utf-8",

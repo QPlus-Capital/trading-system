@@ -270,11 +270,12 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 |---|---|
 | `scripts/quality/classify.py` | Applies the authoritative TOML risk model to changed paths |
 | `scripts/quality/validate_task.py` | Validates task sections, AC/INV test traceability, and review dispositions |
+| `scripts/quality/finding_registry.py` | Loads split finding files, derives content IDs, and verifies the lossless legacy migration |
 | `scripts/quality/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `scripts/quality/pr_ready.py` | Composes risk, task, review, traceability, and evidence-freshness gates |
 | `scripts/quality/mutation.py` | Runs focused Linux mutation scopes and enforces the TOML survivor ratchet |
 | `scripts/quality/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
-| `scripts/quality/pr_body.py` | Binds required PR sections to one current, ready task artifact |
+| `scripts/quality/pr_body.py` | Selects risk-scaled PR sections and binds R2/R3 bodies to current task evidence |
 | `scripts/quality/workflow_contract.py` | Renders workflow documents from the authoritative TOML contract and rejects drift |
 | `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `scripts/quality/hooks/pre_bash.py` | Collects Git/task metadata and emits Claude Code hook responses |

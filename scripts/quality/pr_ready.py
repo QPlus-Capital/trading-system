@@ -16,9 +16,13 @@ from scripts.quality.classify import (
     classify_paths,
     load_model,
 )
-from scripts.quality.validate_task import discover_task_id, evidence_records, validate_task_dir
+from scripts.quality.validate_task import (
+    discover_task_id,
+    evidence_records,
+    load_schema,
+    validate_task_dir,
+)
 
-_RISK_RE = re.compile(r"\bR([0-3])\b")
 _HEAD_RE = re.compile(r"^HEAD:\s*(\S+)\s*$", re.MULTILINE)
 
 
@@ -41,21 +45,6 @@ class ReadinessResult:
     required_gates: tuple[str, ...]
     declared_risk: str | None
     checks: tuple[ReadinessCheck, ...]
-
-
-def _declared_risk(spec_path: Path) -> str | None:
-    if not spec_path.is_file():
-        return None
-    headings = spec_path.read_text(encoding="utf-8")
-    section = re.search(
-        r"^## Risk class\s*$\n(?P<body>.*?)(?=^## |\Z)",
-        headings,
-        flags=re.MULTILINE | re.DOTALL,
-    )
-    if section is None:
-        return None
-    match = _RISK_RE.search(section.group("body"))
-    return f"R{match.group(1)}" if match is not None else None
 
 
 def _recorded_head(evidence_path: Path) -> str | None:
@@ -113,93 +102,123 @@ def evidence_is_current(
 
 
 def assess_readiness(
-    task_dir: Path,
+    task_dir: Path | None,
     changed: Sequence[str],
     head_sha: str,
     *,
     root: Path = REPO_ROOT,
+    declared_risk: str | None = None,
 ) -> ReadinessResult:
     """Run task, risk, traceability, review, and evidence gates."""
 
     model = load_model()
     classification = classify_paths(changed, model)
-    validation = validate_task_dir(task_dir)
-    declared = _declared_risk(task_dir / "spec.md")
     risk_class = classification.risk_class
-    if declared is not None and int(declared[1]) > int(risk_class[1]):
-        risk_class = declared
+    if declared_risk is not None and int(declared_risk[1]) > int(risk_class[1]):
+        risk_class = declared_risk
     required_gates = model.required_gates(risk_class)
+    required_files = load_schema().required_files_for(risk_class)
 
-    checks: list[ReadinessCheck] = [
-        ReadinessCheck(
-            "task-artifacts",
-            validation.ok,
-            "all task artifacts are valid"
-            if validation.ok
-            else "; ".join(issue.message for issue in validation.issues),
+    checks: list[ReadinessCheck] = []
+    if required_files:
+        if task_dir is None:
+            checks.append(
+                ReadinessCheck(
+                    "task-artifacts",
+                    False,
+                    f"{risk_class} requires task artifacts: {', '.join(required_files)}",
+                )
+            )
+            validation_ok = False
+        else:
+            validation = validate_task_dir(task_dir, risk_class=risk_class)
+            validation_ok = validation.ok
+            checks.append(
+                ReadinessCheck(
+                    "task-artifacts",
+                    validation.ok,
+                    "all task artifacts are valid"
+                    if validation.ok
+                    else "; ".join(issue.message for issue in validation.issues),
+                )
+            )
+    else:
+        validation_ok = True
+        checks.append(
+            ReadinessCheck(
+                "task-artifacts",
+                True,
+                f"{risk_class} requires no task artifacts",
+            )
         )
-    ]
 
-    if declared is None:
-        checks.append(ReadinessCheck("risk-class", False, "spec.md has no declared risk class"))
-    elif int(declared[1]) < int(classification.risk_class[1]):
+    if declared_risk is not None and int(declared_risk[1]) < int(classification.risk_class[1]):
         checks.append(
             ReadinessCheck(
                 "risk-class",
                 False,
-                f"declared risk {declared} understates classifier result "
+                f"declared risk {declared_risk} understates classifier result "
                 f"{classification.risk_class}",
             )
         )
     else:
+        declaration = declared_risk or "not supplied"
         checks.append(
             ReadinessCheck(
                 "risk-class",
                 True,
-                f"declared risk {declared}; classifier result {classification.risk_class}",
+                f"declared risk {declaration}; classifier result {classification.risk_class}",
             )
         )
 
-    evidence_path = task_dir / "evidence.md"
-    evidence_text = evidence_path.read_text(encoding="utf-8") if evidence_path.is_file() else ""
-    records = evidence_records(evidence_text)
-    missing_gates = [
-        gate for gate in required_gates if not any(record.gate == gate for record in records)
-    ]
-    failed_gates = {
-        gate: tuple(record.exit_status for record in records if record.gate == gate)
-        for gate in required_gates
-        if any(record.gate == gate and record.exit_status != 0 for record in records)
-    }
-    gate_details: list[str] = []
-    if missing_gates:
-        gate_details.append(f"missing required gates: {', '.join(missing_gates)}")
-    if failed_gates:
-        failures = ", ".join(
-            f"{gate} ({'/'.join(str(status) for status in statuses)})"
-            for gate, statuses in failed_gates.items()
+    if "evidence.md" in required_files and task_dir is not None and validation_ok:
+        evidence_path = task_dir / "evidence.md"
+        evidence_text = evidence_path.read_text(encoding="utf-8") if evidence_path.is_file() else ""
+        records = evidence_records(evidence_text)
+        missing_gates = [
+            gate for gate in required_gates if not any(record.gate == gate for record in records)
+        ]
+        failed_gates = {
+            gate: tuple(record.exit_status for record in records if record.gate == gate)
+            for gate in required_gates
+            if any(record.gate == gate and record.exit_status != 0 for record in records)
+        }
+        gate_details: list[str] = []
+        if missing_gates:
+            gate_details.append(f"missing required gates: {', '.join(missing_gates)}")
+        if failed_gates:
+            failures = ", ".join(
+                f"{gate} ({'/'.join(str(status) for status in statuses)})"
+                for gate, statuses in failed_gates.items()
+            )
+            gate_details.append(f"required gates with non-zero exit: {failures}")
+        gates_ok = not gate_details
+        checks.append(
+            ReadinessCheck(
+                "required-gates",
+                gates_ok,
+                f"all {len(required_gates)} required gates have exit 0"
+                if gates_ok
+                else "; ".join(gate_details),
+            )
         )
-        gate_details.append(f"required gates with non-zero exit: {failures}")
-    gates_ok = not gate_details
-    checks.append(
-        ReadinessCheck(
-            "required-gates",
-            gates_ok,
-            f"all {len(required_gates)} required gates have exit 0"
-            if gates_ok
-            else "; ".join(gate_details),
+        evidence_ok, evidence_detail = evidence_is_current(evidence_path, head_sha, root=root)
+        checks.append(ReadinessCheck("evidence-current", evidence_ok, evidence_detail))
+    elif "evidence.md" not in required_files:
+        checks.append(
+            ReadinessCheck(
+                "required-gates",
+                True,
+                f"{risk_class} gate outcomes are enforced by required CI checks",
+            )
         )
-    )
-
-    evidence_ok, evidence_detail = evidence_is_current(evidence_path, head_sha, root=root)
-    checks.append(ReadinessCheck("evidence-current", evidence_ok, evidence_detail))
 
     return ReadinessResult(
         ready=all(check.ok for check in checks),
         classification=classification,
         risk_class=risk_class,
         required_gates=required_gates,
-        declared_risk=declared,
+        declared_risk=declared_risk,
         checks=tuple(checks),
     )
 
@@ -228,13 +247,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     paths = changed_paths(args.base)
     task_id = args.task_id or discover_task_id(paths)
-    if task_id is None:
+    classification = classify_paths(paths, load_model())
+    required_files = load_schema().required_files_for(classification.risk_class)
+    if task_id is None and required_files:
         print(
             "NOT READY: provide a task ID or change files in exactly one .ai/tasks/<id>/ directory"
         )
         return 1
 
-    result = assess_readiness(REPO_ROOT / ".ai" / "tasks" / task_id, paths, _head_sha(REPO_ROOT))
+    task_dir = REPO_ROOT / ".ai" / "tasks" / task_id if task_id is not None else None
+    result = assess_readiness(task_dir, paths, _head_sha(REPO_ROOT))
     print(f"Risk: {result.risk_class}")
     print("Reasons:")
     for reason in result.classification.reasons:

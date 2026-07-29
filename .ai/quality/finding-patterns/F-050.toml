@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #123 complete independent re-review"
+defect_class = "secret-regression-guard-matches-only-one-serialization"
+severity = "P2"
+affected = "tests/test_live_accounts.py"
+root_cause = "the login-literal detector recognized an unquoted assignment but not quoted dotenv, JSON, annotated Python, comment, docstring, or task-evidence representations"
+why_tests_missed = "the guard was tested against three canonical-looking examples rather than a committed representation matrix and the known account suffixes in .ai task output"
+regression = "test_login_literal_guard_matches_plausible_reintroduction_forms; test_ai_task_login_suffix_is_detected_without_a_bare_number_scan"
+generalized = "a secret regression guard must enumerate the serializations operators and tooling actually produce, with a narrow domain witness where a broad numeric scan is infeasible"
+workflow_change = "twenty-two assignment/serialization forms and account-suffix task evidence are executable guard inputs"

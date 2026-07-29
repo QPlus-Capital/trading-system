@@ -15,8 +15,7 @@ from scripts.quality.hooks.decisions import (
     bypass_decision,
     dangerous_command_decision,
     main_branch_decision,
-    pr_readiness_decision,
-    push_readiness_decision,
+    pr_transition_decision,
     review_artifact_decision,
     secret_decision,
 )
@@ -75,16 +74,13 @@ def test_main_branch_decision_blocks_nontrivial_change_and_allows_safe_case() ->
     assert main_branch_decision("git commit -m test", "feature/66", "R3").allowed
 
 
-def test_push_readiness_decision_blocks_failure_and_allows_success() -> None:
-    assert not push_readiness_decision("git push origin HEAD", False).allowed
-    assert push_readiness_decision("git push origin HEAD", True).allowed
-    assert push_readiness_decision("git status", False).allowed
-
-
-def test_pr_readiness_decision_blocks_failure_and_allows_success() -> None:
-    assert not pr_readiness_decision("gh pr create --fill", False).allowed
-    assert pr_readiness_decision("gh pr create --fill", True).allowed
-    assert pr_readiness_decision("gh pr view 66", False).allowed
+def test_pr_transition_decision_allows_draft_and_gates_ready_transition() -> None:
+    assert pr_transition_decision("gh pr create --draft --fill", False).allowed
+    assert not pr_transition_decision("gh pr create --fill", True).allowed
+    assert not pr_transition_decision("gh pr ready 66", False).allowed
+    assert pr_transition_decision("gh pr ready 66", True).allowed
+    assert pr_transition_decision("git push origin HEAD", False).allowed
+    assert pr_transition_decision("gh pr view 66", False).allowed
 
 
 def test_baseline_evidence_decision_blocks_missing_and_allows_explicit_evidence() -> None:
@@ -118,9 +114,10 @@ def test_bypass_decision_blocks_widened_toml_per_file_ignores() -> None:
 
 def test_review_artifact_decision_blocks_invalid_r3_and_allows_valid_review() -> None:
     issue = ValidationIssue("unresolved-review", "one unresolved P1 finding")
-    assert not review_artifact_decision("git commit -m x", "R3", (issue,)).allowed
-    assert review_artifact_decision("git commit -m x", "R3", ()).allowed
-    assert review_artifact_decision("git commit -m x", "R2", (issue,)).allowed
+    assert not review_artifact_decision("gh pr ready 66", "R3", (issue,)).allowed
+    assert review_artifact_decision("gh pr ready 66", "R3", ()).allowed
+    assert review_artifact_decision("gh pr ready 66", "R2", (issue,)).allowed
+    assert review_artifact_decision("git push origin HEAD", "R3", (issue,)).allowed
 
 
 def test_denied_payload_uses_documented_schema_and_never_echoes_input(
@@ -156,7 +153,11 @@ def test_evaluate_reuses_classifier_and_task_validator(monkeypatch: pytest.Monke
         return Classification("R3", ())
 
     monkeypatch.setattr(pre_bash, "classify_paths", classify)
-    monkeypatch.setattr(pre_bash, "_task_state", lambda task_id, index, root: ((), ()))
+    monkeypatch.setattr(
+        pre_bash,
+        "_task_state",
+        lambda task_id, risk_class, index, root: ((), ()),
+    )
 
     assert pre_bash.evaluate("git commit -m test").allowed
     assert observed == {"paths": paths, "model": model}
@@ -172,7 +173,7 @@ def test_evaluate_blocks_r3_boundary_without_task_review(monkeypatch: pytest.Mon
     monkeypatch.setattr(pre_bash, "_git", lambda args, root: "feature/66")
     monkeypatch.setattr(pre_bash, "classify_paths", lambda paths, model: Classification("R3", ()))
 
-    decision = pre_bash.evaluate("git commit -m test")
+    decision = pre_bash.evaluate("gh pr ready 66")
 
     assert not decision.allowed
     assert "review artifact" in decision.reason
@@ -193,14 +194,15 @@ def test_task_state_validates_the_staged_snapshot(
             )
         return "# Task file"
 
-    def validate(task_dir: Path) -> ValidationResult:
+    def validate(task_dir: Path, *, risk_class: str) -> ValidationResult:
+        assert risk_class == "R3"
         assert sorted(path.name for path in task_dir.iterdir()) == sorted(pre_bash._TASK_FILES)
         return ValidationResult(task_dir, ())
 
     monkeypatch.setattr(pre_bash, "_git", git_show)
     monkeypatch.setattr(pre_bash, "validate_task_dir", validate)
 
-    issues, evidence = pre_bash._task_state("66", index=True, root=tmp_path)
+    issues, evidence = pre_bash._task_state("66", "R3", index=True, root=tmp_path)
 
     assert issues == ()
     assert [record.gate for record in evidence] == ["check"]
