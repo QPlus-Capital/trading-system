@@ -125,3 +125,27 @@ break that argument, not confirm it. Specifically:
 8. **Executable checks — passed.** `tests/test_quality_mutation.py` reported 155 passed and one
    expected Windows Mutmut skip. Full `just check` reported 1,348 passed, one expected skip, with
    Ruff, strict mypy, and Vulture green.
+
+---
+
+## Independent review of the fingerprint remediation
+
+**Reviewer:** Claude
+
+**Date:** 2026-07-29
+
+**Result:** no findings.
+
+Claude exercised ten policy variations against the production `policy_fingerprint`. Reordering
+targets and reordering patterns were correctly cosmetic. Replacing, removing, or duplicating a
+pattern; changing a path while retaining the ID; changing an ID while retaining the path; and
+removing a target all changed the fingerprint. The review therefore confirmed both sides of the
+identity boundary: order is canonicalized, while target and pattern content is not.
+
+`tool_version` is deliberately outside this fingerprint. `scripts/quality/mutation.py` separately
+checks the installed Mutmut version against the policy and refuses a mismatch before measurement;
+if the repository intentionally changes the tool version, the real mutation result and exact
+survivor set must be measured again. Mixing the tool version into the policy digest would duplicate
+that refusal without replacing the required survivor remeasurement.
+
+**Adversarial-review status:** passed with exit 0.
