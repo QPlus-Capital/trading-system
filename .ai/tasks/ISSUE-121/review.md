@@ -67,3 +67,20 @@ now killed by platform/opt-in behavioral tests. The remaining default-argument m
 only because Mutmut's unchanged trampoline binds and passes `beep=False` before the inner mutated
 default can be reached; it cannot change observable runtime behavior. This disposition remains
 subject to the required fresh independent review.
+
+## Latest re-review dispositions
+
+The next complete independent re-review verified N2-N4 by execution and reported the three
+test-guard findings below. These are builder dispositions, not an independent approval; Claude must
+review the resulting fix.
+
+| ID | Severity | Finding | Disposition | Status |
+|---|---|---|---|---|
+| F1 | Suspected defect | The known-login suffix matcher protected only `.ai/**`, so independently written code representations could evade the production scan. | Apply the suffix matcher to normalized text from every tracked path while retaining the assignment-shape matcher; commit all eight supplied code counterexamples. | resolved |
+| F2 | Note | Valid Python integer literals containing digit separators evaded both matchers. | Remove only underscores between two digits before applying either matcher; commit all three supplied underscore forms. | resolved |
+| F3 | Note | The suffix alternation duplicated the two current profile suffixes and could omit a future account. | Build the deterministic escaped alternation from `ACCOUNTS` and assert every configured profile contributes its suffix. | resolved |
+
+The supplied oracle was run before remediation: 11 cases failed and all three feasibility checks
+passed. After remediation all 14 pass, the full account file passes 81 tests, and the tree-wide
+scan reports zero hits across the tracked repository. No production, live, monitoring, research, or
+runner file changed in this round.

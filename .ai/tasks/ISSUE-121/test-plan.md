@@ -19,7 +19,7 @@
 | AC-13, INV-12 | copy MEX login into the complete TTP environment block | RED: `get_account("ttp")` accepts the self-consistent copy | GREEN: suffix mismatch refuses before bridge construction |
 | AC-14, INV-13 | write the documented layout with two Windows paths and Telegram values, then invoke real `uv run --env-file` | RED: uv warns, returns success, and drops the first backslash path plus every later value | GREEN: all six values round-trip exactly with no warning |
 | AC-15, INV-13 | construct `Notifier` with both Telegram variables absent | RED: no log record | GREEN: one exact warning states that remote safety alerts are disabled |
-| AC-16, INV-09 | 22-form login serialization matrix plus synthetic `.ai` suffix evidence | RED: ten representation cases fail and the `.ai` helper is absent | GREEN: every form and either known-suffix task value is detected without a broad `.ai` number scan |
+| AC-16, INV-09 | 30-form login serialization matrix, 11 independent counterexamples, digit-underscore literals, and a tree-wide known-suffix scan derived from `ACCOUNTS` | RED: eight independently written code forms and all three underscore forms evade the production scan | GREEN: both the assignment-shape matcher and the account-derived suffix matcher inspect normalized text in every tracked path, with zero tree-wide hits |
 | AC-17, INV-12 | configure MEX login as `97` against suffix `0097` | RED: accepted after zero-padding | GREEN: refused because the raw login has no independent prefix |
 | AC-18, INV-14 | signature oracle plus 80 profile/login/currency decisions | RED: `execute` remains in the signature | GREEN: only `(state, profile)` remain and the decision matrix has zero divergences |
 | INV-01 | missing/malformed/wrong identity complement | RED: missing identity passes | GREEN: no case reaches an allowed guard result |
@@ -54,6 +54,13 @@ guides omitted quoting/precedence, a two-digit login passed the four-digit witne
 parameter remained, and missing remote transport emitted no warning. The corrected env-file test
 uses a forward-slash fixture filename so its failure is the dotenv content rather than uv's command
 argument parsing.
+
+The next independent re-review supplied 11 additional counterexamples written without consulting
+the matcher: eight code representations caught only by the suffix matcher that production limited
+to `.ai/**`, plus three valid Python integer literals containing digit separators. The committed
+focused command exited 1 with exactly 11 failures and three passing feasibility checks. The fix
+normalizes digit separators before both matchers, applies both matchers to every tracked path, and
+derives the suffix alternation from every profile in `ACCOUNTS`.
 
 ## Focused green proof
 

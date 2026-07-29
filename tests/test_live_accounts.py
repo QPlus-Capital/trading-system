@@ -54,8 +54,28 @@ _LOGIN_LITERAL = re.compile(
     (?![0-9])
     """
 )
-_AI_LOGIN_SUFFIX_LITERAL = re.compile(r"(?<![0-9])[1-9][0-9]{1,5}(?:0097|1681)(?![0-9])")
+_LOGIN_SUFFIXES = "|".join(
+    re.escape(suffix)
+    for suffix in sorted({profile.expected_login_suffix for profile in ACCOUNTS.values()})
+)
+_LOGIN_SUFFIX_LITERAL = re.compile(rf"(?<![0-9])[1-9][0-9]{{1,5}}(?:{_LOGIN_SUFFIXES})(?![0-9])")
+_DIGIT_SEPARATOR = re.compile(r"(?<=[0-9])_(?=[0-9])")
 _BARE_LONG_NUMBER = re.compile(r"(?<![0-9])[1-9][0-9]{5,9}(?![0-9])")
+_INDEPENDENT_REINTRODUCTION_TEMPLATES = [
+    "logins = [{value}, {other}]",
+    "LOGIN_TTP = {value}",
+    "TTP_ACCOUNT = {value}",
+    'accounts = {{"ttp": {value}}}',
+    'EXPECTED_LOGIN = int("{value}")',
+    "assert state.login == {value}",
+    "return {value}  # ttp login",
+    "login=(\n    {value}\n)",
+]
+_UNDERSCORE_REINTRODUCTION_TEMPLATES = [
+    "MT5_TTP_LOGIN={value}",
+    "login = {value}",
+    "x = {other}",
+]
 _DOCUMENTATION_PATHS = {".env.example", "README.md", "RUN.md"}
 _DOCUMENTATION_NUMBER_ALLOWLIST = {
     ("docs/architecture.md", "770077"),  # public MT5 magic number
@@ -115,13 +135,13 @@ def _tracked_text() -> dict[str, str]:
 
 
 def _login_literal_hits(texts: dict[str, str]) -> list[str]:
-    """Return tracked paths containing a login assignment or a known login in task evidence."""
-    return [
-        path
-        for path, text in texts.items()
-        if _LOGIN_LITERAL.search(text)
-        or (path.startswith(".ai/") and _AI_LOGIN_SUFFIX_LITERAL.search(text))
-    ]
+    """Return tracked paths containing a login assignment or known account login."""
+    return [path for path, text in texts.items() if _contains_login_literal(text)]
+
+
+def _contains_login_literal(text: str) -> bool:
+    normalized = _DIGIT_SEPARATOR.sub("", text)
+    return bool(_LOGIN_LITERAL.search(normalized) or _LOGIN_SUFFIX_LITERAL.search(normalized))
 
 
 def test_guard_refuses_when_the_login_environment_is_missing(
@@ -317,11 +337,12 @@ def test_tracked_tree_has_no_account_login_literal_or_user_home_path() -> None:
         "export MT5_TTP_LOGIN={value}",
         "set MT5_TTP_LOGIN={value}",
         '$env:MT5_TTP_LOGIN="{value}"',
+        *_INDEPENDENT_REINTRODUCTION_TEMPLATES,
     ],
 )
 def test_login_literal_guard_matches_plausible_reintroduction_forms(template: str) -> None:
-    line = template.format(value="504" + "071681")
-    assert _LOGIN_LITERAL.search(line)
+    line = template.format(value="504" + "071681", other="904" + "80097")
+    assert _contains_login_literal(line)
 
 
 def test_ai_task_login_suffix_is_detected_without_a_bare_number_scan() -> None:
@@ -329,6 +350,59 @@ def test_ai_task_login_suffix_is_detected_without_a_bare_number_scan() -> None:
     texts = {path: "captured account login " + "999" + "001681"}
 
     assert _login_literal_hits(texts) == [path]
+
+
+@pytest.mark.parametrize("template", _INDEPENDENT_REINTRODUCTION_TEMPLATES)
+def test_a_login_in_tracked_code_is_caught_however_it_is_written(template: str) -> None:
+    """The guard must protect code paths, not only the key=value shape it was built around."""
+    line = template.format(value="504" + "071681", other="904" + "80097")
+
+    assert _contains_login_literal(line)
+
+
+@pytest.mark.parametrize("template", _UNDERSCORE_REINTRODUCTION_TEMPLATES)
+def test_an_underscore_separated_login_literal_is_caught(template: str) -> None:
+    """An underscore-separated Python integer literal must not evade both patterns."""
+    line = template.format(value="504_" + "071_" + "681", other="90_" + "480_" + "097")
+
+    assert _contains_login_literal(line)
+
+
+def test_widening_the_suffix_rule_to_the_whole_tree_is_free() -> None:
+    """The stronger suffix rule must produce no false positives in the tracked tree."""
+    texts = _tracked_text()
+    assert len(texts) >= 100
+    hits = [
+        (path, match.group())
+        for path, text in texts.items()
+        for match in _LOGIN_SUFFIX_LITERAL.finditer(text)
+    ]
+
+    assert hits == [], f"tree-wide suffix hits: {hits}"
+
+
+def test_the_suffix_rule_covers_every_configured_account() -> None:
+    """A third account must not silently lose suffix protection."""
+    for profile in ACCOUNTS.values():
+        assert profile.expected_login_suffix in _LOGIN_SUFFIX_LITERAL.pattern, (
+            f"account {profile.name!r} suffix {profile.expected_login_suffix!r} is not in the "
+            "derived pattern"
+        )
+
+
+def test_normalising_digit_underscores_closes_the_last_gap() -> None:
+    """Digit-underscore normalisation must close the gap without tree-wide false positives."""
+    for template in _UNDERSCORE_REINTRODUCTION_TEMPLATES:
+        line = template.format(value="504_" + "071_" + "681", other="90_" + "480_" + "097")
+        assert _LOGIN_SUFFIX_LITERAL.search(_DIGIT_SEPARATOR.sub("", line)), line
+    texts = _tracked_text()
+    hits = [
+        (path, match.group())
+        for path, text in texts.items()
+        for match in _LOGIN_SUFFIX_LITERAL.finditer(_DIGIT_SEPARATOR.sub("", text))
+    ]
+
+    assert hits == [], f"tree-wide hits after normalisation: {hits}"
 
 
 def test_tracked_text_includes_tests_and_is_non_vacuous() -> None:
