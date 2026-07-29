@@ -30,8 +30,9 @@ review. This file does not mark the PR ready.
 - A complete MEX-to-TTP environment copy formerly passed. The TTP suffix pin rejects it, while
   synthetic matching-suffix values prove both profiles' accepting path.
 - F-043 through F-046 generalize the four confirmed defect classes.
-- F6 (dead compatibility parameter) and F7 (dashboard `SystemExit` presentation) were not requested
-  and remain unchanged. Halt/exception presentation is not widened in this remediation.
+- The earlier F6 deferral for the dead compatibility parameter is superseded by Jan's N4 decision
+  below. F7 (dashboard `SystemExit` presentation) remains out of scope; halt/exception presentation
+  is not widened in this remediation.
 - The complete independent adversarial and live-money review must run again because live,
   monitoring, and research-snapshot entrypoints changed materially.
 
