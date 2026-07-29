@@ -3,7 +3,7 @@
 | Requirement | Test | RED oracle | Expected GREEN |
 |---|---|---|---|
 | AC-01 | `tests/test_ci_cost_workflows.py::test_ready_test_node_inventory_is_partitioned_without_loss`; executed Windows/Linux collection diff | Old workflow has no platform partition; Linux collection fails on the unconditional MT5 import | Ready union equals the 1,286-node Windows baseline, with an empty cross-platform diff |
-| AC-02 | `tests/test_ci_cost_workflows.py::test_only_the_mt5_boundary_job_uses_windows` | All six CI jobs use Windows | Only the exact MT5 boundary job uses Windows |
+| AC-02 | `tests/test_ci_cost_workflows.py::test_only_the_platform_boundary_job_uses_windows` | All six CI jobs use Windows | Only the exact MT5 boundary job uses Windows |
 | AC-03 | `tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries`; `tests/test_ci_cost_workflows.py::test_mt5_boundary_job_runs_the_exact_windows_node` | No narrow job exists and the module import prevents Linux collection | Exact node remains blocking on Windows and collects safely on Linux |
 | AC-04 | `tests/test_ci_cost_workflows.py::test_pull_request_edited_triggers_no_workflow` | Both workflows accept `edited` (CI explicitly, mutation implicitly) | Neither parsed trigger accepts `edited` |
 | AC-05, INV-01 | `tests/test_ci_cost_workflows.py::test_mutation_job_runs_for_production_and_direct_critical_test_changes` | Production-only filter rejects `tests/test_live_risk_control.py` | Parsed embedded predicate accepts both a configured production target and a test that imports one directly; docs and `tests/test_gate_consistency.py` still skip |
