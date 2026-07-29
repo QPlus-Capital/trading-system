@@ -506,11 +506,13 @@ def test_position_snapshots_forward_the_symbol_filter(
     assert fake.positions_get_calls == [{"symbol": "EURUSD"}, {"symbol": "EURUSD"}]
 
 
+@pytest.mark.parametrize("invalid_value", [True, _ValueErrorIndex()])
 def test_position_snapshot_preserves_invalid_ticket_issue_and_continues(
     monkeypatch: pytest.MonkeyPatch,
+    invalid_value: object,
 ) -> None:
     invalid_ticket = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
-    invalid_ticket.ticket = _ValueErrorIndex()
+    invalid_ticket.ticket = invalid_value
     valid = SimpleNamespace(
         **{
             **vars(_raw_position(_FakeMt5.POSITION_TYPE_SELL)),
