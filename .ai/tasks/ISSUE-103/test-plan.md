@@ -81,6 +81,18 @@ no retrievable ticket; both stopped and stop-less foreign invalid records let a 
 only 110.1 risk charged; and monitoring reported no unpriceable market. The same 114-test command
 passes after the shared snapshot and per-record flatten implementation.
 
+Linux run `30431184595` exposed 53 PR-specific survivors in the new snapshot, account-risk, and
+partial-flatten surfaces. Exact behavioural assertions reduced that set to two in run
+`30432148064`. Both remaining Mutmut bodies were then applied literally: accepting a boolean
+ticket through `operator.index` emitted ticket `1`, and replacing the arithmetic-fallback
+`continue` with `break` returned 30 rather than the complete 60 account risk. The two committed
+oracles failed independently against those bodies. Run `30432909044` then showed that the
+three-position ordering killed `break` but let a distinct `+=` to `=` mutation survive. Putting
+one broker-priced position on each side of the arithmetic fallback makes both mutations
+observable: the assignment body returns 50 and the early break returns 40 instead of 60. That
+exact assignment body was also applied and the committed oracle failed before the intended code
+was restored. No PR-specific survivor is classified.
+
 ## Adversarial cases
 
 - Unknown positive and negative integer position types.

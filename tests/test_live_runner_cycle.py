@@ -823,8 +823,8 @@ def test_open_risk_accumulates_every_priced_and_fallback_position() -> None:
 
     stub = PerPositionRiskBridge()
     stub.open_positions = [
-        Position(3, "XAUUSD", "BUY", 1.0, 2000.0, 1970.0, 2090.0, 0.0, MAGIC),
         Position(1, "XAUUSD", "BUY", 1.0, 2000.0, 1990.0, 2030.0, 0.0, MAGIC),
+        Position(3, "XAUUSD", "BUY", 1.0, 2000.0, 1970.0, 2090.0, 0.0, MAGIC),
         Position(2, "XAUUSD", "SELL", 1.0, 2000.0, 2010.0, 1970.0, 0.0, MAGIC),
     ]
     runner = _runner(stub)
