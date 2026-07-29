@@ -218,3 +218,26 @@ pre-fix run was `2 failed, 2 passed`; the corrected focused run is `8 passed`, i
 previously verified owned partial-flatten and foreign-only infinite-risk outcomes. This is builder
 disposition evidence only. Because the runner safety decision changed, the independent adversarial
 and live-money reviews remain non-zero until Claude completes another full review.
+
+## Sixth complete independent review — no findings
+
+Claude completed the round-6 R3 adversarial and live-money review on 2026-07-29:
+[GitHub review 4807831718](https://github.com/QPlus-Capital/trading-system/pull/105#pullrequestreview-4807831718).
+The review is anchored to implementation/evidence HEAD
+`5e7aac5e9887fda6a38a55d67710c32b70d866d5`.
+
+**Verdict: no finding. This is clean.** The review verified by execution:
+
+- an undecodable owned record halts when it is first, middle, or last in a six-record enumeration,
+  both when `magic == MAGIC` and when ownership is unreadable (`magic is None`);
+- foreign-only undecodable records still block new entries with `open_risk = inf`, without halting,
+  flattening, or closing anything;
+- a clean account is unaffected and its open risk remains finite;
+- `test_foreign_unknown_position_type_never_halts_or_flattens_owned_book` now turns red under the
+  ownership-predicate mutation that previously left it green;
+- `git diff 444022c..HEAD -- tests/` removes no assertion and no test anywhere in the diff;
+- the mutation baseline tightened from 410 survivors to 409, with no new classification.
+
+No MT5 terminal was initialized, no runner was contacted, and no order was placed, modified, or
+closed. Every acceptance criterion and invariant was traced successfully. The review found no
+business, trading, methodology, live-money, architecture, or risk decision requiring escalation.
