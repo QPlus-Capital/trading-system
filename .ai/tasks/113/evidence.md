@@ -18,12 +18,12 @@ remains byte-faithful. A later evidence-only commit is permitted by the readines
 | `check` | PowerShell `just check` | 0 | Ruff, strict mypy over 187 files, Vulture, and pytest passed: 1,593 passed and one expected unavailable-Mutmut skip. |
 | `impacted-tests` | `just check-fast origin/main` | 0 | The impact-selected workflow, account-environment, mutation, and quality set passed 287/287 with one expected unavailable-Mutmut skip. |
 | `property-tests-where-applicable` | PowerShell `just check-properties` | 0 | 21 property tests passed twice with seed `20260721`. |
-| `integration-tests` | PowerShell `just check`; Actions run `30478429911` | 0 | Windows passed 1,593 tests with one tool-availability skip; Linux passed 1,592 with the expected Mutmut and MT5-boundary skips. The same 1,594-node inventory was collected on both platforms. |
+| `integration-tests` | PowerShell `just check`; Actions run `30479420482` | 0 | Windows passed 1,593 tests with one tool-availability skip; Linux passed 1,592 with the expected Mutmut and MT5-boundary skips. The same 1,594-node inventory was collected on both platforms. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 113 --base origin/main` | 0 | Task 113 is valid with seven acceptance criteria and three invariants; review F1 has a resolved disposition and executable traceability. |
 | `adversarial-review` | PR #130 reviews `4810464072` and `4811220729`, 2026-07-29 | 0 | The nine-shape predicate review remained sound. The first Linux run found two environment-precondition defects; both are reproduced, resolved, and permanently registered with executable proof. |
 | `invariants` | PowerShell `just check-invariants` | 0 | All 529 critical invariant tests passed. |
-| `mutation-on-touched-critical` | Actions run `30478424981` | 0 | The real weakened-test probe passed with Mutmut supplied, then the unchanged critical ratchet passed at 4,761/5,171 killed and 410 exact survivors. |
-| `parity-where-applicable` | Actions run `30478429911`; local Windows collection | 0 | The ready-state Linux suite collected the same 1,594-node inventory and passed 1,592 with only the expected unavailable-Mutmut and unavailable-MT5 skips; Windows passed 1,593 with only the unavailable-Mutmut skip. |
+| `mutation-on-touched-critical` | Actions run `30479420647` | 0 | The real weakened-test probe passed with Mutmut supplied, then the unchanged critical ratchet passed at 4,761/5,171 killed and 410 exact survivors. |
+| `parity-where-applicable` | Actions run `30479420482`; local Windows collection | 0 | The fully green ready-state Linux suite collected the same 1,594-node inventory and passed 1,592 with only the expected unavailable-Mutmut and unavailable-MT5 skips; Windows passed 1,593 with only the unavailable-Mutmut skip. |
 | `live-money-review` | PR #130 independent R3 re-review `4810464072`, 2026-07-29 | 0 | No finding; the reviewer verified the platform and gate structure plus the bounded remediation against executable counterexamples. |
 | `human-decision-escalation` | spec, actual CI runs, and active ruleset audit | 0 | The platform limitation, external required-check transition, and deferred ready-state observations are explicit; no result was guessed. |
 | `no-autonomous-merge` | Ready PR #130 and project-state audit | 0 | Jan performed the ready transition; the card remains in `Reviewing`, and no merge or auto-merge occurred. |
@@ -109,6 +109,10 @@ MT5 package is confined to the Windows boundary. The job's first pass stopped on
 PR-evidence, which this evidence-only commit resolves. Mutation run `30478424981` separately proved
 that the same Mutmut node executes and passes when `mutmut==3.5.0` is supplied.
 
+Final synchronize run `30479420482` passed `platform-quality` and the complete Linux
+`full-quality` job on the evidence-updated head. Mutation run `30479420647` passed both the real
+weakened-test probe and the unchanged critical ratchet on that same head.
+
 ### Test inventory and platform boundary
 
 - Pre-change Windows collection: 1,286 node IDs, SHA-256
@@ -136,7 +140,8 @@ a test executes a target.
 GitHub's timing API reports zero billable milliseconds for both runs because this repository is
 public. Using the actual per-job durations, per-job minute rounding, and the standard
 Windows-to-Linux minute weighting, the last comparable six-Windows-job run `30476116476` consumed
-20 Linux-equivalent minutes; post-change run `30478429911` consumed four, an 80% reduction. The
+20 Linux-equivalent minutes; fully green post-change run `30479420482` consumed six, a 70%
+reduction. The
 measured exposure is materially lower even though the current public repository incurs zero charge.
 
 ## Deferred checks
