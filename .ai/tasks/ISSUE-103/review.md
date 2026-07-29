@@ -189,3 +189,13 @@ touch signal generation, order placement, order sizing, risk thresholds, or any 
 No fourth production path was changed. This is nevertheless a material live-risk fix, so the
 complete independent adversarial and live-money reviews must run again; these builder dispositions
 do not mark either review gate green.
+
+The mutation remediation is also complete without classification. Run `30431184595` first exposed
+53 PR-specific survivors. Exact snapshot fields, per-record continuation, account-risk
+accumulation, boundary warnings, and flatten alerts reduced that set to two in run `30432148064`.
+The remaining boolean-ticket and early-break bodies were applied literally and made RED; run
+`30432909044` then exposed a distinct fallback-overwrite survivor that the first position ordering
+could not distinguish. The final mixed ordering makes both early termination and replacement of
+the running total observable. Run `30433501950` measured 5,106 mutants with 4,697 killed, exactly
+the inherited 409 survivors, and zero unhealthy outcomes. The baseline refresh therefore adds 128
+measured mutants and 128 kills, adds no survivor or classification, and weakens no gate.
