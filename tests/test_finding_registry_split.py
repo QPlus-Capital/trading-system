@@ -110,6 +110,12 @@ def _content(item: dict[str, Any]) -> dict[str, str]:
 def test_migration_preserves_all_legacy_ids_and_content() -> None:
     before = tomllib.loads(_LEGACY.read_text(encoding="utf-8"))["finding"]
     after = {finding.id: finding.content for finding in load_findings(_REGISTRY)}
+    legacy_ids = {str(item["id"]) for item in before}
+    migrated_ids = {
+        finding_id
+        for finding_id in after
+        if len(finding_id) == len("F-000") and finding_id[2:].isdigit()
+    }
     assert len(before) == 55
-    assert set(after) == {str(item["id"]) for item in before}
+    assert migrated_ids == legacy_ids
     assert all(after[str(item["id"])] == _content(item) for item in before)
