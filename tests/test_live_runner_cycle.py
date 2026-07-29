@@ -171,6 +171,73 @@ def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
     )
 
 
+def _raw_position(
+    ticket: int,
+    symbol: str,
+    type_: object,
+    magic: object,
+) -> SimpleNamespace:
+    return SimpleNamespace(
+        ticket=ticket,
+        symbol=symbol,
+        type=type_,
+        volume=0.1,
+        price_open=2000.0,
+        sl=1980.0,
+        tp=2060.0,
+        profit=-10.0,
+        magic=magic,
+    )
+
+
+def _wire_raw_position_bridge(
+    monkeypatch: pytest.MonkeyPatch,
+    raw_positions: list[SimpleNamespace],
+) -> StubBridge:
+    class RawTerminal:
+        POSITION_TYPE_BUY = 0
+        POSITION_TYPE_SELL = 1
+
+        @staticmethod
+        def positions_get(**kwargs: object) -> list[SimpleNamespace]:
+            symbol = kwargs.get("symbol")
+            return [
+                position
+                for position in raw_positions
+                if symbol is None or position.symbol == symbol
+            ]
+
+        @staticmethod
+        def last_error() -> tuple[int, str]:
+            return 0, "synthetic"
+
+    monkeypatch.setattr(bridge_module, "mt5", RawTerminal())
+    real_bridge = Mt5Bridge({"XAUUSD": "XAUUSD"})
+    real_bridge._connected = True
+    real_bridge._resolved["XAUUSD"] = "XAUUSD"
+
+    class RawPositionBridge(StubBridge):
+        def __init__(self) -> None:
+            super().__init__()
+            self.open_positions = [
+                Position(11, "XAUUSD", "BUY", 0.1, 2000.0, 1980.0, 2060.0, -10.0, MAGIC)
+            ]
+
+        def positions(self, name: str | None = None) -> list[Position]:
+            return real_bridge.positions(name)
+
+        def position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, real_bridge.position_snapshot(name))
+
+        def owned_positions(self, name: str | None = None) -> list[Position]:
+            return real_bridge.owned_positions(name)
+
+        def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, real_bridge.owned_position_snapshot(name))
+
+    return RawPositionBridge()
+
+
 def test_run_once_full_cycle_no_signal_no_orders() -> None:
     stub = StubBridge()
     runner = _runner(stub)
@@ -452,8 +519,14 @@ def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book(
         def positions(self, name: str | None = None) -> list[Position]:
             return position_bridge.positions(name)
 
+        def position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.position_snapshot(name))
+
         def owned_positions(self, name: str | None = None) -> list[Position]:
             return position_bridge.owned_positions(name)
+
+        def owned_position_snapshot(self, name: str | None = None) -> SimpleNamespace:
+            return cast(SimpleNamespace, position_bridge.owned_position_snapshot(name))
 
     stub = RawPositionBridge()
     runner = _runner(stub, mode=Mode.EXECUTE)
@@ -464,6 +537,40 @@ def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book(
     assert runner._halt_reason == ""
     assert stub.closed == []
     assert [position.ticket for position in stub.open_positions] == [11, 12]
+
+
+@pytest.mark.parametrize("order", ["owned_first", "foreign_first"])
+def test_an_undecodable_owned_side_halts_whatever_the_enumeration_order(
+    monkeypatch: pytest.MonkeyPatch,
+    order: str,
+) -> None:
+    foreign = _raw_position(20, "GBPJPY", 7, 999)
+    owned = _raw_position(21, "XAUUSD", 7, MAGIC)
+    raw = [owned, foreign] if order == "owned_first" else [foreign, owned]
+
+    stub = _wire_raw_position_bridge(monkeypatch, raw)
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    runner.run_once()
+
+    assert runner._halted, (
+        f"order={order}: halted={runner._halted}, reason={runner._halt_reason!r}, "
+        f"open_risk={runner._risk.open_risk}"
+    )
+
+
+def test_a_position_whose_magic_cannot_be_decoded_is_treated_as_unverifiable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    unreadable_magic = _raw_position(22, "XAUUSD", 0, "not-an-int")
+
+    stub = _wire_raw_position_bridge(monkeypatch, [unreadable_magic])
+    runner = _runner(stub, mode=Mode.EXECUTE)
+    runner.run_once()
+
+    assert runner._halted, (
+        f"halted={runner._halted}, reason={runner._halt_reason!r}, "
+        f"open_risk={runner._risk.open_risk}"
+    )
 
 
 @pytest.mark.parametrize("stop", [190.0, 0.0])

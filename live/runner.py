@@ -441,15 +441,20 @@ class LiveRunner:
         runner can close every other retrievable owned position.
         """
         snapshot = self._bridge.position_snapshot()
+        unverifiable = next(
+            (issue for issue in snapshot.issues if issue.magic == MAGIC or issue.magic is None),
+            None,
+        )
+        if unverifiable is not None:
+            raise Mt5SideError(unverifiable.reason)
         for issue in snapshot.issues:
-            if issue.magic == MAGIC:
-                raise Mt5SideError(issue.reason)
             log.critical(
                 "cannot decode account position ticket %s on %s -> blocking new entries "
                 "until it is resolved",
                 issue.ticket,
                 issue.symbol,
             )
+        if snapshot.issues:
             return math.inf
         infos: dict[str, SymbolInfo] = {}
         for spec in self._markets:

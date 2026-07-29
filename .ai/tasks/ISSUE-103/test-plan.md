@@ -24,6 +24,8 @@
 | AC-16, INV-05 | `test_foreign_unknown_position_type_blocks_new_risk_without_halting`; `test_load_live_surfaces_an_undecodable_position_as_unpriceable` | RED: both stop variants placed a BUY and charged only 110.1 open risk; dashboard reported no unpriceable market | GREEN: both variants set infinite risk, place and close nothing, stay unhalted, and make GBPJPY unpriceable in the dashboard |
 | AC-17, INV-08 | `test_runner_halts_loudly_and_flattens_retrievable_positions_from_real_bridge`; `test_trailing_breach_flattens_each_retrievable_owned_raw_position` | RED: the real bridge raised the whole owned batch, closed no ticket, and emitted only a generic enumeration alert | GREEN: both semantic and trailing-limit halts close ticket 11 and alert specifically for undecodable ticket 13 |
 | AC-18, INV-02 | `test_position_type_value_error_is_classified_as_a_side_error`; `test_position_magic_value_error_is_classified_before_direction` | RED: both failures escaped as bare `ValueError` | GREEN: both raise the complete boundary-specific `Mt5SideError` before any order call |
+| Constitution section 3, INV-08 | `test_an_undecodable_owned_side_halts_whatever_the_enumeration_order`; `test_a_position_whose_magic_cannot_be_decoded_is_treated_as_unverifiable` | RED on reviewed HEAD `444022c`: foreign-first ordering and unreadable magic both left the runner active with `open_risk=inf` | GREEN: every issue is scanned before the decision, so owned or unknown ownership always halts while a purely foreign issue remains non-destructive |
+| Constitution section 8, INV-08 | `test_foreign_unknown_position_type_never_halts_or_flattens_owned_book` | RED under the reviewer mutation that routes every issue to the halt: the former fixture stayed green because it never delegated `position_snapshot` | GREEN: both snapshot methods reach the real bridge and the same mutation fails before any owned ticket can be closed |
 | INV-01 | autouse MT5 boundary plus synthetic fake assertions | Existing safety fixture | GREEN: no real terminal import, initialization, connection, or order |
 | INV-05, INV-06 | production-path diff and baseline artifact SHA-256 comparison | Main baseline | GREEN: no research/report producer diff; both CSV hashes unchanged |
 
@@ -92,6 +94,16 @@ one broker-priced position on each side of the arithmetic fallback makes both mu
 observable: the assignment body returns 50 and the early break returns 40 instead of 60. That
 exact assignment body was also applied and the committed oracle failed before the intended code
 was restored. No PR-specific survivor is classified.
+
+The fifth independent review supplied a further RED state against reviewed HEAD `444022c`. The
+reviewer's two committed counterexamples were copied into the branch unchanged in behavior. The
+focused command produced two failures and two passes: foreign-first issue ordering left the runner
+active at infinite risk, and an unreadable magic value received the same weaker outcome. Reversing
+the first ordering already halted, proving terminal enumeration order selected the safety action.
+The production fix scans the complete issue tuple before choosing an outcome; the same focused
+command passes all four cases. A separate temporary mutation that halted on every issue made
+`test_foreign_unknown_position_type_never_halts_or_flattens_owned_book` fail after its snapshot
+delegation was corrected, proving that the named regression now reaches the actual consumer.
 
 ## Adversarial cases
 

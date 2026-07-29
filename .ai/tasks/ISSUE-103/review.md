@@ -199,3 +199,22 @@ could not distinguish. The final mixed ordering makes both early termination and
 the running total observable. Run `30433501950` measured 5,106 mutants with 4,697 killed, exactly
 the inherited 409 survivors, and zero unhealthy outcomes. The baseline refresh therefore adds 128
 measured mutants and 128 kills, adds no survivor or classification, and weakens no gate.
+
+## Fifth complete independent re-review dispositions
+
+The fifth review verified both previous-round P1 fixes and the rollback binding of the partial
+flatten behavior. Those paths remain unchanged. It found two P1 defects in the six-line
+account-risk issue decision and one non-binding regression fixture:
+
+| ID | Severity | Review point | Disposition | Status |
+|---|---|---|---|---|
+| F1 | P1 | Returning inside the issue loop made the halt depend on whether an owned undecodable record appeared before a foreign one. | Scan the complete issue tuple for an owned or ownership-unknown record before selecting any outcome. The reviewer-supplied two-order fixture now halts in both orders. | resolved |
+| F2 | P1 | `magic=None` was treated as proven foreign ownership and received only the infinite-risk outcome. | Treat `magic is None` as unverifiable ownership and raise the same dedicated semantic side error used for a known-owned record. The reviewer-supplied unreadable-magic fixture now halts. | resolved |
+| F3 | P2 | The foreign-undecodable runner test delegated list reads but not either snapshot read, so it never reached the issue consumer. | Delegate both `position_snapshot()` and `owned_position_snapshot()` to the real fake-backed bridge. A temporary halt-on-any-issue mutation now makes the test fail. | resolved |
+
+F-054 generalizes the combined failure: batch safety decisions must be order-invariant, inspect the
+complete batch, and place unknown classification metadata on the conservative branch. The focused
+pre-fix run was `2 failed, 2 passed`; the corrected focused run is `8 passed`, including the
+previously verified owned partial-flatten and foreign-only infinite-risk outcomes. This is builder
+disposition evidence only. Because the runner safety decision changed, the independent adversarial
+and live-money reviews remain non-zero until Claude completes another full review.

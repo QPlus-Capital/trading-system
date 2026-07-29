@@ -539,3 +539,15 @@ why_tests_missed = "the runner test made account-wide positions fail while its o
 regression = "real Mt5Bridge raw positions_get with one valid and one invalid owned record must close the valid ticket and alert with the invalid ticket during both semantic and limit-triggered halts"
 generalized = "best-effort safety actions over external batches require per-record decoding results; one bad record must remain loud without erasing independently retrievable actions"
 workflow_change = "the halt path consumes an owned-position snapshot and mutation coverage includes the decoder, account-risk completeness check, and per-record flatten consumer"
+
+[[finding]]
+id = "F-054"
+source = "PR #105 fifth independent live-money review"
+defect_class = "ordered-short-circuit-and-unknown-ownership-weaken-safety-outcome"
+severity = "P1"
+affected = "live/runner.py, tests/test_live_runner_cycle.py"
+root_cause = "the account-risk consumer returned after the first undecodable record and treated an undecodable ownership marker as proven foreign, so terminal enumeration order and missing ownership metadata selected different safety outcomes for the same account exposure"
+why_tests_missed = "one named undecodable-record regression delegated list reads but not the snapshot API the runner actually consumed, while no fixture combined foreign-first and owned-later issues or an unreadable magic value"
+regression = "test_an_undecodable_owned_side_halts_whatever_the_enumeration_order; test_a_position_whose_magic_cannot_be_decoded_is_treated_as_unverifiable; test_foreign_unknown_position_type_never_halts_or_flattens_owned_book"
+generalized = "a batch safety decision must inspect the complete batch, be invariant to external enumeration order, and route missing classification metadata to the conservative outcome rather than treating it as a negative classification"
+workflow_change = "runner regressions now delegate the real snapshot surface and jointly pin issue ordering, ambiguous ownership, and the non-destructive foreign-only outcome"
