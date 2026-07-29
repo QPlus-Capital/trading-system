@@ -14,9 +14,7 @@ from scripts.quality.mutation import load_policy
 _ROOT = Path(__file__).resolve().parents[1]
 _CI_PATH = _ROOT / ".github" / "workflows" / "ci.yml"
 _MUTATION_PATH = _ROOT / ".github" / "workflows" / "mutation.yml"
-_MT5_NODE = (
-    "tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries"
-)
+_MT5_NODE = "tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries"
 _FULL_RECIPES = {
     "check-standard",
     "check-tests",
@@ -87,7 +85,7 @@ class _Expression:
     def evaluate(self) -> bool:
         value = self._or()
         assert self._position == len(self._tokens), (
-            f"unparsed GitHub expression tokens: {self._tokens[self._position:]}"
+            f"unparsed GitHub expression tokens: {self._tokens[self._position :]}"
         )
         assert isinstance(value, bool), f"job condition did not resolve to bool: {value!r}"
         return value
@@ -170,9 +168,7 @@ def _selected_jobs(
             "event": {"pull_request": {"draft": draft}},
         },
         "needs": {
-            "critical-change-filter": {
-                "outputs": {"changed": str(critical_changed).lower()}
-            }
+            "critical-change-filter": {"outputs": {"changed": str(critical_changed).lower()}}
         },
     }
     selected: set[str] = set()
@@ -189,10 +185,7 @@ def _job(workflow: Mapping[str, Any], name: str) -> dict[str, Any]:
 
 
 def _steps(job: Mapping[str, Any]) -> list[dict[str, Any]]:
-    return [
-        _mapping(step, "job step")
-        for step in _sequence(job["steps"], "job.steps")
-    ]
+    return [_mapping(step, "job step") for step in _sequence(job["steps"], "job.steps")]
 
 
 def _recipes(job: Mapping[str, Any]) -> set[str]:
@@ -243,9 +236,7 @@ def test_pull_request_edited_triggers_no_workflow() -> None:
 
 def test_draft_and_ready_events_select_the_expected_gate_sets() -> None:
     workflow = _workflow(_CI_PATH)
-    draft_jobs = _selected_jobs(
-        workflow, event_name="pull_request", action="opened", draft=True
-    )
+    draft_jobs = _selected_jobs(workflow, event_name="pull_request", action="opened", draft=True)
     ready_jobs = _selected_jobs(
         workflow, event_name="pull_request", action="ready_for_review", draft=False
     )
@@ -265,9 +256,10 @@ def test_ready_synchronize_runs_the_full_set() -> None:
 
 def test_direct_ready_pull_request_runs_the_full_set() -> None:
     workflow = _workflow(_CI_PATH)
-    assert _selected_jobs(
-        workflow, event_name="pull_request", action="opened", draft=False
-    ) == {"full-quality", "mt5-boundary"}
+    assert _selected_jobs(workflow, event_name="pull_request", action="opened", draft=False) == {
+        "full-quality",
+        "mt5-boundary",
+    }
 
 
 def test_mutation_job_uses_the_policy_for_concrete_changed_paths() -> None:
@@ -306,10 +298,7 @@ def test_mutation_filter_has_no_copied_target_paths() -> None:
     source = _embedded_python(workflow)
     tree = ast.parse(source)
     imported = {
-        alias.name
-        for node in tree.body
-        if isinstance(node, ast.ImportFrom)
-        for alias in node.names
+        alias.name for node in tree.body if isinstance(node, ast.ImportFrom) for alias in node.names
     }
     called = {
         node.func.id
@@ -386,9 +375,7 @@ def test_consolidated_jobs_cache_dependencies_and_preserve_limits() -> None:
     for name in ("fast-quality", "full-quality", "mt5-boundary"):
         job = _job(ci, name)
         setup = next(
-            step
-            for step in _steps(job)
-            if "astral-sh/setup-uv@" in str(step.get("uses", ""))
+            step for step in _steps(job) if "astral-sh/setup-uv@" in str(step.get("uses", ""))
         )
         options = _mapping(setup["with"], f"{name} setup-uv.with")
         assert options["enable-cache"] == "true"
@@ -399,6 +386,31 @@ def test_consolidated_jobs_cache_dependencies_and_preserve_limits() -> None:
     assert int(str(_job(ci, "mt5-boundary")["timeout-minutes"])) <= 30
     mutation = _workflow(_MUTATION_PATH)
     assert int(str(_job(mutation, "mutation-critical")["timeout-minutes"])) == 45
+
+
+def test_each_consolidated_gate_keeps_its_previous_timeout_ceiling() -> None:
+    ci = _workflow(_CI_PATH)
+    expected = {
+        "Gate: Standard Quality": 20,
+        "Gate: Tests": 30,
+        "Gate: Deterministic Property Replay": 30,
+        "Gate: Task-Artifact Validation": 10,
+        "Gate: Security": 20,
+        "Gate: Critical Invariants": 20,
+        "Gate: PR-Evidence Validation": 10,
+    }
+    full = {
+        str(step.get("name", "")): int(str(step["timeout-minutes"]))
+        for step in _steps(_job(ci, "full-quality"))
+        if str(step.get("name", "")).startswith("Gate: ")
+    }
+    assert full == expected
+    fast_standard = next(
+        step
+        for step in _steps(_job(ci, "fast-quality"))
+        if step.get("name") == "Gate: Standard Quality"
+    )
+    assert int(str(fast_standard["timeout-minutes"])) == 20
 
 
 def test_expression_evaluator_refuses_unknown_or_trailing_input() -> None:

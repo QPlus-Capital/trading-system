@@ -2,6 +2,7 @@ name: Critical mutation
 
 on:
   pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  critical-change-filter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      changed: ${{ steps.filter.outputs.changed }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Detect configured critical production changes
+        id: filter
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          uv run --no-project --python 3.13 python - <<'PY'
+          from __future__ import annotations
+
+          import os
+          from collections.abc import Sequence
+
+          from scripts.quality.classify import changed_paths, load_model
+          from scripts.quality.mutation import load_policy, select_fast_targets
+
+
+          def critical_changed(paths: Sequence[str]) -> bool:
+              """Use the production mutation policy and risk classifier without copying paths."""
+              return bool(select_fast_targets(paths, load_policy(), load_model()))
+
+
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch":
+              changed = True
+          else:
+              changed = critical_changed(changed_paths(f"origin/{os.environ['BASE_REF']}"))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"changed={str(changed).lower()}\n")
+          PY
+
   mutation-critical:
+    needs: critical-change-filter
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false &&
+      needs.critical-change-filter.outputs.changed == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -23,6 +74,8 @@ jobs:
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
       - name: Install locked dependencies except the Windows-only MT5 bridge
         run: uv sync --locked --no-install-package metatrader5
       - name: Prove a real weakened test creates a caught survivor
