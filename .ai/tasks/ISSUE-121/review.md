@@ -2,9 +2,9 @@
 
 ## Status
 
-The complete independent review found F1-F5 below. Builder remediation is complete only after the
-recorded gates; the material fixes require another complete independent adversarial and live-money
-review. This file does not mark the PR ready.
+The final independent adversarial and live-money re-review completed on 2026-07-29 with no finding.
+All earlier findings are resolved. This file records review evidence only and does not authorize a
+ready, merge, or auto-merge action.
 
 ## Findings
 
@@ -84,3 +84,27 @@ The supplied oracle was run before remediation: 11 cases failed and all three fe
 passed. After remediation all 14 pass, the full account file passes 81 tests, and the tree-wide
 scan reports zero hits across the tracked repository. No production, live, monitoring, research, or
 runner file changed in this round.
+
+## Final independent re-review — no findings
+
+Claude completed the final R3 adversarial and live-money review on 2026-07-29:
+[GitHub review 4807831900](https://github.com/QPlus-Capital/trading-system/pull/123#pullrequestreview-4807831900).
+The review is anchored to HEAD `fbbdda8fddb09806bec5dc9c6748be09cae8e368`.
+
+**Verdict: no finding. This is clean.** Every claim was verified by execution against the production
+guard:
+
+- all 15 independently chosen login-reintroduction forms were caught by
+  `_contains_login_literal`; ten of those forms had evaded the previous guard;
+- five unrelated-number probes produced no false positive: property-test seed `20260721`, public
+  magic `770077`, `x = 12_345`, `total = 4646`, and an SSRN identifier;
+- the actual tracked tree contains 375 files and produces zero login-literal hits;
+- `_LOGIN_SUFFIXES` is derived from `ACCOUNTS`, so adding a third configured account extends the
+  protection automatically;
+- the one removed assertion was replaced by an assertion against the production
+  `_contains_login_literal` function, and the independent forms were added to the pre-existing
+  guard test's own parameter list.
+
+No production file changed in the reviewed round. No MT5 terminal was initialized, no runner was
+contacted, no live account was read, and no order was placed, modified, or closed. No decision
+requiring Jan remains in the review.
