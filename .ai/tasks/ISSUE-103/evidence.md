@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: c93777e0f0fbafd4beb84f293a9b3d368face78a
+HEAD: 5756e9c79932b624cf8265251232811a3f263f68
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -12,18 +12,18 @@ The only later commit permitted by readiness is this evidence file itself.
 
 | Gate | Command | Exit status | Result |
 |---|---|---:|---|
-| `format` | `just check-fast origin/main` with Git `sh` on `PATH` | 0 | All six changed Python files are formatted; Ruff, strict mypy, and 184 impacted tests passed. |
-| `docs-consistency` | full `just check` plus task validation | 0 | Engineering-document and gate-consistency tests passed inside the 1,282-test suite. |
-| `check` | `just check` with Git `sh` on `PATH` | 0 | Ruff, strict mypy over 181 files, Vulture, and pytest passed: 1,282 passed, 1 Windows-only mutation self-test skipped. |
-| `impacted-tests` | `just check-fast origin/main` with Git `sh` on `PATH` | 0 | The three changed production files selected every configured bridge, runner, risk, monitoring, sizing, swap, and parity consumer; 184 tests passed. |
+| `format` | `uvx --from rust-just just check-fast origin/main` with Git `sh` on `PATH` | 0 | All six changed Python files are formatted; Ruff, strict mypy, and 187 impacted tests passed. |
+| `docs-consistency` | full `just check` plus task validation | 0 | Engineering-document and gate-consistency tests passed inside the 1,285-test suite. |
+| `check` | `uvx --from rust-just just check` with Git `sh` on `PATH` | 0 | Ruff, strict mypy over 181 files, Vulture, and pytest passed: 1,285 passed, 1 Windows-only mutation self-test skipped. |
+| `impacted-tests` | `uvx --from rust-just just check-fast origin/main` with Git `sh` on `PATH` | 0 | The three changed production files selected every configured bridge, runner, risk, monitoring, sizing, swap, and parity consumer; 187 tests passed. |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | 21 property tests passed twice at fixed Hypothesis seed `20260721`. |
-| `integration-tests` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_monitoring_dashboard.py` plus `check-fast` | 0 | 121 direct bridge/runner/dashboard tests and 184 complete impacted tests passed using synthetic fakes only. |
+| `integration-tests` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_monitoring_dashboard.py` plus `check-fast` | 0 | 124 direct bridge/runner/dashboard tests and 187 complete impacted tests passed using synthetic fakes only. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-103 --base origin/main` | 0 | Task ISSUE-103 is valid with 18 acceptance criteria and 9 invariants. |
-| `adversarial-review` | `.ai/tasks/ISSUE-103/review.md` | 1 | The complete re-review found F1/F2/F3/F5; all are dispositioned with executable evidence, but the material P1 live-path fix requires one further complete independent review. |
-| `invariants` | `just check-invariants` with Git `sh` on `PATH` | 0 | 430 critical invariant tests passed; the suite directly exercises the MT5 bridge, runner safety cycle, and monitoring completeness surface. |
-| `mutation-on-touched-critical` | Linux Critical mutation run `30434111428` | 0 | 5,106 total, 4,697 killed, exactly 409 inherited survivors, 0 no-tests, and every other unhealthy status 0. The wholesale refreshed baseline passed; total and killed both increased by 128 with no survivor or classification added. |
+| `adversarial-review` | `.ai/tasks/ISSUE-103/review.md` | 1 | The fifth complete re-review's F1/F2/F3 are dispositioned with executable evidence, but the material live-risk fix requires another complete independent review. |
+| `invariants` | `uvx --from rust-just just check-invariants` with Git `sh` on `PATH` | 0 | 433 critical invariant tests passed; the suite directly exercises the MT5 bridge, runner safety cycle, and monitoring completeness surface. |
+| `mutation-on-touched-critical` | Linux Critical mutation run `30445689649` | 0 | 5,113 total, 4,704 killed, exactly 409 inherited survivors, 0 no-tests, and every other unhealthy status 0. The refreshed exact baseline passed; total and killed both increased by seven with no survivor or classification added. |
 | `parity-where-applicable` | legal-input fake-broker assertions and baseline trade-artifact hashes | 0 | Valid BUY/SELL position, pricing, entry, and close behavior remains exact; no research producer changed and both trade artifacts remain byte-identical. |
-| `live-money-review` | fake-only safety evidence plus `.ai/tasks/ISSUE-103/review.md` | 1 | Builder evidence is green, but the complete independent doubly-rigorous review must rerun after narrowing the destructive safety trigger. |
+| `live-money-review` | fake-only safety evidence plus `.ai/tasks/ISSUE-103/review.md` | 1 | Builder evidence is green, but the complete independent doubly-rigorous review must rerun after making the account-issue decision order invariant and conservative for unknown ownership. |
 | `human-decision-escalation` | task validation and spec audit | 0 | Jan's integral index-protocol rule with explicit bool rejection, independent raw-magic ownership filter, dedicated conversion-failure behavior, draft status, and merge authority are explicit; halt persistence remains in #122. |
 | `no-autonomous-merge` | PR #105 state audit | 0 | PR #105 remains open and draft; auto-merge is absent and no ready/merge action occurred. |
 
@@ -38,9 +38,11 @@ The only later commit permitted by readiness is this evidence file itself.
 | `loose-equality` | four `_LooselyEqual` boundary tests | 0 | Raw position, pricing, placement, and close all raise their full distinct error with zero terminal calls. This replaces the former test-plan overclaim with executable proof. |
 | `red-fourth-review` | focused snapshot/risk/monitoring tests before production changes | 1 | Nine failures: absent completeness snapshots, two unclassified conversion failures, no partial owned flatten, two new orders admitted on incomplete foreign exposure, and a falsely determinate dashboard. |
 | `red-final-mutation` | literal boolean-ticket, arithmetic-fallback `break`, and fallback `+=` to `=` bodies | 1 | The three committed oracles failed with ticket `1`, risk 40, and risk 50 respectively instead of the authoritative issue and complete risk 60. |
-| `review-focused-green` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_monitoring_dashboard.py` | 0 | 121 fake-only bridge, runner-cycle, and monitoring tests passed after the fourth-review dispositions. |
+| `red-fifth-review` | reviewer-supplied enumeration-order and unreadable-magic tests against `444022c` | 1 | Two failures and two passes: foreign-first ordering and unreadable magic both left the runner active at `open_risk=inf`, while owned-first already halted. |
+| `red-snapshot-consumer` | temporary halt-on-any-snapshot-issue mutation against `test_foreign_unknown_position_type_never_halts_or_flattens_owned_book` | 1 | The repaired fixture failed inside the real account snapshot path; restoring production made it green, proving the test no longer reads the hardcoded empty stub snapshot. |
+| `review-focused-green` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_monitoring_dashboard.py` | 0 | 124 fake-only bridge, runner-cycle, and monitoring tests passed after the fifth-review dispositions. |
 | `risk-classification` | `uv run python -m scripts.quality.classify $(git diff --name-only origin/main...HEAD)` | 0 | R3 because the live broker bridge, runner safety consumer, mutation policy, and invariant gate change. |
-| `finding-registry` | ID audit across fetched origin branches and registry tests | 0 | F-037/F-040/F-041 remain intact; F-042 was free and generalizes a broad transport exception triggering destructive safety action. |
+| `finding-registry` | ID audit across local and open worktrees plus registry tests | 0 | F-037 through F-049 remain intact; F-054 avoids every open-branch ID and generalizes order-sensitive batch decisions plus unknown ownership receiving a weaker safety outcome. |
 | `impact` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command impact origin/main` | 0 | `live/mt5_bridge.py` and `live/runner.py` select all configured direct/transitive consumers; no unknown dynamic edge was reported. |
 | `security` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check-security` | 0 | Secret scan clean, pip-audit reports no known vulnerabilities, and Ruff security checks passed. |
 | `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-103 --base origin/main` | 1 | Correctly reports NOT READY on the pending `adversarial-review` and `live-money-review`; all builder-controlled gates pass and evidence binds the non-evidence HEAD. |
@@ -97,6 +99,16 @@ An unsupported foreign record is omitted with an exact warning and cannot halt o
 owned book. An unsupported owned record still raises `Mt5SideError`. `True` and `False` remain in
 the invalid fixture, so removal or weakening of the explicit bool exclusion fails.
 
+The fifth review's two counterexamples were then run against reviewed HEAD `444022c` before the
+production change. The focused command exited 1 with two failures and two passes. With identical
+account state, owned-first issue ordering halted while foreign-first ordering returned infinite
+risk without halting; a position whose magic could not be decoded also returned infinite risk
+without halting. After the fix, the complete issue tuple is scanned first and all four cases pass:
+known-owned and ownership-unknown records halt, while a purely foreign undecodable record blocks
+new risk without closing or halting. A temporary mutation routing every issue to the halt also
+made the corrected foreign-only regression fail, proving its snapshot wiring reaches the real
+consumer rather than `StubBridge.issues=()`.
+
 ## Mutation evidence
 
 The mutation sequence was deliberately fail-closed:
@@ -152,22 +164,35 @@ The mutation sequence was deliberately fail-closed:
     run [30434111428](https://github.com/QPlus-Capital/trading-system/actions/runs/30434111428)
     passed the refreshed ratchet on implementation HEAD `c93777e`: 5,106 total, 4,697 killed,
     409 exact-name survivors, and every unhealthy status zero.
+13. The fifth-review implementation was first measured in run
+    [30445165378](https://github.com/QPlus-Capital/trading-system/actions/runs/30445165378):
+    5,113 total, 4,704 killed, the same 409 survivors, and zero unhealthy outcomes. The gate
+    rejected only the deliberately stale total of 5,106; the retained report compared with the
+    refreshed baseline as `baseline_issues=[]` and `survivors_equal=True`.
+14. The exact baseline was refreshed from that report without changing any survivor or
+    classification. Independent run
+    [30445689649](https://github.com/QPlus-Capital/trading-system/actions/runs/30445689649)
+    passed on implementation/baseline HEAD `5756e9c`: 4,704/5,113 killed, exactly 409 inherited
+    survivors, and every unhealthy status zero.
 
-The current fourth-review refresh adds 128 measured mutants and 128 kills relative to the prior
-4,978/4,569 baseline, while the survivor set remains exactly 409. No survivor or classification
-was added. Snapshot completeness, incomplete account risk, per-record owned flattening, the
-explicit bool exclusions, and complete mixed pricing/fallback accumulation are all mutation-pinned.
-The retained report compares with the committed baseline using `check_baseline(...)=[]`.
+The current fifth-review refresh adds seven measured mutants and seven kills relative to the
+fourth-review 5,106/4,697/409 baseline, while the survivor set remains exactly 409. No survivor or
+classification was added. Complete-batch scanning, order-invariant owned-issue handling, and the
+unknown-ownership safety branch are mutation-pinned alongside the unchanged snapshot completeness
+and partial-flatten behavior. The retained report compares with the committed baseline using
+`check_baseline(...)=[]`.
 
 ## Numerical and artifact parity
 
 No signal, side, price, quantity, risk limit, sizing amount, research stage, or reporting producer
 changed. Valid bridge requests remain exact-pinned. The runner's failure behavior changes
 materially and deliberately: a semantic `Mt5SideError` still halts, alerts, and execute-mode
-flattens, while routine `symbol_info` or `positions_get` `Mt5Error` reads close nothing, leave the
-runner unhalted, and propagate to the established logged polling retry. Daily/trailing hard stops
-still execute before open-risk reconstruction, and one failed ownership lookup during a real halt
-still cannot suppress flattening in later markets.
+flattens whenever any snapshot issue is known-owned or has unverifiable ownership, regardless of
+enumeration order. A purely foreign issue still blocks new risk at infinity without halting or
+closing. Routine `symbol_info` or `positions_get` `Mt5Error` reads close nothing, leave the runner
+unhalted, and propagate to the established logged polling retry. Daily/trailing hard stops still
+execute before open-risk reconstruction, and one failed ownership lookup during a real halt still
+cannot suppress flattening in later markets.
 
 - `portfolio_trades.csv`:
   `b5a0a9bb6d19ccee85c35aa6570a3bd67ea8fd885665d92901e5f14113f45129`;
@@ -184,11 +209,12 @@ running live runner was touched.
 
 ## Coverage and mutation
 
-The final deterministic suite has 1,282 passing tests, the impacted set has 184, the critical
-invariant suite has 430, and 21 properties pass twice at the fixed seed. Linux mutation has 4,697
-of 5,106 mutants killed, 409 exact-name inherited survivors, and zero unhealthy results. The
-baseline adds 128 measured mutants and 128 kills without adding a survivor or classification; no
-test, threshold, comparison rule, risk limit, or valid live behavior is weakened.
+The final deterministic suite has 1,285 passing tests, the impacted set has 187, the critical
+invariant suite has 433, and 21 properties pass twice at the fixed seed. Linux mutation has 4,704
+of 5,113 mutants killed, 409 exact-name inherited survivors, and zero unhealthy results. The
+baseline adds seven measured mutants and seven kills without adding a survivor or classification;
+no test, threshold, comparison rule, risk limit, previously verified flatten behavior, or valid
+live behavior is weakened.
 
 ## Deferred checks
 
