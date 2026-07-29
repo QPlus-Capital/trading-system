@@ -241,24 +241,27 @@ def test_draft_and_ready_events_select_the_expected_gate_sets() -> None:
         workflow, event_name="pull_request", action="ready_for_review", draft=False
     )
 
-    assert draft_jobs == {"fast-quality"}
-    assert _recipes(_job(workflow, "fast-quality")) == _FAST_RECIPES
-    assert ready_jobs == {"full-quality", "mt5-boundary"}
-    assert _recipes(_job(workflow, "full-quality")) == _FULL_RECIPES
+    assert draft_jobs == {"platform-quality"}
+    assert _recipes(_job(workflow, "platform-quality")) == _FAST_RECIPES
+    assert ready_jobs == {"full-quality", "platform-quality"}
+    assert (
+        _recipes(_job(workflow, "full-quality")) | _recipes(_job(workflow, "platform-quality"))
+        == _FULL_RECIPES
+    )
 
 
 def test_ready_synchronize_runs_the_full_set() -> None:
     workflow = _workflow(_CI_PATH)
     assert _selected_jobs(
         workflow, event_name="pull_request", action="synchronize", draft=False
-    ) == {"full-quality", "mt5-boundary"}
+    ) == {"full-quality", "platform-quality"}
 
 
 def test_direct_ready_pull_request_runs_the_full_set() -> None:
     workflow = _workflow(_CI_PATH)
     assert _selected_jobs(workflow, event_name="pull_request", action="opened", draft=False) == {
         "full-quality",
-        "mt5-boundary",
+        "platform-quality",
     }
 
 
@@ -317,31 +320,29 @@ def test_mutation_filter_has_no_copied_target_paths() -> None:
     assert not target_paths & string_literals
 
 
-def test_only_the_mt5_boundary_job_uses_windows() -> None:
+def test_only_the_platform_boundary_job_uses_windows() -> None:
     workflow = _workflow(_CI_PATH)
     platforms = {
         name: str(_mapping(job, f"job {name}")["runs-on"])
         for name, job in _mapping(workflow["jobs"], "jobs").items()
     }
     assert platforms == {
-        "fast-quality": "ubuntu-latest",
         "full-quality": "ubuntu-latest",
-        "mt5-boundary": "windows-latest",
+        "platform-quality": "windows-latest",
     }
 
 
 def test_linux_jobs_do_not_resync_the_excluded_mt5_package() -> None:
     workflow = _workflow(_CI_PATH)
-    for name in ("fast-quality", "full-quality"):
-        job = _job(workflow, name)
-        environment = _mapping(job["env"], f"{name}.env")
-        assert environment["UV_NO_SYNC"] == "1"
-    assert "env" not in _job(workflow, "mt5-boundary")
+    full = _job(workflow, "full-quality")
+    environment = _mapping(full["env"], "full-quality.env")
+    assert environment["UV_NO_SYNC"] == "1"
+    assert "env" not in _job(workflow, "platform-quality")
 
 
 def test_mt5_boundary_job_runs_the_exact_windows_node() -> None:
     workflow = _workflow(_CI_PATH)
-    boundary = _job(workflow, "mt5-boundary")
+    boundary = _job(workflow, "platform-quality")
     commands = [str(step.get("run", "")) for step in _steps(boundary)]
     pytest_commands = [command for command in commands if "pytest" in command]
     assert pytest_commands == [f"uv run pytest -q {_MT5_NODE}"]
@@ -352,7 +353,7 @@ def test_ready_test_node_inventory_is_partitioned_without_loss() -> None:
     assert "check-tests" in _recipes(_job(workflow, "full-quality"))
     assert _MT5_NODE in next(
         str(step["run"])
-        for step in _steps(_job(workflow, "mt5-boundary"))
+        for step in _steps(_job(workflow, "platform-quality"))
         if "pytest" in str(step.get("run", ""))
     )
 
@@ -368,12 +369,13 @@ def test_ready_test_node_inventory_is_partitioned_without_loss() -> None:
 def test_full_job_invokes_every_existing_gate_as_a_distinct_step() -> None:
     workflow = _workflow(_CI_PATH)
     full = _job(workflow, "full-quality")
+    platform = _job(workflow, "platform-quality")
     recipe_steps = [
         step
-        for step in _steps(full)
+        for step in [*_steps(full), *_steps(platform)]
         if re.search(r"(?:^|\s)just\s+[a-z0-9-]+\b", str(step.get("run", "")))
     ]
-    assert _recipes(full) == _FULL_RECIPES
+    assert _recipes(full) | _recipes(platform) == _FULL_RECIPES
     assert len(recipe_steps) == len(_FULL_RECIPES)
     assert len({str(step.get("name", "")) for step in recipe_steps}) == len(_FULL_RECIPES)
     assert all(str(step.get("name", "")).startswith("Gate: ") for step in recipe_steps)
@@ -381,7 +383,7 @@ def test_full_job_invokes_every_existing_gate_as_a_distinct_step() -> None:
 
 def test_consolidated_jobs_cache_dependencies_and_preserve_limits() -> None:
     ci = _workflow(_CI_PATH)
-    for name in ("fast-quality", "full-quality", "mt5-boundary"):
+    for name in ("full-quality", "platform-quality"):
         job = _job(ci, name)
         setup = next(
             step for step in _steps(job) if "astral-sh/setup-uv@" in str(step.get("uses", ""))
@@ -390,9 +392,8 @@ def test_consolidated_jobs_cache_dependencies_and_preserve_limits() -> None:
         assert options["enable-cache"] == "true"
         assert options["cache-dependency-glob"] == "uv.lock"
 
-    assert int(str(_job(ci, "fast-quality")["timeout-minutes"])) <= 20
     assert int(str(_job(ci, "full-quality")["timeout-minutes"])) <= 30
-    assert int(str(_job(ci, "mt5-boundary")["timeout-minutes"])) <= 30
+    assert int(str(_job(ci, "platform-quality")["timeout-minutes"])) <= 30
     mutation = _workflow(_MUTATION_PATH)
     assert int(str(_job(mutation, "mutation-critical")["timeout-minutes"])) == 45
 
@@ -400,7 +401,6 @@ def test_consolidated_jobs_cache_dependencies_and_preserve_limits() -> None:
 def test_each_consolidated_gate_keeps_its_previous_timeout_ceiling() -> None:
     ci = _workflow(_CI_PATH)
     expected = {
-        "Gate: Standard Quality": 20,
         "Gate: Tests": 30,
         "Gate: Deterministic Property Replay": 30,
         "Gate: Task-Artifact Validation": 10,
@@ -414,12 +414,12 @@ def test_each_consolidated_gate_keeps_its_previous_timeout_ceiling() -> None:
         if str(step.get("name", "")).startswith("Gate: ")
     }
     assert full == expected
-    fast_standard = next(
+    platform_standard = next(
         step
-        for step in _steps(_job(ci, "fast-quality"))
+        for step in _steps(_job(ci, "platform-quality"))
         if step.get("name") == "Gate: Standard Quality"
     )
-    assert int(str(fast_standard["timeout-minutes"])) == 20
+    assert int(str(platform_standard["timeout-minutes"])) == 20
 
 
 def test_expression_evaluator_refuses_unknown_or_trailing_input() -> None:

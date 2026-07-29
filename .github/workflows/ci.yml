@@ -12,12 +12,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  fast-quality:
-    if: github.event.pull_request.draft == true
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      UV_NO_SYNC: "1"
+  platform-quality:
+    runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -28,11 +25,15 @@ jobs:
           python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Install locked dependencies except the Windows-only MT5 bridge
-        run: uv sync --locked --no-install-package metatrader5
+      - name: Install locked dependencies including the Windows-only MT5 bridge
+        run: uv sync --locked
       - name: "Gate: Standard Quality"
         timeout-minutes: 20
         run: uvx --from rust-just just check-standard
+      - name: Run the real-MT5 pytest boundary self-test
+        if: github.event.pull_request.draft == false
+        timeout-minutes: 30
+        run: uv run pytest -q tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries
 
   full-quality:
     if: github.event.pull_request.draft == false
@@ -52,9 +53,6 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install locked dependencies except the Windows-only MT5 bridge
         run: uv sync --locked --no-install-package metatrader5
-      - name: "Gate: Standard Quality"
-        timeout-minutes: 20
-        run: uvx --from rust-just just check-standard
       - name: "Gate: Tests"
         timeout-minutes: 30
         run: uvx --from rust-just just check-tests
@@ -73,23 +71,3 @@ jobs:
       - name: "Gate: PR-Evidence Validation"
         timeout-minutes: 10
         run: uvx --from rust-just just check-pr-evidence
-
-  mt5-boundary:
-    if: github.event.pull_request.draft == false
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        with:
-          python-version: "3.13"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - name: Install locked dependencies including the Windows-only MT5 bridge
-        run: uv sync --locked
-      - name: Run the real-MT5 pytest boundary self-test
-        timeout-minutes: 30
-        run: uv run pytest -q tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries

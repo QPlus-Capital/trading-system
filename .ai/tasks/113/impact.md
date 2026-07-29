@@ -3,9 +3,9 @@
 ## Direct impact
 
 - `.github/workflows/ci.yml`: removes `push: main` and `pull_request: edited`, adds
-  `ready_for_review`, replaces six duplicated Windows jobs with draft-fast and ready-full Linux
-  jobs plus one narrow Windows MT5-boundary job, enables the existing setup-uv cache, and keeps all
-  seven `just` recipe invocations as distinct blocking steps.
+  `ready_for_review`, replaces six duplicated Windows jobs with one Windows platform job and one
+  ready-only Linux full job, enables the existing setup-uv cache, and keeps all seven `just` recipe
+  invocations as distinct blocking steps.
 - `.github/workflows/mutation.yml`: retains the Linux mutation commands and timeout, adds a cheap
   configuration-driven changed-path detector, and gates the expensive job on both critical path
   selection and non-draft state.
@@ -19,8 +19,9 @@
 
 ## Transitive impact
 
-- Pull requests: drafts receive standard-quality feedback; direct-ready, `ready_for_review`, and every later
-  non-draft `synchronize` event validate the complete event HEAD.
+- Pull requests: drafts receive Windows standard-quality feedback; direct-ready,
+  `ready_for_review`, and every later non-draft `synchronize` event validate the complete event
+  HEAD across the Windows platform and Linux full jobs.
 - Branch protection: the external required contexts must move from six legacy CI job names to the
   consolidated ready contexts. Until Jan performs that transition, this draft is intentionally not
   mergeable.
@@ -28,9 +29,10 @@
   Adding or removing a target in `.ai/quality/mutation.toml` changes workflow selection without a
   YAML edit.
 - Test collection: the complete Linux suite retains the Windows-only boundary node as a skip, and
-  the narrow Windows job executes that exact node. No other test remains on Windows.
-- Billing: ready CI pays one Linux setup plus one narrow Windows setup instead of six full Windows
-  setups; docs/non-critical drafts do not pay for mutation.
+  the Windows platform job executes that exact node. The standard recipe remains in that same job
+  because actual Linux execution found a mypy/winsound platform dependency.
+- Billing: ready CI pays one Linux setup plus one Windows platform setup instead of six full
+  Windows setups; docs/non-critical drafts do not pay for mutation.
 
 ## Critical dependencies
 

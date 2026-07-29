@@ -10,7 +10,7 @@
 | AC-06 | `tests/test_ci_cost_workflows.py::test_draft_and_ready_events_select_the_expected_gate_sets` | Draft and ready select the same six jobs | Draft selects fast recipes; ready selects every recipe |
 | INV-03 | `tests/test_ci_cost_workflows.py::test_ready_synchronize_runs_the_full_set` | No state split exists | A `synchronize` payload with `draft=false` selects full quality and Windows boundary |
 | INV-01, INV-02 | `tests/test_ci_cost_workflows.py::test_full_job_invokes_every_existing_gate_as_a_distinct_step`; `tests/test_gate_consistency.py::test_every_ci_gate_invokes_a_local_just_recipe` | Six jobs rather than one setup; old stable-split assertion | All seven recipes remain exact, separate, and blocking |
-| AC-02, AC-07 | `tests/test_ci_cost_workflows.py::test_consolidated_jobs_cache_dependencies_and_preserve_limits` | No cache and six Windows installs | Cache on, one Linux full setup, one narrow Windows setup, unchanged ceilings |
+| AC-02, AC-07 | `tests/test_ci_cost_workflows.py::test_consolidated_jobs_cache_dependencies_and_preserve_limits` | No cache and six Windows installs | Cache on, one Linux full setup, one Windows platform setup, unchanged ceilings |
 | AC-05 | `tests/test_ci_cost_workflows.py::test_mutation_filter_has_no_copied_target_paths` | No filter exists | Parsed Python AST imports and uses the policy/classifier functions; no target path literal exists |
 | AC-04, AC-05, AC-06, AC-07 | Real GitHub observations after 2026-08-01 | Actions allowance kills every job before observation | Event/run matrix and billed-minute comparison recorded with run IDs |
 

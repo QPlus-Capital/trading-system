@@ -56,7 +56,7 @@ def test_every_ci_gate_invokes_a_local_just_recipe() -> None:
 
 
 def test_ci_exposes_the_complete_consolidated_job_split() -> None:
-    for job in ("fast-quality", "full-quality", "mt5-boundary"):
+    for job in ("full-quality", "platform-quality"):
         assert re.search(rf"^  {re.escape(job)}:\s*$", _CI, re.MULTILINE)
     for retired_job in (
         "standard-quality",

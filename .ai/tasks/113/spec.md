@@ -7,9 +7,9 @@ edits and non-critical changes, and do not distinguish draft feedback from final
 
 ## Goal
 
-Run the same binding ready-PR gates and test set with one cached Linux quality environment, retain
-only the genuinely MT5-dependent boundary test on Windows, and run critical mutation only for
-configured critical production paths.
+Run the same binding ready-PR gates and test set with one cached Linux full-validation environment,
+one cached Windows platform environment for the standard gate plus the genuinely MT5-dependent
+boundary test, and critical mutation only for configured critical production paths.
 
 ## Non-goals
 
@@ -23,13 +23,15 @@ configured critical production paths.
 
 - Pull-request actions `opened`, `reopened`, `synchronize`, and `ready_for_review` trigger CI;
   `edited` and `push` do not.
-- Drafts run only the fast standard-quality recipe. Every non-draft event,
-  including `opened` directly ready and `synchronize` after readiness, runs all seven existing
-  recipes on the event HEAD.
-- Full quality runs once on cached `ubuntu-latest` after a locked sync excluding the Windows-only
-  `metatrader5` package. Each recipe remains a separate, clearly named step.
-- The single test that verifies pytest's real MT5 boundary remains a blocking Windows check. Linux
-  collection retains the same node ID and skips it only when the bridge package is unavailable.
+- Drafts run only the fast standard-quality recipe in the single Windows platform job. Every
+  non-draft event, including `opened` directly ready and `synchronize` after readiness, also runs
+  the six remaining recipes on Linux and the MT5 boundary on the event HEAD.
+- Full Linux quality runs once after a locked sync excluding the Windows-only `metatrader5`
+  package. `UV_NO_SYNC=1` prevents nested `uv run` calls in unchanged `just` recipes from trying to
+  reinstall the excluded package. Each recipe remains a separate, clearly named step.
+- The standard recipe and the single real-MT5 pytest boundary share the only Windows job.
+  Execution proved that strict mypy evaluates `winsound.Beep` differently on Linux, so moving that
+  unchanged recipe would require an out-of-scope live-file or gate change.
 - The mutation filter imports `changed_paths`, `load_policy`, `load_model`, and
   `select_fast_targets`; it never restates mutation target paths in workflow YAML.
 - A draft or a non-critical change skips `mutation-critical`. A critical non-draft change and a
@@ -58,9 +60,11 @@ configured critical production paths.
 
 ## Assumptions
 
-- `MetaTrader5` is the only Windows-only dependency. Repository import and collection audits found
-  one test with an unconditional package import; all production imports are already isolated behind
-  fake-safe test seams.
+- `MetaTrader5` is the only Windows-only installed dependency. Repository import and collection
+  audits found one test with an unconditional package import; all production imports are already
+  isolated behind fake-safe test seams. Actual Linux CI additionally proved that the unchanged
+  standard recipe is platform-specific at static-analysis time because mypy rejects
+  `winsound.Beep` on Linux.
 - A GitHub skipped job is not used as proof of a required gate. Only the consolidated full-quality,
   Windows MT5 boundary, and conditional mutation contexts should bind after the ruleset transition.
 
@@ -71,8 +75,8 @@ configured critical production paths.
   real Linux runner after the Actions allowance resets on 2026-08-01; it cannot honestly be green
   during this build.
 - The active `main` ruleset still requires the six old CI job names plus `mutation-critical`.
-  Before this PR can merge, Jan must atomically replace those six CI contexts with the consolidated
-  full-quality and MT5-boundary contexts after their first observed ready run. Keeping the old names
+  Before this PR can merge, Jan must atomically replace those six CI contexts with
+  `platform-quality` and `full-quality` after their first observed ready run. Keeping the old names
   would require the six runner starts this issue exists to remove.
 
 ## Expected artifacts
