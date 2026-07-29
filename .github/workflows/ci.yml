@@ -1,10 +1,8 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
-    types: [opened, reopened, synchronize, edited]
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: read
@@ -14,102 +12,62 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  standard-quality:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        with:
-          python-version: "3.13"
-      - name: Install dependencies
-        run: uv sync --locked
-      - name: Run the local Standard Quality recipe
-        run: uvx --from rust-just just check-standard
-
-  tests:
+  platform-quality:
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.13"
-      - name: Install dependencies
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies including the Windows-only MT5 bridge
         run: uv sync --locked
-      - name: Run the local Tests recipe
+      - name: "Gate: Standard Quality"
+        timeout-minutes: 20
+        run: uvx --from rust-just just check-standard
+      - name: Run the real-MT5 pytest boundary self-test
+        if: github.event.pull_request.draft == false
+        timeout-minutes: 30
+        run: uv run pytest -q tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries
+
+  full-quality:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UV_NO_SYNC: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies except the Windows-only MT5 bridge
+        run: uv sync --locked --no-install-package metatrader5
+      - name: "Gate: Tests"
+        timeout-minutes: 30
         run: uvx --from rust-just just check-tests
-      - name: Run the local deterministic Property Replay recipe
+      - name: "Gate: Deterministic Property Replay"
+        timeout-minutes: 30
         run: uvx --from rust-just just check-properties
-
-  task-artifact-validation:
-    if: github.event_name == 'pull_request'
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        with:
-          python-version: "3.13"
-      - name: Install dependencies
-        run: uv sync --locked
-      - name: Run the local Task-Artifact Validation recipe
+      - name: "Gate: Task-Artifact Validation"
+        timeout-minutes: 10
         run: uvx --from rust-just just check-task-artifact
-
-  security:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        with:
-          python-version: "3.13"
-      - name: Install dependencies
-        run: uv sync --locked
-      - name: Run the local Security recipe
+      - name: "Gate: Security"
+        timeout-minutes: 20
         run: uvx --from rust-just just check-security
-
-  critical-invariants:
-    runs-on: windows-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        with:
-          python-version: "3.13"
-      - name: Install dependencies
-        run: uv sync --locked
-      - name: Run the local Critical Invariants recipe
+      - name: "Gate: Critical Invariants"
+        timeout-minutes: 20
         run: uvx --from rust-just just check-invariants
-
-  pr-evidence-validation:
-    if: github.event_name == 'pull_request'
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        with:
-          python-version: "3.13"
-      - name: Install dependencies
-        run: uv sync --locked
-      - name: Run the local PR-Evidence Validation recipe
+      - name: "Gate: PR-Evidence Validation"
+        timeout-minutes: 10
         run: uvx --from rust-just just check-pr-evidence
