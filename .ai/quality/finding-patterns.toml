@@ -515,3 +515,27 @@ why_tests_missed = "fixtures varied side representations only on owned positions
 regression = "integral index-protocol position types; foreign unknown type omitted from account/owned position surfaces; execute-mode healthy cycle retains both owned tickets without halting"
 generalized = "classify ownership from an independent field before decoding an action-bearing enum; an unowned malformed record must not trigger destructive action on owned state"
 workflow_change = "bridge and runner critical mutation scopes pin bool rejection, index-protocol acceptance, raw ownership filtering, and the complete halt-and-flatten loop"
+
+[[finding]]
+id = "F-048"
+source = "PR #105 fourth independent live-money review"
+defect_class = "actionability-filter-hides-unverifiable-account-risk"
+severity = "P1"
+affected = "live/mt5_bridge.py, live/runner.py, monitoring/dashboard.py"
+root_cause = "the bridge safely omitted an undecodable foreign position from the actionable list but exposed no separate evidence that account-wide exposure was incomplete"
+why_tests_missed = "the foreign-position regression asserted only no halt and no close; it never drove the same raw record through the 2% account-risk cap or the operator risk display"
+regression = "real-bridge foreign invalid-side fixtures with and without a stop require infinite runner risk, zero orders, no halt or close, and an indeterminate dashboard risk header"
+generalized = "filtering a record from an action surface must not filter it from safety accounting; preserve a separate completeness signal and fail closed on any unpriced exposure"
+workflow_change = "position snapshots now carry decoded records and per-record issues jointly into the account-risk and monitoring consumers"
+
+[[finding]]
+id = "F-049"
+source = "PR #105 fourth independent live-money review"
+defect_class = "batch-decode-error-suppresses-retrievable-safety-actions"
+severity = "P1"
+affected = "live/mt5_bridge.py, live/runner.py"
+root_cause = "owned-position decoding raised for the whole terminal result, so one invalid record discarded earlier valid positions before the safety flatten loop could close them"
+why_tests_missed = "the runner test made account-wide positions fail while its owned-position fake still returned a clean list, a state the real bridge cannot produce"
+regression = "real Mt5Bridge raw positions_get with one valid and one invalid owned record must close the valid ticket and alert with the invalid ticket during both semantic and limit-triggered halts"
+generalized = "best-effort safety actions over external batches require per-record decoding results; one bad record must remain loud without erasing independently retrievable actions"
+workflow_change = "the halt path consumes an owned-position snapshot and mutation coverage includes the decoder, account-risk completeness check, and per-record flatten consumer"

@@ -21,6 +21,9 @@
 | AC-14, INV-08 | `test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails` | RED: first market lookup exception aborted the entire flatten method | GREEN: failure is alerted and the exact two retrievable later-market positions close |
 | AC-10, INV-02 | `test_position_types_accept_the_integral_index_protocol`; existing boolean complement cases | RED: two index-protocol integral values raised `Mt5SideError` | GREEN: BUY/SELL index values map exactly while `True` and `False` still raise |
 | AC-15, INV-09 | `test_foreign_unknown_type_cannot_poison_account_or_owned_positions`; `test_foreign_unknown_position_type_never_halts_or_flattens_owned_book` | RED: bridge conversion raised; execute mode halted and entered the flatten path | GREEN: the foreign record is omitted before it can poison owned conversion, the runner remains active, and tickets 11/12 remain open |
+| AC-16, INV-05 | `test_foreign_unknown_position_type_blocks_new_risk_without_halting`; `test_load_live_surfaces_an_undecodable_position_as_unpriceable` | RED: both stop variants placed a BUY and charged only 110.1 open risk; dashboard reported no unpriceable market | GREEN: both variants set infinite risk, place and close nothing, stay unhalted, and make GBPJPY unpriceable in the dashboard |
+| AC-17, INV-08 | `test_runner_halts_loudly_and_flattens_retrievable_positions_from_real_bridge`; `test_trailing_breach_flattens_each_retrievable_owned_raw_position` | RED: the real bridge raised the whole owned batch, closed no ticket, and emitted only a generic enumeration alert | GREEN: both semantic and trailing-limit halts close ticket 11 and alert specifically for undecodable ticket 13 |
+| AC-18, INV-02 | `test_position_type_value_error_is_classified_as_a_side_error`; `test_position_magic_value_error_is_classified_before_direction` | RED: both failures escaped as bare `ValueError` | GREEN: both raise the complete boundary-specific `Mt5SideError` before any order call |
 | INV-01 | autouse MT5 boundary plus synthetic fake assertions | Existing safety fixture | GREEN: no real terminal import, initialization, connection, or order |
 | INV-05, INV-06 | production-path diff and baseline artifact SHA-256 comparison | Main baseline | GREEN: no research/report producer diff; both CSV hashes unchanged |
 
@@ -71,6 +74,13 @@ XAUUSD positions. The three focused tests failed four cases before the fix. Afte
 read before conversion and `operator.index` defines integral semantics, all four pass; the existing
 `True`/`False` complement tests keep the boolean alias closed.
 
+The fourth complete re-review supplied the F-048/F-049 RED state. The focused fake-only command
+exited 1 with nine failures: the bridge exposed no completeness snapshot; `operator.index`
+`ValueError` failures escaped unclassified for side and magic; the real-bridge owned batch closed
+no retrievable ticket; both stopped and stop-less foreign invalid records let a BUY through with
+only 110.1 risk charged; and monitoring reported no unpriceable market. The same 114-test command
+passes after the shared snapshot and per-record flatten implementation.
+
 ## Adversarial cases
 
 - Unknown positive and negative integer position types.
@@ -84,5 +94,9 @@ read before conversion and `operator.index` defines integral semantics, all four
   proving only the semantic conversion failure liquidates.
 - An unsupported foreign/manual position before two valid owned positions, proving independent
   magic ownership prevents a malformed unowned record from halting or flattening the owned book.
+- The same unsupported foreign position with and without a stop, proving non-actionability cannot
+  erase it from account-wide risk or the operator display.
+- One valid and one invalid owned raw record through the real bridge, proving batch decoding cannot
+  erase a retrievable safety close.
 - A transient failure followed by a healthy breached cycle, proving retryability does not disable
   the later hard stop.

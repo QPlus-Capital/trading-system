@@ -203,9 +203,12 @@ mutant_patterns = [
 id = "mt5-deal-export"
 path = "live/mt5_bridge.py"
 mutant_patterns = [
+    "live.mt5_bridge.x__runtime_index__mutmut_*",
     "live.mt5_bridge.x__runtime_side__mutmut_*",
     "live.mt5_bridge.x__order_type__mutmut_*",
     "live.mt5_bridge.x*Mt5Bridge*positions__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*position_snapshot__mutmut_*",
+    "live.mt5_bridge.x*Mt5Bridge*owned_position_snapshot__mutmut_*",
     "live.mt5_bridge.x*Mt5Bridge*loss_for_order__mutmut_*",
     "live.mt5_bridge.x*Mt5Bridge*loss_to_stop__mutmut_*",
     "live.mt5_bridge.x*Mt5Bridge*history_deals__mutmut_*",
@@ -218,6 +221,7 @@ id = "live-runner-fail-closed"
 path = "live/runner.py"
 mutant_patterns = [
     "live.runner.x*LiveRunner*apply_cycle_safety__mutmut_*",
+    "live.runner.x*LiveRunner*total_open_risk__mutmut_*",
     "live.runner.x*LiveRunner*halt_and_flatten__mutmut_*",
     "live.runner.x*LiveRunner*owned_positions_for_flatten__mutmut_*",
 ]

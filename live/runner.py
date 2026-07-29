@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 from core.paths import REPO_ROOT
 from core.strategies.rsi_wpr_bb_signals import RsiWprBbSignals, SignalParams
 
-from live.mt5_bridge import Bar, Mt5Bridge, Mt5SideError, Position, Side, SymbolInfo
+from live.mt5_bridge import MAGIC, Bar, Mt5Bridge, Mt5SideError, Position, Side, SymbolInfo
 from live.notify import Notifier
 from live.risk_control import RiskController, position_volume
 
@@ -429,22 +429,34 @@ class LiveRunner:
         return priced if priced is not None else position_risk(pos, info)
 
     def _total_open_risk(self) -> float:
-        """Total entry->stop risk of EVERY position on the account -- not just our markets.
+        """Total entry-to-stop risk of every decodable account position.
 
         A manual or foreign-EA position on an unconfigured symbol contributes its PnL to the
         equity this runner trades against, so its stop-risk must count against the open-risk cap
         too; visiting only ``self._markets`` let check_open admit new trades past the 2% cap.
         The terminal prices any symbol (#6/#19); the tick arithmetic needs our SymbolInfo and is
-        only available for configured markets. Exposure we cannot price at all fails CLOSED:
-        ``inf`` blocks every new entry until the operator resolves the position, and touches
-        nothing (the ownership filter still keeps us from managing it).
+        only available for configured markets. Any raw record that cannot be decoded, or exposure
+        that cannot be priced at all, fails closed: ``inf`` blocks every new entry until the
+        operator resolves it. An undecodable owned side remains a semantic safety halt so the
+        runner can close every other retrievable owned position.
         """
+        snapshot = self._bridge.position_snapshot()
+        for issue in snapshot.issues:
+            if issue.magic == MAGIC:
+                raise Mt5SideError(issue.reason)
+            log.critical(
+                "cannot decode account position ticket %s on %s -> blocking new entries "
+                "until it is resolved",
+                issue.ticket,
+                issue.symbol,
+            )
+            return float("inf")
         infos: dict[str, SymbolInfo] = {}
         for spec in self._markets:
             info = self._bridge.symbol_info(spec.name)
             infos[info.name] = info  # keyed by TERMINAL symbol, which is what positions carry
         total = 0.0
-        for pos in self._bridge.positions():
+        for pos in snapshot.positions:
             if pos.sl <= 0:  # H5: unbounded downside -> loud warning + worst-case charge below
                 log.warning(
                     "open position %s (%s) has NO stop-loss -> charged at worst case",
@@ -688,9 +700,9 @@ class LiveRunner:
                         log.exception("failed to flatten %s ticket %s", spec.name, pos.ticket)
 
     def _owned_positions_for_flatten(self, name: str) -> list[Position] | None:
-        """Return one market's owned positions, alerting when safety enumeration fails."""
+        """Return retrievable owned positions and alert for each undecodable raw record."""
         try:
-            return self._bridge.owned_positions(name)
+            snapshot = self._bridge.owned_position_snapshot(name)
         except Exception:
             log.exception("failed to enumerate owned %s positions during safety halt", name)
             self._notify.alert(
@@ -698,6 +710,17 @@ class LiveRunner:
                 "manual intervention required"
             )
             return None
+        for issue in snapshot.issues:
+            log.error(
+                "could not decode owned %s position ticket %s during safety halt",
+                name,
+                issue.ticket,
+            )
+            self._notify.alert(
+                f"SAFETY HALT: could not decode owned {name} position ticket {issue.ticket}; "
+                "manual intervention required"
+            )
+        return list(snapshot.positions)
 
     # -- loop --
 

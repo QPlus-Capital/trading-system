@@ -138,9 +138,29 @@ tests = [
     "tests/test_signal_adapter_parity.py",
     "tests/test_live_runner.py",
     "tests/test_live_runner_cycle.py",
+    "tests/test_monitoring_dashboard.py",
 ]
 possibly_affected = []
 reason = "the live adapter must preserve signal parity and fail closed through its risk and flatten consumers"
+
+[[edges]]
+source = "live/mt5_bridge.py"
+tests = [
+    "tests/test_live_mt5_bridge.py",
+    "tests/test_live_runner_cycle.py",
+    "tests/test_monitoring_dashboard.py",
+]
+possibly_affected = []
+reason = "position decoding must preserve action ownership while surfacing incomplete account exposure to the runner and operator"
+
+[[edges]]
+source = "monitoring/dashboard.py"
+tests = [
+    "tests/test_monitoring_dashboard.py",
+    "tests/test_monitoring_risk_view.py",
+]
+possibly_affected = []
+reason = "the operator risk display must remain indeterminate when the bridge cannot decode every account position"
 
 [[edges]]
 source = "research/forward_test_registry.py"

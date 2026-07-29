@@ -105,6 +105,13 @@ class _BrokenIndexPositionType:
         raise TypeError("synthetic invalid index")
 
 
+class _ValueErrorIndex:
+    """Advertises the index protocol but fails while producing its value."""
+
+    def __index__(self) -> int:
+        raise ValueError("synthetic invalid index value")
+
+
 class _RuntimeSide(str):
     """Synthetic C-extension-like string subtype."""
 
@@ -453,6 +460,80 @@ def test_foreign_unknown_type_cannot_poison_account_or_owned_positions(
     assert [record.getMessage() for record in caplog.records] == [
         "ignoring foreign position ticket 9 with unsupported MT5 position type"
     ]
+    _assert_no_order_boundary_call(fake)
+
+
+def test_position_snapshot_surfaces_foreign_unknown_exposure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    foreign_unknown = SimpleNamespace(
+        **{
+            **vars(_raw_position(_FakeMt5.POSITION_TYPE_BUY)),
+            "ticket": 9,
+            "symbol": "GBPJPY",
+            "type": 7,
+            "magic": 999,
+        }
+    )
+    fake = _FakeMt5([foreign_unknown])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    snapshot = bridge.position_snapshot()
+
+    assert snapshot.positions == ()
+    assert [
+        (issue.ticket, issue.symbol, issue.magic, issue.reason) for issue in snapshot.issues
+    ] == [
+        (
+            9,
+            "GBPJPY",
+            999,
+            "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL",
+        )
+    ]
+
+
+def test_owned_position_snapshot_keeps_retrievable_positions_and_names_rejections(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    valid = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    invalid = SimpleNamespace(**{**vars(valid), "ticket": 13, "type": 7})
+    foreign_invalid = SimpleNamespace(
+        **{**vars(valid), "ticket": 14, "type": 7, "magic": MAGIC + 1}
+    )
+    fake = _FakeMt5([valid, invalid, foreign_invalid])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    snapshot = bridge.owned_position_snapshot()
+
+    assert [(position.ticket, position.side) for position in snapshot.positions] == [(7, "BUY")]
+    assert [(issue.ticket, issue.magic) for issue in snapshot.issues] == [(13, MAGIC)]
+
+
+def test_position_type_value_error_is_classified_as_a_side_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5([_raw_position(_ValueErrorIndex())])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(
+        Mt5SideError,
+        match="^invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL$",
+    ):
+        bridge.positions()
+
+
+def test_position_magic_value_error_is_classified_before_direction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    raw = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    raw.magic = _ValueErrorIndex()
+    fake = _FakeMt5([raw])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    with pytest.raises(Mt5SideError, match="^invalid MT5 position magic; expected an integer$"):
+        bridge.owned_positions()
+
     _assert_no_order_boundary_call(fake)
 
 

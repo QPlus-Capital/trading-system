@@ -46,18 +46,20 @@ Every consumer of unfiltered `positions()` was reconciled before changing owners
 
 1. `LiveRunner._total_open_risk()` needs every **decodable** account position, including manual and
    foreign-EA positions, because valid foreign exposure consumes the same equity and 2% open-risk
-   budget. Valid foreign positions therefore retain exact risk behavior. A foreign record with an
-   unsupported type cannot be priced reliably and is omitted with a warning after its independent
-   non-owned magic is read; it cannot trigger halt-and-flatten.
-2. `monitoring.dashboard._load_live()` uses unfiltered positions only for a read-only open-risk
-   display. It continues to receive every decodable account position. Omitting an unsupported
-   foreign record may make that display incomplete, but it cannot place, modify, or close an order.
+   budget. It also needs proof that the raw account snapshot was complete. A foreign record with an
+   unsupported type remains absent from the actionable list but is retained as a snapshot issue;
+   that issue makes open risk infinite and blocks entries without triggering halt-and-flatten.
+2. `monitoring.dashboard._load_live()` uses the same unfiltered snapshot for a read-only open-risk
+   display. Every issue becomes an unpriceable market, so the header shows no determinate headroom
+   instead of silently omitting the exposure.
 3. `Mt5Bridge.owned_positions()` feeds runner same-side, reversal, long-only flatten, safety
    flatten, and other manage/close decisions. Those consumers need **only** `magic == MAGIC`; the
-   raw magic filter now runs before direction conversion. An unsupported owned record still raises
-   `Mt5SideError`.
+   raw magic filter runs before direction conversion. Normal management still raises on an
+   unsupported owned record. Safety flattening consumes the per-record owned snapshot instead, so
+   it closes every decodable owned position and alerts for each rejected owned ticket.
 
-No consumer needs an invalid foreign record represented as an executable-looking BUY or SELL. The
+No consumer needs an invalid foreign record represented as an executable-looking BUY or SELL.
+Actionability and exposure completeness are therefore separate outputs of one decode pass. The
 unfiltered surface remains exact for every legal MT5 position type, preserving the reviewed
 3,456-scenario legal-input differential and valid-foreign account-risk accounting.
 
@@ -70,8 +72,9 @@ unfiltered surface remains exact for every legal MT5 position type, preserving t
 - The critical mutation policy already copies and mutates `live/mt5_bridge.py`; its target will be
   extended from deal export to the side converter and the five affected methods. The final Linux
   report is the sole source for the wholesale exact-name baseline refresh.
-- `live/runner.py` is the only changed consumer. `live/risk_control.py`, signals, account profiles,
-  and live configuration remain unchanged.
+- `live/runner.py` is the only changed trading consumer. `monitoring/dashboard.py` consumes the
+  same snapshot read-only so it cannot display false headroom. `live/risk_control.py`, signals,
+  account profiles, and live configuration remain unchanged.
 
 ## Mutation-testability impact
 
@@ -125,6 +128,10 @@ unfiltered surface remains exact for every legal MT5 position type, preserving t
   or string subtype and disabling the whole positions surface.
 - Converting direction before checking independent magic ownership, allowing a malformed foreign
   record to trigger destructive safety handling for an otherwise healthy owned book.
+- Dropping an undecodable foreign record from both the action list and the exposure evidence,
+  allowing the 2% cap and dashboard to treat incomplete account risk as zero.
+- Raising once for an owned-position batch, discarding earlier decodable positions and leaving them
+  open through a genuine safety breach.
 - Treating an empty position sequence like terminal failure, causing a flat account to abort every
   runner cycle.
 - Returning before validating a stop-less position's side, leaving an ambiguous safety record.

@@ -17,7 +17,8 @@ pricing call, or order request can be produced from an invalid value.
 - Do not initialize or connect to MT5, inspect an account, touch either running runner, or place,
   modify, or close an order.
 - Do not change signal generation, sizing, risk limits, exit geometry, symbol resolution, filling
-  modes, account identity, monitoring, research, or reported results.
+  modes, account identity, research, or reported results. The read-only monitoring risk header may
+  become indeterminate when a raw position is undecodable; it must not hide that exposure.
 - Do not change the valid BUY/SELL requests, prices, return values, or public data structures.
 - Do not address monitoring deal-type reconstruction; issues #102 and #104 own that scope.
 - Do not persist or alter clearing of the runner halt state; pre-existing issue #122 owns that
@@ -33,9 +34,13 @@ pricing call, or order request can be produced from an invalid value.
   Internal side strings continue to accept `str` subclasses with exact BUY/SELL values.
 - The converter rejects booleans, unknown integers, unknown strings, and every other object with a
   clear `Mt5Error`; it never assigns a default executable direction.
-- `positions()` reads `magic` before side conversion. It returns every decodable account position,
-  including manual/foreign exposure, but logs and omits a foreign record whose side is unsupported;
-  an unsupported owned record still fails closed.
+- Position reads preserve two separate facts: every decodable account position and every raw record
+  that could not be decoded. `positions()` remains the actionable compatibility surface, while
+  `position_snapshot()` carries both facts to account-wide risk and monitoring.
+- An undecodable foreign record is never emitted as an actionable position and never triggers
+  flattening, but it makes account-wide risk indeterminate (`inf`) and blocks every new entry.
+- An undecodable owned record remains a semantic safety halt. During that halt, per-record owned
+  decoding closes every retrievable owned position and alerts with each rejected ticket.
 - `owned_positions()` applies `magic == MAGIC` to raw records before converting direction, so no
   malformed unowned record can interrupt an owned manage/close/flatten path.
 - `loss_for_order()` validates its side before `order_calc_profit`.
@@ -97,6 +102,14 @@ pricing call, or order request can be produced from an invalid value.
 - AC-15: A foreign/manual position with an unsupported type is filtered using `magic` before owned
   conversion and cannot halt or flatten a healthy execute-mode book; every valid foreign position
   remains visible to account-wide risk.
+- AC-16: A foreign/manual position with an unsupported type, with or without a stop, makes
+  account-wide open risk infinite, blocks a real BUY signal before order placement, leaves the
+  runner unhalted, and appears as unpriceable in the monitoring risk header.
+- AC-17: With one decodable and one undecodable owned raw position, both a conversion-triggered halt
+  and a genuine trailing-limit halt close the decodable ticket and alert with the undecodable
+  ticket; the test uses the real `Mt5Bridge` raw `positions_get` path.
+- AC-18: `operator.index` failures from either `TypeError` or `ValueError`, including malformed
+  position magic, become a clear `Mt5SideError` rather than escaping unclassified.
 
 ## Invariants
 
@@ -107,8 +120,8 @@ pricing call, or order request can be produced from an invalid value.
 - INV-03: Legal BUY/SELL behavior is unchanged at every affected boundary.
 - INV-04: One converter owns runtime side classification; no affected boundary retains an
   `if BUY else SELL` default.
-- INV-05: No signal, risk limit, sizing value, research result, trade record, or monitoring
-  behavior changes.
+- INV-05: No signal, risk limit, sizing value, research result, or trade record changes. Monitoring
+  changes only by refusing to show determinate headroom for an undecodable position.
 - INV-06: `portfolio_trades.csv` and `full_history_trades.csv` remain byte-identical because no
   research producer or configuration changes.
 - INV-07: The branch remains a draft, never merges autonomously, and requires Jan's approval after
@@ -129,8 +142,9 @@ pricing call, or order request can be produced from an invalid value.
 
 ## Open questions
 
-None. Jan and Claude fixed the severity, fail-closed policy, accepted values, five call sites, and
-synthetic-only verification boundary.
+None. Jan and Claude fixed the severity, fail-closed policy, accepted values, five call sites,
+incomplete-exposure semantics, per-record safety flattening, and synthetic-only verification
+boundary.
 
 ## Expected artifacts
 
@@ -150,9 +164,10 @@ boundaries even though the new behavior only rejects invalid inputs.
 ## Human decisions required
 
 Jan has ratified integral index-protocol acceptance with explicit boolean rejection, exact accepted
-values, raw ownership filtering, dedicated conversion-failure handling, draft status, the
-requirement to kill rather than classify non-equivalent boundary mutants, F-040/F-041/F-042/F-047
-registration, and the prohibition on touching the running live systems. Five
+values, raw ownership filtering, dedicated conversion-failure handling, incomplete-exposure
+blocking, per-record safety flattening, draft status, the requirement to kill rather than classify
+non-equivalent boundary mutants, F-040/F-041/F-042/F-047/F-048/F-049 registration, and the
+prohibition on touching the running live systems. Five
 semantically meaningful default-argument mutants were
 unobservable through Mutmut's unchanged trampoline defaults; the implementation therefore removes
 that untestable representation without changing the public defaults: the private order-type helper

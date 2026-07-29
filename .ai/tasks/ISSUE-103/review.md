@@ -168,3 +168,24 @@ review points have these builder dispositions:
 F-047 generalizes F1: independent ownership metadata must be applied before an action-bearing enum
 can trigger destructive behavior. This section records builder dispositions only; it does not
 replace or self-approve the required independent re-review.
+
+## Fourth complete independent re-review dispositions
+
+The fourth review confirmed the integral/ownership change with nine foreign-position variants and
+73 legal-input scenarios, then found two P1s, one P2, and two P3s at the position-read consumers:
+
+| ID | Severity | Review point | Disposition | Status |
+|---|---|---|---|---|
+| F1 | P1 | Omitting an undecodable foreign record also hid its exposure from the 2% cap and dashboard. | One bridge snapshot now carries decoded positions and all decode issues. The runner maps any non-owned/unknown issue to infinite open risk and the dashboard maps it to an unpriceable market; stopped and stop-less real-bridge fixtures place and close nothing. F-048 records the generalized defect. | resolved |
+| F2 | P1 | One undecodable owned record discarded the whole batch, so a genuine safety stop closed no retrievable ticket. | Safety flattening consumes a per-record owned snapshot, closes every decoded owned position, and emits a ticket-specific alert for each issue. Both semantic and genuine trailing halts run through real `Mt5Bridge.positions_get`; ticket 11 closes while ticket 13 remains loud. F-049 records the generalized defect. | resolved |
+| F3 | P2 | The former runner fixture decoupled account-wide and owned reads and could not reproduce the real bridge failure. | Replace it with a synthetic raw terminal behind the real `Mt5Bridge`; both account and owned surfaces now arise from the same `positions_get` batch. | resolved |
+| F4 | P3 | `operator.index` and magic conversion did not classify `ValueError`. | The shared runtime-index boundary catches `TypeError` and `ValueError`, preserves explicit bool rejection, and supplies distinct complete side/magic messages. | resolved |
+| F5 | P3 | `_total_open_risk` documented completeness behavior that the code no longer provided. | The docstring now states the two observable cases exactly: undecodable non-owned/unknown exposure blocks at `inf`, while an undecodable owned side triggers the semantic halt and best-effort owned flatten. | resolved |
+
+The scope judgment does not require splitting the PR. F1 explicitly requires the three existing
+position-read consumers: bridge decoding, runner account-risk/flattening, and the dashboard's
+read-only risk header. The implementation adds one shared snapshot at that boundary and does not
+touch signal generation, order placement, order sizing, risk thresholds, or any research path.
+No fourth production path was changed. This is nevertheless a material live-risk fix, so the
+complete independent adversarial and live-money reviews must run again; these builder dispositions
+do not mark either review gate green.
