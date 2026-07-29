@@ -230,6 +230,7 @@ def validate_task_dir(
     schema_path: Path = SCHEMA_PATH,
     *,
     risk_class: str = "R3",
+    require_completed_review: bool = True,
 ) -> ValidationResult:
     """Validate one task directory; return every finding rather than stopping at the first."""
     schema = load_schema(schema_path)
@@ -279,8 +280,9 @@ def validate_task_dir(
 
     review = content.get("review.md")
     if review is not None:
-        issues.extend(_critical_review_issues(review, schema.resolved_review_statuses))
-        if risk_class == "R3" and not _review_ran(review):
+        if require_completed_review:
+            issues.extend(_critical_review_issues(review, schema.resolved_review_statuses))
+        if require_completed_review and risk_class == "R3" and not _review_ran(review):
             issues.append(
                 ValidationIssue(
                     "missing-adversarial-review",
@@ -306,9 +308,14 @@ def validate_task(
     task_root: Path = TASK_ROOT,
     *,
     risk_class: str = "R3",
+    require_completed_review: bool = True,
 ) -> ValidationResult:
     """Validate ``.ai/tasks/<task_id>``."""
-    return validate_task_dir(task_root / task_id, risk_class=risk_class)
+    return validate_task_dir(
+        task_root / task_id,
+        risk_class=risk_class,
+        require_completed_review=require_completed_review,
+    )
 
 
 def discover_task_id(paths: Sequence[str]) -> str | None:
@@ -342,7 +349,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if task_id is None:
         print("Task artifact: NOT VALID (cannot discover exactly one changed task ID)")
         return 1
-    result = validate_task(task_id, risk_class=risk_class)
+    result = validate_task(
+        task_id,
+        risk_class=risk_class,
+        require_completed_review=False,
+    )
     if result.ok:
         print(
             f"Task {task_id}: valid "

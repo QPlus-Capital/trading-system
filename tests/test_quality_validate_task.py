@@ -225,7 +225,9 @@ def test_cli_reports_the_discovered_task_id(
     monkeypatch.setattr(
         task_validator,
         "validate_task",
-        lambda task_id, risk_class: ValidationResult(Path(task_id), (), ("AC-01",), ("INV-01",)),
+        lambda task_id, risk_class, require_completed_review: ValidationResult(
+            Path(task_id), (), ("AC-01",), ("INV-01",)
+        ),
     )
     assert task_validator.main(["--base", "origin/main"]) == 0
     assert "Task 67: valid" in capsys.readouterr().out
@@ -321,6 +323,17 @@ def test_an_empty_r3_review_fails(tmp_path: Path) -> None:
     result = validate_task_dir(task)
     assert not result.ok
     assert "counterexamples" in _messages(task).lower()
+
+
+def test_draft_schema_validation_allows_an_honest_pending_review(tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\nIndependent review has not run.\n\n"
+        "## Dispositions\nPending independent review.\n",
+        encoding="utf-8",
+    )
+    assert validate_task_dir(task, require_completed_review=False).ok
+    assert not validate_task_dir(task, require_completed_review=True).ok
 
 
 def test_an_r3_no_findings_review_records_counterexamples(tmp_path: Path) -> None:
