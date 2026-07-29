@@ -299,19 +299,61 @@ def test_an_unmapped_invariant_fails(tmp_path: Path) -> None:
     assert "INV-*" in _messages(task)
 
 
-def test_an_unresolved_p1_fails(tmp_path: Path) -> None:
+def test_task_validator_accepts_new_severities_and_rejects_old_codes(tmp_path: Path) -> None:
+    for severity in ("Blocker", "Defect", "Suspected defect", "Note"):
+        case_root = tmp_path / severity.replace(" ", "-")
+        case_root.mkdir()
+        task = _task(case_root)
+        (task / "review.md").write_text(
+            "# Review\n\n## Findings\n\n"
+            "| ID | Severity | Finding | Disposition | Status |\n"
+            "|---|---|---|---|---|\n"
+            f"| R-01 | {severity} | Checked path | Verified | resolved |\n\n"
+            "## Dispositions\nVerified.\n",
+            encoding="utf-8",
+        )
+        assert validate_task_dir(task).ok
+
+    for severity in ("P0", "P1", "P2", "P3"):
+        case_root = tmp_path / severity
+        case_root.mkdir()
+        task = _task(case_root)
+        (task / "review.md").write_text(
+            "# Review\n\n## Findings\n\n"
+            "| ID | Severity | Finding | Disposition | Status |\n"
+            "|---|---|---|---|---|\n"
+            f"| R-01 | {severity} | Old vocabulary | None | resolved |\n\n"
+            "## Dispositions\nRejected.\n",
+            encoding="utf-8",
+        )
+        result = validate_task_dir(task)
+        assert not result.ok
+        assert "counterexamples" in _messages(task).lower()
+
+
+def test_blocking_severity_set_is_unchanged_by_the_migration() -> None:
+    assert frozenset({"blocker", "defect", "suspected defect"}) == task_validator._CRITICAL
+    assert set(task_validator._SEVERITIES.values()) == {
+        "Blocker",
+        "Defect",
+        "Suspected defect",
+        "Note",
+    }
+
+
+def test_an_unresolved_defect_fails(tmp_path: Path) -> None:
     task = _task(tmp_path)
     (task / "review.md").write_text(
         "# Review\n\n## Findings\n\n"
         "| ID | Severity | Finding | Disposition | Status |\n"
         "|---|---|---|---|---|\n"
-        "| R-01 | P1 | Broken path | Investigate | unresolved |\n\n"
+        "| R-01 | Defect | Broken path | Investigate | unresolved |\n\n"
         "## Dispositions\nPending.\n",
         encoding="utf-8",
     )
     result = validate_task_dir(task)
     assert not result.ok
-    assert "P1" in _messages(task)
+    assert "Defect" in _messages(task)
 
 
 def test_an_empty_r3_review_fails(tmp_path: Path) -> None:
@@ -361,7 +403,7 @@ def test_an_r3_no_findings_review_requires_a_counterexample(tmp_path: Path) -> N
 def test_an_r3_review_rejects_a_malformed_finding_row(tmp_path: Path) -> None:
     task = _task(tmp_path)
     (task / "review.md").write_text(
-        "# Review\n\n## Findings\n| P3 |\n\n## Dispositions\nNone.\n",
+        "# Review\n\n## Findings\n| Note |\n\n## Dispositions\nNone.\n",
         encoding="utf-8",
     )
     result = validate_task_dir(task)
@@ -369,19 +411,19 @@ def test_an_r3_review_rejects_a_malformed_finding_row(tmp_path: Path) -> None:
     assert "counterexamples" in _messages(task).lower()
 
 
-def test_an_unresolved_p0_fails(tmp_path: Path) -> None:
+def test_an_unresolved_blocker_fails(tmp_path: Path) -> None:
     task = _task(tmp_path)
     (task / "review.md").write_text(
         "# Review\n\n## Findings\n\n"
         "| ID | Severity | Finding | Disposition | Status |\n"
         "|---|---|---|---|---|\n"
-        "| R-00 | P0 | Catastrophic path | Investigate | unresolved |\n\n"
+        "| R-00 | Blocker | Catastrophic path | Investigate | unresolved |\n\n"
         "## Dispositions\nPending.\n",
         encoding="utf-8",
     )
     result = validate_task_dir(task)
     assert not result.ok
-    assert "P0" in _messages(task)
+    assert "Blocker" in _messages(task)
 
 
 def test_evidence_without_command_results_fails(tmp_path: Path) -> None:
@@ -399,28 +441,28 @@ def test_evidence_without_command_results_fails(tmp_path: Path) -> None:
     assert "command" in _messages(task).lower()
 
 
-def test_an_unresolved_p2_fails(tmp_path: Path) -> None:
+def test_an_unresolved_suspected_defect_fails(tmp_path: Path) -> None:
     task = _task(tmp_path)
     (task / "review.md").write_text(
         "# Review\n\n## Findings\n\n"
         "| ID | Severity | Finding | Disposition | Status |\n"
         "|---|---|---|---|---|\n"
-        "| R-02 | P2 | Probable risk | None | open |\n\n"
+        "| R-02 | Suspected defect | Probable risk | None | open |\n\n"
         "## Dispositions\nPending.\n",
         encoding="utf-8",
     )
     result = validate_task_dir(task)
     assert not result.ok
-    assert "P2" in _messages(task)
+    assert "Suspected defect" in _messages(task)
 
 
-def test_a_resolved_critical_finding_passes(tmp_path: Path) -> None:
+def test_a_resolved_blocking_finding_passes(tmp_path: Path) -> None:
     task = _task(tmp_path)
     (task / "review.md").write_text(
         "# Review\n\n## Findings\n\n"
         "| ID | Severity | Finding | Disposition | Status |\n"
         "|---|---|---|---|---|\n"
-        "| R-01 | P1 | Broken path | Fixed by test_guard | resolved |\n\n"
+        "| R-01 | Defect | Broken path | Fixed by test_guard | resolved |\n\n"
         "## Dispositions\nVerified.\n",
         encoding="utf-8",
     )

@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #105 fourth independent live-money review"
 defect_class = "actionability-filter-hides-unverifiable-account-risk"
-severity = "P1"
+severity = "Defect"
 affected = "live/mt5_bridge.py, live/runner.py, monitoring/dashboard.py"
 root_cause = "the bridge safely omitted an undecodable foreign position from the actionable list but exposed no separate evidence that account-wide exposure was incomplete"
 why_tests_missed = "the foreign-position regression asserted only no halt and no close; it never drove the same raw record through the 2% account-risk cap or the operator risk display"

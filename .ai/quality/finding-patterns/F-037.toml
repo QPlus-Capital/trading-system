@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #103 from direction-correctness audit #101"
 defect_class = "catch-all-enum-becomes-executable-action"
-severity = "P2"
+severity = "Suspected defect"
 affected = "live/mt5_bridge.py"
 root_cause = "typed BUY/SELL inputs were trusted at runtime and every non-BUY value fell through to an executable SELL, or the opposing BUY close"
 why_tests_missed = "tests covered legal typed values but never injected an unknown MT5 enum or side string and asserted that terminal pricing and order calls stayed at zero"

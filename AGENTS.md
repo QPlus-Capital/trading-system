@@ -68,6 +68,23 @@ carry this issue number is never resumed, and neither is a branch from a fork or
 repository — ownership is decided by the branch name and its origin, not by the card, because the
 card cannot tell you who wrote the code.
 
+Execute the starting guard rather than inferring it from the request:
+
+```text
+gh issue view <issue> --json labels,projectItems
+gh project item-list 1 --owner QPlus-Capital --format json --limit 200
+gh project item-edit --id <item-id> --project-id <project-id> \
+  --field-id <status-field-id> --single-select-option-id <implementing-option-id>
+gh issue view <issue> --json projectItems
+gh issue edit <issue> --remove-label approved
+gh issue view <issue> --json labels
+```
+
+The first two reads must show this repository, `Ready to Implement`, exactly one `risk:Rn`, and
+`approved`. Run the status edit, read the card back as `Implementing`, and only then remove the
+permit. Read the labels back and require `approved` absent. If any command fails or any observation
+differs, stop; never compensate by removing the permit early.
+
 1. **Specify** — the specification is the issue body; Claude wrote it and Jan approved it. Do not
    restate it in a file and do not extend it. If it is wrong, incomplete, or unbuildable, do not
    guess: move the card back, state the concrete gap in an issue comment, and stop.

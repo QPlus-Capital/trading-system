@@ -22,9 +22,9 @@ def _finding_review(severity: str, status: str) -> str:
     )
 
 
-def test_a_p3_finding_does_not_block_readiness(tmp_path: Path) -> None:
+def test_a_note_finding_does_not_block_readiness(tmp_path: Path) -> None:
     task = _task(tmp_path)
-    (task / "review.md").write_text(_finding_review("P3", "open"), encoding="utf-8")
+    (task / "review.md").write_text(_finding_review("Note", "open"), encoding="utf-8")
     assert assess_readiness(task, ["scripts/tool.py"], "abc123").ready
 
 

@@ -27,7 +27,8 @@ Apply this procedure in order:
 13. Propose an executable regression test for every confirmed or probable defect.
 14. Categorise each observation as confirmed defect, probable defect, human decision, optional
     improvement, or no finding.
-15. Assign P0-P3 using the constitution and make P0-P2 blocking.
+15. Assign Blocker / Defect / Suspected defect / Note using the constitution and make the first
+    three blocking.
 16. Cite the tightest `file:line` location and name the real caller that executes it.
 17. Report explicitly when an area is sound; do not invent findings.
 

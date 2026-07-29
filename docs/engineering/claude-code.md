@@ -33,6 +33,6 @@ schema on Windows. Claude Code itself is not a project dependency, so discovery 
 dogfooded by the independent Claude review after the PR opens.
 
 Claude's primary runtime path is conceptual design followed by independent, read-only review of the
-completed Codex build. `adversarial-review` and the three reviewer subagents implement that path.
+completed Codex build. `review-change` and the four reviewer subagents implement that path.
 The implementation and PR-preparation skills remain available only when Jan assigns Claude the
 highest-stakes trading-work exception; a fresh independent reviewer must then review Claude's work.

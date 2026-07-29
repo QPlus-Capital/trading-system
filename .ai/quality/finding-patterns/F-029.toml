@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #67 PR-evidence adversarial review"
 defect_class = "unchecked-attestation-counts-as-evidence"
-severity = "P1"
+severity = "Defect"
 affected = "scripts/quality/pr_body.py"
 root_cause = "the validator searched for attestation text, so the template's default unchecked statement could satisfy the safety claim"
 why_tests_missed = "the first negative cases removed sections and artifacts but did not retain an unchecked safety statement"

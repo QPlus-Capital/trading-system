@@ -11,18 +11,16 @@ from pathlib import Path
 from scripts.quality.classify import REPO_ROOT, classify_path, load_model
 
 _SKILLS = {
-    "adversarial-review",
-    "create-issues",
-    "design-tests",
-    "impact-analysis",
-    "implement-change",
-    "prepare-pr",
-    "resolve-review",
+    "build-change",
+    "create-issue",
+    "resolve-findings",
+    "review-change",
     "specify-change",
 }
 _AGENTS = {
     "adversarial-code-reviewer",
     "live-money-reviewer",
+    "methodology-reviewer",
     "test-quality-reviewer",
 }
 
@@ -75,6 +73,65 @@ def test_expected_agents_are_read_only_and_name_their_role() -> None:
         assert frontmatter["description"]
         assert frontmatter["tools"] == "Read, Grep, Glob, Bash"
         assert "do not edit" in re.sub(r"\s+", " ", body.casefold())
+
+
+def test_exactly_five_workflow_skills_remain() -> None:
+    discovered = {
+        path.parent.name for path in (REPO_ROOT / ".claude" / "skills").glob("*/SKILL.md")
+    }
+    assert discovered == _SKILLS
+    assert len(discovered) == 5
+
+
+def test_build_change_is_limited_to_the_explicit_builder_exception() -> None:
+    _, body = _frontmatter(REPO_ROOT / ".claude" / "skills" / "build-change" / "SKILL.md")
+    normalized = re.sub(r"\s+", " ", body.casefold())
+    assert "jan explicitly assigns" in normalized
+    assert "highest-stakes trading" in normalized
+    assert "never review" in normalized
+    assert "fresh independent reviewer" in normalized
+
+
+def test_specify_change_drives_the_issue_and_stops_before_arming() -> None:
+    _, body = _frontmatter(REPO_ROOT / ".claude" / "skills" / "specify-change" / "SKILL.md")
+    normalized = re.sub(r"\s+", " ", body.casefold())
+    assert "issue body" in normalized
+    assert "specifying" in normalized
+    assert "stop before" in normalized and "approved" in normalized
+    assert "jan's explicit approval" in normalized
+
+
+def test_review_change_is_fresh_read_only_and_uses_executable_selection() -> None:
+    _, body = _frontmatter(REPO_ROOT / ".claude" / "skills" / "review-change" / "SKILL.md")
+    normalized = re.sub(r"\s+", " ", body.casefold())
+    assert "fresh session" in normalized
+    assert "read-only" in normalized
+    assert "scripts.quality.review_selection" in body
+
+
+def test_every_review_skill_and_agent_is_read_only() -> None:
+    for skill in ("review-change", "resolve-findings"):
+        _, body = _frontmatter(REPO_ROOT / ".claude" / "skills" / skill / "SKILL.md")
+        assert "read-only" in body.casefold()
+        assert "do not edit" in re.sub(r"\s+", " ", body.casefold())
+    for agent in _AGENTS:
+        _, body = _frontmatter(REPO_ROOT / ".claude" / "agents" / f"{agent}.md")
+        assert "do not edit" in re.sub(r"\s+", " ", body.casefold())
+
+
+def test_methodology_reviewer_is_read_only_and_names_all_five_invariants() -> None:
+    frontmatter, body = _frontmatter(REPO_ROOT / ".claude" / "agents" / "methodology-reviewer.md")
+    normalized = re.sub(r"\s+", " ", body.casefold())
+    assert frontmatter["tools"] == "Read, Grep, Glob, Bash"
+    for invariant in (
+        "no leakage",
+        "untouched holdout",
+        "`net_r` as the sole return stream",
+        "content-addressed lineage",
+        "stage 1 equal-footing sizing",
+        "selection/execution agreement",
+    ):
+        assert invariant in normalized
 
 
 def test_settings_use_thin_documented_pre_tool_hook_schema() -> None:

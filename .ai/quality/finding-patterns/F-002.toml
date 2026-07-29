@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "continuous walk-forward"
 defect_class = "config-propagation-loss"
-severity = "P1"
+severity = "Defect"
 affected = "research/engine/continuous.py, core/strategies/rsi_wpr_bb.py"
 root_cause = "a constant non-default grid value (e.g. rsi_length=21) was lost between selection and execution; execution reverted to the default"
 why_tests_missed = "no test compared the value selection scored against the value execution used"

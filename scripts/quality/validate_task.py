@@ -25,8 +25,13 @@ _SECTION = re.compile(
     r"^##\s+(?P<heading>.+?)\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
     re.MULTILINE | re.DOTALL,
 )
-_CRITICAL = {"P0", "P1", "P2"}
-_SEVERITIES = {"P0", "P1", "P2", "P3"}
+_CRITICAL = frozenset({"blocker", "defect", "suspected defect"})
+_SEVERITIES = {
+    "blocker": "Blocker",
+    "defect": "Defect",
+    "suspected defect": "Suspected defect",
+    "note": "Note",
+}
 _NO_FINDINGS = re.compile(
     r"^\s*no findings;\s*(?P<count>\d+)\s+counterexamples attempted\.?\s*$",
     re.IGNORECASE | re.MULTILINE,
@@ -199,7 +204,7 @@ def _review_ran(text: str) -> bool:
     findings = _sections(text).get("findings", "")
     has_finding = any(
         len(cells) >= 5
-        and cells[1].upper() in _SEVERITIES
+        and cells[1].casefold() in _SEVERITIES
         and all(cell.strip() for cell in cells[:5])
         for cells in _table_rows(findings)
     )
@@ -210,7 +215,7 @@ def _review_ran(text: str) -> bool:
 def _critical_review_issues(text: str, resolved: frozenset[str]) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
     for cells in _table_rows(text):
-        severities = {cell.upper() for cell in cells} & _CRITICAL
+        severities = {cell.casefold() for cell in cells} & _CRITICAL
         if not severities:
             continue
         status = cells[-1].strip().casefold()
@@ -219,7 +224,8 @@ def _critical_review_issues(text: str, resolved: frozenset[str]) -> list[Validat
                 issues.append(
                     ValidationIssue(
                         "unresolved-review",
-                        f"review.md has unresolved {severity} finding (status {cells[-1]!r})",
+                        "review.md has unresolved "
+                        f"{_SEVERITIES[severity]} finding (status {cells[-1]!r})",
                     )
                 )
     return issues

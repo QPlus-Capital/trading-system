@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #70 (first measured critical mutation run)"
 defect_class = "nominally-focused-broad-execution"
-severity = "P1"
+severity = "Defect"
 affected = ".ai/quality/mutation.toml, scripts/quality/mutation.py"
 root_cause = "each target used a module-wide wildcard, so the focused gate mutated CLI and orchestration code and selected 298 mutants with no tests"
 why_tests_missed = "the policy test asserted only module paths, not the function-level patterns actually passed to Mutmut"

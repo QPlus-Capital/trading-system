@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #105 fourth independent live-money review"
 defect_class = "batch-decode-error-suppresses-retrievable-safety-actions"
-severity = "P1"
+severity = "Defect"
 affected = "live/mt5_bridge.py, live/runner.py"
 root_cause = "owned-position decoding raised for the whole terminal result, so one invalid record discarded earlier valid positions before the safety flatten loop could close them"
 why_tests_missed = "the runner test made account-wide positions fail while its owned-position fake still returned a clean list, a state the real bridge cannot produce"

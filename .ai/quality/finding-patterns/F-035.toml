@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #60 constitution audit"
 defect_class = "canonical-component-overwritten-by-derived-value"
-severity = "P1"
+severity = "Defect"
 affected = "research/portfolio/stats.py"
 root_cause = "the broker-aware helper stored gross R and then overwrote that column with gross plus swap instead of preserving the cost decomposition"
 why_tests_missed = "tests covered R recovery and swap pricing separately but never invoked the helper's broker-aware branch and asserted all three column identities"

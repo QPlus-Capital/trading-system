@@ -132,12 +132,7 @@ _REQUIRED_TRANSITIONS = frozenset(
         ),
     }
 )
-_REQUIRED_ACTIVATIONS = frozenset(
-    {
-        ("The `methodology-reviewer` subagent", 112),
-        ("Findings named `Blocker` / `Defect` / `Suspected defect` / `Note`", 112),
-    }
-)
+_REQUIRED_ACTIVATIONS: frozenset[tuple[str, int]] = frozenset()
 
 
 def _normalize(text: str) -> str:
@@ -150,7 +145,7 @@ def test_workflow_contract_toml_is_valid_and_complete() -> None:
     assert contract.statuses
     assert {guard.name for guard in contract.builder_guards} == {"Start", "Resume"}
     assert contract.transitions
-    assert contract.activations
+    assert contract.activations == ()
     assert contract.gate_rule.relation == "minimum"
     assert contract.gate_rule.additional_scoped_checks
     assert contract.ready_for_review.initial_pull_request_state == "draft"
@@ -188,6 +183,32 @@ def test_every_registered_activation_is_declared() -> None:
         f"missing={sorted(_REQUIRED_ACTIVATIONS - declared)}\n"
         f"unregistered={sorted(declared - _REQUIRED_ACTIVATIONS)}"
     )
+
+
+def test_empty_activation_register_renders_and_validates(tmp_path: Path) -> None:
+    """The combined #110/#112 end state is a valid empty generated table."""
+    source = CONTRACT_PATH.read_text(encoding="utf-8")
+    without_activations = re.sub(
+        r"\n\[\[activation\]\]\n.*?(?=\n\[\[|\Z)",
+        "",
+        source,
+        flags=re.DOTALL,
+    )
+    path = tmp_path / "workflow-contract.toml"
+    path.write_text(without_activations, encoding="utf-8")
+    contract = load_contract(path)
+    assert contract.activations == ()
+    rendered = render_document(
+        _WORKFLOW,
+        (_ROOT / _WORKFLOW).read_text(encoding="utf-8"),
+        contract,
+    )
+    block = rendered.split("<!-- workflow-contract:activations:start -->", 1)[1].split(
+        "<!-- workflow-contract:activations:end -->",
+        1,
+    )[0]
+    assert "| Part of this contract | Lands with | Until then |" in block
+    assert "[#" not in block
 
 
 def test_workflow_contract_rejects_a_malformed_document_digest(tmp_path: Path) -> None:
@@ -243,7 +264,7 @@ def test_rendering_emits_every_machine_contract_record() -> None:
 
 
 def test_no_role_document_says_builder_opens_ready_pull_request() -> None:
-    """Round-one P1 F3 remains a permanent negative and positive protection."""
+    """Round-one Defect F3 remains a permanent negative and positive protection."""
     forbidden = "opens the ready pull request"
     for relative in (_CONSTITUTION, _AGENTS, _CLAUDE):
         raw = (_ROOT / relative).read_text(encoding="utf-8")

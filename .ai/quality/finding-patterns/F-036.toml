@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #58 constant-basis audit"
 defect_class = "coupled-accounting-model-not-updated-at-every-consumer"
-severity = "P1"
+severity = "Defect"
 affected = "research/engine/continuous.py"
 root_cause = "Stage 1 changed sizing and returns to a constant basis but retained a compounding running-equity viability check"
 why_tests_missed = "the constant-basis test varied prior profits only, while separate tests ratified the obsolete ruin behavior instead of crossing the negative basis boundary"

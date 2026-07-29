@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #66 (staged hook dogfood)"
 defect_class = "source-escape-placeholder-false-positive"
-severity = "P2"
+severity = "Suspected defect"
 affected = "scripts/quality/hooks/decisions.py"
 root_cause = "the staged scanner accepted a brace placeholder alone but included an adjacent escaped newline in the parsed value, so the fake-secret fixture blocked its own commit"
 why_tests_missed = "the clean source test omitted the exact escaped newline present in the staged f-string"

@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #66 (staged bypass-hook dogfood)"
 defect_class = "suppression-scanner-string-literal-false-positive"
-severity = "P2"
+severity = "Suspected defect"
 affected = "scripts/quality/hooks/decisions.py"
 root_cause = "raw diff matching treated a quoted broad-ignore counterexample in the hook's own test as an actual Python comment"
 why_tests_missed = "the pure bypass test supplied the synthetic suppression as a bare added line rather than its exact quoted test-source representation"

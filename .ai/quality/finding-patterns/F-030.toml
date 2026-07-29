@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #67 PR-evidence adversarial review"
 defect_class = "linked-issue-task-identity-not-bound"
-severity = "P1"
+severity = "Defect"
 affected = "scripts/quality/pr_body.py"
 root_cause = "the PR body validated a task path and required a linked-issue section but did not require their numeric identities to agree"
 why_tests_missed = "the first positive and negative cases used one task reference without a contradictory issue number"

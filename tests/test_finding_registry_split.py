@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import subprocess
 import tomllib
 from pathlib import Path
@@ -18,6 +20,13 @@ from scripts.quality.finding_registry import (
 _ROOT = Path(__file__).resolve().parents[1]
 _REGISTRY = _ROOT / ".ai" / "quality" / "finding-patterns"
 _LEGACY = _ROOT / "tests" / "fixtures" / "finding-patterns-v1.toml"
+_SEVERITY_V1 = _ROOT / "tests" / "fixtures" / "finding-severity-v1.toml"
+_SEVERITY_MIGRATION = {
+    "P0": "Blocker",
+    "P1": "Defect",
+    "P2": "Suspected defect",
+    "P3": "Note",
+}
 
 
 def _finding(name: str) -> Finding:
@@ -25,7 +34,7 @@ def _finding(name: str) -> Finding:
         id="",
         source=f"synthetic {name}",
         defect_class=f"{name}-class",
-        severity="P2",
+        severity="Suspected defect",
         affected=f"{name}.py",
         root_cause=f"{name} root cause",
         why_tests_missed=f"{name} was not exercised",
@@ -119,3 +128,27 @@ def test_migration_preserves_all_legacy_ids_and_content() -> None:
     assert len(before) == 55
     assert migrated_ids == legacy_ids
     assert all(after[str(item["id"])] == _content(item) for item in before)
+
+
+def _stable_content_digest(content: dict[str, str]) -> str:
+    stable = {key: value for key, value in content.items() if key != "severity"}
+    payload = json.dumps(
+        stable,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hashlib.sha256(payload).hexdigest()
+
+
+def test_severity_migration_changes_only_severity_across_all_58_patterns() -> None:
+    before = tomllib.loads(_SEVERITY_V1.read_text(encoding="utf-8"))
+    expected = {
+        bytes(row["content_sha256"]).hex(): _SEVERITY_MIGRATION[row["severity"]]
+        for row in before["finding"]
+    }
+    after = load_findings(_REGISTRY)
+    observed = {_stable_content_digest(finding.content): finding.severity for finding in after}
+    assert before["count"] == 58
+    assert len(expected) == len(after) == 58
+    assert observed == expected

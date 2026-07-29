@@ -3,37 +3,42 @@ name: specify-change
 description: Invoke as Claude's primary design path to turn Jan's intent into an executable contract.
 ---
 
-This is Claude's primary conceptual-design skill. It is mandatory before Codex implements a
-non-trivial change, or before Claude implements a highest-stakes trading exception assigned by Jan.
+This is Claude's primary conceptual-design skill. It produces the issue that carries the
+specification and controls Claude's board transitions. It never arms work without Jan's explicit
+approval.
 
 ## Required inputs
 
 - The issue or operator request, `docs/engineering/constitution.md`, and `AGENTS.md` or `CLAUDE.md`.
-- The repository state and the task identifier.
+- The repository state, issue number, project item, and current board status.
 
 ## Procedure
 
-1. Run `uv run python -m scripts.quality.classify --base origin/main` when a branch diff exists;
-   otherwise classify the expected paths explicitly. Treat the result as a minimum and upgrade it
-   when semantic impact is broader.
-2. Create the five files under `.ai/tasks/<id>/` from the repository task-artifact structure.
-3. Convert the request into numbered acceptance criteria and invariants, with explicit non-goals,
-   assumptions, human decisions, and expected artifacts.
-4. Run `uv run python -m scripts.quality.validate_task <id>`.
+1. Move the project card to `Specifying`.
+2. Check that the problem still exists, is not a duplicate, and does not violate the constitution.
+3. Classify the expected paths with `scripts.quality.classify`; treat the result as a minimum.
+4. Write the complete specification into the issue body: problem, goal, scope, non-goals, numbered
+   acceptance criteria and invariants, affected modules, justified risk class, verification plan,
+   and open decisions.
+5. If a decision only Jan can make remains open, move the card to `Blocked` and stop.
+6. Present the complete issue body and risk to Jan. **Stop before** moving to
+   `Ready to Implement` or adding `approved` until Jan's explicit approval.
+7. After that approval only, write the final issue body, add `risk:Rn`, move the card to
+   `Ready to Implement`, and add `approved` last.
 
 ## Outputs
 
-- A valid task specification and companion impact, test-plan, review, and evidence files.
-- A declared risk class and explicit unresolved decisions.
+- A complete issue body, declared risk class, and explicit unresolved decisions.
+- A board card left unarmed while Jan's approval is absent, or armed in the required order after it.
 
 ## Stop conditions
 
-- Stop before implementation if a business, trading, methodology, architecture, or live-money
-  decision is unresolved.
+- Stop before arming when Jan has not explicitly approved the complete issue body.
+- Stop if a business, trading, methodology, architecture, live-money, or risk decision is open.
 - Stop if the declared risk would understate the classifier result.
 
 ## Prohibited shortcuts
 
-- Do not replace acceptance criteria with narrative intent.
+- Do not create a second specification under `.ai/tasks/`; the issue body is authoritative.
 - Do not copy the classifier or validator policy into the skill or task prose.
-- Do not implement code while the task artifact is invalid.
+- Do not add `approved` before every earlier approval action succeeds.

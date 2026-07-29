@@ -160,13 +160,15 @@ prose. A narrative description never substitutes for missing evidence.
 
 ## 12. Finding severity
 
-- **P0** — live-money loss, a leaked secret, or data corruption.
-- **P1** — a correctness defect: wrong result, broken invariant, silent failure.
-- **P2** — a probable defect or risk needing verification, or a missing test for a real edge case.
-- **P3** — an optional improvement or style point.
+- **Blocker** — live-money loss, a leaked secret, or data corruption.
+- **Defect** — a correctness defect: wrong result, broken invariant, silent failure.
+- **Suspected defect** — a probable defect or risk needing verification, or a missing test for a
+  real edge case.
+- **Note** — an optional improvement or style point.
 
-A P0 or P1 blocks readiness; an unresolved P2 blocks readiness; a P3 does not automatically block.
-Saying "this is correct" when it is, is valuable — do not invent findings to seem thorough.
+Blocker, Defect, and Suspected defect findings block readiness until resolved. A Note does not
+automatically block. Saying "this is correct" when it is, is valuable — do not invent findings to
+seem thorough.
 
 ## 13. Unresolved uncertainty
 
