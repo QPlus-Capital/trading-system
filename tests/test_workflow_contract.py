@@ -28,37 +28,110 @@ _AGENTS = Path("AGENTS.md")
 _CLAUDE = Path("CLAUDE.md")
 _CONTRACT_DOCUMENTS = (_WORKFLOW, _CONSTITUTION, _AGENTS, _CLAUDE)
 
-# These authorized sets deliberately live in the test, outside the contract they constrain. A
+# These required sets deliberately live in the test, outside the contract they constrain. A
 # contract edit therefore cannot make a missing or invented record authorize itself.
+_REQUIRED_STATUSES = frozenset(
+    {
+        ("Backlog", "A raw idea. One sentence is enough.", "Project automation (auto-add)"),
+        (
+            "Specifying",
+            "Claude is working the idea into a specification with Jan.",
+            "Claude",
+        ),
+        (
+            "Ready to Implement",
+            'Approved by Jan. Codex **may** build it — not "build it now".',
+            "Claude, after Jan's explicit approval",
+        ),
+        ("Implementing", "Codex is building.", "Codex"),
+        (
+            "Reviewing",
+            "The change is with the independent reviewer — on the draft pull request, or on the "
+            "pushed branch while the branch-review rule below applies.",
+            "Codex, at handover",
+        ),
+        (
+            "Blocked",
+            "Waiting on a decision only Jan can make (constitution §13).",
+            "Any agent",
+        ),
+        ("Done", "Merged.", "Project automation (item closed)"),
+    }
+)
 _REQUIRED_TRANSITIONS = frozenset(
     {
         ("-", "Backlog", "project automation", "an issue is opened"),
         ("Backlog", "Specifying", "Claude", "Jan asks for the idea to be worked out"),
         ("Blocked", "Specifying", "Claude", "Jan decided"),
-        ("Specifying", "Ready to Implement", "Claude"),
-        ("Ready to Implement", "Implementing", "Codex"),
-        ("Implementing", "Reviewing", "Codex"),
+        (
+            "Specifying",
+            "Backlog",
+            "Claude",
+            "Jan defers the idea; the specification is kept",
+        ),
+        (
+            "Specifying",
+            "Ready to Implement",
+            "Claude",
+            "Jan approves; `approved` is written last",
+        ),
+        (
+            "Ready to Implement",
+            "Specifying",
+            "Claude",
+            "an approved issue must change; `approved` is removed first",
+        ),
+        (
+            "Ready to Implement",
+            "Implementing",
+            "Codex",
+            "build starts; `approved` is removed afterwards",
+        ),
+        (
+            "Implementing",
+            "Reviewing",
+            "Codex",
+            "the change is handed over for review — by opening the draft pull request, or, while "
+            "the branch-review rule below applies, by pushing the branch and saying so",
+        ),
         ("Reviewing", "Implementing", "Claude", "a blocking finding"),
-        ("Reviewing", "Done", "project automation"),
-    }
-)
-_AUTHORIZED_EDGES = frozenset(
-    {
-        ("-", "Backlog"),
-        ("Backlog", "Specifying"),
-        ("Blocked", "Specifying"),
-        ("Specifying", "Backlog"),
-        ("Specifying", "Ready to Implement"),
-        ("Specifying", "Blocked"),
-        ("Ready to Implement", "Specifying"),
-        ("Ready to Implement", "Implementing"),
-        ("Ready to Implement", "Blocked"),
-        ("Implementing", "Reviewing"),
-        ("Implementing", "Specifying"),
-        ("Implementing", "Blocked"),
-        ("Reviewing", "Implementing"),
-        ("Reviewing", "Blocked"),
-        ("Reviewing", "Done"),
+        ("Implementing", "Reviewing", "Codex", "the review fix is pushed"),
+        (
+            "Implementing",
+            "Specifying",
+            "Codex",
+            "the specification is wrong, incomplete or unbuildable",
+        ),
+        (
+            "Specifying",
+            "Blocked",
+            "Claude",
+            "a decision only Jan can make is open",
+        ),
+        (
+            "Ready to Implement",
+            "Blocked",
+            "any agent",
+            "a decision only Jan can make is open",
+        ),
+        (
+            "Implementing",
+            "Blocked",
+            "any agent",
+            "a decision only Jan can make is open",
+        ),
+        (
+            "Reviewing",
+            "Blocked",
+            "any agent",
+            "a decision only Jan can make is open",
+        ),
+        (
+            "Reviewing",
+            "Done",
+            "project automation",
+            "the pull request merged and closed the issue",
+        ),
     }
 )
 _REQUIRED_ACTIVATIONS = frozenset(
@@ -93,28 +166,23 @@ def test_workflow_contract_toml_is_valid_and_complete() -> None:
     assert contract.transitional_review.activation_issue > 0
 
 
-def test_every_required_transition_is_declared() -> None:
-    """A row may not vanish; the review loop's return edge has already regressed."""
+def test_declared_statuses_exactly_match_required_records() -> None:
+    """Every status fact is independently pinned in both directions."""
+    contract = load_contract()
+    declared = {(row.name, row.meaning, row.actor) for row in contract.statuses}
+    assert declared == _REQUIRED_STATUSES, (
+        f"missing={sorted(_REQUIRED_STATUSES - declared)}\n"
+        f"unauthorized={sorted(declared - _REQUIRED_STATUSES)}"
+    )
+
+
+def test_declared_transitions_exactly_match_required_records() -> None:
+    """Every complete transition fact is independently pinned in both directions."""
     contract = load_contract()
     declared = {(row.source, row.target, row.actor, row.trigger) for row in contract.transitions}
-    prefixes = {record[:3] for record in declared}
-    missing = {
-        required
-        for required in _REQUIRED_TRANSITIONS
-        if required not in declared and required not in prefixes
-    }
-    assert missing == set(), f"the contract lost required transitions: {sorted(missing)}"
-
-
-def test_no_transition_outside_the_authorized_edge_set_exists() -> None:
-    """The declared graph is exactly the authorized graph, in both directions."""
-    contract = load_contract()
-    declared = {(row.source, row.target) for row in contract.transitions}
-    assert declared - _AUTHORIZED_EDGES == set(), (
-        f"the contract authorizes unreviewed edges: {sorted(declared - _AUTHORIZED_EDGES)}"
-    )
-    assert _AUTHORIZED_EDGES - declared == set(), (
-        f"the contract dropped authorized edges: {sorted(_AUTHORIZED_EDGES - declared)}"
+    assert declared == _REQUIRED_TRANSITIONS, (
+        f"missing={sorted(_REQUIRED_TRANSITIONS - declared)}\n"
+        f"unauthorized={sorted(declared - _REQUIRED_TRANSITIONS)}"
     )
 
 
@@ -368,6 +436,18 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
                 'actor = "any agent"\n'
                 'trigger = "the change looks small enough"\n'
             )
+    elif name == "approval-transition-loses-jan-trigger":
+        _replace_once(
+            contract,
+            'trigger = "Jan approves; `approved` is written last"',
+            'trigger = "the specification is complete"',
+        )
+    elif name == "ready-status-loses-jan-approval-actor":
+        _replace_once(
+            contract,
+            'actor = "Claude, after Jan\'s explicit approval"',
+            'actor = "Claude"',
+        )
     else:
         raise AssertionError(f"unknown counterexample: {name}")
 
@@ -392,8 +472,18 @@ _COUNTEREXAMPLES = (
     "missing-review-return-transition",
     "missing-board-tooling-activation",
     "unauthorized-backlog-done-contract-transition",
+    "approval-transition-loses-jan-trigger",
+    "ready-status-loses-jan-approval-actor",
 )
-_CONTRACT_RECORD_COUNTEREXAMPLES = frozenset(_COUNTEREXAMPLES[-3:])
+_CONTRACT_RECORD_COUNTEREXAMPLES = frozenset(
+    {
+        "missing-review-return-transition",
+        "missing-board-tooling-activation",
+        "unauthorized-backlog-done-contract-transition",
+        "approval-transition-loses-jan-trigger",
+        "ready-status-loses-jan-approval-actor",
+    }
+)
 
 
 @pytest.mark.parametrize("counterexample", _COUNTEREXAMPLES)
@@ -408,20 +498,14 @@ def test_contract_rendering_rejects_semantic_counterexample(
     if counterexample in _CONTRACT_RECORD_COUNTEREXAMPLES:
         _render_counterexample_documents(paths, contract)
 
+    declared_statuses = {(row.name, row.meaning, row.actor) for row in contract.statuses}
     declared_transitions = {
         (row.source, row.target, row.actor, row.trigger) for row in contract.transitions
     }
-    transition_prefixes = {record[:3] for record in declared_transitions}
-    missing_transitions = {
-        required
-        for required in _REQUIRED_TRANSITIONS
-        if required not in declared_transitions and required not in transition_prefixes
-    }
-    declared_edges = {(row.source, row.target) for row in contract.transitions}
     declared_activations = {(row.capability, row.issue) for row in contract.activations}
     totality_errors = (
-        missing_transitions
-        or declared_edges != _AUTHORIZED_EDGES
+        declared_statuses != _REQUIRED_STATUSES
+        or declared_transitions != _REQUIRED_TRANSITIONS
         or declared_activations != _REQUIRED_ACTIVATIONS
     )
     assert check_documents(tmp_path, contract) or totality_errors, (

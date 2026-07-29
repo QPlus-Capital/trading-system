@@ -322,3 +322,19 @@ document text.
 
 **Review status:** the blocking finding is implemented but not self-approved. A fresh independent
 review is still required; this disposition is builder evidence only.
+
+---
+
+## Builder disposition after the sixth independent review
+
+The sixth review verified the round-five fix and identified one residual hole in the supplied
+counterexample design: four required transitions were only three-field prefixes, and statuses had
+no independent required set. The builder kept every round-five protection and changed no contract
+fact, renderer, skeleton digest, `_validate_contract` check, or document.
+
+| ID | Disposition |
+|---|---|
+| Sixth-review complete-record finding | Confirmed and fixed. The partial `_REQUIRED_TRANSITIONS` and edge-only `_AUTHORIZED_EDGES` sets are replaced by one test-owned frozenset containing all 16 complete source/target/actor/trigger records. One exact equality assertion rejects missing, invented, or rewritten transitions in both directions. A second test-owned frozenset contains all seven complete name/meaning/actor status records with the same equality protection. The parametrized oracle now executes both supplied residual attacks: replacing Jan's approval trigger with "the specification is complete", and replacing the `Ready to Implement` actor with plain "Claude". Both mutations regenerate the governed document views before assertion, so renderer or skeleton drift cannot provide the rejection. F-039 now names the two exact-record guards and generalizes complete status, transition, and activation equality. |
+
+**Review status:** the residual finding is implemented but not self-approved. A fresh independent
+review is still required; this disposition is builder evidence only.
