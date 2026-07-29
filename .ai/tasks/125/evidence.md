@@ -2,6 +2,8 @@
 
 ## HEAD
 
+HEAD: dd5a3dfe832cd38cc262cf067eb1f5e13fe2a001
+
 Branch `claude/125-mutation-total`, branched from `origin/main` at `8b75ff0`. This tree contains
 nothing from the unmerged pull requests #105, #106 and #123 or from the unmerged issue #107 branch.
 
@@ -13,10 +15,10 @@ nothing from the unmerged pull requests #105, #106 and #123 or from the unmerged
 | `red-first` | `uv run pytest -q tests/test_quality_mutation.py -k both_totals_stay_visible` after extracting `summary_lines` behaviour-preserving and before adding the baseline total | 1 | RED: **2 failed** — `assert '4646' in 'Mutation critical: 4364/4775 killed, 411 survived; report critical.toml'`, on both the passing-run and the failing-run case. |
 | `format` | `uvx --from rust-just just check-standard` | 0 | GREEN: Ruff, format and mypy. Two `C420` findings and one `E501` were fixed before the final commit. |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_claude_runtime_files.py tests/test_docs_language.py tests/test_docs_architecture_map.py` | 0 | GREEN: **136 passed**. No engineering document changed. |
-| `check` | `uvx --from rust-just just check` | 0 | GREEN: **1346 passed**, 1 skipped (Mutmut needs fork/WSL on Windows). |
+| `check` | `uvx --from rust-just just check` | 0 | GREEN: **1348 passed**, 1 skipped (Mutmut needs fork/WSL on Windows). |
 | `impacted-tests` | `uvx --from rust-just just check-fast` | 0 | GREEN: impact selected `tests/test_quality_mutation.py` as the only directly related suite and discovered no transitive, critical-path or dynamic edge; **155 passed**, 1 skipped. |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | GREEN: **21 properties passed twice** with seed 20260721. |
-| `integration-tests` | full pytest within `check` | 0 | GREEN: 1346 passed with no MT5 terminal initialised and no runner contacted. |
+| `integration-tests` | full pytest within `check` | 0 | GREEN: 1348 passed with no MT5 terminal initialised and no runner contacted. |
 | `invariants` | `uvx --from rust-just just check-invariants` | 0 | GREEN: **325 passed**. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task 125` | 0 | GREEN: valid. |
 | `security` | `uvx --from rust-just just check-security` | 0 | GREEN: tracked-secret scan, dependency audit and static security checks. |
