@@ -469,6 +469,7 @@ def test_foreign_unknown_position_type_never_halts_or_flattens_owned_book(
 @pytest.mark.parametrize("stop", [190.0, 0.0])
 def test_foreign_unknown_position_type_blocks_new_risk_without_halting(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
     stop: float,
 ) -> None:
     raw_positions = [
@@ -524,16 +525,24 @@ def test_foreign_unknown_position_type_blocks_new_risk_without_halting(
     runner = _runner(stub, mode=Mode.EXECUTE)
     monkeypatch.setattr(runner, "_replay_signal", lambda closed: (True, False))
 
-    runner.run_once()
+    with caplog.at_level(logging.CRITICAL, logger="live"):
+        runner.run_once()
 
     assert runner._risk.open_risk == float("inf")
     assert not runner._halted
     assert stub.placed == []
     assert stub.closed == []
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.CRITICAL
+    ] == [
+        "cannot decode account position ticket 20 on GBPJPY -> blocking new entries until it is "
+        "resolved"
+    ]
 
 
 def test_trailing_breach_flattens_each_retrievable_owned_raw_position(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     raw_positions = [
         SimpleNamespace(
@@ -603,7 +612,8 @@ def test_trailing_breach_flattens_each_retrievable_owned_raw_position(
         day_start_balance=stub.balance,
     )
 
-    runner.run_once()
+    with caplog.at_level(logging.ERROR, logger="live"):
+        runner.run_once()
 
     assert runner._halted
     assert runner._halt_reason == "trailing stop: equity 90000 <= floor 95000"
@@ -612,6 +622,9 @@ def test_trailing_breach_flattens_each_retrievable_owned_raw_position(
         "SAFETY HALT: could not decode owned XAUUSD position ticket 13; "
         "manual intervention required"
     )
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.ERROR
+    ] == ["could not decode owned XAUUSD position ticket 13 during safety halt"]
 
 
 def test_daily_safety_cutoff_precedes_unverifiable_open_risk() -> None:
@@ -801,6 +814,47 @@ def test_open_risk_prefers_the_terminals_price_and_falls_back_to_arithmetic() ->
     assert runner._total_open_risk() == 20.0  # terminal_risk is None -> fallback
     stub.terminal_risk = 33.0  # the broker prices the same stop differently (conversion)
     assert runner._total_open_risk() == 33.0  # the terminal's number wins
+
+
+def test_open_risk_accumulates_every_priced_and_fallback_position() -> None:
+    class PerPositionRiskBridge(StubBridge):
+        def loss_to_stop(self, position: Position) -> float | None:
+            return {1: 10.0, 2: 20.0, 3: None}[position.ticket]
+
+    stub = PerPositionRiskBridge()
+    stub.open_positions = [
+        Position(1, "XAUUSD", "BUY", 1.0, 2000.0, 1990.0, 2030.0, 0.0, MAGIC),
+        Position(2, "XAUUSD", "SELL", 1.0, 2000.0, 2010.0, 1970.0, 0.0, MAGIC),
+        Position(3, "XAUUSD", "BUY", 1.0, 2000.0, 1970.0, 2090.0, 0.0, MAGIC),
+    ]
+    runner = _runner(stub)
+
+    assert runner._total_open_risk() == 60.0
+
+
+@pytest.mark.parametrize(
+    ("stop", "expected_warning"),
+    [
+        (0.0, ["open position 1 (XAUUSD) has NO stop-loss -> charged at worst case"]),
+        (0.9, []),
+    ],
+)
+def test_open_risk_warns_only_when_the_stop_is_non_positive(
+    caplog: pytest.LogCaptureFixture,
+    stop: float,
+    expected_warning: list[str],
+) -> None:
+    stub = StubBridge()
+    stub.terminal_risk = 10.0
+    stub.open_positions = [
+        Position(1, "XAUUSD", "BUY", 1.0, 1.2, stop, 1.4, 0.0, MAGIC),
+    ]
+    runner = _runner(stub)
+
+    with caplog.at_level(logging.WARNING, logger="live"):
+        assert runner._total_open_risk() == 10.0
+
+    assert [record.getMessage() for record in caplog.records] == expected_warning
 
 
 def test_rejected_order_leaves_the_bar_unmarked_and_retries_next_cycle(
@@ -1068,7 +1122,9 @@ def test_an_explicit_day_start_is_used_and_the_hwm_banks_the_balance() -> None:
     assert runner._risk.hwm_balance == 104_000.0  # HWM banks the balance -> raises the floor
 
 
-def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk() -> None:
+def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     """Codex round-5 P1: open risk only visited configured markets, so a manual position on any
     OTHER symbol contributed its PnL to equity while its stop-risk never entered the total --
     check_open could admit new trades past the 2% cap. Unpriceable exposure must fail closed."""
@@ -1077,9 +1133,16 @@ def test_an_unpriceable_position_on_a_foreign_symbol_blocks_new_risk() -> None:
         Position(9, "GBPJPY", "BUY", 1.0, 200.0, 190.0, 220.0, 5.0, magic=777)  # not configured
     ]
     runner = _runner(stub)  # terminal_risk None -> the terminal cannot price it either
-    runner.run_once()
+    with caplog.at_level(logging.CRITICAL, logger="live"):
+        runner.run_once()
     assert runner._risk.open_risk == float("inf")  # fail closed
     assert not runner._risk.check_open(1.0, stub.equity).allowed  # nothing new gets in
+    assert [
+        record.getMessage() for record in caplog.records if record.levelno == logging.CRITICAL
+    ] == [
+        "cannot price position 9 on unconfigured symbol GBPJPY -> blocking new entries until it "
+        "is closed or priceable"
+    ]
 
 
 def test_a_priceable_foreign_position_is_charged_into_open_risk() -> None:

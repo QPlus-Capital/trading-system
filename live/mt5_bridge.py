@@ -41,6 +41,7 @@ _SYMBOL_FILLING_FOK = 1
 _SYMBOL_FILLING_IOC = 2
 _DEFAULT_ORDER_DEVIATION = 20
 _DEFAULT_ORDER_COMMENT = "qplus"
+_INVALID_POSITION_TICKET = "invalid MT5 position ticket"
 
 # Our research name -> the broker's base symbol name (before any account suffix).
 SYMBOL_MAP: dict[str, str] = {
@@ -75,6 +76,16 @@ def _runtime_index(value: object, *, error: str) -> int:
         return operator.index(value)
     except (TypeError, ValueError) as exc:
         raise Mt5SideError(error) from exc
+
+
+def _position_ticket(value: object) -> int | None:
+    """Return an integral ticket, or leave the record identifiable as unknown."""
+    if isinstance(value, bool) or not isinstance(value, SupportsIndex):
+        return None
+    try:
+        return operator.index(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _runtime_side(
@@ -403,11 +414,7 @@ class Mt5Bridge:
         issues: list[PositionDecodeIssue] = []
         position_types = (int(m.POSITION_TYPE_BUY), int(m.POSITION_TYPE_SELL))
         for p in raw:
-            ticket: int | None
-            try:
-                ticket = _runtime_index(p.ticket, error="invalid MT5 position ticket")
-            except Mt5SideError:
-                ticket = None
+            ticket = _position_ticket(p.ticket)
             symbol = str(p.symbol)
             try:
                 magic = _runtime_index(
@@ -444,7 +451,7 @@ class Mt5Bridge:
                         ticket=None,
                         symbol=symbol,
                         magic=magic,
-                        reason="invalid MT5 position ticket",
+                        reason=_INVALID_POSITION_TICKET,
                     )
                 )
                 continue

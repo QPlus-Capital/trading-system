@@ -204,6 +204,7 @@ id = "mt5-deal-export"
 path = "live/mt5_bridge.py"
 mutant_patterns = [
     "live.mt5_bridge.x__runtime_index__mutmut_*",
+    "live.mt5_bridge.x__position_ticket__mutmut_*",
     "live.mt5_bridge.x__runtime_side__mutmut_*",
     "live.mt5_bridge.x__order_type__mutmut_*",
     "live.mt5_bridge.x*Mt5Bridge*positions__mutmut_*",

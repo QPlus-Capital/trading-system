@@ -450,7 +450,7 @@ class LiveRunner:
                 issue.ticket,
                 issue.symbol,
             )
-            return float("inf")
+            return math.inf
         infos: dict[str, SymbolInfo] = {}
         for spec in self._markets:
             info = self._bridge.symbol_info(spec.name)
@@ -477,7 +477,7 @@ class LiveRunner:
                 pos.ticket,
                 pos.symbol,
             )
-            return float("inf")
+            return math.inf
         return total
 
     def _process_market(self, spec: MarketSpec, equity: float, now_epoch: float) -> None:

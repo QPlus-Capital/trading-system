@@ -493,6 +493,74 @@ def test_position_snapshot_surfaces_foreign_unknown_exposure(
     ]
 
 
+def test_position_snapshots_forward_the_symbol_filter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _FakeMt5([_raw_position(_FakeMt5.POSITION_TYPE_BUY)])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    assert [position.ticket for position in bridge.position_snapshot("EURUSD").positions] == [7]
+    assert [position.ticket for position in bridge.owned_position_snapshot("EURUSD").positions] == [
+        7
+    ]
+    assert fake.positions_get_calls == [{"symbol": "EURUSD"}, {"symbol": "EURUSD"}]
+
+
+def test_position_snapshot_preserves_invalid_ticket_issue_and_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_ticket = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    invalid_ticket.ticket = _ValueErrorIndex()
+    valid = SimpleNamespace(
+        **{
+            **vars(_raw_position(_FakeMt5.POSITION_TYPE_SELL)),
+            "ticket": 8,
+        }
+    )
+    fake = _FakeMt5([invalid_ticket, valid])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    snapshot = bridge.position_snapshot()
+
+    assert [(position.ticket, position.side) for position in snapshot.positions] == [(8, "SELL")]
+    assert snapshot.issues == (
+        bridge_module.PositionDecodeIssue(
+            ticket=None,
+            symbol="EURUSD",
+            magic=MAGIC,
+            reason="invalid MT5 position ticket",
+        ),
+    )
+
+
+def test_position_snapshot_preserves_invalid_magic_issue_and_continues(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid_magic = _raw_position(_FakeMt5.POSITION_TYPE_BUY)
+    invalid_magic.ticket = 9
+    invalid_magic.magic = _ValueErrorIndex()
+    valid = SimpleNamespace(
+        **{
+            **vars(_raw_position(_FakeMt5.POSITION_TYPE_SELL)),
+            "ticket": 8,
+        }
+    )
+    fake = _FakeMt5([invalid_magic, valid])
+    bridge = _bridge_with_fake(monkeypatch, fake)
+
+    snapshot = bridge.position_snapshot()
+
+    assert [(position.ticket, position.side) for position in snapshot.positions] == [(8, "SELL")]
+    assert snapshot.issues == (
+        bridge_module.PositionDecodeIssue(
+            ticket=9,
+            symbol="EURUSD",
+            magic=None,
+            reason="invalid MT5 position magic; expected an integer",
+        ),
+    )
+
+
 def test_owned_position_snapshot_keeps_retrievable_positions_and_names_rejections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
