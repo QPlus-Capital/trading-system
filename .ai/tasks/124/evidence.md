@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 9cf42d098904cd86e3b8f24c9c8e2f79d6fcaaca
+HEAD: 9e45f3e89aae53abb0e4a3496a90fd51b48a4bd5
 
 ## Commands
 
@@ -12,11 +12,11 @@ HEAD: 9cf42d098904cd86e3b8f24c9c8e2f79d6fcaaca
 | `red-first` | `uv run pytest -q tests/test_quality_process_scaling.py tests/test_finding_registry_split.py` | 1 | RED during collection: missing `pr_transition_decision` and missing `scripts.quality.finding_registry`; 2 collection errors. |
 | `format` | `uvx --from rust-just just check-fast origin/main` | 0 | 17 changed Python files formatted; Ruff and mypy passed. |
 | `docs-consistency` | `uv run python -m scripts.quality.workflow_contract` and `uv run pytest -q tests/test_engineering_docs.py tests/test_engineering_workflow_docs.py tests/test_workflow_contract.py` | 0 | Generated contract matched its TOML facts; 92 documentation/contract tests passed. |
-| `check` | `uvx --from rust-just just check` | 0 | Ruff, mypy, vulture, and full pytest passed: 1572 passed, 1 Windows mutation skip. |
+| `check` | `uvx --from rust-just just check` | 0 | Ruff, mypy, vulture, and full pytest passed after the draft-schema separation: 1573 passed, 1 Windows mutation skip. |
 | `impacted-tests` | `uvx --from rust-just just check-fast origin/main` | 0 | Conservative focused set passed: 177 tests. |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Deterministic property replay passed twice: 21 + 21. |
 | `integration-tests` | `uv run pytest -q tests/test_workflow_system_validation.py tests/test_quality_process_scaling.py tests/test_finding_registry_split.py` | 0 | 19 end-to-end workflow, scaling, and real-Git merge cases passed. |
-| `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 124 --base origin/main` | 1 | Expected at draft handover: schema files are present, but independent review has not run. |
+| `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 124 --base origin/main` | 0 | Valid: 6 AC and 3 INV mappings; the schema permits an honest pending review while `pr_ready` still rejects it. |
 | `adversarial-review` | `Claude fresh-session review on draft PR` | 1 | Not run; builder must not review its own work. |
 | `invariants` | `uvx --from rust-just just check-invariants` | 0 | 529 critical invariant tests passed. |
 | `mutation-on-touched-critical` | `uvx --from rust-just just mutation-critical` | 1 | Local platform refusal: mutmut 3.5 requires fork and WSL is not installed; the dedicated Linux required check must supply this result. |
@@ -30,7 +30,7 @@ HEAD: 9cf42d098904cd86e3b8f24c9c8e2f79d6fcaaca
 ## Coverage and mutation
 
 The focused red/green suite passed 110 tests and the complete focused workflow set
-passed 177. The full suite passed 1572 with only the repository's intentional
+passed 177. The full suite passed 1573 with only the repository's intentional
 Windows mutmut skip. No mutation target, pattern, threshold, baseline, or survivor
 classification changed. The production mutation tree is therefore unchanged; the
 required Linux job remains the authoritative ratchet observation.
