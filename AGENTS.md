@@ -20,7 +20,9 @@ diagrams, and the one-line-per-file module map.
 
 Codex specifies the bounded change from Jan's request or Claude's design, classifies its risk,
 analyses impact, writes red-first tests, implements, runs every required gate, maintains the task
-artifact, and opens a ready pull request. Do not merge.
+artifact, and hands the finished branch to independent review. It opens the **draft** pull request
+at the point the active workflow permits, and marks it ready for review only once that review is
+clean. Do not merge.
 
 ## This repository trades real money
 
@@ -42,24 +44,52 @@ A defect is a loss, not a bug report. These constraints are immutable and always
 
 ## Development protocol
 
+Jan starts you with nothing but an issue number: `implement #101`. Everything you need is in the
+issue body, the labels, and this file. The full procedure is
+[docs/engineering/workflow.md](docs/engineering/workflow.md).
+
 Every non-trivial change carries a risk class R0–R3, defined in
 [docs/engineering/risk-classes.md](docs/engineering/risk-classes.md). The class sets its cumulative
-mandatory gates.
+mandatory gates, which task artifacts exist as files, how many PR sections are required, and which
+review subagents run.
 
-1. **Specify** — create `.ai/tasks/<id>/` with acceptance criteria, invariants, risk class, scope,
-   and explicit human decisions.
+**0. Check the permit — before anything else.** Two disjoint guards, because the first start
+consumes the permit and resuming therefore cannot demand it.
+
+<!-- workflow-contract:builder-guard:start -->
+- **Starting new work.** Refuse unless card in `Ready to Implement`, `approved` present, `risk:Rn` present. Then move the card to `Implementing`, **then** remove `approved`.
+
+- **Resuming.** When the card is in `Implementing` or `Reviewing`, **and** a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for **this** issue number, continue on it **without** a permit — the first start already consumed it.
+<!-- workflow-contract:builder-guard:end -->
+
+Any other combination is a refusal: report the actual status and stop. A card in `Backlog`,
+`Specifying` or `Blocked` is never built, with or without a branch. A branch whose name does not
+carry this issue number is never resumed, and neither is a branch from a fork or from outside this
+repository — ownership is decided by the branch name and its origin, not by the card, because the
+card cannot tell you who wrote the code.
+
+1. **Specify** — the specification is the issue body; Claude wrote it and Jan approved it. Do not
+   restate it in a file and do not extend it. If it is wrong, incomplete, or unbuildable, do not
+   guess: move the card back, state the concrete gap in an issue comment, and stop.
 2. **Analyse impact** — trace files, callers, configuration routes, lifecycle, artifacts, and tests
    before implementation. Enumerate every consumer of a coupled quantity in one pass.
-3. **Design tests, then implement** — add the red-first behavioural guard, record its failure,
-   implement the smallest bounded change, and keep `just check` green.
-4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's
-   fresh reviewer path; resolve every blocking finding with executable proof.
-5. **Prepare the PR** — open it ready for review only after the readiness check passes for current
-   HEAD. Do not merge or enable autonomous merge.
+3. **Design tests, then implement** — map every `AC-nn` and `INV-nn` to exactly one named test, add
+   the red-first behavioural guard, record its failure, implement the smallest bounded change, and
+   keep `just check` green. Clean up nothing on the side; the non-goals bound the diff.
+<!-- workflow-contract:review-handover:start -->
+4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's fresh reviewer path. Until #124 lands, push the branch, move the card to `Reviewing`, and hand over the branch; the review happens before a pull request exists. Resolve every blocking finding with executable proof.
+5. **Open a draft PR** — while the #124 transitional rule applies, do this only after the branch review is clean and the readiness check passes. After #124 lands, open it at the initial review handover. Include `Closes #<issue>` in the body.
+6. **Mark it ready for review** — only after the review is clean and the readiness check passes for current HEAD. Do not merge or enable autonomous merge.
+<!-- workflow-contract:review-handover:end -->
 
-**Do not open a pull request until the readiness check for the change's risk class passes.** R3
-changes never merge autonomously. Only a **trivial R0** change may go straight to `main`; every R1+
-change uses a feature branch and pull request. Valid out-of-scope work becomes a separate issue.
+Work in **one git worktree per issue** on branch `codex/<issue>-<slug>`, so the main checkout stays
+clean and a running live runner never sees half-finished code.
+
+**Do not mark a pull request ready for review until the readiness check for the change's risk class
+passes.** A draft carries the review; only a ready pull request asks for a merge. R3
+changes never merge autonomously. Every change reaches `main` through a feature branch and pull
+request. Valid out-of-scope work becomes a separate issue —
+evidenced only, never speculative, and you return to the task at hand immediately.
 
 ## Roles, exception, and authority
 
