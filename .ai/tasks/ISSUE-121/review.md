@@ -59,3 +59,10 @@ adversarial and live-money review.
 The four earlier remediations remain untouched: preflight masking, non-vacuous top-level scanning,
 the three guarded terminal consumers, and the independent code-owned suffix are unchanged except
 for N3's strictly stronger raw-length precondition. No MT5 terminal or runner was accessed.
+
+The N4 baseline remediation removes all three obsolete `execute`-argument survivors. Expanding the
+critical scope to `Notifier.__init__` initially exposed six survivors: five real beep branches are
+now killed by platform/opt-in behavioral tests. The remaining default-argument mutant is classified
+only because Mutmut's unchanged trampoline binds and passes `beep=False` before the inner mutated
+default can be reached; it cannot change observable runtime behavior. This disposition remains
+subject to the required fresh independent review.
