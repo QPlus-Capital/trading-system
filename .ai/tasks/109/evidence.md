@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: c305562230ea5cd703e16d9e9beb82123518bba6
+HEAD: ae64907f8f633f72a83e26cda6a9dd6152b19d93
 
 Only this evidence file may change after the tested implementation commit.
 
@@ -18,9 +18,9 @@ Only this evidence file may change after the tested implementation commit.
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | GREEN: **21 properties passed twice** with seed `20260721`. |
 | `integration-tests` | `uv run pytest -q tests/test_quality_classify.py tests/test_quality_pr_ready.py tests/test_quality_impact.py tests/test_quality_hooks.py` | 0 | GREEN: **85 passed** across classifier/readiness/impact/hook consumers. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task 109 --base origin/main` | 0 | GREEN: task 109 is valid with five acceptance criteria and four invariants. |
-| `adversarial-review` | independent Claude review | 1 | OWED and blocking. Codex built the change and must not review it; the draft PR is the review surface. |
+| `adversarial-review` | [Claude independent review](https://github.com/QPlus-Capital/trading-system/pull/129#pullrequestreview-4810102389), submitted 2026-07-29 | 0 | **No finding.** The reviewer classified all 380 tracked files under both `main` and branch rule sets: zero classifications were lowered and exactly twelve were raised (eleven `.claude/**` contracts R0 to R3 and `docs/architecture.md` R0 to R2). All five acceptance-criterion path cases were checked through the production classifier. Four not-yet-existing paths under `.github/workflows/`, `.claude/skills/`, `.claude/agents/`, and bare `.claude/` also classified R3, proving the broad globs fail closed for future workflow contracts. |
 | `invariants` | `uvx --from rust-just just check-invariants` | 0 | GREEN: **443 passed**, including the production classifier and tracked-tree guards. |
-| `mutation-on-touched-critical` | `uvx --from rust-just just mutation-fast origin/main` | 1 | Native Windows refused before selection because Mutmut 3.5 requires fork/WSL. No configured production mutation target changed; the dedicated Linux PR workflow remains the executable gate. No baseline was edited. |
+| `mutation-on-touched-critical` | GitHub Actions Critical mutation run `30459101696` | 0 | GREEN on reviewed head `ae64907`: Linux executed the unchanged 24-target critical ratchet, killed 4,704 of 5,113 mutants, retained the 409 exact-name survivors, and passed. No mutation target or baseline changed in this PR. |
 | `parity-where-applicable` | `git diff --exit-code origin/main...HEAD -- live monitoring research core .ai/quality/mutation-baseline.toml .ai/quality/mutation.toml` | 0 | GREEN: no trading, signal, sizing, risk, result, mutation-policy, or mutation-baseline file changed. |
 | `live-money-review` | changed-path and scoped-diff audit | 0 | GREEN: no live path, terminal, runner, account, order, risk limit, market data, or research result was touched. |
 | `human-decision-escalation` | issue #109 plus project permit inspection | 0 | GREEN: Jan approved the exact R3 scope; no unresolved business, methodology, live-money, architecture, or risk decision remains. |
@@ -60,6 +60,5 @@ target, threshold, or test selection changed.
 
 ## Deferred checks
 
-- Independent Claude review.
-- Linux `mutation-critical` workflow result on the draft pull request.
-- Final `pr-ready` remains correctly NOT READY until those two records are green.
+- Jan must still make the PR ready and merge it. This evidence does not authorize a ready, merge,
+  or auto-merge action.
