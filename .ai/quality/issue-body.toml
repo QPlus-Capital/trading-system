@@ -1,0 +1,31 @@
+# Required issue-specification sections. This is distinct from pr-body.toml: the issue is the
+# approved specification, while the pull request is implementation evidence.
+version = 1
+
+[required_sections]
+R0 = []
+R1 = []
+R2 = [
+  "Problem",
+  "Goal",
+  "Scope",
+  "Non-goals",
+  "Acceptance criteria",
+  "Invariants",
+  "Affected modules",
+  "Risk class",
+  "Verification plan",
+  "Open decisions (Jan)",
+]
+R3 = [
+  "Problem",
+  "Goal",
+  "Scope",
+  "Non-goals",
+  "Acceptance criteria",
+  "Invariants",
+  "Affected modules",
+  "Risk class",
+  "Verification plan",
+  "Open decisions (Jan)",
+]

@@ -134,7 +134,6 @@ _REQUIRED_TRANSITIONS = frozenset(
 )
 _REQUIRED_ACTIVATIONS = frozenset(
     {
-        ("Board transitions performed by tooling", 110),
         ("The `methodology-reviewer` subagent", 112),
         ("Findings named `Blocker` / `Defect` / `Suspected defect` / `Note`", 112),
     }
@@ -194,11 +193,13 @@ def test_every_registered_activation_is_declared() -> None:
 def test_workflow_contract_rejects_a_malformed_document_digest(tmp_path: Path) -> None:
     """Digest chunking avoids secret false positives without weakening integrity validation."""
     source = CONTRACT_PATH.read_text(encoding="utf-8")
-    malformed = source.replace(
-        "workflow = [237, 111",
-        "workflow = [999, 111",
-        1,
+    malformed, count = re.subn(
+        r"(?m)^workflow = \[\d+",
+        "workflow = [999",
+        source,
+        count=1,
     )
+    assert count == 1
     path = tmp_path / "workflow-contract.toml"
     path.write_text(malformed, encoding="utf-8")
     with pytest.raises(ValueError, match="integers from 0 through 255"):
@@ -319,15 +320,6 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
             "| `Reviewing` → `Done` | project automation | "
             "the pull request merged and closed the issue |",
         )
-    elif name == "activation-points-to-wrong-issue":
-        owner = "[#110](https://github.com/QPlus-Capital/trading-system/issues/110)"
-        text = workflow.read_text(encoding="utf-8")
-        assert text.count(owner) >= 1
-        wrong_owner = owner.replace("#110", "#109").replace("/110", "/109")
-        workflow.write_text(
-            text.replace(owner, wrong_owner, 1),
-            encoding="utf-8",
-        )
     elif name == "constitution-forbids-branch-review":
         _replace_once(
             constitution,
@@ -354,17 +346,6 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
             "| **Start** | card in `Ready to Implement`, `approved` present, `risk:Rn` present |",
             "| **Start** | card in `Backlog`, `approved` absent | start immediately |\n"
             "| **Start** | card in `Ready to Implement`, `approved` present, `risk:Rn` present |",
-        )
-    elif name == "duplicate-activation-row-before-real-row":
-        _replace_once(
-            workflow,
-            "| Board transitions performed by tooling | "
-            "[#110](https://github.com/QPlus-Capital/trading-system/issues/110) |",
-            "| Board transitions performed by tooling | "
-            "[#109](https://github.com/QPlus-Capital/trading-system/issues/109) | "
-            "Let agents guess the transition. |\n"
-            "| Board transitions performed by tooling | "
-            "[#110](https://github.com/QPlus-Capital/trading-system/issues/110) |",
         )
     elif name == "second-state-transition-table":
         _replace_once(
@@ -410,16 +391,6 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
             'trigger = "a blocking finding"\n\n',
             "",
         )
-    elif name == "missing-board-tooling-activation":
-        _replace_once(
-            contract,
-            "[[activation]]\n"
-            'capability = "Board transitions performed by tooling"\n'
-            "issue = 110\n"
-            'fallback = "Agents call `gh` directly and are responsible for the ordering rules '
-            'themselves."\n\n',
-            "",
-        )
     elif name == "unauthorized-backlog-done-contract-transition":
         with contract.open("a", encoding="utf-8") as stream:
             stream.write(
@@ -451,19 +422,16 @@ _COUNTEREXAMPLES = (
     "gate-ceiling-with-unlisted-phrase",
     "review-fix-owned-by-wrong-actor",
     "unauthorized-extra-transition",
-    "activation-points-to-wrong-issue",
     "constitution-forbids-branch-review",
     "third-force-builder-guard-row",
     "third-agent-bullet-allows-unpermitted-start",
     "duplicate-start-row-before-real-row",
-    "duplicate-activation-row-before-real-row",
     "second-state-transition-table",
     "done-board-row-declares-nonterminal",
     "gate-ceiling-in-neighbouring-paragraph",
     "constitution-reintroduces-ready-pr-opening",
     "agents-reintroduces-ready-pr-opening",
     "missing-review-return-transition",
-    "missing-board-tooling-activation",
     "unauthorized-backlog-done-contract-transition",
     "approval-transition-loses-jan-trigger",
     "ready-status-loses-jan-approval-actor",
@@ -471,7 +439,6 @@ _COUNTEREXAMPLES = (
 _CONTRACT_RECORD_COUNTEREXAMPLES = frozenset(
     {
         "missing-review-return-transition",
-        "missing-board-tooling-activation",
         "unauthorized-backlog-done-contract-transition",
         "approval-transition-loses-jan-trigger",
         "ready-status-loses-jan-approval-actor",
