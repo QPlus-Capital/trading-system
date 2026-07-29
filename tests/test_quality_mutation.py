@@ -165,6 +165,38 @@ reason = "not enough"
         load_baseline(baseline)
 
 
+def test_a_baseline_whose_counts_do_not_sum_to_its_total_is_refused(tmp_path: Path) -> None:
+    """INV-03. The gate no longer compares the total, so the baseline's own must stay coherent."""
+    baseline = tmp_path / "baseline.toml"
+    baseline.write_text(
+        """version = 1
+tool = "mutmut"
+tool_version = "3.5.0"
+change_explanation = "test"
+targets = ["one"]
+[summary]
+total = 9
+killed = 0
+survived = 1
+no_tests = 0
+skipped = 0
+suspicious = 0
+timeout = 0
+not_checked = 0
+interrupted = 0
+segfault = 0
+caught_by_type_check = 0
+[[survivor_groups]]
+names = ["module.x__mutmut_1"]
+classification = "equivalent"
+reason = "reviewed"
+""",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="sum to"):
+        load_baseline(baseline)
+
+
 def test_baseline_group_classifies_each_exact_survivor(tmp_path: Path) -> None:
     baseline = tmp_path / "baseline.toml"
     baseline.write_text(
@@ -390,14 +422,24 @@ def test_both_totals_stay_visible_on_a_passing_and_a_failing_run(
 ) -> None:
     """AC-05. Dropping the comparison must not drop the number needed to refresh the baseline."""
     baseline = load_baseline()
-    report = _synthetic_report(
-        baseline=baseline, killed_delta=128, extra_survivors=extra_survivors
-    )
+    report = _synthetic_report(baseline=baseline, killed_delta=128, extra_survivors=extra_survivors)
     assert report.summary.total != baseline.summary.total
     assert bool(check_baseline(report, baseline)) is bool(extra_survivors)
     text = "\n".join(summary_lines("critical", report, baseline, Path("critical.toml")))
     assert str(report.summary.total) in text
     assert str(baseline.summary.total) in text
+
+
+def test_the_fast_scope_summary_is_unchanged_by_the_critical_baseline_line() -> None:
+    """The fast scope never consults the baseline, so its summary must not mention one."""
+    baseline = load_baseline()
+    report = _synthetic_report(baseline=baseline, killed_delta=128, scope="fast")
+    lines = summary_lines("fast", report, baseline, Path("fast.toml"))
+    assert lines == [
+        f"Mutation fast: {report.summary.killed}/{report.summary.total} killed, "
+        f"{report.summary.survived} survived; report fast.toml"
+    ]
+    assert str(baseline.summary.total) not in "\n".join(lines)
 
 
 def test_the_differential_cases_actually_exercise_every_verdict() -> None:
