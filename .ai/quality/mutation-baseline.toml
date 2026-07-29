@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "After PR #116 merged, PR #100 was rebased and Linux Critical mutation run 30341283390 measured 4,646 mutants: 4,236 killed and 410 survived, with every unhealthy status zero. Against PR #100 pre-test run 30339335275, behavioural tests killed 17 of the 24 branch-specific survivors (nine trade-direction and eight synchronized-H4 mutations); the remaining one trade-direction survivor and six synchronized-H4 survivors are proven equivalent and individually classified, with the money-parser cleanup deferred consistently to issue #120. The same tests also killed one pre-existing main survivor, while thirteen other stale synchronized-H4 names disappeared under the branch refactor, so the exact survivor set tightens from 417 to 410 even after adding the trade-direction-extraction target. No test, target, threshold, or comparison rule is weakened."
+change_explanation = "PR #105 fifth-review remediation makes the account-position issue decision independent of terminal enumeration order and routes unknown ownership to the conservative semantic halt. Linux run 30445165378 measured 5,113 mutants: 4,704 killed, the same 409 inherited exact-name survivors, and zero no-tests or unhealthy outcomes. Compared with the fourth-review 5,106/4,697/409 baseline, total and killed both increase by seven, every new mutant is killed by the reviewer-supplied ordering and unreadable-ownership regressions, the exact survivor set is unchanged, and no classification was added. No test, threshold, target, comparison rule, risk limit, previously verified flatten behavior, or valid live behavior was weakened."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -24,6 +24,7 @@ targets = [
     "selection-protocol",
     "result-regression",
     "mt5-deal-export",
+    "live-runner-fail-closed",
     "monitoring-deal-reconstruction",
     "monitoring-stable-snapshot",
     "forward-cohort-identity",
@@ -31,9 +32,9 @@ targets = [
 ]
 
 [summary]
-total = 4646
-killed = 4236
-survived = 410
+total = 5113
+killed = 4704
+survived = 409
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -97,7 +98,6 @@ names = [
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_13",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_14",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_18",
-    "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_7",
     "live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_9",
 ]

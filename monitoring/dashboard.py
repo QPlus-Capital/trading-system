@@ -104,7 +104,11 @@ def _load_live(account_name: str) -> dict[str, Any]:
         term_to_research = {v: k for k, v in bridge._resolved.items()}
         pricing: list[tuple[str, float | None]] = []
         positions = []
-        for p in bridge.positions():
+        position_snapshot = bridge.position_snapshot()
+        for issue in position_snapshot.issues:
+            research = term_to_research.get(issue.symbol, issue.symbol)
+            pricing.append((research, None))
+        for p in position_snapshot.positions:
             research = term_to_research.get(p.symbol, p.symbol)
             info = bridge.symbol_info(research) if research in bridge._resolved else None
             # Price it the way the RUNNER does (#19): the tick_value arithmetic understates
