@@ -72,6 +72,34 @@ def test_partial_remote_notification_transport_warns_without_disclosure(
             assert value not in caplog.text
 
 
+def test_beep_is_opt_in_and_runs_only_when_requested_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(notify.sys, "platform", "win32")
+    monkeypatch.setattr(Notifier, "_do_beep", lambda _self, urgent: calls.append(urgent))
+    monkeypatch.setattr(Notifier, "_send_telegram", lambda _self, _text: None)
+
+    Notifier(telegram=("", "")).signal("default remains silent")
+    assert calls == []
+
+    enabled = Notifier(beep=True, telegram=("", ""))
+    enabled.signal("requested signal beep")
+    enabled.alert("requested alert beep")
+    assert calls == [False, True]
+
+
+def test_beep_request_is_ignored_off_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(notify.sys, "platform", "linux")
+    monkeypatch.setattr(Notifier, "_do_beep", lambda _self, urgent: calls.append(urgent))
+    monkeypatch.setattr(Notifier, "_send_telegram", lambda _self, _text: None)
+
+    Notifier(beep=True, telegram=("", "")).signal("no platform beep")
+
+    assert calls == []
+
+
 def test_a_failed_telegram_send_never_writes_the_token_to_the_log(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
