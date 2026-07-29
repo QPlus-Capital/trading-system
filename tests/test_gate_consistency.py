@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import yaml
+
 _ROOT = Path(__file__).resolve().parents[1]
 _JUSTFILE = (_ROOT / "justfile").read_text(encoding="utf-8")
 _CI = (_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
@@ -53,8 +55,10 @@ def test_every_ci_gate_invokes_a_local_just_recipe() -> None:
     assert "just mutation-self-test" in _MUTATION
 
 
-def test_ci_exposes_the_complete_stable_job_split() -> None:
-    for job in (
+def test_ci_exposes_the_complete_consolidated_job_split() -> None:
+    for job in ("fast-quality", "full-quality", "mt5-boundary"):
+        assert re.search(rf"^  {re.escape(job)}:\s*$", _CI, re.MULTILINE)
+    for retired_job in (
         "standard-quality",
         "tests",
         "task-artifact-validation",
@@ -62,7 +66,7 @@ def test_ci_exposes_the_complete_stable_job_split() -> None:
         "critical-invariants",
         "pr-evidence-validation",
     ):
-        assert re.search(rf"^  {re.escape(job)}:\s*$", _CI, re.MULTILINE)
+        assert not re.search(rf"^  {re.escape(retired_job)}:\s*$", _CI, re.MULTILINE)
     assert re.search(r"^  mutation-critical:\s*$", _MUTATION, re.MULTILINE)
 
 
@@ -74,19 +78,31 @@ def test_workflows_pin_actions_and_cancel_superseded_runs() -> None:
 
 
 def test_r3_governance_changes_cannot_be_path_filtered_out() -> None:
-    assert "paths:" not in _CI
-    assert "paths-ignore:" not in _CI
-    assert "paths:" not in _MUTATION
-    assert "paths-ignore:" not in _MUTATION
+    for source in (_CI, _MUTATION):
+        workflow = yaml.load(source, Loader=yaml.BaseLoader)
+        assert isinstance(workflow, dict)
+        triggers = workflow["on"]
+        assert isinstance(triggers, dict)
+        for event in triggers.values():
+            if isinstance(event, dict):
+                assert "paths" not in event
+                assert "paths-ignore" not in event
 
 
-def test_pr_body_edits_rerun_evidence_validation() -> None:
-    assert "types: [opened, reopened, synchronize, edited]" in _CI
+def test_pr_body_edits_do_not_rerun_ci() -> None:
+    assert "edited" not in _CI
+    assert "ready_for_review" in _CI
 
 
 def test_ci_does_not_hide_gate_logic_outside_just_recipes() -> None:
+    mt5_boundary = (
+        "uv run pytest -q tests/test_workflow_system_validation.py"
+        "::test_pytest_blocks_real_mt5_boundaries"
+    )
+    assert _CI.count(mt5_boundary) == 1
+    gate_source = _CI.replace(mt5_boundary, "")
     for direct_gate in ("uv run ruff", "uv run mypy", "uv run pytest", "pip-audit"):
-        assert direct_gate not in _CI
+        assert direct_gate not in gate_source
     assert "uv run --no-sync --with mutmut" not in _MUTATION
 
 
