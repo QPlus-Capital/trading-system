@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "PR #105 fourth-review remediation separates position actionability from exposure completeness: undecodable foreign records block account-wide risk and remain visible to monitoring without becoming executable, while every retrievable owned position can still be flattened independently. Linux run 30431184595 exposed 53 PR-specific survivors in the new snapshot, risk, and partial-flatten paths. Behavioural tests and mutation-observable representations reduced that set to two in run 30432148064; literal boolean-ticket, early-break, and overwrite bodies were then applied RED-first, and final run 30433501950 killed every PR-specific survivor. The final report measures 5,106 mutants: 4,697 killed, the same 409 inherited exact-name survivors, and zero no-tests or unhealthy outcomes. Compared with the former 4,978/4,569/409 baseline, total and killed both increase by 128, the exact survivor set is unchanged, no classification was added, and the score tightens. No test, threshold, target, comparison rule, risk limit, or valid live behavior was weakened."
+change_explanation = "PR #105 fifth-review remediation makes the account-position issue decision independent of terminal enumeration order and routes unknown ownership to the conservative semantic halt. Linux run 30445165378 measured 5,113 mutants: 4,704 killed, the same 409 inherited exact-name survivors, and zero no-tests or unhealthy outcomes. Compared with the fourth-review 5,106/4,697/409 baseline, total and killed both increase by seven, every new mutant is killed by the reviewer-supplied ordering and unreadable-ownership regressions, the exact survivor set is unchanged, and no classification was added. No test, threshold, target, comparison rule, risk limit, previously verified flatten behavior, or valid live behavior was weakened."
 targets = [
     "live-risk-control",
     "portfolio-h4-prices",
@@ -32,8 +32,8 @@ targets = [
 ]
 
 [summary]
-total = 5106
-killed = 4697
+total = 5113
+killed = 4704
 survived = 409
 no_tests = 0
 skipped = 0
