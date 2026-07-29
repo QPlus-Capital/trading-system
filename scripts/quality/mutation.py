@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import hashlib
 import importlib.metadata
 import json
 import platform
@@ -36,6 +37,7 @@ POLICY_PATH = REPO_ROOT / ".ai" / "quality" / "mutation.toml"
 BASELINE_PATH = REPO_ROOT / ".ai" / "quality" / "mutation-baseline.toml"
 RESULT_ROOT = REPO_ROOT / ".ai" / "mutation"
 _RESULT_LINE = re.compile(r"^\s*(?P<name>\S+):\s+(?P<status>[a-z ]+)\s*$")
+_POLICY_FINGERPRINT = re.compile(r"[0-9a-f]{64}")
 _STATUS_FIELDS = {
     "killed": "killed",
     "survived": "survived",
@@ -98,6 +100,7 @@ class MutationReport:
 
     scope: str
     targets: tuple[str, ...]
+    policy_fingerprint: str
     mutants: Mapping[str, str]
 
     @property
@@ -128,6 +131,7 @@ class MutationBaseline:
     tool_version: str
     change_explanation: str
     targets: tuple[str, ...]
+    policy_fingerprint: str
     summary: MutationSummary
     survivors: tuple[Survivor, ...]
 
@@ -138,7 +142,7 @@ def load_policy(path: Path = POLICY_PATH) -> MutationPolicy:
     targets = tuple(
         MutationTarget(
             str(item["id"]),
-            normalize(str(item["path"])),
+            str(item["path"]),
             tuple(str(pattern) for pattern in item["mutant_patterns"]),
         )
         for item in data["targets"]
@@ -147,10 +151,10 @@ def load_policy(path: Path = POLICY_PATH) -> MutationPolicy:
         raise ValueError("mutation policy version must be 1 and define targets")
     if len({target.id for target in targets}) != len(targets):
         raise ValueError("mutation target IDs must be unique")
-    if len({target.path for target in targets}) != len(targets):
+    if len({normalize(target.path) for target in targets}) != len(targets):
         raise ValueError("mutation target paths must be unique")
     for target in targets:
-        if not (REPO_ROOT / target.path).is_file():
+        if not (REPO_ROOT / normalize(target.path)).is_file():
             raise ValueError(f"mutation target does not exist: {target.path}")
         if not target.mutant_patterns:
             raise ValueError(f"mutation target needs at least one function pattern: {target.id}")
@@ -160,6 +164,16 @@ def load_policy(path: Path = POLICY_PATH) -> MutationPolicy:
         str(data["tool"]["version"]),
         targets,
     )
+
+
+def policy_fingerprint(policy: MutationPolicy) -> str:
+    """Hash every target definition without making policy ordering significant."""
+    canonical = [
+        [target.id, target.path, sorted(target.mutant_patterns)]
+        for target in sorted(policy.targets, key=lambda item: item.id)
+    ]
+    encoded = json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _as_int(value: object, label: str) -> int:
@@ -187,6 +201,9 @@ def _summary(data: Mapping[str, object]) -> MutationSummary:
 def load_baseline(path: Path = BASELINE_PATH) -> MutationBaseline:
     """Load the committed critical result and its reviewed survivor explanations."""
     data = tomllib.loads(path.read_text(encoding="utf-8"))
+    fingerprint = data.get("policy_fingerprint")
+    if not isinstance(fingerprint, str) or _POLICY_FINGERPRINT.fullmatch(fingerprint) is None:
+        raise ValueError("mutation baseline requires a lowercase SHA-256 policy fingerprint")
     try:
         survivors = tuple(
             Survivor(
@@ -205,6 +222,7 @@ def load_baseline(path: Path = BASELINE_PATH) -> MutationBaseline:
         tool_version=str(data["tool_version"]),
         change_explanation=str(data["change_explanation"]),
         targets=tuple(str(value) for value in data["targets"]),
+        policy_fingerprint=fingerprint,
         summary=_summary(data["summary"]),
         survivors=survivors,
     )
@@ -245,7 +263,8 @@ def select_fast_targets(
     return [
         target
         for target in policy.targets
-        if target.path in changed and classify_path(target.path, risk_model).risk_class == "R3"
+        if normalize(target.path) in changed
+        and classify_path(normalize(target.path), risk_model).risk_class == "R3"
     ]
 
 
@@ -287,10 +306,10 @@ def _health_issues(report: MutationReport) -> list[str]:
 def check_baseline(report: MutationReport, baseline: MutationBaseline) -> list[str]:
     """Return every critical baseline regression; an empty list is the only pass.
 
-    The mutant total is reported but not compared. It counts how much mutable production code
-    exists, so it moves whenever a branch adds or removes a line and cannot move in response to
-    a defect. What binds is the reviewed survivor set, the mutation score, the target set, and
-    the per-status health of the run.
+    The mutant total is reported but not compared because it primarily tracks how much mutable
+    production code exists. The complete target-definition fingerprint specifically binds policy
+    coverage changes, while the reviewed survivor set, mutation score, target set, and per-status
+    health bind mutation outcomes.
     """
     issues = _health_issues(report)
     if report.scope != "critical":
@@ -298,6 +317,11 @@ def check_baseline(report: MutationReport, baseline: MutationBaseline) -> list[s
     if report.targets != baseline.targets:
         issues.append(
             f"critical targets changed: expected {baseline.targets!r}, observed {report.targets!r}"
+        )
+    if report.policy_fingerprint != baseline.policy_fingerprint:
+        issues.append(
+            "mutation policy fingerprint changed: "
+            f"expected {baseline.policy_fingerprint}, observed {report.policy_fingerprint}"
         )
     allowed = {item.name for item in baseline.survivors}
     observed = {name for name, status in report.mutants.items() if status == "survived"}
@@ -357,6 +381,7 @@ def write_report(report: MutationReport, path: Path) -> None:
         "version = 1",
         f"scope = {_quote(report.scope)}",
         "targets = [" + ", ".join(_quote(value) for value in report.targets) + "]",
+        f"policy_fingerprint = {_quote(report.policy_fingerprint)}",
         "",
         "[summary]",
     ]
@@ -372,7 +397,7 @@ def write_report(report: MutationReport, path: Path) -> None:
 def _validate_mutmut_config(policy: MutationPolicy) -> None:
     data = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     configured = {normalize(str(path)) for path in data["tool"]["mutmut"]["paths_to_mutate"]}
-    expected = {target.path for target in policy.targets}
+    expected = {normalize(target.path) for target in policy.targets}
     if configured != expected:
         raise RuntimeError(
             f"[tool.mutmut].paths_to_mutate drifted from mutation.toml: "
@@ -452,7 +477,12 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
             for pattern in target.mutant_patterns
         )
     }
-    report = MutationReport(scope, tuple(target.id for target in targets), selected)
+    report = MutationReport(
+        scope,
+        tuple(target.id for target in targets),
+        policy_fingerprint(policy),
+        selected,
+    )
     result_path = output or RESULT_ROOT / f"{scope}.toml"
     write_report(report, result_path)
     baseline = load_baseline()

@@ -2,19 +2,25 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import platform
 import shutil
 import subprocess
 import sys
 import tomllib
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import scripts.quality.mutation as mutation_module
 from scripts.quality.classify import load_model
 from scripts.quality.mutation import (
     MutationBaseline,
+    MutationPolicy,
     MutationReport,
+    MutationTarget,
     Survivor,
     all_results_command,
     check_baseline,
@@ -23,8 +29,10 @@ from scripts.quality.mutation import (
     load_policy,
     mutation_executable,
     parse_mutmut_results,
+    policy_fingerprint,
     select_fast_targets,
     summary_lines,
+    write_report,
 )
 
 
@@ -130,6 +138,7 @@ def test_mutation_workflow_uploads_the_hidden_machine_report() -> None:
 def test_committed_critical_baseline_is_complete_and_explained() -> None:
     baseline = load_baseline()
     assert baseline.change_explanation.strip()
+    assert baseline.policy_fingerprint == policy_fingerprint(load_policy())
     assert baseline.summary.total > 0
     assert baseline.summary.not_checked == 0
     assert all(item.reason.strip() for item in baseline.survivors)
@@ -143,6 +152,7 @@ tool = "mutmut"
 tool_version = "3.5.0"
 change_explanation = "test"
 targets = ["one"]
+policy_fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 [summary]
 total = 1
 killed = 0
@@ -174,6 +184,7 @@ tool = "mutmut"
 tool_version = "3.5.0"
 change_explanation = "test"
 targets = ["one"]
+policy_fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 [summary]
 total = 9
 killed = 0
@@ -205,6 +216,7 @@ tool = "mutmut"
 tool_version = "3.5.0"
 change_explanation = "test"
 targets = ["one"]
+policy_fingerprint = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 [summary]
 total = 2
 killed = 0
@@ -243,6 +255,7 @@ def test_a_weakened_test_creates_a_survivor_and_the_ratchet_rejects_it() -> None
     weakened = MutationReport(
         scope="critical",
         targets=baseline.targets,
+        policy_fingerprint=baseline.policy_fingerprint,
         mutants={
             **{f"killed_{i}": "killed" for i in range(baseline.summary.killed - 1)},
             **{item.name: "survived" for item in baseline.survivors},
@@ -263,7 +276,10 @@ def test_an_exact_clean_report_passes_the_ratchet(tmp_path: Path) -> None:
         f"synthetic_killed_{i}": "killed" for i in range(baseline.summary.total - len(survivors))
     }
     report = MutationReport(
-        scope="critical", targets=baseline.targets, mutants={**killed, **survivors}
+        scope="critical",
+        targets=baseline.targets,
+        policy_fingerprint=baseline.policy_fingerprint,
+        mutants={**killed, **survivors},
     )
     assert check_baseline(report, baseline) == []
 
@@ -288,7 +304,201 @@ def _synthetic_report(
     if unhealthy:
         mutants["synthetic_unhealthy"] = "no tests"
     targets = baseline.targets[:-1] if drop_last_target else baseline.targets
-    return MutationReport(scope=scope, targets=targets, mutants=mutants)
+    return MutationReport(
+        scope=scope,
+        targets=targets,
+        policy_fingerprint=baseline.policy_fingerprint,
+        mutants=mutants,
+    )
+
+
+def _independent_policy_fingerprint(policy: MutationPolicy) -> str:
+    canonical = [
+        [target.id, target.path, sorted(target.mutant_patterns)]
+        for target in sorted(policy.targets, key=lambda item: item.id)
+    ]
+    encoded = json.dumps(canonical, ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _policy_with_coverage_substitution(policy: MutationPolicy) -> MutationPolicy:
+    removed = "live.risk_control.x*RiskController*trailing_floor__mutmut_*"
+    replacement = "live.risk_control.x*__repr____mutmut_*"
+    target = next(item for item in policy.targets if item.id == "live-risk-control")
+    assert removed in target.mutant_patterns
+    assert not any(
+        "RiskController" in survivor.name and "trailing_floor__mutmut_" in survivor.name
+        for survivor in load_baseline().survivors
+    )
+    changed = replace(
+        target,
+        mutant_patterns=tuple(pattern for pattern in target.mutant_patterns if pattern != removed)
+        + (replacement,),
+    )
+    return replace(
+        policy,
+        targets=tuple(changed if item.id == target.id else item for item in policy.targets),
+    )
+
+
+def test_policy_substitution_fails_with_exact_survivors_and_an_improved_score() -> None:
+    """A same-ID/path coverage regression must not hide behind a stronger aggregate score."""
+    baseline = load_baseline()
+    policy = load_policy()
+    weakened_policy = _policy_with_coverage_substitution(policy)
+    assert policy_fingerprint(policy) == _independent_policy_fingerprint(policy)
+    assert policy_fingerprint(weakened_policy) == _independent_policy_fingerprint(weakened_policy)
+    assert policy_fingerprint(weakened_policy) != policy_fingerprint(policy)
+    baseline = replace(
+        baseline,
+        policy_fingerprint=policy_fingerprint(policy),
+    )
+    report = _synthetic_report(baseline=baseline, killed_delta=128)
+    report = replace(
+        report,
+        policy_fingerprint=policy_fingerprint(weakened_policy),
+    )
+
+    assert [(item.id, item.path) for item in weakened_policy.targets] == [
+        (item.id, item.path) for item in policy.targets
+    ]
+    assert report.targets == baseline.targets
+    assert {name for name, status in report.mutants.items() if status == "survived"} == {
+        item.name for item in baseline.survivors
+    }
+    assert all(
+        getattr(report.summary, field) == 0
+        for field in (
+            "no_tests",
+            "skipped",
+            "suspicious",
+            "timeout",
+            "not_checked",
+            "interrupted",
+            "segfault",
+            "caught_by_type_check",
+        )
+    )
+    assert report.summary.score > baseline.summary.score
+    assert any("policy fingerprint changed" in issue for issue in check_baseline(report, baseline))
+
+
+def test_policy_fingerprint_ignores_only_target_and_pattern_order() -> None:
+    policy = load_policy()
+    reordered = replace(
+        policy,
+        targets=tuple(
+            replace(target, mutant_patterns=tuple(reversed(target.mutant_patterns)))
+            for target in reversed(policy.targets)
+        ),
+    )
+
+    assert policy_fingerprint(reordered) == policy_fingerprint(policy)
+    assert policy_fingerprint(policy) == _independent_policy_fingerprint(policy)
+
+
+def test_policy_fingerprint_binds_every_target_field_and_pattern_multiplicity() -> None:
+    target = MutationTarget("target", "module.py", ("module.x_one*", "module.x_two*"))
+    policy = MutationPolicy(1, "mutmut", "3.5.0", (target,))
+    variants = (
+        replace(policy, targets=(replace(target, id="other"),)),
+        replace(policy, targets=(replace(target, path="other.py"),)),
+        replace(policy, targets=(replace(target, path="./module.py"),)),
+        replace(policy, targets=(replace(target, mutant_patterns=("module.x_other*",)),)),
+        replace(policy, targets=(replace(target, mutant_patterns=(*target.mutant_patterns,) * 2),)),
+    )
+
+    assert all(policy_fingerprint(variant) != policy_fingerprint(policy) for variant in variants)
+
+
+def test_fast_report_fingerprints_the_whole_policy(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    policy = MutationPolicy(
+        version=1,
+        tool="mutmut",
+        tool_version="3.5.0",
+        targets=(
+            MutationTarget("one", "one.py", ("target.one*",)),
+            MutationTarget("two", "two.py", ("target.two*",)),
+        ),
+    )
+    baseline = load_baseline()
+    output = tmp_path / "fast.toml"
+
+    def fake_run(command: Sequence[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        stdout = (
+            "target.one__mutmut_1: killed\ntarget.two__mutmut_1: killed\n"
+            if "results" in command
+            else ""
+        )
+        return subprocess.CompletedProcess(command, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(mutation_module, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(mutation_module, "ensure_supported_platform", lambda: None)
+    monkeypatch.setattr(mutation_module, "load_policy", lambda: policy)
+    monkeypatch.setattr(mutation_module, "_validate_mutmut_config", lambda _policy: None)
+    monkeypatch.setattr(mutation_module, "changed_paths", lambda _base: ["one.py"])
+    monkeypatch.setattr(mutation_module, "load_model", lambda _path: object())
+    monkeypatch.setattr(
+        mutation_module,
+        "select_fast_targets",
+        lambda _paths, _policy, _model: [policy.targets[0]],
+    )
+    monkeypatch.setattr(mutation_module, "_tool_command", lambda _policy: ["mutmut"])
+    monkeypatch.setattr("scripts.quality.mutation.subprocess.run", fake_run)
+    monkeypatch.setattr(mutation_module, "load_baseline", lambda: baseline)
+
+    assert mutation_module.run("fast", "origin/main", output) == 0
+    report = tomllib.loads(output.read_text(encoding="utf-8"))
+    assert report["targets"] == ["one"]
+    assert report["policy_fingerprint"] == policy_fingerprint(policy)
+    assert report["policy_fingerprint"] != policy_fingerprint(
+        replace(policy, targets=(policy.targets[0],))
+    )
+
+
+def test_baseline_without_a_policy_fingerprint_is_refused(tmp_path: Path) -> None:
+    baseline = tmp_path / "baseline.toml"
+    baseline.write_text(
+        """version = 1
+tool = "mutmut"
+tool_version = "3.5.0"
+change_explanation = "test"
+targets = ["one"]
+[summary]
+total = 0
+killed = 0
+survived = 0
+no_tests = 0
+skipped = 0
+suspicious = 0
+timeout = 0
+not_checked = 0
+interrupted = 0
+segfault = 0
+caught_by_type_check = 0
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="policy fingerprint"):
+        load_baseline(baseline)
+
+
+def test_report_serializes_its_required_policy_fingerprint(tmp_path: Path) -> None:
+    report = MutationReport(
+        scope="critical",
+        targets=("one",),
+        policy_fingerprint="a" * 64,
+        mutants={},
+    )
+    path = tmp_path / "critical.toml"
+
+    write_report(report, path)
+
+    assert tomllib.loads(path.read_text(encoding="utf-8"))["policy_fingerprint"] == "a" * 64
 
 
 def test_added_production_code_alone_no_longer_fails_the_ratchet() -> None:
@@ -497,7 +707,7 @@ def test_a_real_weakened_test_increases_survivors_and_is_caught(tmp_path: Path) 
             for name, status in parse_mutmut_results(result.stdout).items()
             if name.startswith("sample.")
         }
-        return MutationReport("critical", ("probe",), parsed)
+        return MutationReport("critical", ("probe",), "a" * 64, parsed)
 
     strong = mutation_report("    assert above_limit(10)\n    assert not above_limit(9)\n")
     weak = mutation_report("    assert above_limit(11)\n    assert not above_limit(8)\n")
@@ -509,6 +719,7 @@ def test_a_real_weakened_test_increases_survivors_and_is_caught(tmp_path: Path) 
         tool_version="3.5.0",
         change_explanation="strong probe",
         targets=strong.targets,
+        policy_fingerprint=strong.policy_fingerprint,
         summary=strong.summary,
         survivors=tuple(
             Survivor(name, "meaningful", "reviewed probe survivor")

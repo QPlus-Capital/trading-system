@@ -4,13 +4,15 @@
 
 Codex completed the independent adversarial review of code HEAD
 `dd5a3dfe832cd38cc262cf067eb1f5e13fe2a001`. The later branch commit only binds evidence to that
-tree. One P1 finding remains unresolved, so the branch is not ready for a pull request.
+tree. Jan accepted the P1 finding and assigned Codex to build its remediation. The executable fix is
+now present, but Claude's fresh independent review remains outstanding, so the branch is not ready
+for a pull request.
 
 ### Independent findings
 
 | ID | Severity | File:line | Finding | Concrete failure scenario | Proposed regression | Status |
 |---|---|---|---|---|---|---|
-| 125-R1 | P1 | `scripts/quality/mutation.py:298`, `scripts/quality/mutation.py:455`; exposed by `tests/test_quality_mutation.py:294` | Removing the total check leaves no binding on the full mutation target definitions: the report and baseline compare target IDs only, while `_validate_mutmut_config` checks paths only. A same-ID `mutant_patterns` substitution can silently stop measuring a critical function and still pass. | Keep every target ID and path unchanged; remove a killed-only pattern for a safety function and add a broader trivial pattern that produces 128 additional killed mutants. The reviewed survivor set stays exact, every health count is zero, and the score improves from `0.911752` to `0.914118`. The old rule fails on `expected 4646, observed 4774`; HEAD returns `[]`. The report shape cannot distinguish this coverage defect from the “added production code” case that AC-01 declares safe. | Bind a deterministic fingerprint of each complete target definition `(id, path, mutant_patterns)` into the critical report and baseline, then add a test that changes patterns under an unchanged ID/path and requires `check_baseline` to fail. Retain the total check until that replacement guard exists. | unresolved |
+| 125-R1 | P1 | `scripts/quality/mutation.py:298`, `scripts/quality/mutation.py:455`; exposed by `tests/test_quality_mutation.py:294` | Removing the total check leaves no binding on the full mutation target definitions: the report and baseline compare target IDs only, while `_validate_mutmut_config` checks paths only. A same-ID `mutant_patterns` substitution can silently stop measuring a critical function and still pass. | Keep every target ID and path unchanged; remove a killed-only pattern for a safety function and add a broader trivial pattern that produces 128 additional killed mutants. The reviewed survivor set stays exact, every health count is zero, and the score improves from `0.911752` to `0.914118`. The old rule fails on `expected 4646, observed 4774`; HEAD returns `[]`. The report shape cannot distinguish this coverage defect from the “added production code” case that AC-01 declares safe. | Bind a deterministic fingerprint of each complete target definition `(id, path, mutant_patterns)` into the critical report and baseline, then add a test that changes patterns under an unchanged ID/path and requires `check_baseline` to fail. | resolved |
 
 The findings below were raised by the builder against its own work during construction. They are
 recorded for the reviewer's benefit and are explicitly **not** a substitute for the independent
@@ -42,9 +44,28 @@ review.
 All five builder findings are resolved with the executable proof named in the table above; the
 resolutions are in the committed tree and covered by `tests/test_quality_mutation.py`.
 
-The independent adversarial review is complete but **blocking on 125-R1**. The branch must not be
-marked ready and no pull request should be opened until the target-definition blind spot is fixed
-and independently re-reviewed.
+The independent adversarial review found 125-R1, and its builder remediation is complete with the
+proof below. Readiness remains blocked until Claude independently re-reviews the changed tree.
+
+## Builder remediation of 125-R1
+
+This section records implementation evidence, not self-review coverage.
+
+- The four-case RED run failed exactly where required: the same-ID/path policy substitution returned
+  no issue; the reorder oracle had no fingerprint implementation; a baseline without the key loaded;
+  and the report omitted the key.
+- `policy_fingerprint` hashes the complete ordered tuples after sorting targets by ID and patterns
+  within each target. ID, path, pattern content, and duplicate multiplicity remain significant.
+- `MutationReport` and `MutationBaseline` require the fingerprint. `load_baseline` refuses a missing
+  or malformed value, `write_report` persists it, and `check_baseline` compares it beside the target
+  set.
+- `run` computes the fingerprint from the complete loaded policy before applying scope selection.
+  The fast-scope integration fixture selects one of two targets and proves its artifact still carries
+  the two-target policy identity.
+- The committed baseline gains only the computed fingerprint. No total, survivor, status count,
+  target, pattern, threshold, or classification changed.
+- The focused post-fix suite passes all 161 runnable mutation-orchestration tests with the one
+  expected native-Windows Mutmut skip.
 
 ## What the reviewer should attack
 

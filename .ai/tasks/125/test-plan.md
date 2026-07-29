@@ -12,6 +12,10 @@ and the committed baseline, not against a fake.
 | AC-05 | `test_both_totals_stay_visible_on_a_passing_and_a_failing_run` (2 cases) | RED: baseline total absent from the summary | GREEN |
 | INV-01, INV-02 | `test_the_rule_changes_only_where_the_total_alone_differed` (128 cases) | GREEN, vacuously — the two rules were identical | GREEN, and now load-bearing |
 | INV-03 | `test_a_baseline_whose_counts_do_not_sum_to_its_total_is_refused` (new) | N/A: untested before | GREEN |
+| AC-06 | `test_policy_substitution_fails_with_exact_survivors_and_an_improved_score` | RED: same IDs/paths, exact survivors, clean health, and improved score returned no issue | GREEN: explicit policy-fingerprint failure |
+| AC-07 | `test_policy_fingerprint_ignores_only_target_and_pattern_order`; `test_policy_fingerprint_binds_every_target_field_and_pattern_multiplicity` | RED: no policy fingerprint existed | GREEN: order is cosmetic; ID, path, content, and multiplicity are binding |
+| AC-08 | `test_baseline_without_a_policy_fingerprint_is_refused` | RED: missing key loaded successfully | GREEN: missing or malformed SHA-256 identity refuses |
+| AC-09, INV-04 | `test_report_serializes_its_required_policy_fingerprint`; `test_fast_report_fingerprints_the_whole_policy` | RED: report omitted the key | GREEN: both scopes serialize the complete-policy identity |
 
 ## What each test is for, and what it is not
 
@@ -31,6 +35,23 @@ may drop is `total`, and that an `unexpected` verdict is never lost.
 `test_the_differential_cases_actually_exercise_every_verdict` guards the oracle itself: a differential
 proves nothing if the generated cases never trigger the verdicts being compared. It asserts that the
 128 cases collectively produce all seven verdict kinds.
+
+## Independent-review regression
+
+The accepted 125-R1 counterexample keeps all target IDs and paths unchanged, removes the
+killed-only `RiskController.trailing_floor` selector, and adds a broader trivial selector. Its
+synthetic report preserves every reviewed survivor, has no unhealthy outcome, adds 128 killed
+mutants, and improves the aggregate score. Before the fingerprint comparison,
+`check_baseline` returned no issue; after it, the policy mismatch is the sole verdict.
+
+The digest oracle is independent of production: it sorts targets by ID and patterns within each
+target, serializes the exact `(id, path, patterns)` tuples, and hashes that representation. A mirrored
+test reverses both orders and requires equality. Separate variants change each target field and add
+duplicate pattern content so the implementation cannot canonicalize away any other policy fact.
+
+`test_fast_report_fingerprints_the_whole_policy` drives the real `run("fast", ...)` report path with
+a two-target policy and a one-target selected scope. The artifact must contain the two-target policy
+fingerprint, proving the guard is not accidentally scope-dependent.
 
 ## Corrected fixture
 
