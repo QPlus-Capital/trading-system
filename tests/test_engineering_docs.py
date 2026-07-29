@@ -234,6 +234,9 @@ _MUST_BE_R3 = (
     "uv.lock",
     "justfile",  # the gate commands
     ".github/workflows/ci.yml",  # runs the gates
+    ".claude/settings.json",  # project hooks gate every change
+    ".claude/skills/specify-change/SKILL.md",  # executable workflow contract
+    ".claude/agents/adversarial-code-reviewer.md",  # executable reviewer remit
     "docs/engineering/constitution.md",  # governance -- not a docs-only R0
     "docs/methodology.md",
     "docs/live-runbook.md",  # real-account ops -- not a docs-only R0
@@ -258,7 +261,7 @@ def test_money_path_classifies_as_R3(path: str) -> None:
 #: A plain, non-governance document is R0; unmatched code is at least R2 (never R1 by default).
 _CLASSIFY_CASES = (
     ("README.md", "R0"),
-    ("docs/architecture.md", "R0"),
+    ("docs/architecture.md", "R2"),
     ("docs/engineering/constitution.md", "R3"),  # governance overrides docs-only
     ("scripts/foo.py", "R1"),
     ("core/paths.py", "R2"),
