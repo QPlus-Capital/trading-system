@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: c0861d967a3f8505c5f94402b06b2983bdfdf671
+HEAD: 7727beee1549c67991c641bc887bfef6f6ef5a4e
 
 This is the last non-evidence commit. The final evidence-only commit does not change production
 code, tests, configuration, or the measured mutation baseline.
@@ -13,16 +13,16 @@ code, tests, configuration, or the measured mutation baseline.
 
 | Gate | Command | Exit status | Result |
 |---|---|---:|---|
-| `format` | `just check-fast origin/main` | 0 | All 13 changed Python files were formatted; Ruff and strict mypy passed. |
+| `format` | `just check-fast origin/main` | 0 | All 14 changed Python files were formatted; Ruff and strict mypy passed. |
 | `docs-consistency` | `just check` plus `uv run python -m scripts.quality.validate_task --task-id ISSUE-121 --base origin/main` | 0 | Engineering-document guards passed; the task artifact is valid with 18 acceptance criteria and 14 invariants. |
-| `check` | `just check` | 0 | Ruff, strict mypy over 181 files, Vulture, and pytest passed: 1,293 passed, one Windows-only mutation skip, 98 warnings. |
-| `impacted-tests` | `just check-fast origin/main` | 0 | All 169 directly and transitively affected account, notification, preflight, parity, runner, dashboard, and swap tests passed with fakes only. |
+| `check` | `just check` | 0 | Ruff, strict mypy over 181 files, Vulture, and pytest passed: 1,369 passed, one Windows-only mutation skip, 98 warnings. |
+| `impacted-tests` | `just check-fast origin/main` | 0 | All 204 directly and transitively affected account, notification, preflight, parity, runner, dashboard, risk-view, sizing, swap, and signal-parity tests passed with fakes only. |
 | `property-tests-where-applicable` | `just check-properties` | 0 | The property suite passed twice with seed 20260721: 21 passed on each run. |
-| `integration-tests` | `just check-fast origin/main` | 0 | The real dotenv parser plus preflight, notification, parity, swap-analysis, dashboard, and live CLI boundaries were exercised through synthetic input and bridges; 169 focused tests passed and no terminal was initialized. |
+| `integration-tests` | `just check-fast origin/main` | 0 | The real dotenv parser plus preflight, notification, parity, swap-analysis, dashboard, runner, and live CLI boundaries were exercised through synthetic input and bridges; 204 focused tests passed and no terminal was initialized. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-121 --base origin/main` | 0 | Task artifact valid: 18 acceptance criteria and 14 invariants. |
 | `adversarial-review` | [Claude final independent review](https://github.com/QPlus-Capital/trading-system/pull/123#pullrequestreview-4807831900), submitted 2026-07-29, and `.ai/tasks/ISSUE-121/review.md` | 0 | **No finding.** The production `_contains_login_literal` caught all 15 reintroduction forms, including ten that evaded the previous guard. Five unrelated-number probes produced no false positive, and the actual 375-file tracked tree produced zero hits. `_LOGIN_SUFFIXES` derives from `ACCOUNTS`, so a third account extends the guard. |
-| `invariants` | `just check-invariants` | 0 | All 411 critical-invariant tests passed with 12 warnings. |
-| `mutation-on-touched-critical` | GitHub Actions Critical mutation run `30448049051` | 0 | Linux ratchet passed on `1682439`: 4,704 total, 4,293 killed, 411 exact-name survivors, and zero unexplained, timeout, suspicious, no-test, or error outcomes; no baseline change was needed. |
+| `invariants` | `just check-invariants` | 0 | All 519 critical-invariant tests passed with 12 warnings. |
+| `mutation-on-touched-critical` | GitHub Actions Critical mutation run `30454030879` | 0 | Linux ratchet passed on `7727bee`: 27 targets, 5,171 total, 4,761 killed, 410 exact-name survivors, and every unhealthy outcome zero. The baseline is regenerated from run `30452526580`'s retained artifact over the identical non-evidence tree. |
 | `parity-where-applicable` | 80-case profile/login/currency decision oracle plus the independent review's 96-case accepting-path differential | 0 | Removing `execute` produced zero accept/refuse divergences across 80 combinations; the earlier review measured zero accepting-path divergences across 96 combinations. |
 | `live-money-review` | [Claude final independent review](https://github.com/QPlus-Capital/trading-system/pull/123#pullrequestreview-4807831900), submitted 2026-07-29, and `.ai/tasks/ISSUE-121/review.md` | 0 | **No finding.** The login guard is stronger without broadening to unrelated numbers: seed `20260721`, magic `770077`, `x = 12_345`, `total = 4646`, and an SSRN identifier remain accepted. The one deleted assertion was replaced by the production-function assertion, and the independent forms were added to the existing guard test's parameter list. No MT5 terminal, runner, account, or order was touched. |
 | `human-decision-escalation` | `.ai/tasks/ISSUE-121/spec.md` | 0 | Jan's environment, code-owned four-digit suffix, public-history, restart, merge, and go-live decisions are explicit. |
@@ -44,13 +44,15 @@ code, tests, configuration, or the measured mutation baseline.
 | `guard-mode-differential` | `uv run pytest -q tests/test_live_accounts.py::test_guard_account_accept_refuse_matrix_matches_the_mode_independent_rule` | 0 | Two profiles x ten login values x four currencies: 80 comparisons, zero accept/refuse divergences after removing `execute`. |
 | `impact` | `just impact origin/main` | 0 | R3; all seven changed production paths, direct and transitive tests, and the new notification critical escalation identified, with no unknown or dynamic edge. |
 | `security` | `just check-security` | 0 | Secret scan clean, pip-audit found no known vulnerabilities, and Ruff security checks passed. |
-| `tracked-content` | repository guard in `tests/test_live_accounts.py` | 0 | The scan proves `live/accounts.py` and the test tree are present before checking; after digit-underscore normalization, zero assignment-shaped login literals or account-derived known suffixes exist anywhere in the tracked tree. No unclassified long number in `.env.example`/docs or operator-home path was found. |
+| `tracked-content` | repository guard in `tests/test_live_accounts.py` | 0 | The scan proves `live/accounts.py` and the test tree are present before checking; after digit-underscore normalization, zero assignment-shaped login literals or account-derived known suffixes exist across the rebased 380-file tracked tree. No unclassified long number in `.env.example`/docs or operator-home path was found. |
 | `diff-integrity` | `git diff --check origin/main...HEAD` | 0 | No whitespace errors. |
 | `mutation-N2-harness` | GitHub Actions run `30436434645` | 1 | The new operator-document test exposed that Mutmut did not copy `RUN.md`; adding that required input to `also_copy` fixed the sandbox without skipping or weakening a test. |
 | `mutation-N1-N4-first` | GitHub Actions run `30436603792` | 1 | Measured 4,704 total, 4,288 killed, 416 survivors. The three obsolete `execute` survivors disappeared; six previously unmeasured `Notifier.__init__` beep mutants survived. |
 | `mutation-N1-N4-tested` | GitHub Actions run `30437328697` | 1 | Behavioral platform/opt-in tests killed five notifier survivors: 4,293/4,704 killed, 411 survived. The old baseline then failed only because its three removed names and one Mutmut-trampoline-equivalent name required regeneration. |
 | `mutation-N1-N4-final` | GitHub Actions run `30437957532` | 0 | Mutation self-test and exact ratchet passed at 4,293/4,704 killed with 411 exact-name survivors; all unhealthy statuses were zero. |
-| `readiness-audit` | `uv run python -m scripts.quality.pr_ready ISSUE-121 --base origin/main` | 0 | READY against current `origin/main` `14f0cdb`: all 14 required R3 gates have exit 0, task artifacts and risk class pass, and evidence covers review commit `c0861d9`. |
+| `phase-2-merge-guards` | focused account/dashboard suites plus a temporary six-record runner matrix and the committed foreign-only regressions | 0 | The 380-file tracked tree has zero login hits while `logins = [...]`, `assert state.login == ...`, and `504_071_681` are caught. An undecodable record halted at first, middle, and last in a six-record enumeration for both `magic == MAGIC` and `magic is None` (six cases); foreign-only records block with `inf` without halting or flattening (three cases). All 27 mutation targets include `live-runner-fail-closed`, both dashboard tests survive, and all sixteen disjoint finding IDs are present. |
+| `mutation-merged-measurement` | GitHub Actions Critical mutation run `30452526580`; downloaded `mutation-critical-result/critical.toml`; `check_baseline(report, load_baseline())` | 0 | The first merged-tree workflow executed all 27 targets and retained 5,171 outcomes: 4,761 killed, 410 survived, all unhealthy counts zero. Its workflow exit 1 was the expected stale 24-target baseline mismatch. Regenerating from that artifact made the exact local ratchet check return no issues; no survivor was invented or hand-merged. |
+| `readiness-audit` | `uv run python -m scripts.quality.pr_ready ISSUE-121 --base origin/main` | 0 | READY against current `origin/main` `14f0cdb`: all 14 required R3 gates have exit 0, task artifacts and risk class pass, and evidence covers non-evidence HEAD `7727bee`. |
 
 ## Red-first proof
 
@@ -115,14 +117,20 @@ configured account, digit-underscore normalization, real uv
 round-trip of Windows paths and later Telegram values, mode-independent identity decisions, loud
 redacted notification fallback, and Windows-only opt-in beep behavior.
 
-The final Linux Critical mutation run
-[30448049051](https://github.com/QPlus-Capital/trading-system/actions/runs/30448049051) passed the
-exact-name ratchet with 4,704 total, 4,293 killed, and 411 survivors. Removing `execute` eliminated
-all three previously classified account survivors. The new notification target contributes 22
-mutants; 21 are killed. Its sole survivor changes only the default on Mutmut's inner mutant
-function; the unchanged trampoline binds omitted `beep` as `False` and passes it explicitly, so
-that inner default is unreachable and cannot affect runtime behavior. There were no unexplained
-survivors, timeouts, suspicious results, tests without coverage, or mutation errors.
+The merged Linux Critical mutation run
+[30454030879](https://github.com/QPlus-Capital/trading-system/actions/runs/30454030879) passed the
+exact-name ratchet over all 27 targets with 5,171 total, 4,761 killed, and 410 survivors. The
+baseline was regenerated from the retained artifact of the preceding identical-tree measurement
+[30452526580](https://github.com/QPlus-Capital/trading-system/actions/runs/30452526580), not from
+either conflicting predecessor baseline.
+
+Against #103/#105's 5,113/4,704/409 predecessor, the three #121 targets add 58 mutants, 57 kills,
+and the already-classified unreachable `Notifier.__init__` default-argument mutant. Against #121's
+4,704/4,293/411 predecessor, the merged `live-runner-fail-closed` target and ordering guard add 467
+mutants and 468 kills while killing
+`live.risk_control.xǁRiskControllerǁmust_flatten__mutmut_3`; the survivor set therefore tightens by
+one. There were no unexplained survivors, timeouts, suspicious results, tests without coverage, or
+mutation errors.
 
 ## Live safety attestation
 
@@ -134,9 +142,5 @@ synthetic environment values, fakes, or static tracked-file inspection.
 
 - Jan must populate the four real values from the password manager and choose a quiet restart
   window before this can be deployed.
-- Phase 2 remains separate by instruction. PR #105 is now merged, so this branch must later rebase
-  onto the new `main`, preserve both branches' guards, and regenerate the exact mutation baseline
-  from a Linux critical-mutation run over the combined tree. No hand-written survivor-set merge is
-  permitted.
-- This Phase-1 evidence records the completed independent review only. PR #123 remains draft; no
-  ready, merge, or auto-merge action is authorized.
+- Jan must still make the PR ready and merge it. This evidence does not authorize a ready, merge,
+  or auto-merge action.
