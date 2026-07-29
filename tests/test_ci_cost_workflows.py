@@ -265,13 +265,14 @@ def test_direct_ready_pull_request_runs_the_full_set() -> None:
     }
 
 
-def test_mutation_job_uses_the_policy_for_concrete_changed_paths() -> None:
+def test_mutation_job_runs_for_production_and_direct_critical_test_changes() -> None:
     workflow = _workflow(_MUTATION_PATH)
     predicate = _critical_predicate(workflow)
     critical_path = load_policy().targets[0].path
 
     assert not predicate(["README.md"])
     assert not predicate(["tests/test_gate_consistency.py"])
+    assert predicate(["tests/test_live_risk_control.py"])
     assert predicate([critical_path])
     assert "mutation-critical" not in _selected_jobs(
         workflow,
@@ -294,6 +295,20 @@ def test_mutation_job_uses_the_policy_for_concrete_changed_paths() -> None:
         draft=True,
         critical_changed=True,
     )
+
+
+def test_mutation_job_runs_for_a_transitive_critical_test_change() -> None:
+    workflow = _workflow(_MUTATION_PATH)
+    predicate = _critical_predicate(workflow)
+
+    assert predicate(["tests/test_strategy_sizing_basis.py"])
+
+
+def test_mutation_job_fails_closed_for_an_unknown_dynamic_test_import() -> None:
+    workflow = _workflow(_MUTATION_PATH)
+    predicate = _critical_predicate(workflow)
+
+    assert predicate(["tests/test_research_stages.py"])
 
 
 def test_mutation_filter_has_no_copied_target_paths() -> None:
