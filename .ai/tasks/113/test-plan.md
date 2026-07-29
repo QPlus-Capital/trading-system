@@ -15,6 +15,7 @@
 | AC-02, AC-07 | `tests/test_ci_cost_workflows.py::test_consolidated_jobs_cache_dependencies_and_preserve_limits` | No cache and six Windows installs | Cache on, one Linux full setup, one Windows platform setup, unchanged ceilings |
 | AC-05 | `tests/test_ci_cost_workflows.py::test_mutation_filter_has_no_copied_target_paths` | No filter exists | Parsed Python AST imports and uses the policy/classifier functions; no target path literal exists |
 | AC-04, AC-05, AC-06, AC-07 | Real GitHub observations | The first two draft runs exposed Linux resync and mypy/winsound defects | Event/run matrix and billed-minute comparison recorded with run IDs |
+| AC-01 | `tests/test_live_accounts.py::test_documented_env_layout_round_trips_windows_paths_and_telegram_through_uv`; `tests/test_quality_mutation.py::test_a_real_weakened_test_increases_survivors_and_is_caught` | Ready run `30475661794` inherits `UV_NO_SYNC` into the nested uv probe and executes the Mutmut probe without its ad hoc tool | The dotenv probe is hermetic under exported `UV_*`; the Mutmut probe skips without the console script and executes in `mutation-self-test` where it is supplied |
 
 ## Red-first procedure
 

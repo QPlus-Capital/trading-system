@@ -683,3 +683,27 @@ why_tests_missed = "the workflow contract explicitly asserted that a changed tes
 regression = "test_mutation_job_runs_for_production_and_direct_critical_test_changes; test_mutation_job_runs_for_a_transitive_critical_test_change; test_mutation_job_fails_closed_for_an_unknown_dynamic_test_import"
 generalized = "a conditional mutation ratchet must select both changed targets and changed tests that exercise them transitively, and static-analysis uncertainty must fail closed"
 workflow_change = "the filter reuses the production mutation policy and impact graph; direct and transitive critical tests run mutation while unrelated tests and non-code paths still skip"
+
+[[finding]]
+id = "F-057"
+source = "PR #130 first ready-state Linux run review"
+defect_class = "ci-tool-environment-contaminates-hermetic-subprocess-test"
+severity = "P1"
+affected = "tests/test_live_accounts.py, .github/workflows/ci.yml"
+root_cause = "the dotenv parser test removed account values from its subprocess environment but retained UV control variables, so the job-level UV_NO_SYNC flag changed the nested uv invocation and emitted a warning"
+why_tests_missed = "the old Windows jobs did not export UV_NO_SYNC and the first ready-state Linux run was the first execution under the consolidated job environment"
+regression = "UV_NO_SYNC=1 uv run pytest -q tests/test_live_accounts.py::test_documented_env_layout_round_trips_windows_paths_and_telegram_through_uv"
+generalized = "a hermetic subprocess test for a tool's parsing behavior must remove that tool's inherited control variables while retaining broad diagnostics that expose silent input loss"
+workflow_change = "the clean subprocess environment strips every UV_* variable and the broad no-warning assertion remains unchanged"
+
+[[finding]]
+id = "F-058"
+source = "PR #130 first ready-state Linux run review"
+defect_class = "platform-proxy-skip-does-not-bind-the-required-tool"
+severity = "P1"
+affected = "tests/test_quality_mutation.py, justfile"
+root_cause = "the real Mutmut probe skipped by operating system even though its actual precondition is the separately supplied Mutmut console script"
+why_tests_missed = "the old Windows-only test job always skipped the node, while the first Linux test job satisfied the platform guard without installing the ad hoc mutation dependency"
+regression = "test_a_real_weakened_test_increases_survivors_and_is_caught under full-quality without Mutmut and mutation-self-test with mutmut==3.5.0"
+generalized = "a capability-dependent test must skip on the capability it consumes, not on a platform used as an unreliable proxy"
+workflow_change = "the test reuses mutation_executable for availability, skips cleanly without the tool, and executes in the mutation job that supplies it"

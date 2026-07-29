@@ -515,7 +515,11 @@ def test_documented_env_layout_round_trips_windows_paths_and_telegram_through_uv
         "import json, os; "
         f"print(json.dumps({{key: os.environ.get(key) for key in {tuple(expected)!r}}}))"
     )
-    clean_environment = {key: value for key, value in os.environ.items() if key not in expected}
+    clean_environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in expected and not key.startswith("UV_")
+    }
 
     completed = subprocess.run(
         [
