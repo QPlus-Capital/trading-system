@@ -203,6 +203,11 @@ glob = ".claude/settings.json"
 min_class = "R3"
 reason = "project hooks can block or permit every commit, push, and pull request"
 
+[[rules]]
+glob = ".claude/**"
+min_class = "R3"
+reason = "executable workflow contracts govern building, review, and safety boundaries"
+
 # ---- R3: data ingestion (result integrity) ----
 [[rules]]
 glob = "core/data/**"
@@ -286,9 +291,9 @@ min_class = "R2"
 reason = "live-vs-backtest monitoring semantics"
 
 [[rules]]
-glob = ".github/workflows/**"
+glob = "docs/architecture.md"
 min_class = "R2"
-reason = "CI is a quality gate"
+reason = "load-bearing architecture and module-map contract"
 
 # ---- R1: tests and tooling ----
 # Tests are the guards. A "test-only" change can delete a money-path check, so it is R2 (adversarial

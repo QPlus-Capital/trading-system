@@ -26,7 +26,7 @@ The class and the one-line reason go in the task spec and the PR.
 |-------|------------|---------------------------------------------|
 | **R0** | Documentation or comments only; no behaviour change. | format check, docs consistency |
 | **R1** | Local non-financial code (tooling, scripts) with no financial, methodology, or result-integrity impact. | `just check`, impacted tests |
-| **R2** | Shared core, research orchestration, artifact schema, configuration, or monitoring semantics — depended on widely, but not on the money or methodology path. | property tests where applicable, integration tests, artifact/schema checks, adversarial review |
+| **R2** | Shared core, research orchestration, artifact schema, configuration, monitoring semantics, or load-bearing architecture documentation — depended on widely, but not on the money or methodology path. | property tests where applicable, integration tests, artifact/schema checks, adversarial review |
 | **R3** | The live-money path, position sizing, risk control, account identity, order placement, signal parity, broker/instrument conversion, money calculations, trading methodology, holdout handling, selection logic, or result integrity. | explicit invariants, mutation testing on touched critical functions, parity checks where applicable, adversarial review, **live-money review**, human decision escalation for ambiguous domain choices, and **no autonomous merge** |
 
 Gates are cumulative: R2 includes R1's, R3 includes R2's.
@@ -53,7 +53,8 @@ deliberately does not repeat it, so the two cannot drift. By category, R3 covers
   **broker cost/swap snapshots** that feed net returns;
 - the whole **research engine and portfolio** (`research/engine/**`, `research/portfolio/**`) and
   the **stages** and **config** — selection, methodology, money, holdout, and reported results;
-- the **regression gate** and the **quality model itself** (`.ai/quality/**`).
+- the **regression gate**, the **quality model itself** (`.ai/quality/**`), and the executable
+  Claude workflow contracts under `.claude/**`.
 
 A change to any of these ranks parameters, sizes a position, moves money, decides selection, or
 guards result integrity. It gets the full R3 treatment and a human approves the merge. The concrete
