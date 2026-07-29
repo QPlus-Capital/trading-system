@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 5756e9c79932b624cf8265251232811a3f263f68
+HEAD: cfcad849194112c660284a8e85bbcf3d4ef5bdc7
 
 The only later commit permitted by readiness is this evidence file itself.
 
@@ -19,11 +19,11 @@ The only later commit permitted by readiness is this evidence file itself.
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | 21 property tests passed twice at fixed Hypothesis seed `20260721`. |
 | `integration-tests` | `uv run pytest -q tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_monitoring_dashboard.py` plus `check-fast` | 0 | 124 direct bridge/runner/dashboard tests and 187 complete impacted tests passed using synthetic fakes only. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-103 --base origin/main` | 0 | Task ISSUE-103 is valid with 18 acceptance criteria and 9 invariants. |
-| `adversarial-review` | `.ai/tasks/ISSUE-103/review.md` | 1 | The fifth complete re-review's F1/F2/F3 are dispositioned with executable evidence, but the material live-risk fix requires another complete independent review. |
+| `adversarial-review` | [Claude round-6 independent review](https://github.com/QPlus-Capital/trading-system/pull/105#pullrequestreview-4807831718), submitted 2026-07-29, and `.ai/tasks/ISSUE-103/review.md` | 0 | **No finding.** For both `magic == MAGIC` and `magic is None`, an undecodable owned record halted at the first, middle, and last position of a six-record enumeration. The repaired foreign-only regression turned red under the ownership-predicate mutation that previously left it green. `git diff 444022c..HEAD -- tests/` removed no assertion and no test. The mutation ratchet tightened from 410 survivors to 409. |
 | `invariants` | `uvx --from rust-just just check-invariants` with Git `sh` on `PATH` | 0 | 433 critical invariant tests passed; the suite directly exercises the MT5 bridge, runner safety cycle, and monitoring completeness surface. |
 | `mutation-on-touched-critical` | Linux Critical mutation run `30445689649` | 0 | 5,113 total, 4,704 killed, exactly 409 inherited survivors, 0 no-tests, and every other unhealthy status 0. The refreshed exact baseline passed; total and killed both increased by seven with no survivor or classification added. |
 | `parity-where-applicable` | legal-input fake-broker assertions and baseline trade-artifact hashes | 0 | Valid BUY/SELL position, pricing, entry, and close behavior remains exact; no research producer changed and both trade artifacts remain byte-identical. |
-| `live-money-review` | fake-only safety evidence plus `.ai/tasks/ISSUE-103/review.md` | 1 | Builder evidence is green, but the complete independent doubly-rigorous review must rerun after making the account-issue decision order invariant and conservative for unknown ownership. |
+| `live-money-review` | [Claude round-6 independent review](https://github.com/QPlus-Capital/trading-system/pull/105#pullrequestreview-4807831718), submitted 2026-07-29, plus fake-only safety evidence | 0 | **No finding.** Foreign-only undecodable records still return `open_risk = inf` and block new entries without halting, flattening, or closing anything. A clean account remains unaffected with finite open risk. No MT5 terminal or runner was contacted and no order was placed, modified, or closed. |
 | `human-decision-escalation` | task validation and spec audit | 0 | Jan's integral index-protocol rule with explicit bool rejection, independent raw-magic ownership filter, dedicated conversion-failure behavior, draft status, and merge authority are explicit; halt persistence remains in #122. |
 | `no-autonomous-merge` | PR #105 state audit | 0 | PR #105 remains open and draft; auto-merge is absent and no ready/merge action occurred. |
 
@@ -45,7 +45,7 @@ The only later commit permitted by readiness is this evidence file itself.
 | `finding-registry` | ID audit across local and open worktrees plus registry tests | 0 | F-037 through F-049 remain intact; F-054 avoids every open-branch ID and generalizes order-sensitive batch decisions plus unknown ownership receiving a weaker safety outcome. |
 | `impact` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command impact origin/main` | 0 | `live/mt5_bridge.py` and `live/runner.py` select all configured direct/transitive consumers; no unknown dynamic edge was reported. |
 | `security` | `uvx --from rust-just just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check-security` | 0 | Secret scan clean, pip-audit reports no known vulnerabilities, and Ruff security checks passed. |
-| `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-103 --base origin/main` | 1 | Correctly reports NOT READY on the pending `adversarial-review` and `live-money-review`; all builder-controlled gates pass and evidence binds the non-evidence HEAD. |
+| `pr-ready` | `uv run python -m scripts.quality.pr_ready ISSUE-103 --base origin/main` | 0 | READY: all 14 required R3 gates have exit 0, task artifacts and risk class pass, and evidence covers review commit `cfcad84`. |
 
 ## Red-first proof
 
@@ -218,7 +218,10 @@ live behavior is weakened.
 
 ## Deferred checks
 
-The Linux mutation gate and every builder-controlled gate are complete. The blockers are the fresh
-complete independent adversarial and live-money reviews required by the material P1 disposition.
-Jan retains the merge decision; PR #105 must remain draft. Halt-state persistence remains out of
-scope in issue #122.
+No readiness gate remains deferred. Claude's sixth complete independent adversarial/live-money
+review found nothing, and the Linux mutation gate already passed with a tighter 409-survivor
+baseline. The evidence-only push will trigger the seven protected checks on the final head; their
+state is observed externally rather than creating another evidence commit and another head.
+
+Jan retains the merge decision. PR #105 remains draft; no ready, merge, or auto-merge action is
+authorized here. Halt-state persistence remains out of scope in issue #122.
