@@ -60,6 +60,11 @@ final draft path: `platform-quality` passed on Windows and `full-quality` was sk
 pull request is draft. Run `30463967228` confirms that a non-critical change executes the
 configuration-driven filter and does not start the mutation job.
 
+PR #130's body was edited at `2026-07-29T15:12:51Z`. After 55 seconds, the branch run list still
+ended at synchronize-triggered runs `30464626811` and `30464627044`, both created at
+`2026-07-29T15:11:16Z`; no workflow run was created for the `edited` event. This is the external
+AC-04 observation, not an inference from the local expression evaluator.
+
 ### Test inventory and platform boundary
 
 - Pre-change Windows collection: 1,286 node IDs, SHA-256
@@ -85,9 +90,6 @@ execution and Actions run `30463967228` selected no target for this package.
   package-less Windows execution proves dependency separation but is not a Linux observation.
   After independent review, the ready-only `full-quality` Linux job must collect its node IDs and
   diff them against the recorded Windows 1,300-ID set. A non-empty diff blocks readiness.
-- **AC-04 edited event.** The parsed-workflow test proves an `edited` payload selects no job, but
-  an actual body-edit observation must be recorded on PR #130 without claiming the parser as the
-  external observation.
 - **AC-05 critical path.** Run `30463967228` proves the non-critical half: the filter passed and
   mutation was skipped. A later critical-path change must prove that the same policy-driven filter
   starts `mutation-critical`.
