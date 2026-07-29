@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 from scripts.quality.workflow_contract import (
     CONTRACT_PATH,
+    WorkflowContract,
     check_documents,
     load_contract,
     render_document,
@@ -26,6 +27,49 @@ _CONSTITUTION = Path("docs/engineering/constitution.md")
 _AGENTS = Path("AGENTS.md")
 _CLAUDE = Path("CLAUDE.md")
 _CONTRACT_DOCUMENTS = (_WORKFLOW, _CONSTITUTION, _AGENTS, _CLAUDE)
+
+# These authorized sets deliberately live in the test, outside the contract they constrain. A
+# contract edit therefore cannot make a missing or invented record authorize itself.
+_REQUIRED_TRANSITIONS = frozenset(
+    {
+        ("-", "Backlog", "project automation", "an issue is opened"),
+        ("Backlog", "Specifying", "Claude", "Jan asks for the idea to be worked out"),
+        ("Blocked", "Specifying", "Claude", "Jan decided"),
+        ("Specifying", "Ready to Implement", "Claude"),
+        ("Ready to Implement", "Implementing", "Codex"),
+        ("Implementing", "Reviewing", "Codex"),
+        ("Reviewing", "Implementing", "Claude", "a blocking finding"),
+        ("Reviewing", "Done", "project automation"),
+    }
+)
+_AUTHORIZED_EDGES = frozenset(
+    {
+        ("-", "Backlog"),
+        ("Backlog", "Specifying"),
+        ("Blocked", "Specifying"),
+        ("Specifying", "Backlog"),
+        ("Specifying", "Ready to Implement"),
+        ("Specifying", "Blocked"),
+        ("Ready to Implement", "Specifying"),
+        ("Ready to Implement", "Implementing"),
+        ("Ready to Implement", "Blocked"),
+        ("Implementing", "Reviewing"),
+        ("Implementing", "Specifying"),
+        ("Implementing", "Blocked"),
+        ("Reviewing", "Implementing"),
+        ("Reviewing", "Blocked"),
+        ("Reviewing", "Done"),
+    }
+)
+_REQUIRED_ACTIVATIONS = frozenset(
+    {
+        ("The draft pull request carries the review", 124),
+        ("Artifact files scale by risk class", 124),
+        ("Board transitions performed by tooling", 110),
+        ("The `methodology-reviewer` subagent", 112),
+        ("Findings named `Blocker` / `Defect` / `Suspected defect` / `Note`", 112),
+    }
+)
 
 
 def _normalize(text: str) -> str:
@@ -47,6 +91,41 @@ def test_workflow_contract_toml_is_valid_and_complete() -> None:
     assert contract.approval_steps[-1].action == "add approved"
     assert contract.approval_steps[-1].approved_written_last
     assert contract.transitional_review.activation_issue > 0
+
+
+def test_every_required_transition_is_declared() -> None:
+    """A row may not vanish; the review loop's return edge has already regressed."""
+    contract = load_contract()
+    declared = {(row.source, row.target, row.actor, row.trigger) for row in contract.transitions}
+    prefixes = {record[:3] for record in declared}
+    missing = {
+        required
+        for required in _REQUIRED_TRANSITIONS
+        if required not in declared and required not in prefixes
+    }
+    assert missing == set(), f"the contract lost required transitions: {sorted(missing)}"
+
+
+def test_no_transition_outside_the_authorized_edge_set_exists() -> None:
+    """The declared graph is exactly the authorized graph, in both directions."""
+    contract = load_contract()
+    declared = {(row.source, row.target) for row in contract.transitions}
+    assert declared - _AUTHORIZED_EDGES == set(), (
+        f"the contract authorizes unreviewed edges: {sorted(declared - _AUTHORIZED_EDGES)}"
+    )
+    assert _AUTHORIZED_EDGES - declared == set(), (
+        f"the contract dropped authorized edges: {sorted(_AUTHORIZED_EDGES - declared)}"
+    )
+
+
+def test_every_registered_activation_is_declared() -> None:
+    """The declared activation registry is exact: no row may vanish or self-register."""
+    contract = load_contract()
+    declared = {(row.capability, row.issue) for row in contract.activations}
+    assert declared == _REQUIRED_ACTIVATIONS, (
+        f"missing={sorted(_REQUIRED_ACTIVATIONS - declared)}\n"
+        f"unregistered={sorted(declared - _REQUIRED_ACTIVATIONS)}"
+    )
 
 
 def test_workflow_contract_rejects_a_malformed_document_digest(tmp_path: Path) -> None:
@@ -129,10 +208,21 @@ def _counterexample_repository(tmp_path: Path) -> dict[str, Path]:
     return copied
 
 
+def _render_counterexample_documents(
+    paths: dict[str, Path],
+    contract: WorkflowContract,
+) -> None:
+    for relative in _CONTRACT_DOCUMENTS:
+        path = paths[relative.as_posix()]
+        source = path.read_text(encoding="utf-8")
+        path.write_text(render_document(relative, source, contract), encoding="utf-8")
+
+
 def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
     workflow = paths[_WORKFLOW.as_posix()]
     constitution = paths[_CONSTITUTION.as_posix()]
     agents = paths[_AGENTS.as_posix()]
+    contract = paths[CONTRACT_PATH.relative_to(_ROOT).as_posix()]
 
     if name == "start-allows-missing-permit":
         _replace_once(agents, "`approved` present", "`approved` absent")
@@ -249,6 +339,35 @@ def _apply_counterexample(name: str, paths: dict[str, Path]) -> None:
             "opens the **draft** pull request\nat the point the active workflow permits",
             "opens the ready pull request\nat the point the active workflow permits",
         )
+    elif name == "missing-review-return-transition":
+        _replace_once(
+            contract,
+            "[[transition]]\n"
+            'source = "Reviewing"\n'
+            'target = "Implementing"\n'
+            'actor = "Claude"\n'
+            'trigger = "a blocking finding"\n\n',
+            "",
+        )
+    elif name == "missing-board-tooling-activation":
+        _replace_once(
+            contract,
+            "[[activation]]\n"
+            'capability = "Board transitions performed by tooling"\n'
+            "issue = 110\n"
+            'fallback = "Agents call `gh` directly and are responsible for the ordering rules '
+            'themselves."\n\n',
+            "",
+        )
+    elif name == "unauthorized-backlog-done-contract-transition":
+        with contract.open("a", encoding="utf-8") as stream:
+            stream.write(
+                "\n[[transition]]\n"
+                'source = "Backlog"\n'
+                'target = "Done"\n'
+                'actor = "any agent"\n'
+                'trigger = "the change looks small enough"\n'
+            )
     else:
         raise AssertionError(f"unknown counterexample: {name}")
 
@@ -270,7 +389,11 @@ _COUNTEREXAMPLES = (
     "gate-ceiling-in-neighbouring-paragraph",
     "constitution-reintroduces-ready-pr-opening",
     "agents-reintroduces-ready-pr-opening",
+    "missing-review-return-transition",
+    "missing-board-tooling-activation",
+    "unauthorized-backlog-done-contract-transition",
 )
+_CONTRACT_RECORD_COUNTEREXAMPLES = frozenset(_COUNTEREXAMPLES[-3:])
 
 
 @pytest.mark.parametrize("counterexample", _COUNTEREXAMPLES)
@@ -282,6 +405,25 @@ def test_contract_rendering_rejects_semantic_counterexample(
     paths = _counterexample_repository(tmp_path)
     _apply_counterexample(counterexample, paths)
     contract = load_contract(paths[CONTRACT_PATH.relative_to(_ROOT).as_posix()])
-    assert check_documents(tmp_path, contract), (
+    if counterexample in _CONTRACT_RECORD_COUNTEREXAMPLES:
+        _render_counterexample_documents(paths, contract)
+
+    declared_transitions = {
+        (row.source, row.target, row.actor, row.trigger) for row in contract.transitions
+    }
+    transition_prefixes = {record[:3] for record in declared_transitions}
+    missing_transitions = {
+        required
+        for required in _REQUIRED_TRANSITIONS
+        if required not in declared_transitions and required not in transition_prefixes
+    }
+    declared_edges = {(row.source, row.target) for row in contract.transitions}
+    declared_activations = {(row.capability, row.issue) for row in contract.activations}
+    totality_errors = (
+        missing_transitions
+        or declared_edges != _AUTHORIZED_EDGES
+        or declared_activations != _REQUIRED_ACTIVATIONS
+    )
+    assert check_documents(tmp_path, contract) or totality_errors, (
         f"the machine contract accepted semantic counterexample {counterexample!r}"
     )

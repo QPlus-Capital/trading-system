@@ -306,3 +306,19 @@ material fix; Claude must run the next complete independent review.
 
 **Review status:** implementation complete but not self-approved. This is a material R3 remediation;
 a fresh complete Claude review is required before any pull request is opened or marked ready.
+
+---
+
+## Builder disposition after the fifth independent review
+
+The fifth review accepted the Option-B renderer and skeleton-digest design and left one blocking
+finding: the TOML contract's transition and activation record sets were not independently bounded.
+The builder did not alter the renderer, skeleton digest, `_validate_contract`, contract facts, or
+document text.
+
+| ID | Disposition |
+|---|---|
+| Fifth-review totality finding | Confirmed and fixed. `tests/test_workflow_contract.py` now owns the authorized transition graph, required semantic transitions, and required activation identities outside the TOML they constrain. It checks both set directions: a required row cannot vanish and an unregistered row cannot authorize itself by appearing in the contract. The supplied regression was folded into the existing test style. Its three TOML mutations â€” deleting `Reviewing` â†’ `Implementing`, deleting the #110 activation, and adding `Backlog` â†’ `Done` â€” are now cases in the parametrized counterexample oracle. Each mutation regenerates the document views before assertion, isolating the new totality guard from renderer and skeleton-digest protection. F-039's `generalized` field and `regression` list now describe and bind the protection that exists. |
+
+**Review status:** the blocking finding is implemented but not self-approved. A fresh independent
+review is still required; this disposition is builder evidence only.
