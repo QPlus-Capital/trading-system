@@ -203,7 +203,7 @@ def _embedded_python(workflow: Mapping[str, Any]) -> str:
     step = next(
         step
         for step in _steps(detector)
-        if str(step.get("name", "")) == "Detect configured critical production changes"
+        if str(step.get("name", "")) == "Detect configured critical changes"
     )
     command = str(step["run"])
     marker = "<<'PY'\n"
@@ -330,8 +330,15 @@ def test_mutation_filter_has_no_copied_target_paths() -> None:
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
 
-    assert {"changed_paths", "load_model", "load_policy", "select_fast_targets"} <= imported
-    assert {"changed_paths", "load_model", "load_policy", "select_fast_targets"} <= called
+    policy_functions = {
+        "changed_paths",
+        "changed_tests_exercise_targets",
+        "load_model",
+        "load_policy",
+        "select_fast_targets",
+    }
+    assert policy_functions <= imported
+    assert policy_functions <= called
     assert not target_paths & string_literals
 
 

@@ -28,7 +28,7 @@ jobs:
           python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - name: Detect configured critical production changes
+      - name: Detect configured critical changes
         id: filter
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -42,12 +42,20 @@ jobs:
           from collections.abc import Sequence
 
           from scripts.quality.classify import changed_paths, load_model
+          from scripts.quality.impact import changed_tests_exercise_targets
           from scripts.quality.mutation import load_policy, select_fast_targets
 
 
           def critical_changed(paths: Sequence[str]) -> bool:
-              """Use the production mutation policy and risk classifier without copying paths."""
-              return bool(select_fast_targets(paths, load_policy(), load_model()))
+              """Use production mutation and impact policy without copying paths."""
+              policy = load_policy()
+              return bool(
+                  select_fast_targets(paths, policy, load_model())
+                  or changed_tests_exercise_targets(
+                      paths,
+                      tuple(target.path for target in policy.targets),
+                  )
+              )
 
 
           if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch":
