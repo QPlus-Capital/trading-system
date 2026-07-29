@@ -50,11 +50,11 @@
 
 ## Unknown or dynamic edges
 
-- GitHub event-condition semantics and billing are external. Local tests parse and evaluate the
-  bounded expressions fail-closed, but AC-04 through AC-07 still require real observations after
-  2026-08-01.
+- GitHub event-condition semantics and billing are external. Draft and non-critical behaviour now
+  have real run evidence; edited, ready, critical, and billed-minute cases still require their own
+  observations.
 - Native Linux collection is unavailable locally because WSL, Docker, Podman, Hyper-V VMs, and
   other container runtimes are absent. Windows baseline collection is executable now; Linux
   collection and the cross-platform diff remain deferred rather than inferred.
-- The last comparable billed Windows run must be selected after the allowance resets. Evidence
+- The last comparable billed Windows run must be selected before the ready transition. Evidence
   will name both Actions run IDs and compare billed minutes, not wall-clock guesses.

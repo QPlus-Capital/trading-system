@@ -16,7 +16,8 @@ boundary test, and critical mutation only for configured critical production pat
 - Do not remove, weaken, merge away, or allow failure of any existing gate.
 - Do not change a `just` recipe, timeout ceiling, permission, concurrency rule, mutation target,
   threshold, baseline, trading path, or reported result.
-- Do not claim workflow observations while the organisation Actions allowance is exhausted.
+- Do not claim workflow behaviour from a simulation; record only executable local tests or actual
+  GitHub run IDs.
 - Do not change the active GitHub ruleset from repository code.
 
 ## Behavioural requirements
@@ -48,8 +49,8 @@ boundary test, and critical mutation only for configured critical production pat
 - AC-05: A non-critical changed-path set skips `mutation-critical`, while a path selected from the
   production mutation policy runs it.
 - AC-06: Draft events select only fast gates; a ready event selects the full set.
-- AC-07: After the allowance reset, a complete run records materially fewer billed minutes than
-  the last comparable six-job Windows run.
+- AC-07: After the first reviewed ready transition, a complete run records materially fewer billed
+  minutes than the last comparable six-job Windows run.
 
 ## Invariants
 
@@ -71,9 +72,9 @@ boundary test, and critical mutation only for configured critical production pat
 ## Open questions
 
 - The task states WSL is available, but `wsl.exe --status` reports that WSL is not installed and no
-  local Linux VM/container runtime exists. The Linux half of AC-01 must therefore be executed on a
-  real Linux runner after the Actions allowance resets on 2026-08-01; it cannot honestly be green
-  during this build.
+  local Linux VM/container runtime exists. The Linux half of AC-01 must therefore execute in the
+  ready-only Linux GitHub job after independent review; it cannot honestly be green while the PR
+  remains draft.
 - The active `main` ruleset still requires the six old CI job names plus `mutation-critical`.
   Before this PR can merge, Jan must atomically replace those six CI contexts with
   `platform-quality` and `full-quality` after their first observed ready run. Keeping the old names
