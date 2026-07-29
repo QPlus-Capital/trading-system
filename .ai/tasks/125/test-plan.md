@@ -68,8 +68,8 @@ rather than matching the substring `surviv`.
 
 ## A gap this plan found in itself
 
-The first version of this table cited `test_a_baseline_whose_counts_do_not_sum_is_refused` for INV-03
-as pre-existing. No such test existed: `load_baseline` enforces the sum at
+The first version of this table cited a nonexistent shorter name for the INV-03 baseline-sum test
+as pre-existing. `load_baseline` enforces the sum at
 `scripts/quality/mutation.py:214` but nothing exercised the rejection. The invariant that the
 baseline's own recorded total stays coherent matters more after this change, not less, because the
 gate no longer compares that number against anything. The test was written and is listed above as
