@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -31,6 +32,7 @@ def _deal(ticket: int, profit: str) -> dict[str, Any]:
 class _SnapshotBridge:
     histories: list[list[dict[str, Any]]] = []
     accounts: list[AccountState] = []
+    position_snapshot_result: SimpleNamespace = SimpleNamespace(positions=(), issues=())
     instances: list[_SnapshotBridge] = []
 
     def __init__(self, symbol_map: dict[str, str]) -> None:
@@ -52,8 +54,17 @@ class _SnapshotBridge:
     def positions(self) -> list[object]:
         return []
 
+    def position_snapshot(self) -> SimpleNamespace:
+        return self.position_snapshot_result
+
     def shutdown(self) -> None:
         self.shutdown_called = True
+
+
+@pytest.fixture(autouse=True)
+def _reset_position_snapshot() -> Iterator[None]:
+    _SnapshotBridge.position_snapshot_result = SimpleNamespace(positions=(), issues=())
+    yield
 
 
 def _account(balance: float) -> AccountState:
@@ -106,6 +117,33 @@ def test_load_live_retries_an_interleaved_deal_snapshot(
     assert live["balance"] == 115.0
     assert len(_SnapshotBridge.instances) == 1
     assert _SnapshotBridge.instances[0].shutdown_called
+
+
+def test_load_live_surfaces_an_undecodable_position_as_unpriceable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    history = [_deal(1, "1")]
+    _SnapshotBridge.histories = [history, history]
+    _SnapshotBridge.accounts = [_account(101.0), _account(101.0)]
+    _SnapshotBridge.position_snapshot_result = SimpleNamespace(
+        positions=(),
+        issues=(
+            SimpleNamespace(
+                ticket=20,
+                symbol="GBPJPY",
+                magic=999,
+                reason="unsupported synthetic position type",
+            ),
+        ),
+    )
+    _SnapshotBridge.instances = []
+    monkeypatch.setattr(dashboard, "Mt5Bridge", _SnapshotBridge)
+    dashboard._load_live.clear()
+
+    live = dashboard._load_live("ttp")
+
+    assert live["open_risk"].total == 0.0
+    assert live["open_risk"].unpriceable == ["GBPJPY"]
 
 
 def test_load_live_fails_closed_when_history_never_stabilises(

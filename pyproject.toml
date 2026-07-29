@@ -65,6 +65,7 @@ pythonpath = ["."]
 paths_to_mutate = [
     "live/risk_control.py",
     "live/mt5_bridge.py",
+    "live/runner.py",
     "monitoring/deals.py",
     "monitoring/dashboard.py",
     "research/portfolio/curves.py",
@@ -93,6 +94,8 @@ pytest_add_cli_args = ["--disable-warnings"]
 pytest_add_cli_args_test_selection = [
     "tests/test_live_risk_control.py",
     "tests/test_live_mt5_bridge.py",
+    "tests/test_live_runner.py",
+    "tests/test_live_runner_cycle.py",
     "tests/test_monitoring_dashboard.py",
     "tests/test_monitoring_deals.py",
     "tests/test_monitoring_risk_view.py",

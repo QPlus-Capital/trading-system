@@ -17,11 +17,12 @@ is resolved against the live terminal's symbol list at connect time.
 from __future__ import annotations
 
 import logging
+import operator
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, SupportsIndex
 
 try:  # pragma: no cover - Windows-only dependency; pure helpers stay importable without it
     import MetaTrader5 as mt5
@@ -38,6 +39,9 @@ MAGIC = 770077
 # module does not expose these ``SYMBOL_FILLING_*`` names, so the bit values are hard-coded.
 _SYMBOL_FILLING_FOK = 1
 _SYMBOL_FILLING_IOC = 2
+_DEFAULT_ORDER_DEVIATION = 20
+_DEFAULT_ORDER_COMMENT = "qplus"
+_INVALID_POSITION_TICKET = "invalid MT5 position ticket"
 
 # Our research name -> the broker's base symbol name (before any account suffix).
 SYMBOL_MAP: dict[str, str] = {
@@ -58,6 +62,59 @@ Side = Literal["BUY", "SELL"]
 
 class Mt5Error(RuntimeError):
     """Raised when a MetaTrader 5 call fails (init, login, data, or order)."""
+
+
+class Mt5SideError(Mt5Error):
+    """Raised when a runtime side cannot be converted without ambiguity."""
+
+
+def _runtime_index(value: object, *, error: str) -> int:
+    """Return an integral runtime value while rejecting bool aliases and conversion failures."""
+    if isinstance(value, bool) or not isinstance(value, SupportsIndex):
+        raise Mt5SideError(error)
+    try:
+        return operator.index(value)
+    except (TypeError, ValueError) as exc:
+        raise Mt5SideError(error) from exc
+
+
+def _position_ticket(value: object) -> int | None:
+    """Return an integral ticket, or leave the record identifiable as unknown."""
+    if isinstance(value, bool) or not isinstance(value, SupportsIndex):
+        return None
+    try:
+        return operator.index(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _runtime_side(
+    value: object,
+    *,
+    position_types: tuple[int, int] | None = None,
+) -> Side:
+    """Return the canonical side, rejecting every unsupported runtime value."""
+    if position_types is not None:
+        buy_type, sell_type = position_types
+        error = "invalid MT5 position type; expected POSITION_TYPE_BUY or POSITION_TYPE_SELL"
+        position_type = _runtime_index(value, error=error)
+        if position_type == buy_type:
+            return "BUY"
+        if position_type == sell_type:
+            return "SELL"
+        raise Mt5SideError(error)
+    if isinstance(value, str) and value == "BUY":
+        return "BUY"
+    if isinstance(value, str) and value == "SELL":
+        return "SELL"
+    raise Mt5SideError("invalid order side; expected BUY or SELL")
+
+
+def _order_type(m: Any, value: object, *, opposite: bool) -> int:
+    """Return the MT5 order type for a validated side, optionally opposing it."""
+    side = _runtime_side(value)
+    buy_order = (side == "BUY") != opposite
+    return int(m.ORDER_TYPE_BUY if buy_order else m.ORDER_TYPE_SELL)
 
 
 @dataclass(frozen=True)
@@ -98,6 +155,24 @@ class Position:
     tp: float
     profit: float
     magic: int = 0  # the EA magic number; ours is MAGIC. 0 / other = manual or a foreign EA.
+
+
+@dataclass(frozen=True)
+class PositionDecodeIssue:
+    """A raw terminal position that cannot safely become an actionable ``Position``."""
+
+    ticket: int | None
+    symbol: str
+    magic: int | None
+    reason: str
+
+
+@dataclass(frozen=True)
+class PositionSnapshot:
+    """Decoded positions plus every raw record whose exposure remains unverifiable."""
+
+    positions: tuple[Position, ...]
+    issues: tuple[PositionDecodeIssue, ...]
 
 
 @dataclass(frozen=True)
@@ -292,7 +367,42 @@ class Mt5Bridge:
         )
 
     def positions(self, name: str | None = None) -> list[Position]:
-        """Return open positions, optionally filtered to one of our research names."""
+        """Return every decodable account position for account-wide risk and monitoring."""
+        return self._positions(name, owner_magic=None)
+
+    def position_snapshot(self, name: str | None = None) -> PositionSnapshot:
+        """Return account positions without hiding records whose exposure is undecodable."""
+        return self._position_snapshot(name, owner_magic=None)
+
+    def _positions(
+        self,
+        name: str | None,
+        *,
+        owner_magic: int | None,
+    ) -> list[Position]:
+        """Return decodable positions, optionally restricted to this runner before conversion.
+
+        Every decodable account position remains visible to account-wide risk. An unsupported
+        foreign position is ignored after its independent magic value proves that the runner
+        neither owns nor may act on it. An unsupported owned position still fails closed.
+        """
+        snapshot = self._position_snapshot(name, owner_magic=owner_magic)
+        for issue in snapshot.issues:
+            if issue.magic in (None, MAGIC):
+                raise Mt5SideError(issue.reason)
+            log.warning(
+                "ignoring foreign position ticket %s with unsupported MT5 position type",
+                issue.ticket,
+            )
+        return list(snapshot.positions)
+
+    def _position_snapshot(
+        self,
+        name: str | None,
+        *,
+        owner_magic: int | None,
+    ) -> PositionSnapshot:
+        """Decode raw records independently and retain every rejected record as an issue."""
         m = self._require()
         if name is not None:
             raw = m.positions_get(symbol=self.terminal_symbol(name))
@@ -300,23 +410,65 @@ class Mt5Bridge:
             raw = m.positions_get()
         if raw is None:
             raise Mt5Error(f"positions_get failed: {m.last_error()}")
-        out: list[Position] = []
+        positions: list[Position] = []
+        issues: list[PositionDecodeIssue] = []
+        position_types = (int(m.POSITION_TYPE_BUY), int(m.POSITION_TYPE_SELL))
         for p in raw:
-            side: Side = "BUY" if p.type == m.POSITION_TYPE_BUY else "SELL"
-            out.append(
+            ticket = _position_ticket(p.ticket)
+            symbol = str(p.symbol)
+            try:
+                magic = _runtime_index(
+                    p.magic,
+                    error="invalid MT5 position magic; expected an integer",
+                )
+            except Mt5SideError as exc:
+                issues.append(
+                    PositionDecodeIssue(
+                        ticket=ticket,
+                        symbol=symbol,
+                        magic=None,
+                        reason=str(exc),
+                    )
+                )
+                continue
+            if owner_magic is not None and magic != owner_magic:
+                continue
+            try:
+                side = _runtime_side(p.type, position_types=position_types)
+            except Mt5SideError as exc:
+                issues.append(
+                    PositionDecodeIssue(
+                        ticket=ticket,
+                        symbol=symbol,
+                        magic=magic,
+                        reason=str(exc),
+                    )
+                )
+                continue
+            if ticket is None:
+                issues.append(
+                    PositionDecodeIssue(
+                        ticket=None,
+                        symbol=symbol,
+                        magic=magic,
+                        reason=_INVALID_POSITION_TICKET,
+                    )
+                )
+                continue
+            positions.append(
                 Position(
-                    ticket=int(p.ticket),
-                    symbol=str(p.symbol),
+                    ticket=ticket,
+                    symbol=symbol,
                     side=side,
                     volume=float(p.volume),
                     price_open=float(p.price_open),
                     sl=float(p.sl),
                     tp=float(p.tp),
                     profit=float(p.profit),
-                    magic=int(p.magic),
+                    magic=magic,
                 )
             )
-        return out
+        return PositionSnapshot(positions=tuple(positions), issues=tuple(issues))
 
     def owned_positions(self, name: str | None = None) -> list[Position]:
         """Only the positions THIS runner opened (magic == MAGIC).
@@ -326,7 +478,11 @@ class Mt5Bridge:
         risk still counts ALL exposure (see the runner) -- ownership limits what we *act on*,
         not what we *account for*.
         """
-        return [p for p in self.positions(name) if p.magic == MAGIC]
+        return self._positions(name, owner_magic=MAGIC)
+
+    def owned_position_snapshot(self, name: str | None = None) -> PositionSnapshot:
+        """Return every retrievable owned position plus per-record decoding failures."""
+        return self._position_snapshot(name, owner_magic=MAGIC)
 
     def loss_for_order(
         self, name: str, side: Side, entry: float, sl: float, volume: float
@@ -345,7 +501,7 @@ class Mt5Bridge:
         cost 0.206% instead of the intended 0.18%. This is not a theoretical correction.
         """
         m = self._require()
-        order_type = m.ORDER_TYPE_BUY if side == "BUY" else m.ORDER_TYPE_SELL
+        order_type = _order_type(m, side, opposite=False)
         profit = m.order_calc_profit(order_type, self.terminal_symbol(name), volume, entry, sl)
         if profit is None:
             return None
@@ -365,10 +521,11 @@ class Mt5Bridge:
         Returns ``None`` when the position has no stop or the terminal cannot price it; the caller
         then falls back to the arithmetic estimate.
         """
+        side = _runtime_side(position.side)
         if position.sl <= 0:
             return None  # unbounded downside -> the caller charges the worst case
         m = self._require()
-        order_type = m.ORDER_TYPE_BUY if position.side == "BUY" else m.ORDER_TYPE_SELL
+        order_type = _order_type(m, side, opposite=False)
         profit = m.order_calc_profit(
             order_type, position.symbol, position.volume, position.price_open, position.sl
         )
@@ -435,19 +592,17 @@ class Mt5Bridge:
         *,
         sl: float | None = None,
         tp: float | None = None,
-        deviation: int = 20,
-        comment: str = "qplus",
+        deviation: int = _DEFAULT_ORDER_DEVIATION,
+        comment: str = _DEFAULT_ORDER_COMMENT,
     ) -> int:
         """Send a market order; return the resulting deal/order ticket. Raises on rejection."""
         m = self._require()
+        order_type = _order_type(m, side, opposite=False)
         sym = self.terminal_symbol(name)
         tick = m.symbol_info_tick(sym)
         if tick is None:
             raise Mt5Error(f"no tick for {sym}: {m.last_error()}")
-        if side == "BUY":
-            order_type, price = m.ORDER_TYPE_BUY, float(tick.ask)
-        else:
-            order_type, price = m.ORDER_TYPE_SELL, float(tick.bid)
+        price = float(tick.ask) if order_type == m.ORDER_TYPE_BUY else float(tick.bid)
         request = {
             "action": m.TRADE_ACTION_DEAL,
             "symbol": sym,
@@ -494,17 +649,20 @@ class Mt5Bridge:
                 f"retcode={result.retcode} ({result.comment})"
             )
 
-    def close_position(self, position: Position, *, deviation: int = 20) -> None:
+    def close_position(
+        self,
+        position: Position,
+        *,
+        deviation: int = _DEFAULT_ORDER_DEVIATION,
+    ) -> None:
         """Close an open position with an opposing market order. Raises on rejection."""
         m = self._require()
+        order_type = _order_type(m, position.side, opposite=True)
         sym = position.symbol
         tick = m.symbol_info_tick(sym)
         if tick is None:
             raise Mt5Error(f"no tick for {sym}: {m.last_error()}")
-        if position.side == "BUY":
-            order_type, price = m.ORDER_TYPE_SELL, float(tick.bid)
-        else:
-            order_type, price = m.ORDER_TYPE_BUY, float(tick.ask)
+        price = float(tick.ask) if order_type == m.ORDER_TYPE_BUY else float(tick.bid)
         request = {
             "action": m.TRADE_ACTION_DEAL,
             "symbol": sym,
