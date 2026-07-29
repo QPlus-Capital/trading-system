@@ -76,8 +76,7 @@ def test_a_nonzero_required_gate_blocks_readiness(tmp_path: Path) -> None:
     evidence.write_text(
         evidence.read_text(encoding="utf-8").replace(
             "| `check` | `verify check` | 0 | passed |",
-            "| `check` | `verify check` | 0 | passed |\n"
-            "| `check` | `failed check` | 1 | failed |",
+            "| `check` | `verify check` | 0 | passed |\n| `check` | `failed check` | 1 | failed |",
         ),
         encoding="utf-8",
     )

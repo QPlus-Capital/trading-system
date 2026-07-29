@@ -225,9 +225,7 @@ def test_cli_reports_the_discovered_task_id(
     monkeypatch.setattr(
         task_validator,
         "validate_task",
-        lambda task_id, risk_class: ValidationResult(
-            Path(task_id), (), ("AC-01",), ("INV-01",)
-        ),
+        lambda task_id, risk_class: ValidationResult(Path(task_id), (), ("AC-01",), ("INV-01",)),
     )
     assert task_validator.main(["--base", "origin/main"]) == 0
     assert "Task 67: valid" in capsys.readouterr().out

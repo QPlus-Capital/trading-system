@@ -96,11 +96,18 @@ def _legacy_hashes(registry: Path) -> dict[str, str]:
     if raw.get("version") != 1 or not isinstance(raw.get("content_sha256"), dict):
         raise ValueError("legacy finding manifest must contain version 1 content_sha256")
     hashes = cast(dict[object, object], raw["content_sha256"])
-    result = {str(key): str(value) for key, value in hashes.items()}
+    result: dict[str, str] = {}
+    for raw_key, raw_value in hashes.items():
+        key = str(raw_key)
+        if (
+            not isinstance(raw_value, list)
+            or len(raw_value) != 32
+            or not all(type(octet) is int and 0 <= octet <= 255 for octet in raw_value)
+        ):
+            raise ValueError(f"legacy finding manifest has an invalid digest for {key}")
+        result[key] = bytes(cast(list[int], raw_value)).hex()
     if any(_LEGACY_ID.fullmatch(key) is None for key in result):
         raise ValueError("legacy finding manifest contains an invalid ID")
-    if any(_CONTENT_NAME.fullmatch(value) is None for value in result.values()):
-        raise ValueError("legacy finding manifest contains an invalid content digest")
     return result
 
 

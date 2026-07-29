@@ -95,6 +95,5 @@ def test_every_finding_registry_regression_reference_resolves() -> None:
             f"files={missing_files}, tests={missing_names}, commands={missing_commands}"
         )
         assert file_tokens or name_tokens or command_tokens, (
-            f"finding {finding.id} regression must name an existing test, test file, or just "
-            "recipe"
+            f"finding {finding.id} regression must name an existing test, test file, or just recipe"
         )

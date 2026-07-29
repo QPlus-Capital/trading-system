@@ -186,4 +186,3 @@ def test_readiness_never_uses_less_than_classifier_gate_set(
         _write_task(task, risk_class)
     result = assess_readiness(task, [path], "abc123")
     assert set(result.required_gates) == set(load_model().required_gates(risk_class))
-

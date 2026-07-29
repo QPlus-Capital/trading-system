@@ -277,6 +277,7 @@ def _validate_contract(contract: WorkflowContract) -> None:
     ):
         raise ValueError("ready-for-review requires both clean review and readiness")
 
+
 def _start_marker(name: str) -> str:
     return f"<!-- workflow-contract:{name}:start -->"
 
