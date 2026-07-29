@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #105 fourth independent live-money review"
+defect_class = "batch-decode-error-suppresses-retrievable-safety-actions"
+severity = "P1"
+affected = "live/mt5_bridge.py, live/runner.py"
+root_cause = "owned-position decoding raised for the whole terminal result, so one invalid record discarded earlier valid positions before the safety flatten loop could close them"
+why_tests_missed = "the runner test made account-wide positions fail while its owned-position fake still returned a clean list, a state the real bridge cannot produce"
+regression = "test_owned_position_snapshot_keeps_retrievable_positions_and_names_rejections; test_runner_halts_loudly_and_flattens_retrievable_positions_from_real_bridge; test_trailing_breach_flattens_each_retrievable_owned_raw_position"
+generalized = "best-effort safety actions over external batches require per-record decoding results; one bad record must remain loud without erasing independently retrievable actions"
+workflow_change = "the halt path consumes an owned-position snapshot and mutation coverage includes the decoder, account-risk completeness check, and per-record flatten consumer"

@@ -15,10 +15,15 @@ from dataclasses import dataclass
 
 from scripts.quality.validate_task import EvidenceRecord, ValidationIssue
 
-_BOUNDARY = re.compile(r"\b(?:git\s+(?:commit|push)|gh\s+pr\s+create)\b", re.IGNORECASE)
+_BOUNDARY = re.compile(
+    r"\b(?:git\s+(?:commit|push)|gh\s+pr\s+(?:create|ready))\b",
+    re.IGNORECASE,
+)
 _COMMIT = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
 _PUSH = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
 _PR_CREATE = re.compile(r"\bgh\s+pr\s+create\b", re.IGNORECASE)
+_PR_READY = re.compile(r"\bgh\s+pr\s+ready\b", re.IGNORECASE)
+_DRAFT = re.compile(r"(?:^|\s)--draft(?:\s|$)", re.IGNORECASE)
 _LIVE_COMMAND = re.compile(
     r"(?:\b(?:uv\s+run\s+)?python(?:\.exe)?\s+-m\s+"
     r"live\.(?:run|preflight|parity_check)\b|\bjust\s+live(?:-[\w]+)*(?:-execute)?\b)",
@@ -192,33 +197,22 @@ def main_branch_decision(command: str, branch: str, risk_class: str) -> Decision
     return _allow()
 
 
-def push_readiness_decision(
+def pr_transition_decision(
     command: str, readiness_passed: bool, task_id: str | None = None
 ) -> Decision:
-    """Require a successful current-HEAD readiness result before a push."""
+    """Require draft creation and gate only the later ready-for-review transition."""
 
-    if not _PUSH.search(command) or readiness_passed:
+    if _PR_CREATE.search(command):
+        if _DRAFT.search(command):
+            return _allow()
+        return _deny("Blocked: pull requests must be created as drafts for independent review.")
+    if not _PR_READY.search(command) or readiness_passed:
         return _allow()
     task = task_id or "<task-id>"
     return _deny(
         "Blocked: run "
         f"uv run python -m scripts.quality.pr_ready {task} --base origin/main "
-        "and resolve every failure before pushing."
-    )
-
-
-def pr_readiness_decision(
-    command: str, readiness_passed: bool, task_id: str | None = None
-) -> Decision:
-    """Require a successful current-HEAD readiness result before PR creation."""
-
-    if not _PR_CREATE.search(command) or readiness_passed:
-        return _allow()
-    task = task_id or "<task-id>"
-    return _deny(
-        "Blocked: run "
-        f"uv run python -m scripts.quality.pr_ready {task} --base origin/main "
-        "and resolve every failure before creating the pull request."
+        "and resolve every failure before marking the pull request ready for review."
     )
 
 
@@ -276,7 +270,7 @@ def review_artifact_decision(
 ) -> Decision:
     """Require a present, executed, and resolved adversarial review for R3 boundaries."""
 
-    if risk_class != "R3" or _BOUNDARY.search(command) is None:
+    if risk_class != "R3" or _PR_READY.search(command) is None:
         return _allow()
     review_invalid = any(
         issue.code in _REVIEW_CODES

@@ -110,16 +110,6 @@ class ReadyForReview:
 
 
 @dataclass(frozen=True)
-class TransitionalReview:
-    """The temporary branch-review procedure and the issue that removes it."""
-
-    activation_issue: int
-    blocked_action: str
-    review_surface: str
-    pull_request_timing: str
-
-
-@dataclass(frozen=True)
 class WorkflowContract:
     """All machine-authoritative workflow facts."""
 
@@ -130,7 +120,6 @@ class WorkflowContract:
     activations: tuple[Activation, ...]
     gate_rule: GateRule
     ready_for_review: ReadyForReview
-    transitional_review: TransitionalReview
     document_hashes: Mapping[str, str]
 
 
@@ -221,7 +210,6 @@ def load_contract(path: Path = CONTRACT_PATH) -> WorkflowContract:
 
     gate = _mapping(data.get("gate_rule"), "gate_rule")
     ready = _mapping(data.get("ready_for_review"), "ready_for_review")
-    transitional = _mapping(data.get("transitional_review"), "transitional_review")
     hash_data = _mapping(data.get("document_hashes"), "document_hashes")
     document_hashes = {
         key: _digest(hash_data, key) for key in ("workflow", "agents", "claude", "constitution")
@@ -244,12 +232,6 @@ def load_contract(path: Path = CONTRACT_PATH) -> WorkflowContract:
             _boolean(ready, "requires_clean_independent_review"),
             _boolean(ready, "requires_readiness_check"),
             _string(ready, "merge_decider"),
-        ),
-        transitional_review=TransitionalReview(
-            _integer(transitional, "activation_issue"),
-            _string(transitional, "blocked_action"),
-            _string(transitional, "review_surface"),
-            _string(transitional, "pull_request_timing"),
         ),
         document_hashes=document_hashes,
     )
@@ -294,20 +276,6 @@ def _validate_contract(contract: WorkflowContract) -> None:
         and contract.ready_for_review.requires_readiness_check
     ):
         raise ValueError("ready-for-review requires both clean review and readiness")
-
-    review_activation = next(
-        (
-            activation
-            for activation in contract.activations
-            if activation.capability == "The draft pull request carries the review"
-        ),
-        None,
-    )
-    if (
-        review_activation is None
-        or review_activation.issue != contract.transitional_review.activation_issue
-    ):
-        raise ValueError("the transitional review owner must match its activation-register row")
 
 
 def _start_marker(name: str) -> str:
@@ -356,7 +324,6 @@ def _render_builder_guard(contract: WorkflowContract) -> str:
 
 
 def _render_build_sequence(contract: WorkflowContract) -> str:
-    transition = contract.transitional_review
     gate = contract.gate_rule
     if (gate.relation, gate.scope, gate.additional_scoped_checks) != (
         "minimum",
@@ -375,8 +342,7 @@ def _render_build_sequence(contract: WorkflowContract) -> str:
             "6  Gates           at least those of the risk class, plus any scoped check that "
             "applies",
             "7  Evidence        command, exit code, result",
-            f"8  Handover        until #{transition.activation_issue}: push the branch for review; "
-            f"after #{transition.activation_issue}: open the draft PR",
+            "8  Handover        open the draft PR and hand it to the independent reviewer",
             "9  Card            → Reviewing",
             "```",
         )
@@ -385,16 +351,11 @@ def _render_build_sequence(contract: WorkflowContract) -> str:
 
 def _render_ready_order(contract: WorkflowContract) -> str:
     ready = contract.ready_for_review
-    transition = contract.transitional_review
     return (
-        f"Until #{transition.activation_issue} lands, the independent review runs on the pushed "
-        f"branch. Once that review is clean and the readiness check passes for current HEAD, "
-        f"{ready.actor} opens the pull request as a **{ready.initial_pull_request_state}** and "
-        "then marks it **ready for review**. After the transition lands, the draft pull request "
-        "opens at "
-        "the initial handover and carries the review. In both procedures, ready-for-review comes "
-        f"only after the clean independent review and is the signal that the change is "
-        f"{ready.merge_decider}'s to judge."
+        f"{ready.actor} opens the pull request as a **{ready.initial_pull_request_state}** at the "
+        "initial review handover. Once the independent review is clean and the readiness check "
+        "passes for current HEAD, Codex marks it **ready for review**. That transition is the "
+        f"signal that the change is {ready.merge_decider}'s to judge."
     )
 
 
@@ -432,20 +393,13 @@ def _render_agent_guard(contract: WorkflowContract) -> str:
 
 
 def _render_agent_handover(contract: WorkflowContract) -> str:
-    transition = contract.transitional_review
     return "\n".join(
         (
             "4. **Prepare independent review** — complete current evidence and hand the final diff "
-            "to Claude's fresh reviewer path. "
-            f"Until #{transition.activation_issue} lands, push the branch, move the card to "
-            "`Reviewing`, and hand over the branch; the review happens before a pull request "
-            "exists. "
-            "Resolve every blocking finding with executable proof.",
-            f"5. **Open a draft PR** — while the #{transition.activation_issue} transitional rule "
-            "applies, do this only after the branch review is clean and the readiness check "
-            "passes. "
-            f"After #{transition.activation_issue} lands, open it at the initial review handover. "
-            "Include `Closes #<issue>` in the body.",
+            "to Claude's fresh reviewer path by opening a **draft** pull request, moving the card "
+            "to `Reviewing`, and handing over that draft. Include `Closes #<issue>` in the body.",
+            "5. **Resolve the review** — fix every blocking finding with executable proof and "
+            "return the card to `Reviewing` after each material fix.",
             "6. **Mark it ready for review** — only after the review is clean and the readiness "
             "check passes for current HEAD. Do not merge or enable autonomous merge.",
         )
@@ -469,23 +423,13 @@ def _render_claude_approval(contract: WorkflowContract) -> str:
 
 def _render_constitution_pr_order(contract: WorkflowContract) -> str:
     ready = contract.ready_for_review
-    transition = contract.transitional_review
     return (
         f"A **{ready.initial_pull_request_state}** pull request is opened once implementation and "
         "deterministic verification are complete; it is what the independent review is performed "
         "on, so that every finding lands as an inline comment at the line it concerns. A pull "
         "request is marked **ready for review** only after that review and its remediation are "
         "complete — that is the point the readiness check gates, and it is the only state Jan is "
-        "asked to merge from.\n\n"
-        f"**Transitional rule, until [#{transition.activation_issue}]"
-        f"(https://github.com/QPlus-Capital/trading-system/issues/"
-        f"{transition.activation_issue}) lands.** The readiness gate currently blocks the "
-        "*creation* of a pull request rather than the ready-for-review transition, so a draft "
-        "cannot yet carry a review that has not happened. Until that gate moves, the independent "
-        "review is performed on the **pushed branch** and the pull request is opened afterwards. "
-        "This rule is stated here, at the same precedence as the paragraph it suspends, because a "
-        "lower-ranking document cannot suspend this one. It is removed by the change that makes "
-        "the draft path executable."
+        "asked to merge from."
     )
 
 

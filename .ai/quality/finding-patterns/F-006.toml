@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #59 (constitution + risk model)"
+defect_class = "risk-model-underclassification"
+severity = "P1"
+affected = ".ai/quality/risk-classes.toml"
+root_cause = "money/methodology paths matched no rule or only a too-broad fallback and fell below R3 (a directory glob for a file module, no live/** catch-all, broker snapshot only core/**, research fallback R2)"
+why_tests_missed = "the consistency test asserted token presence, not that concrete paths classify R3"
+regression = "test_money_path_classifies_as_R3 in test_engineering_docs.py"
+generalized = "for the risk model, assert concrete production paths on the money/methodology/result path resolve to R3 via the matcher; keep catch-alls so nothing falls through"
+workflow_change = "risk model catch-alls (live/**, research/engine/**, research/portfolio/**, .ai/quality/**)"

@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #57 (constant-basis sizing)"
+defect_class = "coupled-quantity-partial-change"
+severity = "P1"
+affected = "core/strategies/rsi_wpr_bb.py, research/engine/continuous.py, research/portfolio/trades.py, research/engine/characterize.py"
+root_cause = "the sizing basis was pinned at one call site (OOS execution) while training sizing, R attribution, margin, and the Stage 1 account basis were left inconsistent"
+why_tests_missed = "synthetic fixtures never compounded far enough to reveal the coupling; each site passed in isolation"
+regression = "test_strategy_sizing_basis.py, test_research_risk.py (fixed-basis), account_balance_of tests"
+generalized = "before changing a coupled quantity (sizing basis, risk denominator, cost), enumerate EVERY entry point and change them in one pass; a partial change is the dominant multi-round defect"
+workflow_change = "CLAUDE.md protocol step 2; risk-classes.md upgrade rationale"

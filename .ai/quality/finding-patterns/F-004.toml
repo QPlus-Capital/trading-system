@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "research/regression.py"
+defect_class = "numeric-boundary"
+severity = "P1"
+affected = "research/regression.py"
+root_cause = "trade-count drift computed as 0% when the reference count was zero, hiding a real zero->nonzero transition"
+why_tests_missed = "no test covered a zero reference with a nonzero candidate"
+regression = "zero-reference drift tests in test_research_regression.py"
+generalized = "test zero/empty/NaN/inf reference and candidate, and every near-zero denominator; an undefined ratio is a stop, not a pass"
+workflow_change = "constitution section 6 (guard every denominator); section 8 (numeric matrix)"

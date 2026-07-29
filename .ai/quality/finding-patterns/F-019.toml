@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #66 (staged secret scan)"
+defect_class = "security-scanner-fixture-false-positive"
+severity = "P2"
+affected = "scripts/quality/hooks/decisions.py"
+root_cause = "the named-secret value parser truncated a brace-delimited test variable and treated fixture source as a credential"
+why_tests_missed = "the first clean case covered a literal placeholder but not the synthetic fixture's source representation"
+regression = "test_secret_decision_allows_clean_staged_content"
+generalized = "secret scanners need both synthetic-secret detection and source-level placeholder near-neighbours"
+workflow_change = "the committed fake secret is assembled at runtime and its brace placeholder is an explicit allow case"

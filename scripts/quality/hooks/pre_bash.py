@@ -26,8 +26,7 @@ from scripts.quality.hooks.decisions import (
     bypass_decision,
     dangerous_command_decision,
     main_branch_decision,
-    pr_readiness_decision,
-    push_readiness_decision,
+    pr_transition_decision,
     review_artifact_decision,
     secret_decision,
 )
@@ -39,11 +38,13 @@ from scripts.quality.validate_task import (
     validate_task_dir,
 )
 
-_BOUNDARY = re.compile(r"\b(?:git\s+(?:commit|push)|gh\s+pr\s+create)\b", re.IGNORECASE)
+_BOUNDARY = re.compile(
+    r"\b(?:git\s+(?:commit|push)|gh\s+pr\s+(?:create|ready))\b",
+    re.IGNORECASE,
+)
 _COMMIT = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
-_PUSH = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
-_PR_CREATE = re.compile(r"\bgh\s+pr\s+create\b", re.IGNORECASE)
-_TASK_FILES = ("spec.md", "impact.md", "test-plan.md", "review.md", "evidence.md")
+_PR_READY = re.compile(r"\bgh\s+pr\s+ready\b", re.IGNORECASE)
+_TASK_FILES = ("impact.md", "test-plan.md", "review.md", "evidence.md")
 
 
 def denied_payload(reason: str) -> dict[str, object]:
@@ -94,14 +95,19 @@ def _task_id(paths: Sequence[str]) -> str | None:
 
 
 def _readiness(task_id: str | None, base: str) -> bool:
-    if task_id is None:
-        return False
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        return pr_ready_main([task_id, "--base", base]) == 0
+        args = ["--base", base]
+        if task_id is not None:
+            args.insert(0, task_id)
+        return pr_ready_main(args) == 0
 
 
 def _task_state(
-    task_id: str, *, index: bool, root: Path = REPO_ROOT
+    task_id: str,
+    risk_class: str,
+    *,
+    index: bool,
+    root: Path = REPO_ROOT,
 ) -> tuple[tuple[ValidationIssue, ...], tuple[EvidenceRecord, ...]]:
     """Validate and parse the task snapshot that the commit or push actually carries."""
 
@@ -116,7 +122,7 @@ def _task_state(
             except subprocess.CalledProcessError:
                 continue
             (task_dir / name).write_text(f"{content}\n", encoding="utf-8")
-        validation = validate_task_dir(task_dir)
+        validation = validate_task_dir(task_dir, risk_class=risk_class)
         evidence_path = task_dir / "evidence.md"
         evidence = (
             evidence_records(evidence_path.read_text(encoding="utf-8"))
@@ -165,7 +171,12 @@ def evaluate(command: str, *, base: str = "origin/main", root: Path = REPO_ROOT)
         validation_issues = (ValidationIssue("missing-file", "missing review.md task artifact"),)
         evidence = ()
     else:
-        validation_issues, evidence = _task_state(task_id, index=committing, root=root)
+        validation_issues, evidence = _task_state(
+            task_id,
+            classification.risk_class,
+            index=committing,
+            root=root,
+        )
 
     checks = [
         secret_decision(staged_diff) if committing else Decision(True),
@@ -174,15 +185,8 @@ def evaluate(command: str, *, base: str = "origin/main", root: Path = REPO_ROOT)
         baseline_evidence_decision(command, paths, evidence),
         review_artifact_decision(command, classification.risk_class, validation_issues),
     ]
-    readiness = (
-        _readiness(task_id, base) if _PUSH.search(command) or _PR_CREATE.search(command) else True
-    )
-    checks.extend(
-        (
-            push_readiness_decision(command, readiness, task_id),
-            pr_readiness_decision(command, readiness, task_id),
-        )
-    )
+    readiness = _readiness(task_id, base) if _PR_READY.search(command) else True
+    checks.append(pr_transition_decision(command, readiness, task_id))
     return next((check for check in checks if not check.allowed), Decision(True))
 
 

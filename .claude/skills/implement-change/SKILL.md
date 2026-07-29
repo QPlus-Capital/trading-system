@@ -18,7 +18,8 @@ review Claude's implementation.
 2. Update all callers, current-state docstrings, tests, and the architecture map as the diff requires.
 3. Run the focused tests after each coherent change; do not run the full suite after every edit.
 4. Run the risk class's complete required gates at the implementation boundary.
-5. Record any confirmed defect pattern in `.ai/quality/finding-patterns.toml` with its permanent guard.
+5. Record any confirmed defect pattern as a new content-addressed file under
+   `.ai/quality/finding-patterns/` with its permanent guard; never choose an ID.
 
 ## Outputs
 

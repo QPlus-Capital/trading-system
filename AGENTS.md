@@ -77,8 +77,8 @@ card cannot tell you who wrote the code.
    the red-first behavioural guard, record its failure, implement the smallest bounded change, and
    keep `just check` green. Clean up nothing on the side; the non-goals bound the diff.
 <!-- workflow-contract:review-handover:start -->
-4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's fresh reviewer path. Until #124 lands, push the branch, move the card to `Reviewing`, and hand over the branch; the review happens before a pull request exists. Resolve every blocking finding with executable proof.
-5. **Open a draft PR** — while the #124 transitional rule applies, do this only after the branch review is clean and the readiness check passes. After #124 lands, open it at the initial review handover. Include `Closes #<issue>` in the body.
+4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's fresh reviewer path by opening a **draft** pull request, moving the card to `Reviewing`, and handing over that draft. Include `Closes #<issue>` in the body.
+5. **Resolve the review** — fix every blocking finding with executable proof and return the card to `Reviewing` after each material fix.
 6. **Mark it ready for review** — only after the review is clean and the readiness check passes for current HEAD. Do not merge or enable autonomous merge.
 <!-- workflow-contract:review-handover:end -->
 

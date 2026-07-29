@@ -17,7 +17,7 @@ builder exception and a different reviewer owns the independent review.
 2. Root-cause the defect and search for the generalized pattern across the affected scope.
 3. Implement the bounded correction and run the reproduction plus impacted tests.
 4. For confirmed defects, add the generalized failure and permanent guard to
-   `.ai/quality/finding-patterns.toml`.
+   a new content-addressed file under `.ai/quality/finding-patterns/`; never choose an ID.
 5. Update the finding disposition/status and all affected task evidence; rerun adversarial review
    when behaviour or scope changed.
 

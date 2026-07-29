@@ -8,7 +8,7 @@ import os
 import re
 import subprocess
 import tomllib
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -26,8 +26,16 @@ _TASK = re.compile(r"\.ai/tasks/(?P<task_id>[A-Za-z0-9._-]+)/")
 
 @dataclass(frozen=True)
 class PRBodyPolicy:
-    required_sections: tuple[str, ...]
+    required_sections: Mapping[str, tuple[str, ...]]
     required_attestation: str
+
+    def sections_for(self, risk_class: str) -> tuple[str, ...]:
+        """Return the exact PR-body sections for one risk class."""
+
+        try:
+            return self.required_sections[risk_class]
+        except KeyError as exc:
+            raise ValueError(f"unknown risk class: {risk_class}") from exc
 
 
 @dataclass(frozen=True)
@@ -45,9 +53,17 @@ def load_pr_body_policy(path: Path = POLICY_PATH) -> PRBodyPolicy:
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     if data.get("version") != 1:
         raise ValueError("PR body policy version must be 1")
-    required = tuple(str(value) for value in data.get("required_sections", ()))
+    raw_required = data.get("required_sections")
+    if not isinstance(raw_required, dict):
+        raise ValueError("PR body policy requires a required_sections table")
+    required = {
+        risk_class: tuple(str(value) for value in raw_required.get(risk_class, ()))
+        for risk_class in ("R0", "R1", "R2", "R3")
+    }
     attestation = str(data.get("required_attestation", "")).strip()
-    if not required or not attestation:
+    if [len(required[risk]) for risk in ("R0", "R1", "R2", "R3")] != [5, 8, 14, 20]:
+        raise ValueError("PR body policy must require 5/8/14/20 sections for R0/R1/R2/R3")
+    if not attestation:
         raise ValueError("PR body policy requires sections and an attestation")
     return PRBodyPolicy(required, attestation)
 
@@ -79,7 +95,20 @@ def validate_pr_body(
     active_policy = policy or load_pr_body_policy()
     sections = _sections(body)
     issues: list[str] = []
-    for heading in active_policy.required_sections:
+    risk_text = re.sub(
+        r"<!--.*?-->",
+        "",
+        sections.get("risk class and reason", ""),
+        flags=re.DOTALL,
+    )
+    risk_match = re.search(r"\bR[0-3]\b", risk_text)
+    if risk_match is None:
+        issues.append("Risk class and reason must name R0, R1, R2, or R3")
+        declared_risk = "R3"
+    else:
+        declared_risk = risk_match.group(0)
+    required_sections = active_policy.sections_for(declared_risk)
+    for heading in required_sections:
         section = sections.get(heading.casefold())
         if section is None:
             issues.append(f"missing required PR section: {heading}")
@@ -98,7 +127,7 @@ def validate_pr_body(
             f"missing checked live-runner attestation: {active_policy.required_attestation}"
         )
 
-    required_names = {heading.casefold() for heading in active_policy.required_sections}
+    required_names = {heading.casefold() for heading in required_sections}
     linked_issue: str | None = None
     if "linked issue" in required_names:
         linked_match = re.search(r"#(?P<number>\d+)\b", sections.get("linked issue", ""))
@@ -106,15 +135,12 @@ def validate_pr_body(
             issues.append("Linked issue must contain a GitHub issue number such as #67")
         else:
             linked_issue = linked_match.group("number")
-    if (
-        "risk class and reason" in required_names
-        and re.search(r"\bR[0-3]\b", sections.get("risk class and reason", "")) is None
-    ):
-        issues.append("Risk class and reason must name R0, R1, R2, or R3")
-
     task_matches = tuple(dict.fromkeys(match.group("task_id") for match in _TASK.finditer(body)))
-    if len(task_matches) != 1:
+    task_required = "task artifact" in required_names
+    if task_required and len(task_matches) != 1:
         issues.append("PR body must name exactly one task artifact path under .ai/tasks/<id>/")
+        return PRBodyValidation(tuple(issues))
+    if not task_required:
         return PRBodyValidation(tuple(issues))
 
     if task_matches[0].isdigit() and linked_issue is not None and task_matches[0] != linked_issue:
@@ -130,7 +156,13 @@ def validate_pr_body(
         issues.append("task artifact readiness was not evaluated against changed paths and HEAD")
         return PRBodyValidation(tuple(issues))
 
-    readiness = assess_readiness(task_dir, changed, head_sha, root=root)
+    readiness = assess_readiness(
+        task_dir,
+        changed,
+        head_sha,
+        root=root,
+        declared_risk=declared_risk,
+    )
     if not readiness.ready:
         failed = "; ".join(check.detail for check in readiness.checks if not check.ok)
         issues.append(f"task artifact is not PR-ready: {failed}")

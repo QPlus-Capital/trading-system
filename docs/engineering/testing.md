@@ -97,7 +97,7 @@ exact-binomial confidence bounds,
 parameter schedules, continuous window/gap attribution, regression gates, and the shared
 change-risk classifier. A discovered production defect keeps the minimized property and a named
 regression example, and adds its generalized class to
-`.ai/quality/finding-patterns.toml`.
+`.ai/quality/finding-patterns/`.
 
 ## Mutation tests
 

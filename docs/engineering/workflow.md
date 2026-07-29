@@ -21,7 +21,7 @@ Its `Status` field is the single source of truth for where a change stands.
 | `Specifying` | Claude is working the idea into a specification with Jan. | Claude |
 | `Ready to Implement` | Approved by Jan. Codex **may** build it — not "build it now". | Claude, after Jan's explicit approval |
 | `Implementing` | Codex is building. | Codex |
-| `Reviewing` | The change is with the independent reviewer — on the draft pull request, or on the pushed branch while the branch-review rule below applies. | Codex, at handover |
+| `Reviewing` | The change is with the independent reviewer on the draft pull request. | Codex, at handover |
 | `Blocked` | Waiting on a decision only Jan can make (constitution §13). | Any agent |
 | `Done` | Merged. | Project automation (item closed) |
 <!-- workflow-contract:statuses:end -->
@@ -168,7 +168,7 @@ clean, and a running live runner never sees half-finished code.
 5  Prove GREEN
 6  Gates           at least those of the risk class, plus any scoped check that applies
 7  Evidence        command, exit code, result
-8  Handover        until #124: push the branch for review; after #124: open the draft PR
+8  Handover        open the draft PR and hand it to the independent reviewer
 9  Card            → Reviewing
 ```
 <!-- workflow-contract:build-sequence:end -->
@@ -186,8 +186,9 @@ Step 3 carries the whole system: a test that was never red proves nothing.
 | Artifact files | – | – | `review.md`, `evidence.md` | all four |
 | PR sections | 5 | 8 | 14 | 20 |
 
-At R2 the impact analysis and test plan live in the pull-request body; only the audit trail stays on
-disk. There is no `spec.md` — the specification is the issue.
+At R2 the impact analysis and test plan live in the pull-request body; only `review.md` and
+`evidence.md` stay on disk. R3 adds `impact.md` and `test-plan.md`. R0 and R1 require no task
+directory. There is no `spec.md` — the specification is the issue.
 
 If the specification turns out to be wrong, incomplete, or unbuildable, Codex does not guess
 (constitution §13). The card goes back, the gap is stated in an issue comment, and phase 2 runs
@@ -221,7 +222,7 @@ running, and the status field would stop being the truth it is declared to be. T
 then runs again, not only the changed place: a fix can break something elsewhere.
 
 <!-- workflow-contract:ready-order:start -->
-Until #124 lands, the independent review runs on the pushed branch. Once that review is clean and the readiness check passes for current HEAD, Codex opens the pull request as a **draft** and then marks it **ready for review**. After the transition lands, the draft pull request opens at the initial handover and carries the review. In both procedures, ready-for-review comes only after the clean independent review and is the signal that the change is Jan's to judge.
+Codex opens the pull request as a **draft** at the initial review handover. Once the independent review is clean and the readiness check passes for current HEAD, Codex marks it **ready for review**. That transition is the signal that the change is Jan's to judge.
 <!-- workflow-contract:ready-order:end -->
 
 **Codex fixes every finding**, including trivial ones. If Claude fixed them it would afterwards be
@@ -287,7 +288,7 @@ contract; the phases above explain it.
 | `Specifying` → `Ready to Implement` | Claude | Jan approves; `approved` is written last |
 | `Ready to Implement` → `Specifying` | Claude | an approved issue must change; `approved` is removed first |
 | `Ready to Implement` → `Implementing` | Codex | build starts; `approved` is removed afterwards |
-| `Implementing` → `Reviewing` | Codex | the change is handed over for review — by opening the draft pull request, or, while the branch-review rule below applies, by pushing the branch and saying so |
+| `Implementing` → `Reviewing` | Codex | the draft pull request is opened and handed over for review |
 | `Reviewing` → `Implementing` | Claude | a blocking finding |
 | `Implementing` → `Reviewing` | Codex | the review fix is pushed |
 | `Implementing` → `Specifying` | Codex | the specification is wrong, incomplete or unbuildable |
@@ -311,8 +312,6 @@ written.
 <!-- workflow-contract:activations:start -->
 | Part of this contract | Lands with | Until then |
 |---|---|---|
-| The draft pull request carries the review | [#124](https://github.com/QPlus-Capital/trading-system/issues/124) | The pre-Bash hook blocks `gh pr create` until the readiness check passes, so the independent review runs on the **pushed branch** and the pull request is opened afterwards. Constitution §11 states this transitional rule itself, so it is not a lower document overriding a higher one. |
-| Artifact files scale by risk class | [#124](https://github.com/QPlus-Capital/trading-system/issues/124) | `task-artifacts.toml` requires all five files for every class, `spec.md` included. Write them. |
 | Board transitions performed by tooling | [#110](https://github.com/QPlus-Capital/trading-system/issues/110) | Agents call `gh` directly and are responsible for the ordering rules themselves. |
 | The `methodology-reviewer` subagent | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | The general code reviewer carries the constitution §4 methodology invariants, as it does today. |
 | Findings named `Blocker` / `Defect` / `Suspected defect` / `Note` | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | Severities are `P0`–`P3`, as the constitution §12 states. |

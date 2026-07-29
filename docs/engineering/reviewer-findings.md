@@ -2,7 +2,8 @@
 
 Every confirmed Claude or read-only adversarial-review defect becomes permanent protection. The builder
 must reproduce it with a failing test, fix the root cause, keep the generalized regression test,
-and add one entry to `.ai/quality/finding-patterns.toml` before readiness is reassessed.
+and add one content-addressed file under `.ai/quality/finding-patterns/` before readiness is
+reassessed. The registry loader derives its ID; the builder never chooses a numeric ID.
 
 The registry entry names the defect class, severity, affected boundary, root cause, why existing
 tests missed it, the permanent regression, its generalized form, and the workflow change. It must
