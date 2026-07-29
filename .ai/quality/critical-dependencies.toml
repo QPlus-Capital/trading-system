@@ -23,6 +23,16 @@ possibly_affected = []
 reason = "the documented pre-start check must not disclose either connected or expected account identity"
 
 [[edges]]
+source = "live/notify.py"
+tests = [
+  "tests/test_live_notify.py",
+]
+possibly_affected = [
+  "tests/test_live_runner_cycle.py",
+]
+reason = "missing or partial remote alert configuration must be loud without leaking a supplied token or disrupting the runner"
+
+[[edges]]
 source = "research/portfolio/curves.py"
 tests = [
   "tests/test_research_h4_path.py",

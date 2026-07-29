@@ -43,6 +43,18 @@ and operator home paths from the tracked tree.
 - AC-13: Each profile retains a code-owned non-secret four-digit login suffix; a copied environment
   block from the other profile refuses before connection even when path and login are internally
   consistent.
+- AC-14: The documented `.env` layout round-trips both real-form Windows backslash paths and every
+  later Telegram value through the repository's actual `uv --env-file` loader without a warning or
+  dropped value; both operator guides state the single-quote rule and exported-variable precedence.
+- AC-15: Missing or partial Telegram configuration emits a warning that remote safety alerts are
+  disabled without disclosing any supplied token or chat value.
+- AC-16: The anti-recommit guard detects all 22 committed assignment, quoted, JSON, annotated,
+  comment, docstring, shell, and PowerShell login forms; `.ai/**` additionally rejects a
+  six-to-ten-digit value ending in either code-owned account suffix without a broad number scan.
+- AC-17: A login must contain at least one raw digit before its code-owned suffix; formatting or
+  zero-padding a shorter value cannot satisfy the witness.
+- AC-18: `guard_account()` exposes no mode/execute parameter. Its accept/refuse decisions match the
+  mandatory identity rule across an 80-case profile/login/currency matrix.
 
 ## Invariants
 
@@ -68,6 +80,11 @@ and operator home paths from the tracked tree.
   output can affect monitoring and net-of-swap research selection.
 - INV-12: Terminal path and expected login are not the only witnesses from one operator-controlled
   file; the four-digit code pin remains independent.
+- INV-13: Operator configuration examples must be executable on the Windows live platform; a
+  parser warning, a silently dropped trailing variable, or an unreported disabled remote alert is
+  a safety failure.
+- INV-14: The mandatory identity guard has one strictness in every run mode and exposes no inert
+  parameter suggesting otherwise.
 
 ## Scope
 
@@ -77,6 +94,7 @@ and operator home paths from the tracked tree.
 - `RUN.md`
 - `docs/live-runbook.md`
 - `live/preflight.py`
+- `live/notify.py`
 - `live/parity_check.py`
 - `research/portfolio/swap_analysis.py`
 - `monitoring/dashboard.py`
@@ -107,10 +125,15 @@ documented `--env-file` option is the repository's existing dependency-free mech
 - `get_account()` validates both required values before returning the selected profile.
 - `guard_account()` resolves the required expected login unconditionally, including signal-only use,
   before comparing it with the connected account.
+- The raw login is longer than the code-owned suffix and ends with it; no formatting step may
+  manufacture the independent prefix.
 - `guard_connected_account()` is the common boundary for read-only terminal consumers and delegates
   to `guard_account()` before any account-specific data read.
 - Refusal messages name only the variable/profile and failure class, never the secret value.
 - Preflight output shows only the final three digits in the repository's established `***NNN` form.
+- Windows `.env` values use single quotes; an already-exported process variable takes precedence
+  and must be cleared or verified before a live-facing command.
+- Missing Telegram transport is best-effort for trading continuity but never silent.
 
 ## Assumptions
 
@@ -129,6 +152,7 @@ documented `--env-file` option is the repository's existing dependency-free mech
 - Explicit `.env` loading in the live-facing `just` recipes and matching operator documentation.
 - Focused account/CLI tests, tracked-content protection, mutation registration, and this R3 task
   artifact.
+- A real-uv Windows dotenv round-trip and mutation coverage for the alert-transport decision.
 - A separate draft pull request linked to #121.
 
 ## Expected effects
@@ -147,9 +171,9 @@ identity guard; a weak configuration boundary could trade the wrong real account
 
 Jan decided the repository remains public, history is not rewritten, configuration moves to `.env`,
 missing/malformed values fail closed, each profile keeps a four-digit code-owned login pin, delivery
-remains draft, and no running live system is touched. Jan must populate the real values from the
-password manager, verify no stale exported variables override `.env`, and choose a future
-quiet-window restart.
+remains draft, `guard_account` loses the dead `execute` parameter, and no running live system is
+touched. Jan must populate the real values from the password manager, verify no stale exported
+variables override `.env`, and choose a future quiet-window restart.
 
 ## Open questions
 

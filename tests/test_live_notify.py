@@ -25,6 +25,53 @@ def test_no_file_channel_is_a_no_op() -> None:
     Notifier().signal("nothing configured -> silent, no error")
 
 
+def test_missing_remote_notification_transport_logs_a_warning(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("TELEGRAM_CHAT_ID", raising=False)
+
+    with caplog.at_level(logging.WARNING, logger="live"):
+        Notifier()
+
+    assert [record.getMessage() for record in caplog.records] == [
+        "Telegram notifications disabled: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must both be "
+        "set; safety alerts will not reach a remote transport"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("token", "chat"),
+    [
+        ("12345:" + "partial-token", None),
+        (None, "98765"),
+    ],
+)
+def test_partial_remote_notification_transport_warns_without_disclosure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    token: str | None,
+    chat: str | None,
+) -> None:
+    for name, value in (
+        ("TELEGRAM_BOT_TOKEN", token),
+        ("TELEGRAM_CHAT_ID", chat),
+    ):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+
+    with caplog.at_level(logging.WARNING, logger="live"):
+        Notifier()
+
+    assert "safety alerts will not reach a remote transport" in caplog.text
+    for value in (token, chat):
+        if value is not None:
+            assert value not in caplog.text
+
+
 def test_a_failed_telegram_send_never_writes_the_token_to_the_log(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

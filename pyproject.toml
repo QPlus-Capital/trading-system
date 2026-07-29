@@ -64,6 +64,7 @@ pythonpath = ["."]
 # Mutmut needs import-complete package copies; execution remains bounded by mutation.toml patterns.
 paths_to_mutate = [
     "live/accounts.py",
+    "live/notify.py",
     "live/preflight.py",
     "live/risk_control.py",
     "live/mt5_bridge.py",
@@ -105,6 +106,7 @@ mutate_only_covered_lines = false
 pytest_add_cli_args = ["--disable-warnings"]
 pytest_add_cli_args_test_selection = [
     "tests/test_live_accounts.py",
+    "tests/test_live_notify.py",
     "tests/test_live_run_cli.py",
     "tests/test_live_parity_check.py",
     "tests/test_live_risk_control.py",

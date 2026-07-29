@@ -41,7 +41,9 @@ class LiveAccount:
         if not raw.isascii() or not raw.isdigit() or int(raw) <= 0:
             _refuse_environment(self.expected_login_env, kind="broker login")
         login = int(raw)
-        if f"{login:04d}"[-4:] != self.expected_login_suffix:
+        if len(raw) <= len(self.expected_login_suffix) or not raw.endswith(
+            self.expected_login_suffix
+        ):
             _refuse_environment(self.expected_login_env, kind="broker login")
         return login
 
@@ -113,13 +115,12 @@ def get_account(name: str) -> LiveAccount:
     return profile
 
 
-def guard_account(state: AccountState, profile: LiveAccount, *, execute: bool) -> None:
+def guard_account(state: AccountState, profile: LiveAccount) -> None:
     """Refuse unless the live connection is the required account in every run mode.
 
     The single most important safeguard for running two accounts in parallel: it makes it
     impossible for, say, the TTP runner to place orders on the MEX terminal (or vice versa).
     """
-    _ = execute  # Public compatibility; identity is mandatory in both execution modes.
     expected_login = profile.expected_login
     if state.login != expected_login:
         raise SystemExit(
@@ -136,5 +137,5 @@ def guard_account(state: AccountState, profile: LiveAccount, *, execute: bool) -
 def guard_connected_account(bridge: AccountReader, profile: LiveAccount) -> AccountState:
     """Read and verify one connected terminal before any account-specific data is consumed."""
     state = bridge.account()
-    guard_account(state, profile, execute=False)
+    guard_account(state, profile)
     return state

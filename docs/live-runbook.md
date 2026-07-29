@@ -18,6 +18,13 @@ account. All code tooling (dashboard) defaults to TTP.
    `MT5_*_TERMINAL_PATH` values, and store the real values in the shared password manager. The
    gitignored file is loaded by the `just` commands; missing, placeholder, malformed, or mismatching
    identity refuses before trading.
+   On Windows, keep every value in **single quotes**, especially a backslash terminal path such as
+   `MT5_TTP_TERMINAL_PATH='C:\MT5\TTP\terminal64.exe'`. Unquoted and double-quoted backslash paths
+   can make `uv` warn, return success, and discard that line plus everything after it; forward
+   slashes are also safe.
+   An already-exported PowerShell variable takes precedence over `.env`; `uv run --env-file` does
+   not override it. Start from a fresh shell or inspect and clear stale `MT5_*` and `TELEGRAM_*`
+   variables before preflight or a runner start.
 4. **Verify symbols on first connect:** run `--account ttp` once in the default SIGNAL_ONLY mode and
    check the `symbol resolved: … -> …` log lines. If TTP names differ (like `USTEC -> UT100` on
    MEX), add a per-account symbol map. Do this before `--mode execute`.

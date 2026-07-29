@@ -28,6 +28,11 @@ path = "live/preflight.py"
 mutant_patterns = ["live.preflight.x__masked_login__mutmut_*"]
 
 [[targets]]
+id = "live-notification-transport"
+path = "live/notify.py"
+mutant_patterns = ["live.notify.x*Notifier*__init____mutmut_*"]
+
+[[targets]]
 id = "live-risk-control"
 path = "live/risk_control.py"
 mutant_patterns = [

@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> None:
     try:
         account = bridge.account()
         # SAFETY: refuse to run unless we are really on the expected account (login + currency).
-        guard_account(account, profile, execute=(mode == Mode.EXECUTE))
+        guard_account(account, profile)
         log.info(
             "connected: account=***%03d (%s) balance=%.2f equity=%.2f %s | mode=%s",
             account.login % 1000,  # masked: the full login is not written to logs

@@ -53,6 +53,16 @@ guard refuses missing, malformed, or mismatching identity. Telegram values remai
 is gitignored and must never be committed; store every real account value in the shared password
 manager. The live-facing `just` recipes load this file explicitly through `uv run --env-file .env`.
 
+On Windows, keep each `.env` value in **single quotes**, especially terminal paths containing
+backslashes, for example `MT5_TTP_TERMINAL_PATH='C:\MT5\TTP\terminal64.exe'`. An unquoted or
+double-quoted backslash path can make `uv` warn while returning success and discard that line and
+everything after it; forward slashes are also safe.
+
+An already-exported PowerShell variable takes precedence over the same key in `.env`;
+`uv run --env-file` does not override it. Before starting a live-facing command, use a fresh shell or
+inspect and clear stale `MT5_*` and `TELEGRAM_*` variables. Otherwise the runner may use old
+identity/path values while the optional remote alert configuration from `.env` is not loaded.
+
 ## 6. Verify the setup
 
 ```bash

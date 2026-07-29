@@ -42,3 +42,20 @@ review. This file does not mark the PR ready.
 - Correct environment values must preserve the previous valid connection and guard behavior.
 - No tracked or emitted value may disclose account identity or an operator home path.
 - Entry commands must actually load `.env`; documentation alone is not evidence.
+
+## Complete re-review dispositions
+
+The complete independent re-review verified F1-F5 by execution and found N1-N4. The following are
+builder dispositions, not an independent approval; the material fixes require another complete
+adversarial and live-money review.
+
+| ID | Severity | Finding | Disposition | Status |
+|---|---|---|---|---|
+| N1 | P2 | The anti-recommit guard missed quoted, JSON, annotated, comment/docstring, and `.ai` representations. | Parse 22 committed serialization forms and apply a narrow six-to-ten-digit known-suffix detector only under `.ai/**`; F-050 records the generalized defect. | resolved |
+| N2 | P2 | The documented Windows path syntax made uv return success after dropping the path and every later identity/Telegram value; missing remote transport was silent. | Single-quote the canonical dotenv layout, round-trip two Windows paths and both Telegram values through real uv, document exported-variable precedence in both operator guides, and warn when Telegram is unavailable; F-051 records the generalized defect. | resolved |
+| N3 | P3 | Zero-padding let a login shorter than the four-digit witness pass. | Require the raw login to be longer than and end with its code-owned suffix before accepting it; F-052 records the boundary. | resolved |
+| N4 | P3 / Jan decision | `guard_account(execute=...)` implied mode-dependent strictness while being ignored and retained three equivalent mutants. | Remove the parameter and every caller argument; an 80-case profile/login/currency oracle records zero accept/refuse divergences; F-053 records the misleading-safety-parameter class. | resolved |
+
+The four earlier remediations remain untouched: preflight masking, non-vacuous top-level scanning,
+the three guarded terminal consumers, and the independent code-owned suffix are unchanged except
+for N3's strictly stronger raw-length precondition. No MT5 terminal or runner was accessed.

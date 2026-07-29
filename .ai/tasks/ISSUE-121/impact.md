@@ -12,6 +12,7 @@
 | Consumer | Identity/path use | Required behavior |
 |---|---|---|
 | `live/run.py::main` | selects the profile, connects to `terminal_path`, calls `guard_account`, and passes `expected_login` into `LiveRunner` | complete environment validation before bridge construction/connection; matching identity unchanged |
+| `live/notify.py::Notifier` | resolves optional Telegram transport from the same environment tail | missing or partial remote transport is warned without leaking values; notification failure remains non-disruptive |
 | `live/preflight.py::main/_checks` | connects to the selected path and displays the login comparison | required environment before connection; both identities masked in stdout |
 | `live/parity_check.py::main` | connects to the TTP path for read-only feed parity | shared identity guard before any live bar read |
 | `research/portfolio/swap_analysis.py::main` | connects to the TTP path to refresh the broker snapshot | shared identity guard before any swap-rate read |
@@ -22,12 +23,15 @@
 ## Configuration path
 
 - `.env.example` documents `MT5_MEX_LOGIN`, `MT5_MEX_TERMINAL_PATH`, `MT5_TTP_LOGIN`, and
-  `MT5_TTP_TERMINAL_PATH` using inert placeholders.
+  `MT5_TTP_TERMINAL_PATH` using single-quoted inert placeholders. The real-uv regression replaces
+  them with Windows backslash paths and proves that all six account/Telegram values survive.
 - The real `.env` remains gitignored and is populated from the shared password manager.
 - `just live-ttp`, `just live-ttp-execute`, `just live-demo`, `just preflight`, and `just monitor`
   load `.env` with uv's built-in `--env-file` option.
 - Direct callers may export the same variables into the process environment; `live/accounts.py`
   reads only `os.environ` and introduces no file parser or dependency.
+- An already-exported shell value wins over `.env`. `RUN.md` and the live runbook therefore put the
+  precedence warning and clearing instruction at the operator start boundary.
 
 ## Coupled safety quantity
 
@@ -43,7 +47,9 @@ A missing, malformed, copied, or mismatching identity cannot reach account-speci
 - The current operator-specific paths in `live/accounts.py` and `docs/live-runbook.md` are removed.
 - The repository-wide guard resolves `git rev-parse --show-toplevel`, enumerates tracked files with
   `git ls-files`, includes tests, asserts sentinel paths and a plausible count, matches the
-  canonical environment form, and scans operator documentation for unclassified bare long numbers.
+  22 realistic environment/code/JSON/shell forms, and scans operator documentation for
+  unclassified bare long numbers. `.ai/**` uses the two code-owned account suffixes as a narrow
+  witness instead of applying the broad numeric scan to thousands of legitimate task numbers.
 - Git history remains untouched by explicit decision.
 
 ## Numeric and trading impact
@@ -67,6 +73,8 @@ must be corrected in the same bounded change.
 - A tracked-tree scan test owns the non-regression guarantee for login literals and user-home paths.
 - The identity resolver and guard enter the exact Linux critical mutation surface; no threshold is
   relaxed and any non-equivalent survivor blocks.
+- `Notifier.__init__` enters a separate exact Linux mutation target, and `test_live_notify.py` is a
+  critical dependency and invariant because a silent missing phone transport is live-money risk.
 - Existing CLI, preflight, dashboard, runner, security, docs, and gate-consistency tests are
   transitive consumers.
 
@@ -93,4 +101,6 @@ Four-digit code pins reject cross-profile copies; full correctness remains an op
 manager responsibility.
 
 uv gives an already-exported shell variable precedence over `.env`. A stale PowerShell
-`MT5_*_LOGIN` can therefore override the file silently; evidence and handoff call this out.
+`MT5_*_LOGIN` can therefore override the file silently; both operator guides and evidence call this
+out. The `uv` subprocess regression removes those keys from its own environment so it actually
+tests file loading rather than inheriting a green value.

@@ -17,6 +17,11 @@
 | AC-11, INV-10 | canonical regex fixtures, nested-root scan, tests sentinel, plausible count, and documentation number classification | RED: canonical forms were missed, tests excluded, and nested scans partial | GREEN: exact canonical forms match and scan population is explicit |
 | AC-12, INV-11 | wrong-login fakes through swap refresh, parity main, and dashboard `_load_live` | RED: swap pull executes and parity/dashboard return without refusal | GREEN: refusal precedes swap, bar, and history calls |
 | AC-13, INV-12 | copy MEX login into the complete TTP environment block | RED: `get_account("ttp")` accepts the self-consistent copy | GREEN: suffix mismatch refuses before bridge construction |
+| AC-14, INV-13 | write the documented layout with two Windows paths and Telegram values, then invoke real `uv run --env-file` | RED: uv warns, returns success, and drops the first backslash path plus every later value | GREEN: all six values round-trip exactly with no warning |
+| AC-15, INV-13 | construct `Notifier` with both Telegram variables absent | RED: no log record | GREEN: one exact warning states that remote safety alerts are disabled |
+| AC-16, INV-09 | 22-form login serialization matrix plus synthetic `.ai` suffix evidence | RED: ten representation cases fail and the `.ai` helper is absent | GREEN: every form and either known-suffix task value is detected without a broad `.ai` number scan |
+| AC-17, INV-12 | configure MEX login as `97` against suffix `0097` | RED: accepted after zero-padding | GREEN: refused because the raw login has no independent prefix |
+| AC-18, INV-14 | signature oracle plus 80 profile/login/currency decisions | RED: `execute` remains in the signature | GREEN: only `(state, profile)` remain and the decision matrix has zero divergences |
 | INV-01 | missing/malformed/wrong identity complement | RED: missing identity passes | GREEN: no case reaches an allowed guard result |
 | INV-02 | fake bridge connect counter | RED: missing identity is not checked before connection | GREEN: missing configuration leaves counter at zero |
 | INV-03 | capture every refusal | RED: old mismatch message contains both full login values | GREEN: no raw environment or login value appears |
@@ -42,9 +47,17 @@ the scan, both preflight identities leaked, and all three wrong-terminal consume
 separate F5 test showed a complete MEX-to-TTP environment-block copy was accepted. These are the
 recorded pre-remediation oracles.
 
+The complete re-review supplied a third RED execution. The focused N1-N4 command exited 1 with 16
+failures: ten of 22 plausible login representations escaped the regex, `.ai` suffix evidence had
+no detector, the documented Windows path made uv warn and discard trailing values, both operator
+guides omitted quoting/precedence, a two-digit login passed the four-digit witness, the dead mode
+parameter remained, and missing remote transport emitted no warning. The corrected env-file test
+uses a forward-slash fixture filename so its failure is the dotenv content rather than uv's command
+argument parsing.
+
 ## Focused green proof
 
-- `uv run pytest -q tests/test_live_accounts.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_research_swap_analysis.py tests/test_monitoring_dashboard.py`
+- `uv run pytest -q tests/test_live_accounts.py tests/test_live_notify.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_research_swap_analysis.py tests/test_monitoring_dashboard.py`
 - configured match, mismatch, missing, malformed, signal-only, and no-connect paths
 - repository-wide tracked-content scan, including nested-root and non-vacuity proof
 - no refusal output contains a supplied value

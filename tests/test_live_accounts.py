@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import inspect
+import json
+import os
 import re
+import shutil
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -31,7 +35,26 @@ _ACCOUNT_ENV_KEYS = {
     "MT5_TTP_LOGIN",
     "MT5_TTP_TERMINAL_PATH",
 }
-_LOGIN_LITERAL = re.compile(r"(?i)\b[A-Z0-9_]*LOGIN\s*(?:=|:)\s*[1-9][0-9]{5,9}\b")
+_LOGIN_LITERAL = re.compile(
+    r"""(?ix)
+    (?<![A-Z0-9_])
+    (?P<key_quote>["']?)
+    [A-Z0-9_]*LOGIN
+    (?P=key_quote)
+    \s*
+    (?:
+        :\s*[A-Z_][A-Z0-9_.\[\], |]*\s*=
+        |
+        [=:]
+    )
+    \s*
+    (?P<value_quote>["']?)
+    [1-9][0-9]{5,9}
+    (?P=value_quote)
+    (?![0-9])
+    """
+)
+_AI_LOGIN_SUFFIX_LITERAL = re.compile(r"(?<![0-9])[1-9][0-9]{1,5}(?:0097|1681)(?![0-9])")
 _BARE_LONG_NUMBER = re.compile(r"(?<![0-9])[1-9][0-9]{5,9}(?![0-9])")
 _DOCUMENTATION_PATHS = {".env.example", "README.md", "RUN.md"}
 _DOCUMENTATION_NUMBER_ALLOWLIST = {
@@ -91,6 +114,16 @@ def _tracked_text() -> dict[str, str]:
     return result
 
 
+def _login_literal_hits(texts: dict[str, str]) -> list[str]:
+    """Return tracked paths containing a login assignment or a known login in task evidence."""
+    return [
+        path
+        for path, text in texts.items()
+        if _LOGIN_LITERAL.search(text)
+        or (path.startswith(".ai/") and _AI_LOGIN_SUFFIX_LITERAL.search(text))
+    ]
+
+
 def test_guard_refuses_when_the_login_environment_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -98,7 +131,7 @@ def test_guard_refuses_when_the_login_environment_is_missing(
     monkeypatch.setenv(_PATH_ENV, _PATH)
 
     with pytest.raises(SystemExit) as exc_info:
-        guard_account(_state(_LOGIN, "USD"), _PROFILE, execute=True)
+        guard_account(_state(_LOGIN, "USD"), _PROFILE)
 
     assert str(exc_info.value) == (
         "REFUSED: required broker login environment variable 'TEST_MT5_LOGIN' is missing or "
@@ -111,7 +144,7 @@ def test_guard_passes_on_the_expected_environment_account(
 ) -> None:
     _configure(monkeypatch)
 
-    guard_account(_state(_LOGIN, "USD"), _PROFILE, execute=True)
+    guard_account(_state(_LOGIN, "USD"), _PROFILE)
 
 
 def test_guard_refuses_wrong_environment_login_without_disclosing_values(
@@ -121,7 +154,7 @@ def test_guard_refuses_wrong_environment_login_without_disclosing_values(
     connected_login = int("654" + "321")
 
     with pytest.raises(SystemExit) as exc_info:
-        guard_account(_state(connected_login, "USD"), _PROFILE, execute=True)
+        guard_account(_state(connected_login, "USD"), _PROFILE)
 
     message = str(exc_info.value)
     assert message == (
@@ -136,7 +169,7 @@ def test_guard_refuses_wrong_currency(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure(monkeypatch)
 
     with pytest.raises(SystemExit) as exc_info:
-        guard_account(_state(_LOGIN, "EUR"), _PROFILE, execute=True)
+        guard_account(_state(_LOGIN, "EUR"), _PROFILE)
 
     assert str(exc_info.value) == (
         "REFUSED: account currency EUR != expected USD for profile 'test' -- wrong account? "
@@ -149,7 +182,7 @@ def test_guard_refuses_signal_only_without_login(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv(_PATH_ENV, _PATH)
 
     with pytest.raises(SystemExit, match=_LOGIN_ENV):
-        guard_account(_state(_LOGIN, "USD"), _PROFILE, execute=False)
+        guard_account(_state(_LOGIN, "USD"), _PROFILE)
 
 
 @pytest.mark.parametrize(
@@ -163,7 +196,7 @@ def test_login_environment_rejects_malformed_values_without_disclosure(
     _configure(monkeypatch, login=malformed)
 
     with pytest.raises(SystemExit) as exc_info:
-        guard_account(_state(_LOGIN, "USD"), _PROFILE, execute=True)
+        guard_account(_state(_LOGIN, "USD"), _PROFILE)
 
     assert _LOGIN_ENV in str(exc_info.value)
     if malformed.strip():
@@ -242,7 +275,7 @@ def test_tracked_tree_has_no_account_login_literal_or_user_home_path() -> None:
     texts = _tracked_text()
     assert "live/accounts.py" in texts
     assert len(texts) >= 100
-    login_hits = [path for path, text in texts.items() if _LOGIN_LITERAL.search(text)]
+    login_hits = _login_literal_hits(texts)
     home_hits = [path for path, text in texts.items() if _USER_HOME.search(text)]
     bare_documentation_hits = [
         (path, match.group())
@@ -260,15 +293,42 @@ def test_tracked_tree_has_no_account_login_literal_or_user_home_path() -> None:
 
 
 @pytest.mark.parametrize(
-    "line",
+    "template",
     [
-        "MT5_TTP_LOGIN=" + "504" + "071681",
-        "account_login: " + "123" + "456",
-        "LOGIN = " + "987" + "654",
+        "MT5_TTP_LOGIN={value}",
+        "MT5_TTP_LOGIN = {value}",
+        'MT5_TTP_LOGIN="{value}"',
+        "MT5_TTP_LOGIN='{value}'",
+        "MT5_TTP_LOGIN: {value}",
+        'MT5_TTP_LOGIN: "{value}"',
+        '"MT5_TTP_LOGIN": {value}',
+        '"MT5_TTP_LOGIN": "{value}"',
+        "'MT5_TTP_LOGIN': '{value}'",
+        "MT5_TTP_LOGIN: int = {value}",
+        "EXPECTED_LOGIN: int = {value}",
+        "expected_login={value}",
+        "account_login: {value}",
+        "BROKER_LOGIN = {value}",
+        "LOGIN = {value}",
+        "# MT5_TTP_LOGIN={value}",
+        '"""MT5_TTP_LOGIN={value}"""',
+        '{{"MT5_TTP_LOGIN": {value}}}',
+        "{{MT5_TTP_LOGIN: {value}}}",
+        "export MT5_TTP_LOGIN={value}",
+        "set MT5_TTP_LOGIN={value}",
+        '$env:MT5_TTP_LOGIN="{value}"',
     ],
 )
-def test_login_literal_guard_matches_canonical_assignment_forms(line: str) -> None:
+def test_login_literal_guard_matches_plausible_reintroduction_forms(template: str) -> None:
+    line = template.format(value="504" + "071681")
     assert _LOGIN_LITERAL.search(line)
+
+
+def test_ai_task_login_suffix_is_detected_without_a_bare_number_scan() -> None:
+    path = ".ai/tasks/fixture/evidence.md"
+    texts = {path: "captured account login " + "999" + "001681"}
+
+    assert _login_literal_hits(texts) == [path]
 
 
 def test_tracked_text_includes_tests_and_is_non_vacuous() -> None:
@@ -344,10 +404,127 @@ def test_env_example_contains_only_inert_account_placeholders() -> None:
 
     assert values.keys() >= _ACCOUNT_ENV_KEYS
     for key in _ACCOUNT_ENV_KEYS:
-        assert values[key].startswith("<") and values[key].endswith(">")
+        placeholder = values[key].strip("'")
+        assert placeholder.startswith("<") and placeholder.endswith(">")
         if key.endswith("_LOGIN"):
-            assert not any(char.isdigit() for char in values[key])
-        assert _USER_HOME.search(values[key]) is None
+            assert not any(char.isdigit() for char in placeholder)
+        assert _USER_HOME.search(placeholder) is None
+
+
+def test_documented_env_layout_round_trips_windows_paths_and_telegram_through_uv(
+    tmp_path: Path,
+) -> None:
+    example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    mex_login = "1234" + "0097"
+    ttp_login = "1234" + "1681"
+    mex_path = "C:" + r"\Users\Fixture Operator\MT5\MEX\terminal64.exe"
+    ttp_path = "C:" + r"\Users\Fixture Operator\MT5\TTP\terminal64.exe"
+    token = "12345:" + "fixture-token"
+    expected = {
+        "MT5_MEX_LOGIN": mex_login,
+        "MT5_MEX_TERMINAL_PATH": mex_path,
+        "MT5_TTP_LOGIN": ttp_login,
+        "MT5_TTP_TERMINAL_PATH": ttp_path,
+        "TELEGRAM_BOT_TOKEN": token,
+        "TELEGRAM_CHAT_ID": "98765",
+    }
+    rendered = example
+    rendered = rendered.replace("<broker-account-login>", mex_login, 1)
+    rendered = rendered.replace("<absolute-path-to-terminal64.exe>", mex_path, 1)
+    rendered = rendered.replace("<broker-account-login>", ttp_login, 1)
+    rendered = rendered.replace("<absolute-path-to-terminal64.exe>", ttp_path, 1)
+    rendered = rendered.replace("TELEGRAM_BOT_TOKEN=", f"TELEGRAM_BOT_TOKEN='{token}'")
+    rendered = rendered.replace("TELEGRAM_CHAT_ID=", "TELEGRAM_CHAT_ID='98765'")
+    env_file = tmp_path / ".env"
+    env_file.write_text(rendered, encoding="utf-8")
+    command = (
+        "import json, os; "
+        f"print(json.dumps({{key: os.environ.get(key) for key in {tuple(expected)!r}}}))"
+    )
+    clean_environment = {key: value for key, value in os.environ.items() if key not in expected}
+
+    completed = subprocess.run(
+        [
+            shutil.which("uv") or "uv",
+            "run",
+            "--no-project",
+            "--env-file",
+            env_file.as_posix(),
+            "python",
+            "-c",
+            command,
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=clean_environment,
+    )
+
+    assert completed.returncode == 0
+    assert "warning:" not in completed.stderr.lower()
+    assert json.loads(completed.stdout) == expected
+
+
+def test_operator_docs_state_windows_env_quoting_and_export_precedence() -> None:
+    for path in (REPO_ROOT / "RUN.md", REPO_ROOT / "docs" / "live-runbook.md"):
+        text = path.read_text(encoding="utf-8")
+        assert "single quotes" in text
+        assert "already-exported" in text
+        assert "takes precedence" in text
+
+
+def test_login_must_be_longer_than_its_code_owned_suffix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("MT5_MEX_LOGIN", "97")
+    monkeypatch.setenv("MT5_MEX_TERMINAL_PATH", _PATH)
+
+    with pytest.raises(SystemExit, match="missing or malformed"):
+        get_account("mex")
+
+
+def test_guard_account_has_no_mode_parameter() -> None:
+    assert tuple(inspect.signature(guard_account).parameters) == ("state", "profile")
+
+
+def test_guard_account_accept_refuse_matrix_matches_the_mode_independent_rule(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    currencies = ("EUR", "USD", "GBP", "")
+    comparisons = 0
+    divergences: list[tuple[str, int, str, bool, bool]] = []
+
+    for profile in ACCOUNTS.values():
+        expected_login = int("1234" + profile.expected_login_suffix)
+        monkeypatch.setenv(profile.expected_login_env, str(expected_login))
+        monkeypatch.setenv(profile.terminal_path_env, _PATH)
+        candidate_logins = (
+            expected_login,
+            expected_login - 4,
+            expected_login - 3,
+            expected_login - 2,
+            expected_login - 1,
+            expected_login + 1,
+            expected_login + 2,
+            expected_login + 3,
+            expected_login + 4,
+            expected_login + 5,
+        )
+        for login in candidate_logins:
+            for currency in currencies:
+                expected = login == expected_login and currency == profile.expected_currency
+                try:
+                    guard_account(_state(login, currency), profile)
+                except SystemExit:
+                    observed = False
+                else:
+                    observed = True
+                comparisons += 1
+                if observed != expected:
+                    divergences.append((profile.name, login, currency, expected, observed))
+
+    assert comparisons == 80
+    assert divergences == []
 
 
 def test_live_just_recipes_load_the_gitignored_environment_file() -> None:
