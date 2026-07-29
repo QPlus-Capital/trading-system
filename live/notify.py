@@ -52,6 +52,11 @@ class Notifier:
             token = os.environ.get("TELEGRAM_BOT_TOKEN")
             chat = os.environ.get("TELEGRAM_CHAT_ID")
             telegram = (token, chat) if token and chat else None
+            if telegram is None:
+                log.warning(
+                    "Telegram notifications disabled: TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID "
+                    "must both be set; safety alerts will not reach a remote transport"
+                )
         self._telegram = telegram
 
     def signal(self, text: str) -> None:

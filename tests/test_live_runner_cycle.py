@@ -165,6 +165,7 @@ def _runner(stub: StubBridge, mode: Mode = Mode.SIGNAL_ONLY) -> LiveRunner:
         SignalParams(),
         RiskController(RiskLimits(), stub.balance),
         mode=mode,
+        notifier=cast(Notifier, _RecordingNotifier()),
         # A first launch without this HALTS by design; these tests exercise the trading path, so
         # they state the loss day's opening balance the way an operator would.
         day_start_balance=stub.balance,

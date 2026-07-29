@@ -1,7 +1,13 @@
 """Tests for the pure swap-cost logic (night counting + per-night pricing)."""
 
+from types import SimpleNamespace
+from typing import cast
+
 import pandas as pd
+import pytest
 from core.broker import SwapSpec, night_units, swap_per_lot_night
+from live.mt5_bridge import AccountState, Mt5Bridge
+from research.portfolio import swap_analysis
 from research.portfolio.swap_analysis import market_swaps
 
 _WED = 2  # python weekday for Wednesday
@@ -72,3 +78,46 @@ def test_market_swaps_direction_and_sign() -> None:
     assert not bool(m["is_long"].iloc[0])  # inferred short
     assert m["flat_pnl"].iloc[0] == 300.0  # risk_amount * gross r, never pre-netted net_r
     assert m["swap_pnl"].iloc[0] < 0  # one night of the (negative) short swap
+
+
+def test_snapshot_refresh_refuses_the_wrong_terminal_before_pulling_swaps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import live.mt5_bridge as bridge_module
+
+    expected = int("1234" + "1681")
+    wrong = int("9876" + "5432")
+    monkeypatch.setenv("MT5_TTP_LOGIN", str(expected))
+    monkeypatch.setenv("MT5_TTP_TERMINAL_PATH", r"C:\MT5\fake\terminal64.exe")
+
+    class FakeBridge:
+        def __init__(self, symbol_map: dict[str, str]) -> None:
+            del symbol_map
+
+        def connect(self, *, path: str | None = None) -> None:
+            del path
+
+        def account(self) -> AccountState:
+            return AccountState(50_000.0, 50_000.0, "USD", wrong)
+
+        def shutdown(self) -> None:
+            pass
+
+    monkeypatch.setattr(bridge_module, "Mt5Bridge", cast(type[Mt5Bridge], FakeBridge))
+    monkeypatch.setattr(
+        swap_analysis,
+        "load_config_module",
+        lambda _path: SimpleNamespace(
+            RISK_PER_TRADE_PCT=0.18,
+            STRATEGY_SWITCHES={},
+            MARKETS=[],
+        ),
+    )
+    monkeypatch.setattr(
+        swap_analysis,
+        "pull_swap_specs",
+        lambda *_args: pytest.fail("swap rates read before account identity was guarded"),
+    )
+
+    with pytest.raises(SystemExit, match="does not match profile"):
+        swap_analysis.main()

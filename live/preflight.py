@@ -27,27 +27,40 @@ except ImportError:  # pragma: no cover -- Windows-only package
     mt5 = None
 
 
+def _masked_login(login: int) -> str:
+    """Return only the non-identifying final three digits used by existing live logs."""
+    return f"***{login % 1000:03d}"
+
+
 def _checks(bridge: Mt5Bridge, account_name: str) -> tuple[list[tuple[str, bool, str]], float]:
     """Run every pre-flight check and return (rows, per-trade risk EUR) -- no side effects."""
     profile = get_account(account_name)
     rows: list[tuple[str, bool, str]] = []
     acct = bridge.account()
-    rows.append((
-        "Konto-Login",
-        profile.expected_login is None or acct.login == profile.expected_login,
-        f"verbunden {acct.login}, Profil erwartet {profile.expected_login}",
-    ))
-    rows.append((
-        "Waehrung",
-        acct.currency == profile.expected_currency,
-        f"{acct.currency} (erwartet {profile.expected_currency})",
-    ))
+    expected_login = profile.expected_login
+    rows.append(
+        (
+            "Konto-Login",
+            acct.login == expected_login,
+            f"verbunden {_masked_login(acct.login)}, Profil erwartet "
+            f"{_masked_login(expected_login)}",
+        )
+    )
+    rows.append(
+        (
+            "Waehrung",
+            acct.currency == profile.expected_currency,
+            f"{acct.currency} (erwartet {profile.expected_currency})",
+        )
+    )
     ti = mt5.terminal_info() if mt5 is not None else None
-    rows.append((
-        "Algo-Trading aktiv",
-        bool(ti and ti.trade_allowed),
-        "an" if (ti and ti.trade_allowed) else "AUS -- im Terminal einschalten",
-    ))
+    rows.append(
+        (
+            "Algo-Trading aktiv",
+            bool(ti and ti.trade_allowed),
+            "an" if (ti and ti.trade_allowed) else "AUS -- im Terminal einschalten",
+        )
+    )
     risk_amount = acct.balance * risk_per_trade_from_live_config()
     for spec in markets_from_live_config():
         try:
@@ -58,7 +71,12 @@ def _checks(bridge: Mt5Bridge, account_name: str) -> tuple[list[tuple[str, bool,
             # Same pricing as the EXECUTE path (#19): sizing off tick-value arithmetic alone
             # reported GO with volumes the runner would shrink (DE40: measured 14.4% apart).
             sized = size_order(
-                "BUY", price, spec.stop_loss_pct, spec.take_profit_pct, info, risk_amount,
+                "BUY",
+                price,
+                spec.stop_loss_pct,
+                spec.take_profit_pct,
+                info,
+                risk_amount,
                 loss_fn=_loss_fn_for(bridge, spec.name),
             )
             ok = sized is not None and price > 0.0

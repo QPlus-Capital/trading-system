@@ -63,6 +63,9 @@ pythonpath = ["."]
 [tool.mutmut]
 # Mutmut needs import-complete package copies; execution remains bounded by mutation.toml patterns.
 paths_to_mutate = [
+    "live/accounts.py",
+    "live/notify.py",
+    "live/preflight.py",
     "live/risk_control.py",
     "live/mt5_bridge.py",
     "live/runner.py",
@@ -88,10 +91,25 @@ paths_to_mutate = [
     "research/forward_test_registry.py",
     "research/forward_decision.py",
 ]
-also_copy = ["core", "research", "live", "monitoring", "scripts", ".ai", "docs"]
+also_copy = [
+    "core",
+    "research",
+    "live",
+    "monitoring",
+    "scripts",
+    ".ai",
+    "docs",
+    ".env.example",
+    "RUN.md",
+    "justfile",
+]
 mutate_only_covered_lines = false
 pytest_add_cli_args = ["--disable-warnings"]
 pytest_add_cli_args_test_selection = [
+    "tests/test_live_accounts.py",
+    "tests/test_live_notify.py",
+    "tests/test_live_run_cli.py",
+    "tests/test_live_parity_check.py",
     "tests/test_live_risk_control.py",
     "tests/test_live_mt5_bridge.py",
     "tests/test_live_runner.py",
@@ -104,6 +122,7 @@ pytest_add_cli_args_test_selection = [
     "tests/test_research_portfolio_dd.py",
     "tests/test_research_risk.py",
     "tests/test_research_stats.py",
+    "tests/test_research_swap_analysis.py",
     "tests/test_research_portfolio_trades.py",
     "tests/test_research_resample.py",
     "tests/test_research_resample_properties.py",

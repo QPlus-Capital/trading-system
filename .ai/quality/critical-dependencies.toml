@@ -1,6 +1,38 @@
 version = 1
 
 [[edges]]
+source = "live/accounts.py"
+tests = [
+  "tests/test_live_accounts.py",
+  "tests/test_live_run_cli.py",
+  "tests/test_live_parity_check.py",
+  "tests/test_monitoring_dashboard.py",
+  "tests/test_research_swap_analysis.py",
+]
+possibly_affected = [
+  "tests/test_live_runner_cycle.py",
+]
+reason = "required environment identity and its code-owned suffix must refuse before terminal connection and stay authoritative in every live, monitoring, parity, and swap-snapshot consumer"
+
+[[edges]]
+source = "live/preflight.py"
+tests = [
+  "tests/test_live_accounts.py",
+]
+possibly_affected = []
+reason = "the documented pre-start check must not disclose either connected or expected account identity"
+
+[[edges]]
+source = "live/notify.py"
+tests = [
+  "tests/test_live_notify.py",
+]
+possibly_affected = [
+  "tests/test_live_runner_cycle.py",
+]
+reason = "missing or partial remote alert configuration must be loud without leaking a supplied token or disrupting the runner"
+
+[[edges]]
 source = "research/portfolio/curves.py"
 tests = [
   "tests/test_research_h4_path.py",
