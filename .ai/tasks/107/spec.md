@@ -96,3 +96,7 @@ into facts. The existing facts move unchanged into `.ai/quality/workflow-contrac
 tables and ordered lists become views of that data. This explicitly and narrowly supersedes the
 original "no tooling" non-goal. It does not activate board automation or create a general
 documentation framework.
+
+On 2026-07-29, after branch protection became active on `main` without bypass actors, Jan removed
+the trivial-R0 direct-to-main exception. Every change now reaches `main` through a feature branch
+and pull request.

@@ -292,16 +292,15 @@ def test_risk_doc_and_model_agree() -> None:
         assert concept in lowered, f"risk-classes.md must describe the R3 obligation '{concept}'"
 
 
-def test_direct_to_main_exception_is_R0_only_everywhere() -> None:
-    """CLAUDE.md and the constitution must agree: only a trivial R0 change may skip the PR.
-
-    Positive assertion, not just the absence of the old ``R0/R1`` spelling: each document must state
-    that R0 (and not a broader class) is what may go straight to main.
-    """
-    for path in (_CLAUDE, _CONSTITUTION, _ROOT / "README.md"):
-        lowered = _text(path).lower()
-        assert "r0/r1" not in lowered, f"{path.relative_to(_ROOT)} still lets R1 reach main"
-        assert "trivial r0" in lowered and "straight to `main`" in lowered, (
-            f"{path.relative_to(_ROOT)} must state that only a trivial R0 change goes straight to "
-            "main -- every contributor-facing doc must state the same exception."
+def test_every_change_reaches_main_through_a_pull_request() -> None:
+    """Every contributor-facing contract must require a feature branch and pull request."""
+    required = "every change reaches `main` through a feature branch and pull request"
+    for path in (_AGENTS, _CLAUDE, _CONSTITUTION, _ROOT / "README.md"):
+        lowered = " ".join(_text(path).lower().split())
+        assert required in lowered, (
+            f"{path.relative_to(_ROOT)} must require every change to reach main through a feature "
+            "branch and pull request"
+        )
+        assert "trivial r0" not in lowered and "straight to `main`" not in lowered, (
+            f"{path.relative_to(_ROOT)} must not retain a direct-to-main exception"
         )

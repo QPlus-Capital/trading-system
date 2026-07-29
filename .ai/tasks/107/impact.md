@@ -30,7 +30,8 @@ file is touched.
 ## Transitive impact
 
 - `tests/test_engineering_docs.py` reads all three role documents and asserts load-bearing phrases,
-  role markers, forbidden stale markers, and the R0-only direct-to-main exception. Verified passing.
+  role markers and forbidden stale markers; Jan's branch-protection decision is pinned by requiring
+  every change, including R0, to reach `main` through a feature branch and pull request.
 - `tests/test_engineering_workflow_docs.py` reads `branch-protection.md`, `reviewer-findings.md` and
   `sessions.md`. Untouched by this change. Verified passing.
 - `tests/test_docs_language.py` enforces English across committed documentation, including the new

@@ -338,3 +338,34 @@ fact, renderer, skeleton digest, `_validate_contract` check, or document.
 
 **Review status:** the residual finding is implemented but not self-approved. A fresh independent
 review is still required; this disposition is builder evidence only.
+
+---
+
+## Seventh complete independent review
+
+**Reviewer:** Claude
+
+**Date:** 2026-07-29
+
+**Reviewed HEAD:** `85f84982b1fc4cccf2ef26c0eb046859d4020bc4`
+
+**Result:** no findings.
+
+Claude ran seven independent mutations against the test-owned pinned records. Every mutation was
+rejected:
+
+1. a required transition was deleted;
+2. an unauthorized transition was invented;
+3. a transition actor was changed;
+4. the approval-edge trigger was rewritten;
+5. a status actor was changed;
+6. a required status was deleted; and
+7. a required activation was deleted.
+
+The review also confirmed that `_AUTHORIZED_EDGES` and prefix matching are absent, that the status,
+transition, and activation comparisons use exact set equality in both directions, and that
+`.ai/quality/workflow-contract.toml` was byte-identical to its previously reviewed state at
+`85f8498`.
+
+**Adversarial-review status:** passed with exit 0. The seven mutations above are the executable
+counterexamples attempted; none survived.

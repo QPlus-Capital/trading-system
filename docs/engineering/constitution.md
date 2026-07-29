@@ -196,8 +196,7 @@ no gate, because the report then says the numbers held.
 ## 16. Git and commits
 
 - Feature branch → PR → CI green + Claude adversarial review → Jan approves → merge.
-  Only a **trivial R0** change (docs/comments) may go straight to `main`; every R1+ change — any
-  code change — goes through a branch and a PR.
+  Every change reaches `main` through a feature branch and pull request.
 - One branch and one git worktree per issue, named `codex/<issue>-<slug>` — or
   `claude/<issue>-<slug>` when Claude builds under the trading exception. A worktree keeps the main
   checkout clean, so a running live runner never sees half-finished code.

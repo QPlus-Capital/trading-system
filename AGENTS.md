@@ -87,8 +87,8 @@ clean and a running live runner never sees half-finished code.
 
 **Do not mark a pull request ready for review until the readiness check for the change's risk class
 passes.** A draft carries the review; only a ready pull request asks for a merge. R3
-changes never merge autonomously. Only a **trivial R0** change may go straight to `main`; every R1+
-change uses a feature branch and pull request. Valid out-of-scope work becomes a separate issue —
+changes never merge autonomously. Every change reaches `main` through a feature branch and pull
+request. Valid out-of-scope work becomes a separate issue —
 evidenced only, never speculative, and you return to the task at hand immediately.
 
 ## Roles, exception, and authority

@@ -106,4 +106,4 @@ must be doubly rigorous. Claude's builder skills exist for this exception, not a
 
 Jan decides every business, trading, methodology, live-money, architecture, and risk question. Jan
 approves every merge. R3 changes never merge autonomously, regardless of green tools or AI reviews.
-Only a **trivial R0** change may go straight to `main`; every R1+ change uses a pull request.
+Every change reaches `main` through a feature branch and pull request.
