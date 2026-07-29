@@ -330,6 +330,15 @@ def test_only_the_mt5_boundary_job_uses_windows() -> None:
     }
 
 
+def test_linux_jobs_do_not_resync_the_excluded_mt5_package() -> None:
+    workflow = _workflow(_CI_PATH)
+    for name in ("fast-quality", "full-quality"):
+        job = _job(workflow, name)
+        environment = _mapping(job["env"], f"{name}.env")
+        assert environment["UV_NO_SYNC"] == "1"
+    assert "env" not in _job(workflow, "mt5-boundary")
+
+
 def test_mt5_boundary_job_runs_the_exact_windows_node() -> None:
     workflow = _workflow(_CI_PATH)
     boundary = _job(workflow, "mt5-boundary")
