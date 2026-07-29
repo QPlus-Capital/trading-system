@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 1682439bec9f3723bec0faa36be5515bf3c50da8
+HEAD: c0861d967a3f8505c5f94402b06b2983bdfdf671
 
 This is the last non-evidence commit. The final evidence-only commit does not change production
 code, tests, configuration, or the measured mutation baseline.
@@ -20,11 +20,11 @@ code, tests, configuration, or the measured mutation baseline.
 | `property-tests-where-applicable` | `just check-properties` | 0 | The property suite passed twice with seed 20260721: 21 passed on each run. |
 | `integration-tests` | `just check-fast origin/main` | 0 | The real dotenv parser plus preflight, notification, parity, swap-analysis, dashboard, and live CLI boundaries were exercised through synthetic input and bridges; 169 focused tests passed and no terminal was initialized. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-121 --base origin/main` | 0 | Task artifact valid: 18 acceptance criteria and 14 invariants. |
-| `adversarial-review` | `.ai/tasks/ISSUE-121/review.md` | 1 | The latest independent review found F1-F3 in the anti-recommit test guard; all are dispositioned, and Claude's complete re-review of this fix remains required. |
+| `adversarial-review` | [Claude final independent review](https://github.com/QPlus-Capital/trading-system/pull/123#pullrequestreview-4807831900), submitted 2026-07-29, and `.ai/tasks/ISSUE-121/review.md` | 0 | **No finding.** The production `_contains_login_literal` caught all 15 reintroduction forms, including ten that evaded the previous guard. Five unrelated-number probes produced no false positive, and the actual 375-file tracked tree produced zero hits. `_LOGIN_SUFFIXES` derives from `ACCOUNTS`, so a third account extends the guard. |
 | `invariants` | `just check-invariants` | 0 | All 411 critical-invariant tests passed with 12 warnings. |
 | `mutation-on-touched-critical` | GitHub Actions Critical mutation run `30448049051` | 0 | Linux ratchet passed on `1682439`: 4,704 total, 4,293 killed, 411 exact-name survivors, and zero unexplained, timeout, suspicious, no-test, or error outcomes; no baseline change was needed. |
 | `parity-where-applicable` | 80-case profile/login/currency decision oracle plus the independent review's 96-case accepting-path differential | 0 | Removing `execute` produced zero accept/refuse divergences across 80 combinations; the earlier review measured zero accepting-path divergences across 96 combinations. |
-| `live-money-review` | `.ai/tasks/ISSUE-121/review.md` | 1 | Earlier live-money findings remain fixed; Claude's complete independent re-review of the latest guard remediation remains required. |
+| `live-money-review` | [Claude final independent review](https://github.com/QPlus-Capital/trading-system/pull/123#pullrequestreview-4807831900), submitted 2026-07-29, and `.ai/tasks/ISSUE-121/review.md` | 0 | **No finding.** The login guard is stronger without broadening to unrelated numbers: seed `20260721`, magic `770077`, `x = 12_345`, `total = 4646`, and an SSRN identifier remain accepted. The one deleted assertion was replaced by the production-function assertion, and the independent forms were added to the existing guard test's parameter list. No MT5 terminal, runner, account, or order was touched. |
 | `human-decision-escalation` | `.ai/tasks/ISSUE-121/spec.md` | 0 | Jan's environment, code-owned four-digit suffix, public-history, restart, merge, and go-live decisions are explicit. |
 | `no-autonomous-merge` | requested draft-only delivery | 0 | No ready, merge, or auto-merge action is authorized. |
 
@@ -50,7 +50,7 @@ code, tests, configuration, or the measured mutation baseline.
 | `mutation-N1-N4-first` | GitHub Actions run `30436603792` | 1 | Measured 4,704 total, 4,288 killed, 416 survivors. The three obsolete `execute` survivors disappeared; six previously unmeasured `Notifier.__init__` beep mutants survived. |
 | `mutation-N1-N4-tested` | GitHub Actions run `30437328697` | 1 | Behavioral platform/opt-in tests killed five notifier survivors: 4,293/4,704 killed, 411 survived. The old baseline then failed only because its three removed names and one Mutmut-trampoline-equivalent name required regeneration. |
 | `mutation-N1-N4-final` | GitHub Actions run `30437957532` | 0 | Mutation self-test and exact ratchet passed at 4,293/4,704 killed with 411 exact-name survivors; all unhealthy statuses were zero. |
-| `readiness-audit` | `uv run python -m scripts.quality.pr_ready ISSUE-121 --base origin/main` | 1 | Expected `NOT READY`: executable gates pass, while the complete independent adversarial and live-money re-reviews remain required. |
+| `readiness-audit` | `uv run python -m scripts.quality.pr_ready ISSUE-121 --base origin/main` | 0 | READY against current `origin/main` `14f0cdb`: all 14 required R3 gates have exit 0, task artifacts and risk class pass, and evidence covers review commit `c0861d9`. |
 
 ## Red-first proof
 
@@ -132,10 +132,11 @@ synthetic environment values, fakes, or static tracked-file inspection.
 
 ## Deferred checks
 
-- A complete independent adversarial re-review is required because the remediation materially
-  changes live, monitoring, and research-snapshot boundaries.
-- A complete independent live-money re-review is required for the same reason.
 - Jan must populate the four real values from the password manager and choose a quiet restart
   window before this can be deployed.
-- Because these two independent reviews are intentionally outstanding, `pr-ready` is expected to
-  report `NOT READY`; the PR must remain draft.
+- Phase 2 remains separate by instruction. PR #105 is now merged, so this branch must later rebase
+  onto the new `main`, preserve both branches' guards, and regenerate the exact mutation baseline
+  from a Linux critical-mutation run over the combined tree. No hand-written survivor-set merge is
+  permitted.
+- This Phase-1 evidence records the completed independent review only. PR #123 remains draft; no
+  ready, merge, or auto-merge action is authorized.
