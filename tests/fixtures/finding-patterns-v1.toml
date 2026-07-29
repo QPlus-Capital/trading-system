@@ -671,3 +671,15 @@ why_tests_missed = "the differential oracle varied counts, statuses, survivor na
 regression = "test_policy_substitution_fails_with_exact_survivors_and_an_improved_score; test_policy_fingerprint_ignores_only_target_and_pattern_order; test_fast_report_fingerprints_the_whole_policy"
 generalized = "a quality baseline must bind every policy field that determines what is measured, not only display identifiers or aggregate outcomes"
 workflow_change = "mutation reports and baselines require a canonical complete-target fingerprint, and readiness fails on a missing or changed identity"
+
+[[finding]]
+id = "F-056"
+source = "PR #130 independent review"
+defect_class = "test-only-change-skips-mutation-ratchet"
+severity = "P1"
+affected = ".github/workflows/mutation.yml, scripts/quality/impact.py, tests/test_ci_cost_workflows.py"
+root_cause = "the mutation filter selected configured targets only from changed production paths, so weakening a test assertion could create a surviving mutant without starting the ratchet"
+why_tests_missed = "the workflow contract explicitly asserted that a changed test skipped mutation and had no direct, transitive, or unresolved test-import cases"
+regression = "test_mutation_job_runs_for_production_and_direct_critical_test_changes; test_mutation_job_runs_for_a_transitive_critical_test_change; test_mutation_job_fails_closed_for_an_unknown_dynamic_test_import"
+generalized = "a conditional mutation ratchet must select both changed targets and changed tests that exercise them transitively, and static-analysis uncertainty must fail closed"
+workflow_change = "the filter reuses the production mutation policy and impact graph; direct and transitive critical tests run mutation while unrelated tests and non-code paths still skip"
