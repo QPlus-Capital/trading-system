@@ -5,7 +5,6 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-import MetaTrader5 as mt5
 import pytest
 from scripts.quality.pr_ready import assess_readiness
 
@@ -43,6 +42,9 @@ def test_workflow_self_tests_have_no_live_or_network_imports() -> None:
 
 
 def test_pytest_blocks_real_mt5_boundaries() -> None:
+    mt5 = test_config._load_mt5_module()
+    if mt5 is None:
+        pytest.skip("the real MetaTrader5 package is available only on the Windows boundary job")
     assert getattr(mt5.initialize, "__qplus_test_block__", False)
     assert getattr(mt5.order_send, "__qplus_test_block__", False)
 

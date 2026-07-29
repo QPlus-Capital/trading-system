@@ -664,7 +664,15 @@ def test_the_differential_cases_actually_exercise_every_verdict() -> None:
     assert seen == {"health", "scope", "targets", "total", "unexpected", "missing", "score"}
 
 
-@pytest.mark.skipif(platform.system() != "Linux", reason="Mutmut requires fork/WSL on Windows")
+def _mutmut_is_available() -> bool:
+    try:
+        mutation_executable("mutmut", sys.executable, platform.system())
+    except RuntimeError:
+        return False
+    return True
+
+
+@pytest.mark.skipif(not _mutmut_is_available(), reason="Mutmut console script is unavailable")
 def test_a_real_weakened_test_increases_survivors_and_is_caught(tmp_path: Path) -> None:
     """Exercise the selected tool, not a fake mutator, on a minimal boundary contract."""
     (tmp_path / "tests").mkdir()

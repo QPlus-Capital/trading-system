@@ -7,7 +7,12 @@ import subprocess
 from pathlib import Path
 
 from scripts.quality.classify import REPO_ROOT
-from scripts.quality.impact import analyze_impact, format_check_command, write_test_map
+from scripts.quality.impact import (
+    analyze_impact,
+    changed_tests_exercise_targets,
+    format_check_command,
+    write_test_map,
+)
 
 
 def test_continuous_change_surfaces_known_dependent_tests() -> None:
@@ -30,6 +35,82 @@ def test_live_risk_control_surfaces_direct_and_transitive_tests() -> None:
 def test_changed_test_files_are_always_recommended() -> None:
     report = analyze_impact(["tests/test_quality_classify.py"])
     assert "tests/test_quality_classify.py" in report.direct_tests
+
+
+def test_changed_tests_are_mapped_to_mutation_targets_transitively() -> None:
+    assert changed_tests_exercise_targets(
+        ["tests/test_strategy_sizing_basis.py"],
+        ["core/strategies/param_schedule.py"],
+    )
+
+
+def test_changed_tests_fail_closed_when_their_imports_cannot_be_resolved(tmp_path: Path) -> None:
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pkg" / "target.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_broken.py").write_text("def broken(:\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_dynamic.py").write_text(
+        "import importlib\n"
+        "def load(name: str) -> object:\n"
+        "    return importlib.import_module(name)\n",
+        encoding="utf-8",
+    )
+
+    assert changed_tests_exercise_targets(
+        ["tests/test_broken.py"],
+        ["pkg/target.py"],
+        root=tmp_path,
+        critical_map=None,
+    )
+    assert changed_tests_exercise_targets(
+        ["tests/test_dynamic.py"],
+        ["pkg/target.py"],
+        root=tmp_path,
+        critical_map=None,
+    )
+
+
+def test_changed_tests_fail_closed_on_an_unknown_dynamic_production_edge(tmp_path: Path) -> None:
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pkg" / "target.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "pkg" / "loader.py").write_text(
+        'import importlib\nimportlib.import_module("pkg.target")\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "tests" / "test_other.py").write_text("VALUE = 2\n", encoding="utf-8")
+
+    assert changed_tests_exercise_targets(
+        ["tests/test_other.py"],
+        ["pkg/target.py"],
+        root=tmp_path,
+        critical_map=None,
+    )
+
+
+def test_changed_noncritical_tests_and_docs_do_not_select_mutation(tmp_path: Path) -> None:
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pkg" / "target.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_other.py").write_text(
+        "from pathlib import Path\n\n"
+        "def test_path() -> None:\n"
+        "    assert Path('README.md').suffix == '.md'\n",
+        encoding="utf-8",
+    )
+
+    assert not changed_tests_exercise_targets(
+        ["tests/test_other.py", "README.md"],
+        ["pkg/target.py"],
+        root=tmp_path,
+        critical_map=None,
+    )
+    assert not changed_tests_exercise_targets(
+        ["README.md"],
+        ["pkg/target.py"],
+        root=tmp_path,
+        critical_map=None,
+    )
 
 
 def test_format_check_is_limited_to_changed_python_files() -> None:

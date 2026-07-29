@@ -178,6 +178,44 @@ def _imports_any(imports: Iterable[str], modules: set[str]) -> bool:
     )
 
 
+def changed_tests_exercise_targets(
+    paths: Sequence[str],
+    target_paths: Sequence[str],
+    *,
+    root: Path = REPO_ROOT,
+    critical_map: Path | None = CRITICAL_MAP_PATH,
+) -> bool:
+    """Return whether changed tests directly or transitively exercise any target.
+
+    An unreadable test, an unknown dynamic test import, or an unknown dynamic production edge
+    fails closed because static analysis cannot prove that the target is untouched.
+    """
+    normalized_paths = {normalize(path) for path in paths}
+    changed_tests = tuple(
+        sorted(
+            path for path in normalized_paths if path.startswith("tests/") and path.endswith(".py")
+        )
+    )
+    targets = tuple(sorted({normalize(path) for path in target_paths}))
+    if not changed_tests or not targets:
+        return False
+
+    python_files = _python_files(root)
+    known = frozenset(_module_name(path.relative_to(root).as_posix()) for path in python_files)
+    target_modules = {_module_name(path) for path in targets}
+    for path in changed_tests:
+        facts = _facts(root / path, root, known)
+        if facts is None or facts.has_unknown_dynamic_import:
+            return True
+        if _imports_any(facts.imports | facts.dynamic_targets, target_modules):
+            return True
+
+    report = analyze_impact(targets, root=root, critical_map=critical_map)
+    if report.unknown_dynamic_edges:
+        return True
+    return bool(set(changed_tests) & set(report.transitive_tests))
+
+
 def analyze_impact(
     paths: Sequence[str],
     *,
