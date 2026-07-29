@@ -172,3 +172,117 @@ does. The lasting change is therefore procedural rather than textual: a guard ad
 contract is not finished until the counterexample it exists to catch has been executed against it and
 observed to fail. That is now recorded as the red-first evidence for every criterion in the test plan,
 not as a claim.
+
+---
+
+## Third complete independent review of `102ce55`
+
+This is a whole-change review after the material remediation of RR-F1 through RR-F4. The worktree
+was at `39995bca3c7fb755a4c69c310302d18969870461` when reviewed; that commit changes only
+`evidence.md` after the requested semantic HEAD
+`102ce555a413df0f35bc496dc79652bf2257dcf0`. The implementation, documents, and guards reviewed are
+therefore exactly those at `102ce55`.
+
+The four earlier findings have genuine textual fixes:
+
+- constitution §11 and the workflow now state the same temporary pushed-branch review rule and both
+  bind its removal to #124;
+- the transition table uses four explicit `Blocked` sources, leaves `Done` terminal, and describes
+  both the ordinary draft handover and the temporary branch handover;
+- AGENTS and the workflow use the same issue-number/repository ownership predicate for resumption;
+- the old phrase-presence tests were replaced with parsers over identifiable rules and tables.
+
+**Result: NOT READY.** No P0 was found. One P1 and one P2 remain.
+
+### Third-review findings
+
+| ID | Severity | Finding | Concrete failure scenario | Required correction | Status |
+|---|---|---|---|---|---|
+| R3-F1 | P1 | The seven replacement guards in `tests/test_workflow_contract.py:140-320` still do not bind the semantic facts they claim to protect. Each guard passed a fresh mutation that made its own contract property false. The state parser checks only `_REQUIRED_EDGES <= found`, collapses two different `Implementing → Reviewing` rows into one pair, and ignores actor/trigger cells; the activation parser accepts any issue number and any 31-character fallback; the remaining guards are finite wording recognizers rather than complete facts. This is the same gate-can-report-green defect class as RR-F2, not a hypothetical weakness. | Executed on temporary document copies: missing `approved` became a valid Start condition; “changes the PR to ready before review” evaded the `mark…ready` regex; “additional checks are forbidden” evaded the ceiling list; changing the review-fix actor from Codex to Claude passed; adding unauthorized `Backlog → Done` passed; changing both #124 activation owners back to #109 passed; and making constitution §11 say the pushed branch must never be reviewed passed while the workflow still required branch review. **All 7 guards passed despite their corresponding semantic violation.** | Parse the complete facts, not selected tokens: exact Start and Resume condition/action tuples in both documents; one canonical ready-order fact; an explicit lower-bound gate fact; transition triples/quadruples including actor and trigger; `found == allowed` rather than subset containment; an exact capability→owner→fallback register (including #124); and normalized equality of the constitution/workflow transitional procedure. Every counterexample above must be a committed parametrized red-first test, not an unversioned one-off claim. | resolved |
+| R3-F2 | P2 | The mandatory audit artifacts were not updated after the guard rewrite. `.ai/tasks/107/test-plan.md:8-25` still says six guards and maps AC-01/08/09/10 and INV-02 to five test functions that no longer exist. `.ai/tasks/107/evidence.md:37-42` likewise says “six guards, all six red” although the command table says seven. The artifact validator passes because it checks table shape, not whether named tests resolve. | An engineer executing the acceptance map literally gets pytest “not found” for `test_the_state_machine_is_declared_as_a_table_and_is_total`, `test_the_review_loop_returns_the_card_to_reviewing`, `test_capabilities_the_repository_lacks_are_marked_as_not_yet_active`, `test_no_role_document_says_the_builder_opens_a_ready_pull_request`, and `test_required_gates_are_never_described_as_a_maximum`, while the evidence still presents the obsolete map as green. | Update the test plan to the seven current test names, the actual 7-red/7-green proof, and the current focused count; update the coverage paragraph to seven. Add a validation test that every `tests/path.py::test_name` cited in a task test plan resolves during collection, so this stale-evidence class fails mechanically. | resolved |
+
+### Adversarial guard attacks
+
+Each mutation was applied only to a temporary copy of the four documents. The test module's path
+globals were redirected to that copy, and no repository file was changed.
+
+| Guard | Violation injected | Actual result |
+|---|---|---|
+| `test_the_builder_guard_separates_starting_from_resuming` | Changed both Start rules from `approved` present to `approved` absent | **Passed incorrectly** |
+| `test_the_builder_never_reaches_ready_before_the_independent_review` | Workflow said Codex “changes” the draft to ready before review, avoiding the `mark…ready` verb | **Passed incorrectly** |
+| `test_required_gates_are_a_minimum_and_never_a_ceiling` | Replaced the scoped-check allowance with “additional scoped checks are forbidden” | **Passed incorrectly** |
+| `test_the_review_loop_has_a_declared_way_back_to_reviewing` | Changed the review-fix row's actor from Codex to Claude | **Passed incorrectly** |
+| `test_the_state_machine_declares_every_required_transition` | Added an unauthorized `Backlog → Done` shortcut | **Passed incorrectly** |
+| `test_every_unavailable_capability_carries_an_owner_and_a_fallback` | Changed both #124 owners back to #109 | **Passed incorrectly** |
+| `test_the_transitional_review_rule_is_stated_at_constitution_precedence` | Constitution retained the words “transitional rule” and “pushed branch” but explicitly forbade branch review | **Passed incorrectly** |
+
+The enumerated required edge **pairs** match the current table's unique source/target pairs. They do
+not match the full prose contract: two semantically different handovers share the
+`Implementing → Reviewing` pair, and the set records neither their actor nor their trigger. It also
+permits arbitrary additional known-status edges. That loss of information is why the actor mutation
+and the `Backlog → Done` mutation both pass.
+
+### Cross-document result
+
+The current constitution §11 transitional rule and the workflow's first Not-yet-active row agree on
+the operative facts: the current hook prevents a pre-review draft; review therefore runs on the
+pushed branch; the PR opens afterward; #124 removes the exception when it moves readiness to the
+ready-for-review transition. The board meaning and transition table also include that temporary
+handover. No remaining contradiction was found in those current facts.
+
+The general draft-first wording in AGENTS and CLAUDE is subordinate to constitution §11's explicit,
+time-bounded exception. It is not independently executable without reading the constitution, but
+both role documents bind themselves to constitution precedence, so it does not create a second
+unresolvable rule.
+
+### Acceptance-criteria trace
+
+| Requirement | Result | Evidence |
+|---|---|---|
+| AC-01 | **Pass in current text** | All six phases identify the actor, working surface, and resulting board state; the temporary branch handover is reflected in the board and transition table. |
+| AC-02 | **Pass** | Constitution §9 says risk class scales gates, artifacts, PR sections, and reviewers. |
+| AC-03 | **Pass** | Constitution §16 states the issue branch/worktree convention and squash merge. |
+| AC-04 | **Current text passes; guard fails** | AGENTS has the correct fail-closed Start order, but its named guard passes after changing the permit from required to absent (R3-F1). |
+| AC-05 | **Pass** | CLAUDE requires Jan's explicit approval and adds `approved` last. |
+| AC-06 | **Pass for the pre-existing consistency suite** | The marker change remains faithful and no old assertion was removed or made conditional. Focused documentation tests pass. R3-F2 covers the stale task-level map introduced afterward. |
+| AC-07 | **Current text passes; complete guard does not** | Resume predicates are now identical and bounded by status, issue-number branch, and repository origin. The combined Start/Resume guard still ignores all Start facts (R3-F1). |
+| AC-08 | **Current table passes; guard does not** | Required transition pairs are present and `Done` is terminal, but the guard ignores actors/triggers and unauthorized extra edges (R3-F1). |
+| AC-09 | **Current register passes; guard does not** | Current owners and fallbacks are accurate, including #124. The guard accepts the previously wrong #109 owner (R3-F1). |
+| AC-10 | **Current text passes; guards do not** | The builder reaches ready only after clean review and the current Gates line is a lower bound. Semantically opposite wording variants pass both guards (R3-F1). |
+
+### Invariant trace
+
+| Requirement | Result | Evidence |
+|---|---|---|
+| INV-01 | **Pass** | No immutable live-trade, risk-limit, Decimal/money, holdout, signal-parity, secret, English, authorship, Jan-authority, or no-autonomous-R3-merge rule was removed. |
+| INV-02 | **Pass in current documents; regression guard fails** | Constitution and workflow agree on both the ordinary rule and the #124 transition. The guard nevertheless passes when those documents state opposite branch-review behavior (R3-F1). |
+
+### Independently verified gates
+
+| Check | Result |
+|---|---|
+| Focused documentation suite | exit 0; **154 passed** |
+| Full `just check` recipes, invoked with the repository's Windows PowerShell shell override | exit 0; Ruff clean, mypy clean over 182 files, vulture clean, **1216 passed / 1 skipped** |
+| `check-properties` | exit 0; **21 passed twice** |
+| `check-invariants` | exit 0; **325 passed** |
+| `check-security` | exit 0; secret scan clean, no known dependency vulnerabilities, static security check clean |
+| `uv run python -m scripts.quality.validate_task 107` before this review | exit 0; valid (**10 AC, 2 INV**) |
+| `uv run python -m scripts.quality.pr_ready 107 --base origin/main` before this review | exit 0; formally **READY** because the previous findings are marked resolved and evidence binds `102ce55` |
+| The validator and readiness command after recording this review | exit 1 as intended; the open P1/P2 findings are detected and readiness reports **NOT READY** |
+
+The green repository gates confirm that the checked-in documents satisfy the current recognizers;
+the seven executed counterexamples prove that those recognizers still do not enforce the claimed
+contract. This third review therefore reopens blocking findings.
+
+### Builder dispositions after the third review
+
+The builder did not reinterpret either finding and did not alter the workflow documents.
+Independent review is required again because R3-F1 changes the load-bearing guard implementation.
+
+| ID | Disposition |
+|---|---|
+| R3-F1 | Confirmed and fixed structurally. The seven counterexamples are committed as the seven cases of `test_contract_guard_rejects_semantic_counterexample`; before the fix all seven failed because their guard did not raise. Start and Resume now parse to exact condition/action tuples in both documents. Ready order and gate lower bound are canonical facts. Transitions are exact `(source, target, actor, trigger)` allowlisted facts, preserving both `Implementing → Reviewing` handovers and refusing any extra edge. Activations are an exact capability/issue/fallback map. Constitution and workflow transitional rules normalize to the same four facts. After the fix all seven counterexamples pass because every guard rejects its mutation. |
+| R3-F2 | Confirmed and fixed. `test-plan.md` now uses complete current pytest node ids and records the current seven-case oracle. `evidence.md` is updated with the real red/green runs and counts. `test_every_task_plan_test_reference_collects` rejects shorthand and invokes pytest collection for every cited full node id, so a deleted or renamed test makes the suite red. |
+
+**Review status:** implementation complete; a fresh complete Claude review is owed. These
+dispositions record builder work, not self-review.

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -78,6 +81,32 @@ def _task(tmp_path: Path, *, spec: str = _SPEC, test_plan: str = _TEST_PLAN) -> 
     for name, content in files.items():
         (task / name).write_text(content, encoding="utf-8")
     return task
+
+
+def test_every_task_plan_test_reference_collects() -> None:
+    """A versioned acceptance map may not name a test pytest cannot collect."""
+    references: list[str] = []
+    shorthand: list[str] = []
+    for plan in sorted((REPO_ROOT / ".ai" / "tasks").glob("*/test-plan.md")):
+        text = plan.read_text(encoding="utf-8")
+        references.extend(re.findall(r"`(tests/[A-Za-z0-9_./-]+\.py::[A-Za-z0-9_:\[\].-]+)`", text))
+        shorthand.extend(re.findall(r"`(::test_[^`]+)`", text))
+    assert not shorthand, (
+        "task test plans must use complete pytest node ids, not path-relative shorthand: "
+        f"{shorthand}"
+    )
+    assert references, "at least one task test plan must cite an executable pytest node id"
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q", *sorted(set(references))],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        "a task test plan cites a pytest node id that does not collect:\n"
+        f"{result.stdout}\n{result.stderr}"
+    )
 
 
 def _messages(task: Path) -> str:
