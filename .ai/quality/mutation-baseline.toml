@@ -3,8 +3,11 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "PR #105 fifth-review remediation makes the account-position issue decision independent of terminal enumeration order and routes unknown ownership to the conservative semantic halt. Linux run 30445165378 measured 5,113 mutants: 4,704 killed, the same 409 inherited exact-name survivors, and zero no-tests or unhealthy outcomes. Compared with the fourth-review 5,106/4,697/409 baseline, total and killed both increase by seven, every new mutant is killed by the reviewer-supplied ordering and unreadable-ownership regressions, the exact survivor set is unchanged, and no classification was added. No test, threshold, target, comparison rule, risk limit, previously verified flatten behavior, or valid live behavior was weakened."
+change_explanation = "PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
 targets = [
+    "live-account-identity",
+    "live-preflight-redaction",
+    "live-notification-transport",
     "live-risk-control",
     "portfolio-h4-prices",
     "portfolio-sizing",
@@ -32,9 +35,9 @@ targets = [
 ]
 
 [summary]
-total = 5113
-killed = 4704
-survived = 409
+total = 5171
+killed = 4761
+survived = 410
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -43,6 +46,13 @@ not_checked = 0
 interrupted = 0
 segfault = 0
 caught_by_type_check = 0
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Mutmut changes only the default of the inner Notifier.__init__ mutant function from beep=False to beep=True. Its unchanged trampoline binds an omitted beep argument to False before selecting the mutant and passes False explicitly, so the mutated inner default is unreachable and cannot alter beep behavior, state, calls, output, or exceptions."
+names = [
+    "live.notify.x\u01c1Notifier\u01c1__init____mutmut_1",
+]
 
 [[survivor_groups]]
 classification = "equivalent"
