@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #66 (R3 review hook)"
+defect_class = "missing-artifact-fails-open"
+severity = "P1"
+affected = "scripts/quality/hooks/pre_bash.py"
+root_cause = "an undiscoverable task ID originally produced an empty validation-issue set, which the R3 review decision interpreted as a valid review"
+why_tests_missed = "the pure decision received only explicit invalid issues and did not exercise orchestration with no task artifact"
+regression = "test_evaluate_blocks_r3_boundary_without_task_review"
+generalized = "absence must be represented as an explicit failure before passing state into a pure gate decision"
+workflow_change = "boundary orchestration fails closed when it cannot discover exactly one task artifact"

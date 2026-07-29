@@ -1,24 +1,21 @@
 """The finding registry required by constitution section 14 exists and is well-formed.
 
-Every confirmed reviewer finding is reproduced, generalized, and recorded in
-`.ai/quality/finding-patterns.toml` so a defect CLASS becomes permanent protection. This validates
-the file's existence and schema, and that the four representative defect classes the workflow is
-calibrated against are present -- so the registry cannot silently become empty or malformed.
+Every confirmed reviewer finding is reproduced, generalized, and recorded as one file under
+`.ai/quality/finding-patterns/` so a defect CLASS becomes permanent protection. This validates
+the production loader and that the representative defect classes remain present.
 """
 
 from __future__ import annotations
 
 import ast
 import re
-import tomllib
 from pathlib import Path
-from typing import Any
+
+from scripts.quality.finding_registry import REGISTRY_PATH, Finding, load_findings
 
 _ROOT = Path(__file__).resolve().parents[1]
-_REGISTRY = _ROOT / ".ai" / "quality" / "finding-patterns.toml"
 
 _REQUIRED_FIELDS = (
-    "id",
     "source",
     "defect_class",
     "severity",
@@ -39,37 +36,27 @@ _REPRESENTATIVE_CLASSES = (
 )
 
 
-def _registry() -> dict[str, Any]:
-    assert _REGISTRY.is_file(), (
-        "the finding registry .ai/quality/finding-patterns.toml is missing; constitution "
-        "section 14 requires it."
-    )
-    return tomllib.loads(_REGISTRY.read_text(encoding="utf-8"))
-
-
-def _findings() -> list[dict[str, Any]]:
-    findings = _registry().get("finding", [])
-    assert isinstance(findings, list) and findings, "the registry needs at least the seed findings"
-    return findings
+def _findings() -> tuple[Finding, ...]:
+    assert REGISTRY_PATH.is_dir(), "constitution section 14 requires the split finding registry"
+    return load_findings()
 
 
 def test_registry_parses_and_has_findings() -> None:
-    assert _registry().get("version") == 1
     assert _findings()
 
 
 def test_every_finding_is_complete() -> None:
     ids: list[str] = []
     for f in _findings():
-        missing = [k for k in _REQUIRED_FIELDS if not str(f.get(k, "")).strip()]
-        assert not missing, f"finding {f.get('id', '?')} is missing fields: {missing}"
-        assert f["severity"] in ("P0", "P1", "P2", "P3"), f"bad severity in {f['id']}"
-        ids.append(str(f["id"]))
+        missing = [field for field in _REQUIRED_FIELDS if not str(getattr(f, field)).strip()]
+        assert not missing, f"finding {f.id} is missing fields: {missing}"
+        assert f.severity in ("P0", "P1", "P2", "P3"), f"bad severity in {f.id}"
+        ids.append(f.id)
     assert len(ids) == len(set(ids)), f"duplicate finding ids: {ids}"
 
 
 def test_representative_defect_classes_are_recorded() -> None:
-    classes = {str(f["defect_class"]) for f in _findings()}
+    classes = {f.defect_class for f in _findings()}
     missing = [c for c in _REPRESENTATIVE_CLASSES if c not in classes]
     assert not missing, (
         f"the registry must document the representative defect classes; missing: {missing}"
@@ -90,7 +77,7 @@ def test_every_finding_registry_regression_reference_resolves() -> None:
 
     justfile = (_ROOT / "justfile").read_text(encoding="utf-8")
     for finding in _findings():
-        regression = str(finding["regression"])
+        regression = finding.regression
         file_tokens = re.findall(r"(?:tests/)?(test_[A-Za-z0-9_]+\.py)", regression)
         without_files = re.sub(r"(?:tests/)?test_[A-Za-z0-9_]+\.py", "", regression)
         name_tokens = re.findall(r"\b(test_[A-Za-z0-9_]+)\b", without_files)
@@ -104,10 +91,10 @@ def test_every_finding_registry_regression_reference_resolves() -> None:
             if not re.search(rf"(?m)^{re.escape(token)}(?:\s[^:]*)?:", justfile)
         ]
         assert not (missing_files or missing_names or missing_commands), (
-            f"finding {finding['id']} names stale regression protection: "
+            f"finding {finding.id} names stale regression protection: "
             f"files={missing_files}, tests={missing_names}, commands={missing_commands}"
         )
         assert file_tokens or name_tokens or command_tokens, (
-            f"finding {finding['id']} regression must name an existing test, test file, or just "
+            f"finding {finding.id} regression must name an existing test, test file, or just "
             "recipe"
         )

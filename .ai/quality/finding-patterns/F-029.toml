@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #67 PR-evidence adversarial review"
+defect_class = "unchecked-attestation-counts-as-evidence"
+severity = "P1"
+affected = "scripts/quality/pr_body.py"
+root_cause = "the validator searched for attestation text, so the template's default unchecked statement could satisfy the safety claim"
+why_tests_missed = "the first negative cases removed sections and artifacts but did not retain an unchecked safety statement"
+regression = "test_pr_body_validator_requires_checked_attestations_and_checklists"
+generalized = "an offered assertion is not evidence until its explicit completion state is validated"
+workflow_change = "PR evidence rejects every unchecked checklist item and requires a checked live-runner attestation"

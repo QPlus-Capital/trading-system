@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #123 Jan decision on independent account witness"
+defect_class = "identity-guard-is-self-referential-to-one-operator-config"
+severity = "P2"
+affected = "live/accounts.py"
+root_cause = "expected login and terminal path came from adjacent values in the same hand-written environment file, so a consistent profile-block copy could satisfy the runtime comparison"
+why_tests_missed = "the wrong-account tests varied the terminal identity independently but never copied both endpoint and expected identity from another valid profile"
+regression = "test_code_owned_login_suffix_rejects_a_consistent_other_profile_copy; per-profile suffix acceptance"
+generalized = "a live identity guard needs at least one independent code-owned non-secret witness; endpoint and expected identity from one operator-controlled source are not independent"
+workflow_change = "each profile pins four non-secret login digits in code and validates them before any connection"

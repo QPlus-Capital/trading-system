@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #123 complete independent re-review"
+defect_class = "documented-env-format-silently-truncates-safety-configuration"
+severity = "P2"
+affected = ".env.example, RUN.md, docs/live-runbook.md, live/notify.py"
+root_cause = "the documented Windows backslash path was not quoted in the only form uv parses reliably, while uv returned success after dropping that line and later identity and Telegram variables"
+why_tests_missed = "tests inspected placeholder names but never round-tripped the documented file through the real uv dotenv parser or asserted that loss of the remote alert transport is loud"
+regression = "test_documented_env_layout_round_trips_windows_paths_and_telegram_through_uv; test_operator_docs_state_windows_env_quoting_and_export_precedence; test_missing_remote_notification_transport_logs_a_warning"
+generalized = "operator configuration documentation is executable safety code: round-trip the platform-specific representation through the real loader and make disabled alert delivery observable"
+workflow_change = "the Windows layout is single-quoted, exported-variable precedence is documented at the run point, and missing Telegram transport emits a warning"

@@ -228,7 +228,7 @@ _MUST_BE_R3 = (
     "research/engine/schedule_builder.py",  # selected execution params and protective exits
     "research/stages/select.py",
     ".ai/quality/risk-classes.toml",  # the model must not be able to weaken itself below R3
-    ".ai/quality/finding-patterns.toml",
+    ".ai/quality/finding-patterns",
     "core/data/mt5_csv.py",  # data ingestion -> every result
     "pyproject.toml",  # pins the engine / bridge versions
     "uv.lock",

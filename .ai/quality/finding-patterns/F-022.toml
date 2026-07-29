@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #66 (staged bypass-hook dogfood)"
+defect_class = "suppression-scanner-string-literal-false-positive"
+severity = "P2"
+affected = "scripts/quality/hooks/decisions.py"
+root_cause = "raw diff matching treated a quoted broad-ignore counterexample in the hook's own test as an actual Python comment"
+why_tests_missed = "the pure bypass test supplied the synthetic suppression as a bare added line rather than its exact quoted test-source representation"
+regression = "test_bypass_decision_blocks_bypass_and_allows_narrow_suppression fixture-source and documentation cases"
+generalized = "source-policy scanners must distinguish language tokens from strings and documentation examples"
+workflow_change = "Python bypass checks inspect comment and code tokens only; per-file ignores are scoped to TOML diffs"

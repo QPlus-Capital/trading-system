@@ -1,3 +1,8 @@
+<!--
+Keep the exact section set required by the declared risk class:
+R0 = 5, R1 = 8, R2 = 14, R3 = all 20. The machine policy is authoritative.
+-->
+
 ## Linked issue
 
 Closes #<!-- issue number -->

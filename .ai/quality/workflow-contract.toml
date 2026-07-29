@@ -12,17 +12,11 @@ requires_clean_independent_review = true
 requires_readiness_check = true
 merge_decider = "Jan"
 
-[transitional_review]
-activation_issue = 124
-blocked_action = "pull_request_creation"
-review_surface = "pushed_branch"
-pull_request_timing = "after_review"
-
 [document_hashes]
-workflow = [174, 222, 186, 196, 184, 81, 53, 2, 106, 182, 216, 22, 180, 43, 141, 44, 85, 52, 31, 86, 243, 106, 213, 190, 231, 217, 170, 136, 102, 144, 202, 167]
+workflow = [237, 111, 81, 52, 245, 81, 53, 9, 199, 224, 51, 167, 196, 170, 145, 130, 179, 146, 242, 245, 251, 224, 242, 255, 70, 216, 83, 105, 149, 210, 92, 228]
 agents = [250, 136, 112, 59, 183, 24, 109, 39, 138, 248, 54, 99, 68, 163, 143, 46, 124, 61, 186, 63, 174, 9, 49, 190, 165, 97, 214, 160, 135, 9, 103, 2]
 claude = [239, 11, 42, 72, 30, 32, 77, 52, 71, 153, 168, 50, 48, 136, 253, 252, 46, 234, 202, 126, 196, 180, 235, 39, 202, 230, 161, 234, 244, 206, 220, 241]
-constitution = [6, 122, 239, 227, 203, 150, 225, 90, 82, 170, 15, 227, 59, 63, 97, 189, 9, 90, 193, 38, 165, 24, 5, 1, 80, 126, 92, 200, 16, 65, 50, 85]
+constitution = [12, 121, 79, 145, 102, 158, 42, 238, 184, 120, 174, 53, 229, 131, 154, 56, 77, 237, 10, 124, 244, 10, 102, 113, 161, 213, 212, 59, 248, 69, 229, 196]
 
 [[status]]
 name = "Backlog"
@@ -46,7 +40,7 @@ actor = "Codex"
 
 [[status]]
 name = "Reviewing"
-meaning = "The change is with the independent reviewer — on the draft pull request, or on the pushed branch while the branch-review rule below applies."
+meaning = "The change is with the independent reviewer on the draft pull request."
 actor = "Codex, at handover"
 
 [[status]]
@@ -132,7 +126,7 @@ trigger = "build starts; `approved` is removed afterwards"
 source = "Implementing"
 target = "Reviewing"
 actor = "Codex"
-trigger = "the change is handed over for review — by opening the draft pull request, or, while the branch-review rule below applies, by pushing the branch and saying so"
+trigger = "the draft pull request is opened and handed over for review"
 
 [[transition]]
 source = "Reviewing"
@@ -181,16 +175,6 @@ source = "Reviewing"
 target = "Done"
 actor = "project automation"
 trigger = "the pull request merged and closed the issue"
-
-[[activation]]
-capability = "The draft pull request carries the review"
-issue = 124
-fallback = "The pre-Bash hook blocks `gh pr create` until the readiness check passes, so the independent review runs on the **pushed branch** and the pull request is opened afterwards. Constitution §11 states this transitional rule itself, so it is not a lower document overriding a higher one."
-
-[[activation]]
-capability = "Artifact files scale by risk class"
-issue = 124
-fallback = "`task-artifacts.toml` requires all five files for every class, `spec.md` included. Write them."
 
 [[activation]]
 capability = "Board transitions performed by tooling"

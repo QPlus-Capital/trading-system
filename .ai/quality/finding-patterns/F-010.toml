@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #59 (constitution + risk model)"
+defect_class = "non-ratcheting-allowlist"
+severity = "P2"
+affected = "tests/test_import_boundaries.py"
+root_cause = "an exception allowlist was checked in one direction only, so a removed crossing left a silently-permissive entry a later change could reuse"
+why_tests_missed = "the stale-entry check existed for research->live but not live->research"
+regression = "test_live_to_research_allowlist_has_no_stale_entries"
+generalized = "an exception allowlist must ratchet: assert each entry is still actually present, so it can only shrink"
+workflow_change = "both crossing directions now have stale-entry tests"

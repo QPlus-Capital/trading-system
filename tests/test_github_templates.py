@@ -13,6 +13,13 @@ _ISSUES = _ROOT / ".github" / "ISSUE_TEMPLATE"
 _PR_TEMPLATE = _ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md"
 
 
+def _policy(*sections: str) -> PRBodyPolicy:
+    return PRBodyPolicy(
+        {risk: tuple(sections) for risk in ("R0", "R1", "R2", "R3")},
+        "No live runner was touched.",
+    )
+
+
 def test_all_issue_templates_are_renderable_markdown() -> None:
     expected = {"bug.md", "feature.md", "refactor.md", "methodology-decision.md"}
     assert {path.name for path in _ISSUES.glob("*.md")} == expected
@@ -78,9 +85,10 @@ def test_pr_body_validator_rejects_a_missing_task_artifact(tmp_path: Path) -> No
 
 
 def test_pr_body_validator_rejects_an_empty_required_section(tmp_path: Path) -> None:
-    policy = PRBodyPolicy(("Summary",), "No live runner was touched.")
+    policy = _policy("Summary")
     body = (
         "## Summary\n<!-- nothing supplied -->\n\n"
+        "## Risk class and reason\nR1 — tooling.\n\n"
         "## Live-runner attestation\nNo live runner was touched."
     )
     result = validate_pr_body(body, task_root=tmp_path, policy=policy)
@@ -92,7 +100,7 @@ def test_pr_body_validator_accepts_a_complete_body_with_ready_evidence(tmp_path:
     task = _task(tmp_path)
     policy = load_pr_body_policy()
     bodies = []
-    for heading in policy.required_sections:
+    for heading in policy.sections_for("R1"):
         value = "Completed."
         if heading == "Linked issue":
             value = "Closes #67"
@@ -113,8 +121,9 @@ def test_pr_body_validator_accepts_a_complete_body_with_ready_evidence(tmp_path:
 
 
 def test_pr_body_validator_requires_checked_attestations_and_checklists(tmp_path: Path) -> None:
-    policy = PRBodyPolicy(("Acceptance criteria",), "No live runner was touched.")
+    policy = _policy("Acceptance criteria")
     body = (
+        "## Risk class and reason\n\nR1 — tooling.\n\n"
         "## Acceptance criteria\n\n- [ ] AC-01 is proven.\n\n"
         "## Task artifact\n\n`.ai/tasks/67/`\n\n"
         "## Live-runner attestation\n\n- [ ] No live runner was touched."
@@ -126,10 +135,7 @@ def test_pr_body_validator_requires_checked_attestations_and_checklists(tmp_path
 
 
 def test_pr_body_validator_requires_a_linked_issue_matching_a_numeric_task(tmp_path: Path) -> None:
-    policy = PRBodyPolicy(
-        ("Linked issue", "Task artifact", "Risk class and reason"),
-        "No live runner was touched.",
-    )
+    policy = _policy("Linked issue", "Task artifact", "Risk class and reason")
     body = (
         "## Linked issue\n\nCloses #66\n\n"
         "## Task artifact\n\n`.ai/tasks/67/`\n\n"

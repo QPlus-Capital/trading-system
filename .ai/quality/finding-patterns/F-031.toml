@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #67 task-artifact recipe dogfood"
+defect_class = "validated-identity-not-propagated-to-output"
+severity = "P2"
+affected = "scripts/quality/validate_task.py"
+root_cause = "the CLI printed the optional raw argument after discovering a concrete task ID, so successful CI output named Task None"
+why_tests_missed = "discovery was tested as a pure function but the no-argument CLI execution path was not exercised"
+regression = "test_cli_reports_the_discovered_task_id"
+generalized = "after fallback or discovery, reporting must use the resolved value consumed by the decision"
+workflow_change = "the CI-facing task validator now tests and reports the discovered task identity"

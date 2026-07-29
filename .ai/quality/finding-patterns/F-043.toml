@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #123 independent live-money review"
+defect_class = "secret-migration-leaves-operator-output-leak"
+severity = "P1"
+affected = "live/preflight.py"
+root_cause = "account logins moved from source into secret environment configuration, but the documented pre-start report still printed both connected and expected values verbatim"
+why_tests_missed = "tests pinned guard refusal messages and repr redaction but never executed the operator-facing preflight stdout with two distinct full login values"
+regression = "test_preflight_masks_connected_and_expected_login_values"
+generalized = "when a value is reclassified as secret, enumerate runtime output, repr, errors, logs, URLs, docs, and fixtures; migration is incomplete until every emission surface is redacted"
+workflow_change = "the preflight masker is mutation-targeted and its stdout test rejects either full identity"

@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #66 (mutation-evidence adversarial review)"
+defect_class = "baseline-guard-incomplete-path-set"
+severity = "P1"
+affected = "scripts/quality/hooks/decisions.py"
+root_cause = "the evidence hook covered files named baseline but not mutation.toml, even though changing mutation scope can weaken the measured baseline"
+why_tests_missed = "the first block/allow pair exercised only mutation-baseline.toml and an unrelated document"
+regression = "test_baseline_evidence_decision_blocks_missing_and_allows_explicit_evidence mutation-policy case"
+generalized = "a baseline guard must include the policy that defines what the baseline measures"
+workflow_change = "mutation policy and every named quality baseline require successful mutation evidence"

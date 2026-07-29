@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #67 security-gate dogfood"
+defect_class = "dependency-vulnerability-without-binding-audit"
+severity = "P1"
+affected = "uv.lock, justfile"
+root_cause = "the locked environment contained a GitPython release with three published advisories and no dependency audit was binding"
+why_tests_missed = "the quality suite verified behaviour but did not query a vulnerability advisory service"
+regression = "just check-security runs pip-audit against the locked synced environment"
+generalized = "a reproducible lock is not a security assertion; every locked environment requires a current advisory audit"
+workflow_change = "the Security job audits dependencies and gitpython is pinned to a non-vulnerable release"

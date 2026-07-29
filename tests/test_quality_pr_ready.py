@@ -10,7 +10,7 @@ import scripts.quality.pr_ready as pr_ready
 from scripts.quality.classify import load_model
 from scripts.quality.pr_ready import assess_readiness, evidence_is_current
 
-from tests.test_quality_validate_task import _SPEC, _task
+from tests.test_quality_validate_task import _task
 
 
 def _record_gate_evidence(task: Path, risk_class: str) -> None:
@@ -40,7 +40,7 @@ def test_missing_evidence_fails_pr_readiness(tmp_path: Path) -> None:
     (task / "evidence.md").unlink()
     result = assess_readiness(
         task,
-        changed=["scripts/tool.py"],
+        changed=["scripts/quality/pr_ready.py"],
         head_sha="abc123",
     )
     assert not result.ready
@@ -49,9 +49,10 @@ def test_missing_evidence_fails_pr_readiness(tmp_path: Path) -> None:
 
 def test_stale_evidence_fails_pr_readiness(tmp_path: Path) -> None:
     task = _task(tmp_path)
+    _record_gate_evidence(task, "R3")
     result = assess_readiness(
         task,
-        changed=["scripts/tool.py"],
+        changed=["scripts/quality/pr_ready.py"],
         head_sha="new456",
     )
     assert not result.ready
@@ -59,9 +60,8 @@ def test_stale_evidence_fails_pr_readiness(tmp_path: Path) -> None:
 
 
 def test_a_clean_r1_task_passes(tmp_path: Path) -> None:
-    task = _task(tmp_path)
     result = assess_readiness(
-        task,
+        None,
         changed=["scripts/tool.py"],
         head_sha="abc123",
     )
@@ -71,15 +71,21 @@ def test_a_clean_r1_task_passes(tmp_path: Path) -> None:
 
 def test_a_nonzero_required_gate_blocks_readiness(tmp_path: Path) -> None:
     task = _task(tmp_path)
+    _record_gate_evidence(task, "R3")
     evidence = task / "evidence.md"
     evidence.write_text(
         evidence.read_text(encoding="utf-8").replace(
-            "| `check` | `verify check` | 0 | pass |",
-            "| `check` | `verify check` | 0 | pass |\n| `check` | `failed check` | 1 | failed |",
+            "| `check` | `verify check` | 0 | passed |",
+            "| `check` | `verify check` | 0 | passed |\n"
+            "| `check` | `failed check` | 1 | failed |",
         ),
         encoding="utf-8",
     )
-    result = assess_readiness(task, changed=["scripts/tool.py"], head_sha="abc123")
+    result = assess_readiness(
+        task,
+        changed=["scripts/quality/pr_ready.py"],
+        head_sha="abc123",
+    )
     assert not result.ready
     assert any(
         "check" in check.detail and "non-zero" in check.detail
@@ -90,14 +96,19 @@ def test_a_nonzero_required_gate_blocks_readiness(tmp_path: Path) -> None:
 
 def test_a_missing_required_gate_blocks_readiness(tmp_path: Path) -> None:
     task = _task(tmp_path)
+    _record_gate_evidence(task, "R3")
     evidence = task / "evidence.md"
     evidence.write_text(
         evidence.read_text(encoding="utf-8").replace(
-            "| `impacted-tests` | `verify impacted-tests` | 0 | pass |\n", ""
+            "| `impacted-tests` | `verify impacted-tests` | 0 | passed |\n", ""
         ),
         encoding="utf-8",
     )
-    result = assess_readiness(task, changed=["scripts/tool.py"], head_sha="abc123")
+    result = assess_readiness(
+        task,
+        changed=["scripts/quality/pr_ready.py"],
+        head_sha="abc123",
+    )
     assert not result.ready
     assert any(
         "missing required gates: impacted-tests" in check.detail
@@ -107,7 +118,7 @@ def test_a_missing_required_gate_blocks_readiness(tmp_path: Path) -> None:
 
 
 def test_a_full_clean_r3_gate_run_is_ready(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    task = _task(tmp_path)
     _record_gate_evidence(task, "R3")
     _record_no_findings_review(task)
     result = assess_readiness(
@@ -121,10 +132,7 @@ def test_a_full_clean_r3_gate_run_is_ready(tmp_path: Path) -> None:
 
 
 def test_an_r3_change_reports_the_cumulative_r3_gates(tmp_path: Path) -> None:
-    task = _task(
-        tmp_path,
-        spec=_SPEC.replace("R1 — local tooling.", "R3 — quality gates govern result integrity."),
-    )
+    task = _task(tmp_path)
     _record_gate_evidence(task, "R3")
     _record_no_findings_review(task)
     result = assess_readiness(
@@ -139,9 +147,14 @@ def test_an_r3_change_reports_the_cumulative_r3_gates(tmp_path: Path) -> None:
 
 
 def test_a_manual_r3_upgrade_enforces_the_cumulative_r3_gates(tmp_path: Path) -> None:
-    task = _task(tmp_path, spec=_SPEC.replace("R1", "R3", 1))
+    task = _task(tmp_path)
     _record_no_findings_review(task)
-    result = assess_readiness(task, changed=["scripts/tool.py"], head_sha="abc123")
+    result = assess_readiness(
+        task,
+        changed=["scripts/tool.py"],
+        head_sha="abc123",
+        declared_risk="R3",
+    )
     assert not result.ready
     assert result.classification.risk_class == "R1"
     assert result.risk_class == "R3"
@@ -155,6 +168,7 @@ def test_declared_risk_may_not_understate_the_classifier(tmp_path: Path) -> None
         task,
         changed=["scripts/quality/pr_ready.py"],
         head_sha="abc123",
+        declared_risk="R1",
     )
     assert not result.ready
     assert any("declared risk" in check.detail.lower() for check in result.checks if not check.ok)
@@ -168,8 +182,13 @@ def test_cli_exit_code_tracks_clean_and_missing_evidence(
     task_parent = tmp_path / ".ai" / "tasks"
     task_parent.mkdir(parents=True)
     task = _task(task_parent)
+    _record_gate_evidence(task, "R3")
     monkeypatch.setattr(pr_ready, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(pr_ready, "changed_paths", lambda _base: ["scripts/tool.py"])
+    monkeypatch.setattr(
+        pr_ready,
+        "changed_paths",
+        lambda _base: ["scripts/quality/pr_ready.py", ".ai/tasks/task/evidence.md"],
+    )
     monkeypatch.setattr(pr_ready, "_head_sha", lambda _root: "abc123")
 
     assert pr_ready.main([task.name]) == 0
@@ -187,16 +206,21 @@ def test_cli_reports_not_ready_for_a_failing_required_gate(
     task_parent = tmp_path / ".ai" / "tasks"
     task_parent.mkdir(parents=True)
     task = _task(task_parent)
+    _record_gate_evidence(task, "R3")
     evidence = task / "evidence.md"
     evidence.write_text(
         evidence.read_text(encoding="utf-8").replace(
-            "| `check` | `verify check` | 0 | pass |",
+            "| `check` | `verify check` | 0 | passed |",
             "| `check` | `verify check` | 2 | failed |",
         ),
         encoding="utf-8",
     )
     monkeypatch.setattr(pr_ready, "REPO_ROOT", tmp_path)
-    monkeypatch.setattr(pr_ready, "changed_paths", lambda _base: ["scripts/tool.py"])
+    monkeypatch.setattr(
+        pr_ready,
+        "changed_paths",
+        lambda _base: ["scripts/quality/pr_ready.py", ".ai/tasks/task/evidence.md"],
+    )
     monkeypatch.setattr(pr_ready, "_head_sha", lambda _root: "abc123")
 
     assert pr_ready.main([task.name]) == 1

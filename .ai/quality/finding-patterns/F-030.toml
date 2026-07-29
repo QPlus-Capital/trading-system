@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #67 PR-evidence adversarial review"
+defect_class = "linked-issue-task-identity-not-bound"
+severity = "P1"
+affected = "scripts/quality/pr_body.py"
+root_cause = "the PR body validated a task path and required a linked-issue section but did not require their numeric identities to agree"
+why_tests_missed = "the first positive and negative cases used one task reference without a contradictory issue number"
+regression = "test_pr_body_validator_requires_a_linked_issue_matching_a_numeric_task"
+generalized = "independently valid provenance fields must also be reconciled to the same identity"
+workflow_change = "PR evidence now requires a numeric linked issue and matches it to a numeric task artifact ID"

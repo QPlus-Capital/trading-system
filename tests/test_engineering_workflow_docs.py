@@ -33,7 +33,7 @@ def test_branch_protection_names_every_required_check_and_setting() -> None:
 def test_reviewer_findings_policy_closes_the_feedback_loop() -> None:
     text = (_ROOT / "docs/engineering/reviewer-findings.md").read_text(encoding="utf-8")
     for phrase in (
-        ".ai/quality/finding-patterns.toml",
+        ".ai/quality/finding-patterns/",
         "failing test",
         "permanent",
         "repeated defect class",

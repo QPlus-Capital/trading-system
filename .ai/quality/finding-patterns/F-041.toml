@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #105 independent live-money review after mutation remediation"
+defect_class = "external-runtime-representation-or-read-failure-disables-safety-cycle"
+severity = "P2"
+affected = "live/mt5_bridge.py, live/runner.py"
+root_cause = "the bridge required exact built-in runtime types and the runner let position-read failures occur before or abort its safety halt and best-effort flattening"
+why_tests_missed = "fixtures used only exact int/str values, non-empty single-position accounts, and direct bridge calls; they did not exercise C-extension-like subtypes, flat or multi-position accounts, or bridge rejection through the runner"
+regression = "test_positions_accept_integer_subtypes_from_the_runtime; test_positions_returns_empty_list_when_the_account_is_flat; test_loss_to_stop_rejects_invalid_side_even_without_a_stop; test_runner_halts_loudly_and_flattens_retrievable_positions_from_real_bridge; test_halt_and_flatten_closes_every_owned_position_when_one_lookup_fails"
+generalized = "external runtime values must be accepted by documented semantics while excluding bool aliases, and every read failure must be driven through the real safety consumer to prove it cannot bypass or truncate a halt"
+workflow_change = "critical mutation now covers the bridge guards plus the runner safety-cycle and flatten consumers, with independent fake-broker assertions on both rejection and complete valid behavior"

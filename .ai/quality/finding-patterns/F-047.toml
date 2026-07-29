@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #105 complete independent re-review after F-042"
+defect_class = "unowned-invalid-record-triggers-owned-book-liquidation"
+severity = "P2"
+affected = "live/mt5_bridge.py, live/runner.py"
+root_cause = "account-wide position conversion ran before ownership was known, so an unsupported type on a foreign/manual position raised the same semantic error as an owned position and triggered halt-and-flatten"
+why_tests_missed = "fixtures varied side representations only on owned positions and never combined an invalid foreign record with a healthy executable owned book"
+regression = "test_position_types_accept_the_integral_index_protocol; test_foreign_unknown_type_cannot_poison_account_or_owned_positions; test_foreign_unknown_position_type_never_halts_or_flattens_owned_book"
+generalized = "classify ownership from an independent field before decoding an action-bearing enum; an unowned malformed record must not trigger destructive action on owned state"
+workflow_change = "bridge and runner critical mutation scopes pin bool rejection, index-protocol acceptance, raw ownership filtering, and the complete halt-and-flatten loop"
