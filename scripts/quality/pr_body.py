@@ -15,6 +15,11 @@ from typing import Any
 
 from scripts.quality.classify import REPO_ROOT, changed_paths
 from scripts.quality.pr_ready import assess_readiness
+from scripts.quality.review_observation import (
+    GhReviewGateway,
+    ReviewObservation,
+    observe_independent_review,
+)
 
 POLICY_PATH = REPO_ROOT / ".ai" / "quality" / "pr-body.toml"
 _SECTION = re.compile(
@@ -89,6 +94,8 @@ def validate_pr_body(
     head_sha: str | None = None,
     root: Path = REPO_ROOT,
     policy: PRBodyPolicy | None = None,
+    review_observation: ReviewObservation | None = None,
+    require_verifiable_review: bool = False,
 ) -> PRBodyValidation:
     """Validate structure and bind the body to executable readiness evidence when available."""
 
@@ -162,6 +169,8 @@ def validate_pr_body(
         head_sha,
         root=root,
         declared_risk=declared_risk,
+        review_observation=review_observation,
+        require_verifiable_review=require_verifiable_review,
     )
     if not readiness.ready:
         failed = "; ".join(check.detail for check in readiness.checks if not check.ok)
@@ -206,11 +215,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             body = _event_body(Path(event_file))
         else:
             raise ValueError("provide --body-file or GITHUB_EVENT_PATH")
+        head_sha = _head_sha(REPO_ROOT)
+        observation = observe_independent_review(GhReviewGateway(root=REPO_ROOT), head_sha)
         result = validate_pr_body(
             body,
             changed=changed_paths(args.base),
-            head_sha=_head_sha(REPO_ROOT),
+            head_sha=head_sha,
+            review_observation=observation,
+            require_verifiable_review=bool(event_file),
         )
+        if observation.status == "unverifiable":
+            print(f"PR review check skipped locally: {observation.detail}")
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
         print(f"PR body validation failed closed: {type(exc).__name__}")
         return 2

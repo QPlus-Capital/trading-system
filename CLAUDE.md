@@ -38,7 +38,8 @@ live-money, architecture, or risk decision moves the card to `Blocked` and ends 
 by risk class and by the paths touched. Deliver the findings as a real pull-request review: one
 inline comment per finding at its `file:line`, plus a summary carrying the findings table, the
 `AC`/`INV` check, an assessment of the approach Codex chose, and a separated block of decisions that
-require Jan. A blocking finding
+require Jan. Write the matching findings and dispositions directly to
+`.ai/tasks/<id>/review.md`; the builder must never transcribe or certify your review. A blocking finding
 returns the card to `Implementing`; after the fix, rerun the **complete** review. Codex fixes every
 finding, including trivial ones — otherwise you would be reviewing your own code.
 

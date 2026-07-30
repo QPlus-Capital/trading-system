@@ -2,10 +2,9 @@
 
 ## Findings
 
-Use one row per finding. Blocker, Defect, and Suspected defect rows must have a resolved status
-before PR readiness.
-For an R3 review with no findings, replace the table with the exact line `No findings; N
-counterexamples attempted`, where `N` is at least 1.
+The independent reviewer writes this audit record directly; the builder never transcribes it.
+Use one row per finding. Blocker, Defect, and Suspected defect rows request changes in the
+pull-request review. When no findings survive, record the counterexamples attempted.
 
 | ID | Severity | Finding | Disposition | Status |
 |---|---|---|---|---|

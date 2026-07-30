@@ -269,7 +269,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | File | Purpose |
 |---|---|
 | `scripts/quality/classify.py` | Applies the authoritative TOML risk model to changed paths |
-| `scripts/quality/validate_task.py` | Validates task sections, AC/INV test traceability, and review dispositions |
+| `scripts/quality/validate_task.py` | Validates task sections and AC/INV test traceability, then applies the shared observed-review verdict |
 | `scripts/quality/finding_registry.py` | Loads split finding files, derives content IDs, and verifies the lossless legacy migration |
 | `scripts/quality/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `scripts/quality/pr_ready.py` | Composes risk, task, review, traceability, and evidence-freshness gates |
@@ -280,6 +280,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `scripts/quality/board.py` | Applies contract-driven, fail-closed GitHub Project and permit transitions |
 | `scripts/quality/workflow_contract.py` | Renders workflow documents from the authoritative TOML contract and rejects drift |
 | `scripts/quality/review_selection.py` | Selects the exact read-only reviewer set from effective risk and touched paths |
+| `scripts/quality/review_observation.py` | Observes review ordering and verdict from GitHub PR commits and reviews |
 | `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `scripts/quality/hooks/pre_bash.py` | Collects Git/task metadata and emits Claude Code hook responses |
 

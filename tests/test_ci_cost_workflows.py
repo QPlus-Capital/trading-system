@@ -257,6 +257,36 @@ def test_ready_synchronize_runs_the_full_set() -> None:
     ) == {"full-quality", "platform-quality"}
 
 
+def test_task_artifact_only_diff_selects_the_reduced_linux_gate_set() -> None:
+    workflow = _workflow(_CI_PATH)
+    full = _job(workflow, "full-quality")
+    always = {
+        str(step["name"])
+        for step in _steps(full)
+        if str(step.get("name", "")).startswith("Gate: ") and "if" not in step
+    }
+    full_change = {
+        str(step["name"])
+        for step in _steps(full)
+        if str(step.get("name", "")).startswith("Gate: ")
+        and str(step.get("if", "")) == "steps.task-scope.outputs.only != 'true'"
+    }
+
+    assert always == {"Gate: Task-Artifact Validation", "Gate: PR-Evidence Validation"}
+    assert full_change == {
+        "Gate: Tests",
+        "Gate: Deterministic Property Replay",
+        "Gate: Security",
+        "Gate: Critical Invariants",
+    }
+    detector = next(str(step["run"]) for step in _steps(full) if step.get("id") == "task-scope")
+    assert "changed_paths(before)" in detector
+    assert "task_artifact_only_synchronization" in detector
+    assert "github.event.before" in str(
+        next(step["env"] for step in _steps(full) if step.get("id") == "task-scope")
+    )
+
+
 def test_direct_ready_pull_request_runs_the_full_set() -> None:
     workflow = _workflow(_CI_PATH)
     assert _selected_jobs(workflow, event_name="pull_request", action="opened", draft=False) == {

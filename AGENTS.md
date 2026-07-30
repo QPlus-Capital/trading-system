@@ -99,6 +99,9 @@ differs, stop; never compensate by removing the permit early.
 6. **Mark it ready for review** — only after the review is clean and the readiness check passes for current HEAD. Do not merge or enable autonomous merge.
 <!-- workflow-contract:review-handover:end -->
 
+The independent reviewer writes `.ai/tasks/<id>/review.md`; the builder never transcribes or
+certifies that review.
+
 Work in **one git worktree per issue** on branch `codex/<issue>-<slug>`, so the main checkout stays
 clean and a running live runner never sees half-finished code.
 

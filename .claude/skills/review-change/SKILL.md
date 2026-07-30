@@ -22,8 +22,8 @@ the builder, and delivers its result as a pull-request review.
 4. Submit one pull-request review: an inline `file:line` comment per finding and a summary with the
    findings table, contract check, chosen-approach assessment, and Jan-only decisions.
 5. Use `Blocker`, `Defect`, `Suspected defect`, or `Note`. The first three block readiness.
-6. Record the same findings and dispositions in `review.md`; if none survive, record the exact
-   positive counterexample count.
+6. Write the same findings and dispositions directly to `review.md`; the builder never transcribes
+   the review. If none survive, record the positive counterexample count for the audit trail.
 
 ## Outputs
 

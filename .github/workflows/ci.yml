@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -40,6 +41,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
+      GH_TOKEN: ${{ github.token }}
       UV_NO_SYNC: "1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -51,21 +53,49 @@ jobs:
           python-version: "3.13"
           enable-cache: true
           cache-dependency-glob: uv.lock
+      - name: Detect a task-artifact-only synchronization
+        id: task-scope
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          EVENT_ACTION: ${{ github.event.action }}
+        shell: bash
+        run: |
+          uv run --no-project --python 3.13 python - <<'PY'
+          from __future__ import annotations
+
+          import os
+
+          from scripts.quality.classify import changed_paths
+          from scripts.quality.review_observation import task_artifact_only_synchronization
+
+
+          action = os.environ["EVENT_ACTION"]
+          before = os.environ["BEFORE_SHA"]
+          paths = changed_paths(before) if action == "synchronize" and before else ()
+          reduced = task_artifact_only_synchronization(action, paths)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"only={str(reduced).lower()}\n")
+          PY
       - name: Install locked dependencies except the Windows-only MT5 bridge
+        if: steps.task-scope.outputs.only != 'true'
         run: uv sync --locked --no-install-package metatrader5
       - name: "Gate: Tests"
+        if: steps.task-scope.outputs.only != 'true'
         timeout-minutes: 30
         run: uvx --from rust-just just check-tests
       - name: "Gate: Deterministic Property Replay"
+        if: steps.task-scope.outputs.only != 'true'
         timeout-minutes: 30
         run: uvx --from rust-just just check-properties
       - name: "Gate: Task-Artifact Validation"
         timeout-minutes: 10
         run: uvx --from rust-just just check-task-artifact
       - name: "Gate: Security"
+        if: steps.task-scope.outputs.only != 'true'
         timeout-minutes: 20
         run: uvx --from rust-just just check-security
       - name: "Gate: Critical Invariants"
+        if: steps.task-scope.outputs.only != 'true'
         timeout-minutes: 20
         run: uvx --from rust-just just check-invariants
       - name: "Gate: PR-Evidence Validation"

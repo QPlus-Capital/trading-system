@@ -16,9 +16,15 @@ from scripts.quality.classify import (
     classify_paths,
     load_model,
 )
+from scripts.quality.review_observation import (
+    GhReviewGateway,
+    ReviewObservation,
+    observe_independent_review,
+)
 from scripts.quality.validate_task import (
     discover_task_id,
     evidence_records,
+    independent_review_issues,
     load_schema,
     validate_task_dir,
 )
@@ -73,7 +79,7 @@ def evidence_is_current(
     *,
     root: Path = REPO_ROOT,
 ) -> tuple[bool, str]:
-    """Accept evidence for HEAD or an ancestor followed only by its evidence file."""
+    """Accept evidence for HEAD or an ancestor followed only by review audit records."""
 
     recorded = _recorded_head(evidence_path)
     if recorded is None:
@@ -93,8 +99,15 @@ def evidence_is_current(
     except ValueError:
         return False, "evidence file is outside the repository"
     later_paths = {line.strip().replace("\\", "/") for line in changed.splitlines() if line.strip()}
-    if later_paths == {evidence_relative}:
-        return True, f"evidence covers {recorded}; only {evidence_relative} changed afterward"
+    allowed = {
+        evidence_relative,
+        (evidence_path.parent / "review.md").resolve().relative_to(root.resolve()).as_posix(),
+    }
+    if later_paths and later_paths <= allowed:
+        return True, (
+            f"evidence covers {recorded}; only review audit records changed afterward: "
+            f"{', '.join(sorted(later_paths))}"
+        )
     return False, (
         f"evidence covers {recorded}, but later changes are not evidence-only: "
         f"{', '.join(sorted(later_paths)) or '(none)'}"
@@ -108,6 +121,8 @@ def assess_readiness(
     *,
     root: Path = REPO_ROOT,
     declared_risk: str | None = None,
+    review_observation: ReviewObservation | None = None,
+    require_verifiable_review: bool = False,
 ) -> ReadinessResult:
     """Run task, risk, traceability, review, and evidence gates."""
 
@@ -131,7 +146,11 @@ def assess_readiness(
             )
             validation_ok = False
         else:
-            validation = validate_task_dir(task_dir, risk_class=risk_class)
+            validation = validate_task_dir(
+                task_dir,
+                risk_class=risk_class,
+                require_completed_review=False,
+            )
             validation_ok = validation.ok
             checks.append(
                 ReadinessCheck(
@@ -151,6 +170,36 @@ def assess_readiness(
                 f"{risk_class} requires no task artifacts",
             )
         )
+
+    if risk_class == "R3":
+        review_issues = independent_review_issues(
+            review_observation,
+            require_verifiable=require_verifiable_review,
+        )
+        if review_issues:
+            checks.append(
+                ReadinessCheck(
+                    "independent-review",
+                    False,
+                    "; ".join(issue.message for issue in review_issues),
+                )
+            )
+        elif review_observation is None:
+            checks.append(
+                ReadinessCheck(
+                    "independent-review",
+                    True,
+                    "independent review is UNVERIFIABLE locally; advisory check skipped",
+                )
+            )
+        else:
+            checks.append(
+                ReadinessCheck(
+                    "independent-review",
+                    True,
+                    review_observation.detail,
+                )
+            )
 
     if declared_risk is not None and int(declared_risk[1]) < int(classification.risk_class[1]):
         checks.append(
@@ -256,7 +305,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     task_dir = REPO_ROOT / ".ai" / "tasks" / task_id if task_id is not None else None
-    result = assess_readiness(task_dir, paths, _head_sha(REPO_ROOT))
+    head_sha = _head_sha(REPO_ROOT)
+    observation = observe_independent_review(GhReviewGateway(root=REPO_ROOT), head_sha)
+    result = assess_readiness(
+        task_dir,
+        paths,
+        head_sha,
+        review_observation=observation,
+    )
     print(f"Risk: {result.risk_class}")
     print("Reasons:")
     for reason in result.classification.reasons:

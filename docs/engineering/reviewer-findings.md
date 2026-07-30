@@ -16,5 +16,7 @@ bug: strengthen the applicable skill, hook, test matrix, quality check, or const
 same change or a separately linked blocking issue. Every repeated defect class is therefore
 treated as a workflow failure.
 
-The task artifact is the audit trail. `review.md` records findings and dispositions, `test-plan.md`
-records the red/green proof, and `evidence.md` records the exact successful commands and HEAD.
+The task artifact is the audit trail. The independent reviewer writes findings and dispositions in
+`review.md`; the builder never transcribes them. `test-plan.md` records the red/green proof, and
+`evidence.md` records the exact successful commands and HEAD. Readiness observes the submitted
+pull-request review rather than parsing the audit record.

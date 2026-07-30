@@ -9,6 +9,8 @@ import pytest
 import scripts.quality.pr_ready as pr_ready
 from scripts.quality.classify import load_model
 from scripts.quality.pr_ready import assess_readiness, evidence_is_current
+from scripts.quality.review_observation import ReviewObservation
+from scripts.quality.validate_task import validate_task_dir
 
 from tests.test_quality_validate_task import _task
 
@@ -263,3 +265,85 @@ def test_evidence_only_commit_may_follow_the_tested_head(tmp_path: Path) -> None
     current, detail = evidence_is_current(evidence, later, root=tmp_path)
     assert not current
     assert "code.py" in detail
+
+
+def test_review_and_evidence_commits_may_follow_the_tested_head(tmp_path: Path) -> None:
+    _git(tmp_path, "init", "-b", "main")
+    task = tmp_path / ".ai" / "tasks" / "134"
+    task.mkdir(parents=True)
+    evidence = task / "evidence.md"
+    review = task / "review.md"
+    evidence.write_text("# Evidence\n\nHEAD: pending\n", encoding="utf-8")
+    review.write_text("# Review\n\nPending.\n", encoding="utf-8")
+    covered = _commit(tmp_path, "code")
+
+    evidence.write_text(f"# Evidence\n\nHEAD: {covered}\n", encoding="utf-8")
+    review.write_text("# Review\n\nCompleted independently.\n", encoding="utf-8")
+    final = _commit(tmp_path, "review records")
+
+    assert evidence_is_current(evidence, final, root=tmp_path)[0]
+
+
+@pytest.mark.parametrize(
+    ("observation", "strict", "ready"),
+    [
+        (ReviewObservation("verified", "review verified", "https://review/1"), True, True),
+        (ReviewObservation("rejected", "no current review", None), True, False),
+        (ReviewObservation("unverifiable", "review is UNVERIFIABLE", None), False, True),
+        (ReviewObservation("unverifiable", "review is UNVERIFIABLE", None), True, False),
+    ],
+)
+def test_readiness_uses_the_observed_review_with_local_advisory_semantics(
+    tmp_path: Path,
+    observation: ReviewObservation,
+    strict: bool,
+    ready: bool,
+) -> None:
+    task = _task(tmp_path)
+    _record_gate_evidence(task, "R3")
+    (task / "review.md").write_text(
+        "# Anything\n\n**No findings; 900 counterexamples attempted**\n",
+        encoding="utf-8",
+    )
+
+    result = assess_readiness(
+        task,
+        changed=["scripts/quality/pr_ready.py"],
+        head_sha="abc123",
+        review_observation=observation,
+        require_verifiable_review=strict,
+    )
+
+    assert result.ready is ready
+    assert next(check for check in result.checks if check.name == "independent-review").detail
+
+
+@pytest.mark.parametrize(
+    "observation",
+    (
+        ReviewObservation("verified", "review verified", "https://review/1"),
+        ReviewObservation("rejected", "no current review", None),
+        ReviewObservation("unverifiable", "review is UNVERIFIABLE", None),
+    ),
+)
+def test_task_validator_and_pr_readiness_apply_the_same_review_verdict(
+    tmp_path: Path,
+    observation: ReviewObservation,
+) -> None:
+    task = _task(tmp_path)
+    _record_gate_evidence(task, "R3")
+    validation = validate_task_dir(
+        task,
+        review_observation=observation,
+        require_verifiable_review=True,
+    )
+    readiness = assess_readiness(
+        task,
+        changed=["scripts/quality/pr_ready.py"],
+        head_sha="abc123",
+        review_observation=observation,
+        require_verifiable_review=True,
+    )
+    review_check = next(check for check in readiness.checks if check.name == "independent-review")
+
+    assert validation.ok is review_check.ok

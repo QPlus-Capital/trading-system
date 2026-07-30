@@ -2,7 +2,8 @@
 
 The task schema is machine-readable TOML under ``.ai/quality``. The validator deliberately parses
 only stable, auditable Markdown structures: level-two section headings, ``AC-*`` / ``INV-*`` IDs,
-traceability-table rows, and review finding rows. It never stores or requests model transcripts.
+and traceability-table rows. Independent review is an observed pull-request fact; ``review.md`` is
+retained only as the reviewer's human-readable audit record.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from scripts.quality.classify import REPO_ROOT, changed_paths, classify_paths, load_model
+from scripts.quality.review_observation import ReviewObservation
 
 SCHEMA_PATH = REPO_ROOT / ".ai" / "quality" / "task-artifacts.toml"
 TASK_ROOT = REPO_ROOT / ".ai" / "tasks"
@@ -24,17 +26,6 @@ _INV = re.compile(r"\bINV-\d+\b", re.IGNORECASE)
 _SECTION = re.compile(
     r"^##\s+(?P<heading>.+?)\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
     re.MULTILINE | re.DOTALL,
-)
-_CRITICAL = frozenset({"blocker", "defect", "suspected defect"})
-_SEVERITIES = {
-    "blocker": "Blocker",
-    "defect": "Defect",
-    "suspected defect": "Suspected defect",
-    "note": "Note",
-}
-_NO_FINDINGS = re.compile(
-    r"^\s*no findings;\s*(?P<count>\d+)\s+counterexamples attempted\.?\s*$",
-    re.IGNORECASE | re.MULTILINE,
 )
 
 
@@ -200,35 +191,34 @@ def evidence_records(text: str) -> tuple[EvidenceRecord, ...]:
     return tuple(records)
 
 
-def _review_ran(text: str) -> bool:
-    findings = _sections(text).get("findings", "")
-    has_finding = any(
-        len(cells) >= 5
-        and cells[1].casefold() in _SEVERITIES
-        and all(cell.strip() for cell in cells[:5])
-        for cells in _table_rows(findings)
+def independent_review_issues(
+    observation: ReviewObservation | None,
+    *,
+    require_verifiable: bool,
+) -> tuple[ValidationIssue, ...]:
+    """Apply one shared review verdict to task validation and PR readiness."""
+
+    if observation is None:
+        if not require_verifiable:
+            return ()
+        return (
+            ValidationIssue(
+                "unverifiable-adversarial-review",
+                "independent PR review was not evaluated",
+            ),
+        )
+    if observation.status == "verified":
+        return ()
+    if observation.status == "unverifiable" and not require_verifiable:
+        return ()
+    return (
+        ValidationIssue(
+            "missing-adversarial-review"
+            if observation.status == "rejected"
+            else "unverifiable-adversarial-review",
+            observation.detail,
+        ),
     )
-    no_findings = _NO_FINDINGS.search(findings)
-    return has_finding or (no_findings is not None and int(no_findings.group("count")) >= 1)
-
-
-def _critical_review_issues(text: str, resolved: frozenset[str]) -> list[ValidationIssue]:
-    issues: list[ValidationIssue] = []
-    for cells in _table_rows(text):
-        severities = {cell.casefold() for cell in cells} & _CRITICAL
-        if not severities:
-            continue
-        status = cells[-1].strip().casefold()
-        for severity in sorted(severities):
-            if status not in resolved:
-                issues.append(
-                    ValidationIssue(
-                        "unresolved-review",
-                        "review.md has unresolved "
-                        f"{_SEVERITIES[severity]} finding (status {cells[-1]!r})",
-                    )
-                )
-    return issues
 
 
 def validate_task_dir(
@@ -237,6 +227,8 @@ def validate_task_dir(
     *,
     risk_class: str = "R3",
     require_completed_review: bool = True,
+    review_observation: ReviewObservation | None = None,
+    require_verifiable_review: bool = False,
 ) -> ValidationResult:
     """Validate one task directory; return every finding rather than stopping at the first."""
     schema = load_schema(schema_path)
@@ -252,6 +244,8 @@ def validate_task_dir(
 
     for name, required in schema.sections.items():
         if name not in content:
+            continue
+        if name == "review.md":
             continue
         sections = _sections(content[name])
         for section in required:
@@ -284,18 +278,13 @@ def validate_task_dir(
                 )
             )
 
-    review = content.get("review.md")
-    if review is not None:
-        if require_completed_review:
-            issues.extend(_critical_review_issues(review, schema.resolved_review_statuses))
-        if require_completed_review and risk_class == "R3" and not _review_ran(review):
-            issues.append(
-                ValidationIssue(
-                    "missing-adversarial-review",
-                    "R3 review.md must record a finding row or 'No findings; N counterexamples "
-                    "attempted' with N >= 1",
-                )
+    if require_completed_review and risk_class == "R3":
+        issues.extend(
+            independent_review_issues(
+                review_observation,
+                require_verifiable=require_verifiable_review,
             )
+        )
 
     evidence = content.get("evidence.md")
     if evidence is not None and not evidence_records(evidence):
@@ -315,12 +304,16 @@ def validate_task(
     *,
     risk_class: str = "R3",
     require_completed_review: bool = True,
+    review_observation: ReviewObservation | None = None,
+    require_verifiable_review: bool = False,
 ) -> ValidationResult:
     """Validate ``.ai/tasks/<task_id>``."""
     return validate_task_dir(
         task_root / task_id,
         risk_class=risk_class,
         require_completed_review=require_completed_review,
+        review_observation=review_observation,
+        require_verifiable_review=require_verifiable_review,
     )
 
 

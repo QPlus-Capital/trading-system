@@ -9,8 +9,10 @@ import sys
 from pathlib import Path
 
 import pytest
+import scripts.quality.finding_registry as finding_registry
 import scripts.quality.validate_task as task_validator
 from scripts.quality.classify import REPO_ROOT
+from scripts.quality.review_observation import ReviewObservation
 from scripts.quality.validate_task import ValidationResult, discover_task_id, validate_task_dir
 
 _SPEC = """# Task
@@ -299,131 +301,28 @@ def test_an_unmapped_invariant_fails(tmp_path: Path) -> None:
     assert "INV-*" in _messages(task)
 
 
-def test_task_validator_accepts_new_severities_and_rejects_old_codes(tmp_path: Path) -> None:
-    for severity in ("Blocker", "Defect", "Suspected defect", "Note"):
-        case_root = tmp_path / severity.replace(" ", "-")
-        case_root.mkdir()
-        task = _task(case_root)
-        (task / "review.md").write_text(
-            "# Review\n\n## Findings\n\n"
-            "| ID | Severity | Finding | Disposition | Status |\n"
-            "|---|---|---|---|---|\n"
-            f"| R-01 | {severity} | Checked path | Verified | resolved |\n\n"
-            "## Dispositions\nVerified.\n",
-            encoding="utf-8",
-        )
-        assert validate_task_dir(task).ok
+def test_draft_schema_validation_does_not_require_a_pr_review(tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    assert validate_task_dir(task, require_completed_review=False).ok
 
-    for severity in ("P0", "P1", "P2", "P3"):
-        case_root = tmp_path / severity
-        case_root.mkdir()
-        task = _task(case_root)
-        (task / "review.md").write_text(
-            "# Review\n\n## Findings\n\n"
-            "| ID | Severity | Finding | Disposition | Status |\n"
-            "|---|---|---|---|---|\n"
-            f"| R-01 | {severity} | Old vocabulary | None | resolved |\n\n"
-            "## Dispositions\nRejected.\n",
-            encoding="utf-8",
-        )
-        result = validate_task_dir(task)
-        assert not result.ok
-        assert "counterexamples" in _messages(task).lower()
+
+def test_task_validator_accepts_new_severities_and_rejects_old_codes() -> None:
+    """The historic migration guard now binds at the finding-registry boundary."""
+
+    assert (
+        frozenset({"Blocker", "Defect", "Suspected defect", "Note"}) == finding_registry._SEVERITIES
+    )
+    assert not finding_registry._SEVERITIES & {"P0", "P1", "P2", "P3"}
 
 
 def test_blocking_severity_set_is_unchanged_by_the_migration() -> None:
-    assert frozenset({"blocker", "defect", "suspected defect"}) == task_validator._CRITICAL
-    assert set(task_validator._SEVERITIES.values()) == {
-        "Blocker",
-        "Defect",
-        "Suspected defect",
-        "Note",
-    }
-
-
-def test_an_unresolved_defect_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\n\n"
-        "| ID | Severity | Finding | Disposition | Status |\n"
-        "|---|---|---|---|---|\n"
-        "| R-01 | Defect | Broken path | Investigate | unresolved |\n\n"
-        "## Dispositions\nPending.\n",
-        encoding="utf-8",
+    reviewer_contract = (REPO_ROOT / "docs" / "engineering" / "reviewer-findings.md").read_text(
+        encoding="utf-8"
     )
-    result = validate_task_dir(task)
-    assert not result.ok
-    assert "Defect" in _messages(task)
-
-
-def test_an_empty_r3_review_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\nNo findings.\n\n## Dispositions\nNone.\n",
-        encoding="utf-8",
+    assert (
+        "Resolve\nBlocker, Defect, and Suspected defect findings before readiness"
+        in reviewer_contract
     )
-    result = validate_task_dir(task)
-    assert not result.ok
-    assert "counterexamples" in _messages(task).lower()
-
-
-def test_draft_schema_validation_allows_an_honest_pending_review(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\nIndependent review has not run.\n\n"
-        "## Dispositions\nPending independent review.\n",
-        encoding="utf-8",
-    )
-    assert validate_task_dir(task, require_completed_review=False).ok
-    assert not validate_task_dir(task, require_completed_review=True).ok
-
-
-def test_an_r3_no_findings_review_records_counterexamples(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\nNo findings; 3 counterexamples attempted\n\n"
-        "## Dispositions\nNone required.\n",
-        encoding="utf-8",
-    )
-    assert validate_task_dir(task).ok
-
-
-def test_an_r3_no_findings_review_requires_a_counterexample(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\nNo findings; 0 counterexamples attempted\n\n"
-        "## Dispositions\nNone required.\n",
-        encoding="utf-8",
-    )
-    result = validate_task_dir(task)
-    assert not result.ok
-    assert "N >= 1" in _messages(task)
-
-
-def test_an_r3_review_rejects_a_malformed_finding_row(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\n| Note |\n\n## Dispositions\nNone.\n",
-        encoding="utf-8",
-    )
-    result = validate_task_dir(task)
-    assert not result.ok
-    assert "counterexamples" in _messages(task).lower()
-
-
-def test_an_unresolved_blocker_fails(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\n\n"
-        "| ID | Severity | Finding | Disposition | Status |\n"
-        "|---|---|---|---|---|\n"
-        "| R-00 | Blocker | Catastrophic path | Investigate | unresolved |\n\n"
-        "## Dispositions\nPending.\n",
-        encoding="utf-8",
-    )
-    result = validate_task_dir(task)
-    assert not result.ok
-    assert "Blocker" in _messages(task)
 
 
 def test_evidence_without_command_results_fails(tmp_path: Path) -> None:
@@ -441,29 +340,27 @@ def test_evidence_without_command_results_fails(tmp_path: Path) -> None:
     assert "command" in _messages(task).lower()
 
 
-def test_an_unresolved_suspected_defect_fails(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "review_text",
+    (
+        "# Review\n\nOld exact phrase with no PR review.\n",
+        "# Different shape\n\n**No findings; 3 counterexamples attempted**\n",
+        "# Review\n\n| arbitrary | markdown |\n|---|---|\n| is | irrelevant |\n",
+    ),
+)
+def test_review_markdown_shape_is_not_a_gate_input(tmp_path: Path, review_text: str) -> None:
     task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\n\n"
-        "| ID | Severity | Finding | Disposition | Status |\n"
-        "|---|---|---|---|---|\n"
-        "| R-02 | Suspected defect | Probable risk | None | open |\n\n"
-        "## Dispositions\nPending.\n",
-        encoding="utf-8",
-    )
-    result = validate_task_dir(task)
+    (task / "review.md").write_text(review_text, encoding="utf-8")
+    observation = ReviewObservation("verified", "review verified", "https://review/1")
+
+    assert validate_task_dir(task, review_observation=observation).ok
+
+
+def test_old_review_phrase_without_an_observed_pr_review_fails(tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    observation = ReviewObservation("rejected", "no submitted PR review", None)
+
+    result = validate_task_dir(task, review_observation=observation)
+
     assert not result.ok
-    assert "Suspected defect" in _messages(task)
-
-
-def test_a_resolved_blocking_finding_passes(tmp_path: Path) -> None:
-    task = _task(tmp_path)
-    (task / "review.md").write_text(
-        "# Review\n\n## Findings\n\n"
-        "| ID | Severity | Finding | Disposition | Status |\n"
-        "|---|---|---|---|---|\n"
-        "| R-01 | Defect | Broken path | Fixed by test_guard | resolved |\n\n"
-        "## Dispositions\nVerified.\n",
-        encoding="utf-8",
-    )
-    assert validate_task_dir(task).ok
+    assert "no submitted PR review" in " ".join(issue.message for issue in result.issues)
