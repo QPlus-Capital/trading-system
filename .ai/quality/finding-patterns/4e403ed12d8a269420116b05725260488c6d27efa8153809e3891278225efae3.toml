@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4819856100 (S-06, S-07, S-10, S-12)"
+defect_class = "foreign-boundary-wiring-untested"
+severity = "Suspected defect"
+affected = "scripts/quality/review_observation.py, scripts/quality/pr_body.py, .github/workflows/ci.yml"
+root_cause = "pure policy functions were tested while the GitHub parser, strict CI entrypoint, pagination, and embedded workflow detector that actually bind them were not executed"
+why_tests_missed = "workflow tests asserted source substrings and helper tests bypassed the process and event boundaries, allowing default, hardcoded, truncated, and force-push behaviours to survive"
+regression = "test_ci_pr_body_entrypoint_strictly_binds_the_observed_review; test_gateway_parses_all_pages_and_preserves_rename_sources; test_ci_scope_detector_uses_the_real_no_rename_git_diff; test_ci_scope_detector_fails_closed_to_the_full_set_for_an_unreachable_base"
+generalized = "test the exact production entrypoint and external payload boundary; a pure decision test does not prove its foreign-language or process wiring, and uncertainty must choose the safe usable outcome"
+workflow_change = "CI invokes one tested Python entrypoint, the gateway pins pagination and head identity, and diff failure selects full validation instead of wedging or reducing coverage"

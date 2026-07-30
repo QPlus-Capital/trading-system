@@ -19,6 +19,7 @@ from scripts.quality.review_observation import (
     GhReviewGateway,
     ReviewObservation,
     observe_independent_review,
+    task_id_from_pr_body,
 )
 
 POLICY_PATH = REPO_ROOT / ".ai" / "quality" / "pr-body.toml"
@@ -216,7 +217,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             raise ValueError("provide --body-file or GITHUB_EVENT_PATH")
         head_sha = _head_sha(REPO_ROOT)
-        observation = observe_independent_review(GhReviewGateway(root=REPO_ROOT), head_sha)
+        observation = observe_independent_review(
+            GhReviewGateway(root=REPO_ROOT),
+            head_sha,
+            task_id_from_pr_body(body) or "",
+        )
         result = validate_pr_body(
             body,
             changed=changed_paths(args.base),
@@ -227,7 +232,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if observation.status == "unverifiable":
             print(f"PR review check skipped locally: {observation.detail}")
     except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        print(f"PR body validation failed closed: {type(exc).__name__}")
+        print(f"PR body validation failed closed: {type(exc).__name__}: {exc}")
         return 2
     if result.ok:
         print("PR body: valid and backed by current task evidence.")

@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4819856100 (D-04 and D-05)"
+defect_class = "pusher-controlled-metadata-drives-review-freshness"
+severity = "Defect"
+affected = "scripts/quality/review_observation.py"
+root_cause = "review freshness trusted client-controlled commit timestamps and rename-collapsed destination paths while discarding GitHub's review commit_id and rename source"
+why_tests_missed = "fixtures used chronological timestamps and plain filenames only, so backdating, out-of-order metadata, and a production-to-artifact rename were not represented"
+regression = "test_a_code_commit_after_every_review_makes_the_review_stale; test_review_on_an_artifact_descendant_of_the_last_code_commit_is_current; test_gateway_parses_all_pages_and_preserves_rename_sources"
+generalized = "a safety decision must bind to authoritative immutable identity and complete change provenance, never to timestamps or path projections controlled by the side being checked"
+workflow_change = "review freshness follows review commit_id through only current-task artifact descendants, and commit paths union filename with previous_filename"

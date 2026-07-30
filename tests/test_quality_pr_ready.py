@@ -302,7 +302,8 @@ def test_readiness_uses_the_observed_review_with_local_advisory_semantics(
     task = _task(tmp_path)
     _record_gate_evidence(task, "R3")
     (task / "review.md").write_text(
-        "# Anything\n\n**No findings; 900 counterexamples attempted**\n",
+        "# Anything\n\n## Findings\n\n**No findings; 900 counterexamples attempted**\n\n"
+        "## Dispositions\n\nNone.\n",
         encoding="utf-8",
     )
 
@@ -347,3 +348,82 @@ def test_task_validator_and_pr_readiness_apply_the_same_review_verdict(
     review_check = next(check for check in readiness.checks if check.name == "independent-review")
 
     assert validation.ok is review_check.ok
+
+
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+def test_unresolved_review_finding_blocks_readiness_despite_verified_observation(
+    tmp_path: Path,
+    risk_class: str,
+) -> None:
+    task_root = tmp_path / ".ai" / "tasks"
+    task_root.mkdir(parents=True)
+    task = _task(task_root)
+    _record_gate_evidence(task, risk_class)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\n"
+        "| ID | Severity | Finding | Disposition | Status |\n"
+        "|---|---|---|---|---|\n"
+        "| R-01 | Defect | Broken guard | Pending | unresolved |\n\n"
+        "## Dispositions\n\nPending.\n",
+        encoding="utf-8",
+    )
+
+    result = assess_readiness(
+        task,
+        changed=["scripts/tool.py"],
+        declared_risk=risk_class,
+        head_sha="abc123",
+        review_observation=ReviewObservation("verified", "review verified", "https://review/1"),
+        require_verifiable_review=True,
+    )
+
+    assert not result.ready
+    artifact_check = next(check for check in result.checks if check.name == "task-artifacts")
+    assert not artifact_check.ok
+    assert "unresolved Defect" in artifact_check.detail
+
+
+def test_r2_requires_the_observed_review_as_well_as_dispositions(tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    _record_gate_evidence(task, "R2")
+
+    result = assess_readiness(
+        task,
+        changed=["scripts/tool.py"],
+        declared_risk="R2",
+        head_sha="abc123",
+        review_observation=ReviewObservation("rejected", "no current review", None),
+        require_verifiable_review=True,
+    )
+
+    assert not result.ready
+    review_check = next(check for check in result.checks if check.name == "independent-review")
+    assert not review_check.ok
+    assert review_check.detail == "no current review"
+
+
+def test_local_unverifiable_review_is_labelled_advisory_not_pass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    task_root = tmp_path / ".ai" / "tasks"
+    task_root.mkdir(parents=True)
+    task = _task(task_root)
+    _record_gate_evidence(task, "R3")
+    monkeypatch.setattr(pr_ready, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(pr_ready, "changed_paths", lambda base: ["scripts/quality/pr_ready.py"])
+    monkeypatch.setattr(pr_ready, "discover_task_id", lambda paths: task.name)
+    monkeypatch.setattr(pr_ready, "_head_sha", lambda root: "abc123")
+    monkeypatch.setattr(
+        pr_ready,
+        "observe_independent_review",
+        lambda gateway, head_sha, task_id: ReviewObservation(
+            "unverifiable", "independent review is UNVERIFIABLE: offline", None
+        ),
+    )
+
+    assert pr_ready.main([task.name]) == 0
+    output = capsys.readouterr().out
+    assert "[ADVISORY] independent-review:" in output
+    assert "[PASS] independent-review:" not in output

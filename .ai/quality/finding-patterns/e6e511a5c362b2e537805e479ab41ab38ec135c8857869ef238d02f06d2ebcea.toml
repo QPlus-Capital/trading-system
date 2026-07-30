@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4819856100 (D-01 to D-03)"
+defect_class = "independent-safety-facts-treated-as-substitutes"
+severity = "Defect"
+affected = "scripts/quality/validate_task.py, scripts/quality/pr_ready.py, scripts/quality/hooks/decisions.py"
+root_cause = "the external pull-request review observation replaced review structure and blocking-finding disposition checks even though the three gates certify different facts"
+why_tests_missed = "strict validator assertions were deleted or reduced to their permissive half, and behavioural severity tests were replaced by constant and prose checks"
+regression = "test_observed_review_does_not_clear_an_unresolved_blocking_finding; test_review_sections_bind_independently_of_the_observed_review; test_completed_review_strict_mode_refuses_an_unobserved_review"
+generalized = "when adding a stronger evidence source, enumerate every existing gate and retain each one that proves an independent fact; dead policy configuration is evidence that enforcement was disconnected"
+workflow_change = "R2 and R3 independently require an observed current PR review, a structured review artifact, and resolved blocking finding rows"

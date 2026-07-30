@@ -153,6 +153,7 @@ def test_severity_migration_preserves_every_pattern_and_rejects_content_duplicat
     assert len(expected) == 58
     assert len(after) >= len(expected)
     assert len(observed) == len(after)
+    assert expected.items() <= observed.items()
     missing = {
         digest: severity
         for digest, severity in expected.items()

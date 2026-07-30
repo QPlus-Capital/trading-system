@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from scripts.quality.hooks.decisions import (
 )
 from scripts.quality.hooks.pre_bash import denied_payload
 from scripts.quality.validate_task import EvidenceRecord, ValidationIssue, ValidationResult
+
+from tests.test_quality_validate_task import _task
 
 
 @pytest.fixture
@@ -116,8 +119,49 @@ def test_review_artifact_decision_blocks_invalid_r3_and_allows_valid_review() ->
     issue = ValidationIssue("unresolved-review", "one unresolved Defect finding")
     assert not review_artifact_decision("gh pr ready 66", "R3", (issue,)).allowed
     assert review_artifact_decision("gh pr ready 66", "R3", ()).allowed
-    assert review_artifact_decision("gh pr ready 66", "R2", (issue,)).allowed
+    assert not review_artifact_decision("gh pr ready 66", "R2", (issue,)).allowed
     assert review_artifact_decision("git push origin HEAD", "R3", (issue,)).allowed
+
+
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+def test_real_staged_task_snapshot_blocks_an_empty_review_artifact(
+    tmp_path: Path,
+    risk_class: str,
+) -> None:
+    task_root = tmp_path / ".ai" / "tasks"
+    task_root.mkdir(parents=True)
+    task = _task(task_root)
+    (task / "review.md").write_text("", encoding="utf-8")
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "task"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+
+    issues, _ = pre_bash._task_state(
+        task.name,
+        risk_class,
+        index=False,
+        root=tmp_path,
+    )
+
+    assert not review_artifact_decision("gh pr ready 134", risk_class, issues).allowed
+    assert any(issue.code == "missing-section" for issue in issues)
 
 
 def test_denied_payload_uses_documented_schema_and_never_echoes_input(

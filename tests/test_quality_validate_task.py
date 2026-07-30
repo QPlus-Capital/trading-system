@@ -316,13 +316,13 @@ def test_task_validator_accepts_new_severities_and_rejects_old_codes() -> None:
 
 
 def test_blocking_severity_set_is_unchanged_by_the_migration() -> None:
-    reviewer_contract = (REPO_ROOT / "docs" / "engineering" / "reviewer-findings.md").read_text(
-        encoding="utf-8"
-    )
-    assert (
-        "Resolve\nBlocker, Defect, and Suspected defect findings before readiness"
-        in reviewer_contract
-    )
+    assert frozenset({"blocker", "defect", "suspected defect"}) == task_validator._CRITICAL
+    assert set(task_validator._SEVERITIES.values()) == {
+        "Blocker",
+        "Defect",
+        "Suspected defect",
+        "Note",
+    }
 
 
 def test_evidence_without_command_results_fails(tmp_path: Path) -> None:
@@ -350,7 +350,10 @@ def test_evidence_without_command_results_fails(tmp_path: Path) -> None:
 )
 def test_review_markdown_shape_is_not_a_gate_input(tmp_path: Path, review_text: str) -> None:
     task = _task(tmp_path)
-    (task / "review.md").write_text(review_text, encoding="utf-8")
+    (task / "review.md").write_text(
+        f"# Review\n\n## Findings\n\n{review_text}\n\n## Dispositions\n\nNone.\n",
+        encoding="utf-8",
+    )
     observation = ReviewObservation("verified", "review verified", "https://review/1")
 
     assert validate_task_dir(task, review_observation=observation).ok
@@ -364,3 +367,105 @@ def test_old_review_phrase_without_an_observed_pr_review_fails(tmp_path: Path) -
 
     assert not result.ok
     assert "no submitted PR review" in " ".join(issue.message for issue in result.issues)
+
+
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+@pytest.mark.parametrize("severity", ("Blocker", "Defect", "Suspected defect"))
+def test_observed_review_does_not_clear_an_unresolved_blocking_finding(
+    tmp_path: Path,
+    risk_class: str,
+    severity: str,
+) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\n"
+        "| ID | Severity | Finding | Disposition | Status |\n"
+        "|---|---|---|---|---|\n"
+        f"| R-01 | {severity} | Broken guard | Pending | unresolved |\n\n"
+        "## Dispositions\n\nPending.\n",
+        encoding="utf-8",
+    )
+    observation = ReviewObservation("verified", "review verified", "https://review/1")
+
+    result = validate_task_dir(
+        task,
+        risk_class=risk_class,
+        review_observation=observation,
+        require_verifiable_review=True,
+    )
+
+    assert not result.ok
+    assert any(issue.code == "unresolved-review" for issue in result.issues)
+
+
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+def test_review_sections_bind_independently_of_the_observed_review(
+    tmp_path: Path,
+    risk_class: str,
+) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text("", encoding="utf-8")
+    observation = ReviewObservation("verified", "review verified", "https://review/1")
+
+    result = validate_task_dir(
+        task,
+        risk_class=risk_class,
+        review_observation=observation,
+        require_verifiable_review=True,
+    )
+
+    assert not result.ok
+    assert {issue.code for issue in result.issues} >= {"missing-section"}
+    assert any("Findings" in issue.message for issue in result.issues)
+    assert any("Dispositions" in issue.message for issue in result.issues)
+
+
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+def test_completed_review_strict_mode_refuses_an_unobserved_review(
+    tmp_path: Path,
+    risk_class: str,
+) -> None:
+    task = _task(tmp_path)
+
+    result = validate_task_dir(
+        task,
+        risk_class=risk_class,
+        require_completed_review=True,
+        require_verifiable_review=True,
+    )
+
+    assert not result.ok
+    assert any(issue.code == "unverifiable-adversarial-review" for issue in result.issues)
+
+
+def test_task_validator_enforces_the_review_severity_vocabulary(tmp_path: Path) -> None:
+    observation = ReviewObservation("verified", "review verified", "https://review/1")
+    for severity in ("Blocker", "Defect", "Suspected defect", "Note"):
+        case_root = tmp_path / severity.replace(" ", "-")
+        case_root.mkdir()
+        task = _task(case_root)
+        (task / "review.md").write_text(
+            "# Review\n\n## Findings\n\n"
+            "| ID | Severity | Finding | Disposition | Status |\n"
+            "|---|---|---|---|---|\n"
+            f"| R-01 | {severity} | Checked path | Verified | resolved |\n\n"
+            "## Dispositions\n\nVerified.\n",
+            encoding="utf-8",
+        )
+        assert validate_task_dir(task, review_observation=observation).ok
+
+    for severity in ("P0", "P1", "P2", "P3"):
+        case_root = tmp_path / severity
+        case_root.mkdir()
+        task = _task(case_root)
+        (task / "review.md").write_text(
+            "# Review\n\n## Findings\n\n"
+            "| ID | Severity | Finding | Disposition | Status |\n"
+            "|---|---|---|---|---|\n"
+            f"| R-01 | {severity} | Old vocabulary | None | resolved |\n\n"
+            "## Dispositions\n\nRejected.\n",
+            encoding="utf-8",
+        )
+        result = validate_task_dir(task, review_observation=observation)
+        assert not result.ok
+        assert any(issue.code == "invalid-review-severity" for issue in result.issues)

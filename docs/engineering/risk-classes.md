@@ -38,10 +38,11 @@ risk questions and approves every merge. An R3 change never merges autonomously.
 
 `pr-ready` binds those cumulative gate IDs to the task's `evidence.md`. Every required gate must
 have a record with exit status 0, and any non-zero record for a required gate blocks readiness even
-when another attempt passed. Before-fix failures use the non-gate label `red-first`. For R3, the
-required CI gate observes a non-blocking pull-request review submitted after the last commit that
-changed anything outside `.ai/tasks/**`. The reviewer's `review.md` remains an audit record, not
-self-reported evidence that the review ran.
+when another attempt passed. Before-fix failures use the non-gate label `red-first`. For R2 and R3,
+the required CI gate observes a non-blocking pull-request review bound to the current commit state
+after the last change outside the current task's audit files. The reviewer's `review.md` remains an
+audit record, not self-reported evidence that the review ran; its required structure and unresolved
+blocking dispositions bind independently.
 
 ## R3 — the paths that are always at least R3
 

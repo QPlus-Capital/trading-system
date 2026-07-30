@@ -2,13 +2,25 @@
 
 | Requirement | Test | Before-fix result | After-fix result |
 |---|---|---|---|
-| AC-01 | `tests/test_quality_review_observation.py::test_a_code_commit_after_every_review_makes_the_review_stale` | RED: review observation module absent | GREEN: a later code/test commit rejects every earlier review |
-| AC-02 | `tests/test_quality_review_observation.py::test_review_verdict_comes_from_the_latest_review_after_the_last_code_commit` | RED: review observation module absent | GREEN: a later non-blocking PR review verifies independently of the audit Markdown |
-| AC-03 | `tests/test_quality_validate_task.py::test_old_review_phrase_without_an_observed_pr_review_fails` | RED: validator trusted the phrase | GREEN: the phrase cannot substitute for a rejected PR observation |
-| AC-04 | `tests/test_quality_validate_task.py::test_review_markdown_shape_is_not_a_gate_input` | RED: validator parsed exact Markdown | GREEN: alternate headings, bold text, and arbitrary tables do not affect the verdict |
+| AC-01 | `tests/test_quality_review_observation.py::test_a_code_commit_after_every_review_makes_the_review_stale` | RED: a backdated later code commit remained verified under timestamp comparison | GREEN: the review's `commit_id` precedes the current code commit and is rejected regardless of time |
+| AC-02 | `tests/test_quality_review_observation.py::test_review_verdict_comes_from_the_latest_review_after_the_last_code_commit` | RED: the branch had no external review observation | GREEN: a non-blocking review bound to the current code commit verifies independently of audit prose |
+| AC-03 | `tests/test_quality_pr_ready.py::test_r2_requires_the_observed_review_as_well_as_dispositions` | RED: R2 discarded the supplied rejected observation | GREEN: R2 and R3 require the observed review in addition to resolved dispositions |
+| AC-04 | `tests/test_quality_validate_task.py::test_review_markdown_shape_is_not_a_gate_input` | RED: exact prose certified completion | GREEN: prose shape cannot certify completion; required sections and blocking dispositions remain independent structural gates |
 | AC-05 | `tests/test_quality_pr_ready.py::test_task_validator_and_pr_readiness_apply_the_same_review_verdict` | RED: no shared verdict existed | GREEN: all three observation states agree under strict enforcement |
 | AC-06 | `tests/test_quality_pr_ready.py::test_review_and_evidence_commits_may_follow_the_tested_head` | RED: review.md invalidated evidence | GREEN: only review.md and evidence.md may follow the tested commit |
-| AC-07 | `tests/test_ci_cost_workflows.py::test_task_artifact_only_diff_selects_the_reduced_linux_gate_set` | RED: ready synchronizations always ran the full Linux set | GREEN: synchronize-event delta selects two light Linux gates; code/test deltas select all gates |
-| INV-01 | `tests/test_quality_review_observation.py::test_a_code_commit_after_every_review_makes_the_review_stale` | RED: self-reported review could remain current | GREEN: no review predating the last non-artifact commit verifies |
-| INV-02 | `tests/test_quality_review_observation.py::test_reduced_ci_requires_a_task_only_synchronize_event` | RED: no synchronize-diff predicate existed | GREEN: only the actual task-only push delta selects reduced CI |
-| INV-03 | `tests/test_ci_cost_workflows.py::test_full_job_invokes_every_existing_gate_as_a_distinct_step` | RED: reduced path was not represented | GREEN: every existing named gate remains a distinct workflow step |
+| AC-07 | `tests/test_quality_review_observation.py::test_ci_scope_detector_uses_the_real_no_rename_git_diff` | RED: the embedded workflow body had no executable wiring test | GREEN: the shared entrypoint reads the real no-rename delta; mixed or renamed paths select full CI |
+| INV-01 | `tests/test_quality_review_observation.py::test_gateway_parses_all_pages_and_preserves_rename_sources` | RED: `previous_filename` and review `commit_id` were discarded | GREEN: complete path provenance and server-bound review identity reach the decision |
+| INV-02 | `tests/test_quality_review_observation.py::test_ci_scope_detector_fails_closed_to_the_full_set_for_an_unreachable_base` | RED: an unreachable pre-force-push SHA raised and wedged the workflow | GREEN: diff uncertainty selects the full gate set |
+| INV-03 | `tests/test_quality_validate_task.py::test_observed_review_does_not_clear_an_unresolved_blocking_finding` | RED: all six R2/R3 blocking cases passed under a verified observation | GREEN: observation, structure, and disposition are independent cumulative requirements |
+
+## Review-finding regressions
+
+| Finding | Executable protection |
+|---|---|
+| D-01 / D-02 / D-03 | `tests/test_quality_validate_task.py::test_review_sections_bind_independently_of_the_observed_review`, `tests/test_quality_hooks.py::test_real_staged_task_snapshot_blocks_an_empty_review_artifact` |
+| D-04 / D-05 | `tests/test_quality_review_observation.py::test_gateway_parses_all_pages_and_preserves_rename_sources`, `tests/test_quality_review_observation.py::test_review_on_an_artifact_descendant_of_the_last_code_commit_is_current` |
+| S-06 | `tests/test_github_templates.py::test_ci_pr_body_entrypoint_strictly_binds_the_observed_review` |
+| S-07 / S-12 | `tests/test_quality_review_observation.py::test_ci_scope_detector_uses_the_real_no_rename_git_diff`, `tests/test_quality_review_observation.py::test_ci_scope_detector_fails_closed_to_the_full_set_for_an_unreachable_base` |
+| S-08 | `tests/test_quality_review_observation.py::test_a_comment_cannot_clear_the_same_reviewers_change_request`, `tests/test_quality_review_observation.py::test_equal_timestamp_review_states_are_order_independent_and_blocking_wins` |
+| S-09 | `tests/test_quality_review_observation.py::test_task_artifact_only_scope_is_derived_from_the_diff`, `tests/test_quality_review_observation.py::test_an_artifact_commit_for_another_task_invalidates_the_review` |
+| S-10 | `tests/test_quality_review_observation.py::test_gateway_reports_process_and_json_failures`, `tests/test_quality_review_observation.py::test_gateway_requires_the_paginated_commit_tail_to_equal_the_checked_out_head` |

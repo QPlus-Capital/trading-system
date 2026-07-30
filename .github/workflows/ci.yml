@@ -58,24 +58,9 @@ jobs:
         env:
           BEFORE_SHA: ${{ github.event.before }}
           EVENT_ACTION: ${{ github.event.action }}
+          PR_BODY: ${{ github.event.pull_request.body }}
         shell: bash
-        run: |
-          uv run --no-project --python 3.13 python - <<'PY'
-          from __future__ import annotations
-
-          import os
-
-          from scripts.quality.classify import changed_paths
-          from scripts.quality.review_observation import task_artifact_only_synchronization
-
-
-          action = os.environ["EVENT_ACTION"]
-          before = os.environ["BEFORE_SHA"]
-          paths = changed_paths(before) if action == "synchronize" and before else ()
-          reduced = task_artifact_only_synchronization(action, paths)
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"only={str(reduced).lower()}\n")
-          PY
+        run: uv run --no-project --python 3.13 python -m scripts.quality.review_observation ci-scope
       - name: Install locked dependencies except the Windows-only MT5 bridge
         if: steps.task-scope.outputs.only != 'true'
         run: uv sync --locked --no-install-package metatrader5

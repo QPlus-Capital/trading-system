@@ -279,12 +279,14 @@ def test_task_artifact_only_diff_selects_the_reduced_linux_gate_set() -> None:
         "Gate: Security",
         "Gate: Critical Invariants",
     }
-    detector = next(str(step["run"]) for step in _steps(full) if step.get("id") == "task-scope")
-    assert "changed_paths(before)" in detector
-    assert "task_artifact_only_synchronization" in detector
-    assert "github.event.before" in str(
-        next(step["env"] for step in _steps(full) if step.get("id") == "task-scope")
+    detector_step = next(step for step in _steps(full) if step.get("id") == "task-scope")
+    assert str(detector_step["run"]) == (
+        "uv run --no-project --python 3.13 python -m scripts.quality.review_observation ci-scope"
     )
+    detector_environment = detector_step["env"]
+    assert "github.event.before" in str(detector_environment)
+    assert "github.event.action" in str(detector_environment)
+    assert "github.event.pull_request.body" in str(detector_environment)
 
 
 def test_direct_ready_pull_request_runs_the_full_set() -> None:

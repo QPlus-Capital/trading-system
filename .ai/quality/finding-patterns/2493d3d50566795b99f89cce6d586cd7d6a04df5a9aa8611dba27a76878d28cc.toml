@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4819856100 (S-08)"
+defect_class = "state-reducer-erases-blocking-review"
+severity = "Suspected defect"
+affected = "scripts/quality/review_observation.py"
+root_cause = "one globally latest review replaced every reviewer's current state, so a later comment or API ordering tie could clear an unresolved CHANGES_REQUESTED verdict"
+why_tests_missed = "fixtures contained one review each and never combined reviewers, repeated states, equal timestamps, or dismissed approvals"
+regression = "test_a_comment_cannot_clear_the_same_reviewers_change_request; test_equal_timestamp_review_states_are_order_independent_and_blocking_wins; test_a_dismissed_approval_cannot_verify_the_pull_request"
+generalized = "stateful external verdicts must be reduced per authoritative subject with deterministic tie rules; non-decisive events cannot erase a decisive blocking state"
+workflow_change = "reviews reduce to each reviewer's current meaningful state, any current blocker rejects, and dismissal and equal-time cases are pinned"

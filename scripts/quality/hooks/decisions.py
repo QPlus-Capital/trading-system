@@ -268,9 +268,9 @@ def review_artifact_decision(
     risk_class: str,
     validation_issues: Sequence[ValidationIssue],
 ) -> Decision:
-    """Require a present, executed, and resolved adversarial review for R3 boundaries."""
+    """Require a structured and resolved review artifact for R2/R3 readiness."""
 
-    if risk_class != "R3" or _PR_READY.search(command) is None:
+    if risk_class not in {"R2", "R3"} or _PR_READY.search(command) is None:
         return _allow()
     review_invalid = any(
         issue.code in _REVIEW_CODES
@@ -282,6 +282,6 @@ def review_artifact_decision(
     )
     if review_invalid:
         return _deny(
-            "Blocked: the R3 review artifact is missing, did not run, or has unresolved findings."
+            "Blocked: the R2/R3 review artifact is missing, malformed, or has unresolved findings."
         )
     return _allow()

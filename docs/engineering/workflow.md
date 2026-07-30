@@ -233,7 +233,9 @@ assessment of the **chosen approach**, and a clearly separated block of decision
 Changes are requested for any blocking finding. At R2 and above the same findings are recorded in
 `.ai/tasks/<id>/review.md` as a versioned audit trail. The independent reviewer writes that file
 directly; the builder never transcribes or certifies the review. Readiness observes the submitted
-pull-request review after the last non-task-artifact commit and does not parse the audit record.
+pull-request review bound to the current state after the last non-task-artifact commit. It does not
+parse audit prose to infer that review ran; it separately validates the required sections and
+refuses unresolved Blocker, Defect, and Suspected defect rows.
 
 A blocking finding returns the card to `Implementing`. Codex fixes it and, on pushing the fix, moves
 the card **back to `Reviewing`** — otherwise the board would report building while a review is

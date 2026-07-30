@@ -2,8 +2,8 @@
 
 The task schema is machine-readable TOML under ``.ai/quality``. The validator deliberately parses
 only stable, auditable Markdown structures: level-two section headings, ``AC-*`` / ``INV-*`` IDs,
-and traceability-table rows. Independent review is an observed pull-request fact; ``review.md`` is
-retained only as the reviewer's human-readable audit record.
+traceability-table rows, and review finding dispositions. Independent review completion is observed
+from the pull request; the audit record independently proves that blocking findings were resolved.
 """
 
 from __future__ import annotations
@@ -27,6 +27,13 @@ _SECTION = re.compile(
     r"^##\s+(?P<heading>.+?)\s*$\n(?P<body>.*?)(?=^##\s+|\Z)",
     re.MULTILINE | re.DOTALL,
 )
+_CRITICAL = frozenset({"blocker", "defect", "suspected defect"})
+_SEVERITIES = {
+    "blocker": "Blocker",
+    "defect": "Defect",
+    "suspected defect": "Suspected defect",
+    "note": "Note",
+}
 
 
 @dataclass(frozen=True)
@@ -221,6 +228,49 @@ def independent_review_issues(
     )
 
 
+def _review_disposition_issues(
+    text: str,
+    resolved: frozenset[str],
+) -> tuple[ValidationIssue, ...]:
+    issues: list[ValidationIssue] = []
+    findings = _sections(text).get("findings", "")
+    rows = _table_rows(findings)
+    for cells in rows:
+        normalized = {cell.casefold() for cell in cells}
+        if "severity" in normalized:
+            continue
+        severities = normalized & set(_SEVERITIES)
+        legacy = normalized & {"p0", "p1", "p2", "p3"}
+        if legacy:
+            issues.append(
+                ValidationIssue(
+                    "invalid-review-severity",
+                    f"review.md uses unsupported finding severity {sorted(legacy)[0]!r}",
+                )
+            )
+            continue
+        if not severities:
+            continue
+        if len(cells) < 5 or not all(cell.strip() for cell in cells[:5]):
+            issues.append(
+                ValidationIssue(
+                    "invalid-review-row",
+                    "review.md finding rows require ID, Severity, Finding, Disposition, and Status",
+                )
+            )
+            continue
+        for severity in sorted(severities):
+            if severity in _CRITICAL and cells[-1].strip().casefold() not in resolved:
+                issues.append(
+                    ValidationIssue(
+                        "unresolved-review",
+                        "review.md has unresolved "
+                        f"{_SEVERITIES[severity]} finding (status {cells[-1]!r})",
+                    )
+                )
+    return tuple(issues)
+
+
 def validate_task_dir(
     task_dir: Path,
     schema_path: Path = SCHEMA_PATH,
@@ -244,8 +294,6 @@ def validate_task_dir(
 
     for name, required in schema.sections.items():
         if name not in content:
-            continue
-        if name == "review.md":
             continue
         sections = _sections(content[name])
         for section in required:
@@ -278,7 +326,10 @@ def validate_task_dir(
                 )
             )
 
-    if require_completed_review and risk_class == "R3":
+    review = content.get("review.md")
+    if require_completed_review and risk_class in {"R2", "R3"}:
+        if review is not None:
+            issues.extend(_review_disposition_issues(review, schema.resolved_review_statuses))
         issues.extend(
             independent_review_issues(
                 review_observation,

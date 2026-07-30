@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4819856100 (S-09)"
+defect_class = "broad-artifact-prefix-grants-safety-exemption"
+severity = "Suspected defect"
+affected = "scripts/quality/review_observation.py, .github/workflows/ci.yml"
+root_cause = "every path below .ai/tasks was treated as an audit artifact, including templates, registry-level files, unknown filenames, and records belonging to another task"
+why_tests_missed = "positive fixtures covered only review.md and evidence.md for the current task and had no neighbouring-prefix or cross-task cases"
+regression = "test_task_artifact_only_scope_is_derived_from_the_diff; test_an_artifact_commit_for_another_task_invalidates_the_review; test_reduced_ci_requires_a_task_only_synchronize_event"
+generalized = "a safety exemption must match the exact owned object and allowed schema, not a directory prefix; add sibling, template, unknown-name, and other-owner counterexamples"
+workflow_change = "artifact-only freshness and reduced CI accept only the four schema files for the task named by the pull request"

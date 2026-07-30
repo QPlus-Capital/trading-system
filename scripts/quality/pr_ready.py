@@ -149,7 +149,7 @@ def assess_readiness(
             validation = validate_task_dir(
                 task_dir,
                 risk_class=risk_class,
-                require_completed_review=False,
+                require_completed_review=True,
             )
             validation_ok = validation.ok
             checks.append(
@@ -171,7 +171,7 @@ def assess_readiness(
             )
         )
 
-    if risk_class == "R3":
+    if risk_class in {"R2", "R3"}:
         review_issues = independent_review_issues(
             review_observation,
             require_verifiable=require_verifiable_review,
@@ -189,15 +189,18 @@ def assess_readiness(
                 ReadinessCheck(
                     "independent-review",
                     True,
-                    "independent review is UNVERIFIABLE locally; advisory check skipped",
+                    "ADVISORY: independent review is UNVERIFIABLE locally; check skipped",
                 )
             )
         else:
+            detail = review_observation.detail
+            if review_observation.status == "unverifiable":
+                detail = f"ADVISORY: {detail}"
             checks.append(
                 ReadinessCheck(
                     "independent-review",
                     True,
-                    review_observation.detail,
+                    detail,
                 )
             )
 
@@ -306,7 +309,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     task_dir = REPO_ROOT / ".ai" / "tasks" / task_id if task_id is not None else None
     head_sha = _head_sha(REPO_ROOT)
-    observation = observe_independent_review(GhReviewGateway(root=REPO_ROOT), head_sha)
+    observation = observe_independent_review(
+        GhReviewGateway(root=REPO_ROOT),
+        head_sha,
+        task_id or "",
+    )
     result = assess_readiness(
         task_dir,
         paths,
@@ -320,7 +327,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Required gates: {', '.join(result.required_gates) or '(none)'}")
     print("Readiness checks:")
     for check in result.checks:
-        marker = "PASS" if check.ok else "FAIL"
+        marker = (
+            "ADVISORY"
+            if check.ok and check.detail.startswith("ADVISORY:")
+            else ("PASS" if check.ok else "FAIL")
+        )
         print(f"  [{marker}] {check.name}: {check.detail}")
     print("READY" if result.ready else "NOT READY")
     return 0 if result.ready else 1

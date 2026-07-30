@@ -2,9 +2,19 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import cast
 
-from scripts.quality.pr_body import PRBodyPolicy, load_pr_body_policy, validate_pr_body
+import pytest
+import scripts.quality.pr_body as pr_body
+from scripts.quality.pr_body import (
+    PRBodyPolicy,
+    PRBodyValidation,
+    load_pr_body_policy,
+    validate_pr_body,
+)
+from scripts.quality.review_observation import ReviewObservation, ReviewStatus
 
 from tests.test_quality_validate_task import _task
 
@@ -147,3 +157,42 @@ def test_pr_body_validator_requires_a_linked_issue_matching_a_numeric_task(tmp_p
     assert any(
         "linked issue #66 does not match task artifact 67" in issue for issue in result.issues
     )
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_exit"),
+    (("verified", 0), ("rejected", 1), ("unverifiable", 1)),
+)
+def test_ci_pr_body_entrypoint_strictly_binds_the_observed_review(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+    expected_exit: int,
+) -> None:
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {"body": "body"}}), encoding="utf-8")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
+    monkeypatch.setattr(pr_body, "_head_sha", lambda root: "head")
+    monkeypatch.setattr(pr_body, "changed_paths", lambda base: ["scripts/quality/pr_body.py"])
+    observation = ReviewObservation(
+        cast(ReviewStatus, status),
+        f"review {status}",
+        "https://review/1" if status == "verified" else None,
+    )
+    monkeypatch.setattr(
+        pr_body,
+        "observe_independent_review",
+        lambda gateway, head_sha, task_id: observation,
+    )
+
+    def validate(
+        body: str,
+        **kwargs: object,
+    ) -> PRBodyValidation:
+        assert kwargs["review_observation"] is observation
+        assert kwargs["require_verifiable_review"] is True
+        return PRBodyValidation(()) if status == "verified" else PRBodyValidation(("blocked",))
+
+    monkeypatch.setattr(pr_body, "validate_pr_body", validate)
+
+    assert pr_body.main([]) == expected_exit
