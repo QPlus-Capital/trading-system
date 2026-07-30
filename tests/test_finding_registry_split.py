@@ -141,7 +141,7 @@ def _stable_content_digest(content: dict[str, str]) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def test_severity_migration_changes_only_severity_across_all_58_patterns() -> None:
+def test_severity_migration_preserves_every_pattern_and_rejects_content_duplicates() -> None:
     before = tomllib.loads(_SEVERITY_V1.read_text(encoding="utf-8"))
     expected = {
         bytes(row["content_sha256"]).hex(): _SEVERITY_MIGRATION[row["severity"]]
@@ -152,4 +152,5 @@ def test_severity_migration_changes_only_severity_across_all_58_patterns() -> No
     assert before["count"] == 58
     assert len(expected) == 58
     assert len(after) >= len(expected)
-    assert {digest: observed[digest] for digest in expected} == expected
+    assert len(observed) == len(after)
+    assert expected.items() <= observed.items()

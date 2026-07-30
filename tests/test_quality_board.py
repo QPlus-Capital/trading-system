@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 from scripts.quality.board import (
@@ -46,6 +48,9 @@ Behavioural tests.
 None.
 """
 
+_ROOT = Path(__file__).resolve().parents[1]
+_WriteHook = Callable[[IssueState], IssueState]
+
 
 class FakeGateway:
     def __init__(
@@ -56,6 +61,7 @@ class FakeGateway:
         fail_on: str | None = None,
         sticky_remove: bool = False,
         status_names: set[str] | None = None,
+        on_write: dict[str, _WriteHook] | None = None,
     ) -> None:
         contract_names = {item.name for item in load_contract().statuses}
         self.available_statuses = status_names if status_names is not None else contract_names
@@ -68,6 +74,7 @@ class FakeGateway:
         )
         self.fail_on = fail_on
         self.sticky_remove = sticky_remove
+        self.on_write = dict(on_write or {})
         self.calls: list[tuple[str, str]] = []
 
     def status_names(self) -> frozenset[str]:
@@ -104,6 +111,9 @@ class FakeGateway:
         self.calls.append((operation, value))
         if self.fail_on == operation:
             raise BoardError(f"injected failure: {operation}")
+        hook = self.on_write.pop(operation, None)
+        if hook is not None:
+            self.state = hook(self.state)
 
 
 def _service(gateway: FakeGateway, contract: WorkflowContract | None = None) -> BoardService:
@@ -205,12 +215,30 @@ def test_every_arm_write_failure_leaves_approved_absent(operation: str) -> None:
 def test_move_out_of_ready_removes_approved_before_status_change(target: str) -> None:
     gateway = FakeGateway(labels={"approved", "risk:R3"})
 
+    if target == "Implementing":
+        with pytest.raises(BoardError, match="reserved for `start`"):
+            _service(gateway).move(110, target)
+        assert gateway.state.status == "Ready to Implement"
+        assert "approved" in gateway.state.labels
+        assert not any(call[0].startswith(("remove", "move the card")) for call in gateway.calls)
+        return
+
     state = _service(gateway).move(110, target)
 
     writes = [call[0] for call in gateway.calls if call[0] not in {"status_names", "issue_state"}]
     assert writes == ["remove approved", f"move the card to {target}"]
     assert state.status == target
     assert "approved" not in state.labels
+
+
+def test_move_cannot_reach_implementing_without_the_start_guard() -> None:
+    gateway = FakeGateway(labels=set())
+
+    with pytest.raises(BoardError, match="reserved for `start`"):
+        _service(gateway).move(110, "Implementing")
+
+    assert gateway.state.status == "Ready to Implement"
+    assert gateway.calls == [("status_names", ""), ("issue_state", "110")]
 
 
 def test_start_refuses_after_demoting_an_approved_card() -> None:
@@ -238,10 +266,17 @@ def test_withdraw_removes_approved_without_moving_card() -> None:
 
 
 def test_withdrawn_ready_card_can_run_full_arm_sequence() -> None:
+    observed_statuses: list[str | None] = []
+
+    def observe_noop_status(state: IssueState) -> IssueState:
+        observed_statuses.append(state.status)
+        return state
+
     gateway = FakeGateway(labels={"approved", "risk:R3"})
     service = _service(gateway)
     service.withdraw(110)
     gateway.calls.clear()
+    gateway.on_write["move the card to Ready to Implement"] = observe_noop_status
 
     state = service.arm(110, body=_VALID_BODY, risk_class="R3")
 
@@ -252,6 +287,7 @@ def test_withdrawn_ready_card_can_run_full_arm_sequence() -> None:
         "move the card to Ready to Implement",
         "add approved",
     ]
+    assert observed_statuses == ["Ready to Implement"]
     assert "approved" in state.labels
 
 
@@ -277,6 +313,90 @@ def test_move_refuses_before_status_change_when_permit_removal_does_not_stick() 
 
     assert gateway.state.status == "Ready to Implement"
     assert not any(call[0].startswith("move the card") for call in gateway.calls)
+
+
+def test_move_refuses_when_status_changes_during_permit_withdrawal() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        on_write={
+            "remove approved": lambda state: replace(state, status="Blocked"),
+        },
+    )
+
+    with pytest.raises(
+        BoardError,
+        match="status changed while withdrawing the permit: observed status='Blocked'",
+    ):
+        _service(gateway).move(110, "Specifying")
+
+    assert gateway.state.status == "Blocked"
+    assert "approved" not in gateway.state.labels
+    assert not any(call[0].startswith("move the card") for call in gateway.calls)
+
+
+def test_move_refuses_when_a_third_party_readds_permit_after_status_write() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        on_write={
+            "move the card to Specifying": lambda state: replace(
+                state,
+                labels=state.labels | {"approved"},
+            ),
+        },
+    )
+
+    with pytest.raises(
+        BoardError,
+        match="status update retained a stale permit: observed approved=present",
+    ):
+        _service(gateway).move(110, "Specifying")
+
+    assert gateway.state.status == "Specifying"
+    assert "approved" in gateway.state.labels
+
+
+def test_withdraw_refuses_when_status_changes_during_permit_removal() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        on_write={
+            "remove approved": lambda state: replace(state, status="Blocked"),
+        },
+    )
+
+    with pytest.raises(
+        BoardError,
+        match="status changed while withdrawing the permit: observed status='Blocked'",
+    ):
+        _service(gateway).withdraw(110)
+
+    assert gateway.state.status == "Blocked"
+    assert "approved" not in gateway.state.labels
+
+
+def test_move_failure_after_withdrawal_reports_the_absent_permit() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        fail_on="move the card to Specifying",
+    )
+
+    with pytest.raises(BoardError, match="permit was already withdrawn") as raised:
+        _service(gateway).move(110, "Specifying")
+
+    assert "observed approved=absent" in str(raised.value)
+    assert gateway.state.status == "Ready to Implement"
+    assert "approved" not in gateway.state.labels
+
+
+@pytest.mark.parametrize("target", ("Backlog", "Reviewing", "Done"))
+def test_a_refused_move_preserves_the_permit(target: str) -> None:
+    gateway = FakeGateway(labels={"approved", "risk:R3"})
+
+    with pytest.raises(BoardError):
+        _service(gateway).move(110, target)
+
+    assert gateway.state.status == "Ready to Implement"
+    assert "approved" in gateway.state.labels
+    assert not any(call[0].startswith("remove") for call in gateway.calls)
 
 
 def test_start_refusal_names_observed_backlog_status() -> None:
@@ -306,6 +426,37 @@ def test_start_refusal_names_both_observed_risk_labels() -> None:
     assert str(raised.value) == (
         "Start requirements not met: observed risk labels=['risk:R1', 'risk:R3']"
     )
+
+
+def test_start_refuses_a_card_without_any_risk_label() -> None:
+    gateway = FakeGateway(labels={"approved"})
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).start(110)
+
+    assert str(raised.value) == "Start requirements not met: observed risk labels=[]"
+    assert gateway.state.status == "Ready to Implement"
+    assert "approved" in gateway.state.labels
+
+
+def test_start_guard_condition_set_is_unchanged() -> None:
+    label_universe = ("approved", "risk:R0", "risk:R1", "risk:R2", "risk:R3")
+    statuses = tuple(status.name for status in load_contract().statuses)
+
+    for status in statuses:
+        for mask in range(1 << len(label_universe)):
+            labels = {label for index, label in enumerate(label_universe) if mask & (1 << index)}
+            risks = {label for label in labels if label.startswith("risk:R")}
+            expected_accept = (
+                status == "Ready to Implement" and "approved" in labels and len(risks) == 1
+            )
+            gateway = FakeGateway(status=status, labels=labels)
+
+            if expected_accept:
+                assert _service(gateway).start(110).status == "Implementing"
+            else:
+                with pytest.raises(BoardError):
+                    _service(gateway).start(110)
 
 
 def test_start_refusal_reports_every_observed_failure() -> None:
@@ -366,13 +517,15 @@ def test_arm_and_approval_write_refusals_name_observed_status(
     assert str(raised.value) == expected
 
 
-@pytest.mark.parametrize("operation", ("start", "arm", "approve", "withdraw"))
+@pytest.mark.parametrize("operation", ("move", "start", "arm", "approve", "withdraw"))
 def test_refusals_report_a_card_absent_from_project(operation: str) -> None:
     gateway = FakeGateway(status=None)
     service = _service(gateway)
 
     with pytest.raises(BoardError) as raised:
-        if operation == "start":
+        if operation == "move":
+            service.move(110, "Specifying")
+        elif operation == "start":
             service.start(110)
         elif operation == "arm":
             service.arm(110, body=_VALID_BODY, risk_class="R3")
@@ -382,7 +535,7 @@ def test_refusals_report_a_card_absent_from_project(operation: str) -> None:
             service.withdraw(110)
 
     assert "observed project status=absent" in str(raised.value)
-    assert "wrong status" not in str(raised.value)
+    assert "#110" not in str(raised.value)
 
 
 def test_refusal_messages_contain_only_observed_state_values() -> None:
@@ -410,9 +563,13 @@ def test_no_board_operation_path_reaches_armed_ready_without_arm() -> None:
             status=transition.source,
             labels={"approved", "risk:R3"},
         )
+        if transition.source == "Ready to Implement" and transition.target == "Implementing":
+            with pytest.raises(BoardError, match="reserved for `start`"):
+                _service(gateway, contract).move(110, transition.target)
+            assert "approved" in gateway.state.labels
+            continue
         state = _service(gateway, contract).move(110, transition.target)
-        if state.status == "Ready to Implement":
-            assert "approved" not in state.labels, transition
+        assert "approved" not in state.labels, transition
 
     armed = FakeGateway(labels={"risk:R3"})
     armed_state = _service(armed, contract).arm(110, body=_VALID_BODY, risk_class="R3")
@@ -455,6 +612,99 @@ def test_refusal_messages_do_not_expose_sensitive_values() -> None:
     assert "synthetic-private-value" not in message
     assert "123456789" not in message
     assert "github.com" not in message
+
+
+def test_interleaved_state_secrets_are_not_echoed_by_verification_failure() -> None:
+    marker = "synthetic-private-value"
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        on_write={
+            "move the card to Specifying": lambda state: replace(
+                state,
+                url=f"https://example.invalid/?access_token={marker}",
+                body=f"account 123456789 token {marker}",
+                labels=state.labels | {"approved"},
+            ),
+        },
+    )
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).move(110, "Specifying")
+
+    message = str(raised.value)
+    assert message == "status update retained a stale permit: observed approved=present"
+    assert marker not in message
+    assert "123456789" not in message
+    assert "example.invalid" not in message
+
+
+def test_unapprovable_body_is_not_echoed_in_refusal() -> None:
+    marker = "synthetic-private-value"
+    body = f"not approvable; account 123456789 token {marker}"
+    gateway = FakeGateway()
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).arm(110, body=body, risk_class="R3")
+
+    message = str(raised.value)
+    assert message.startswith("issue body is not approvable:")
+    assert marker not in message
+    assert "123456789" not in message
+    assert body not in message
+    assert not any(call[0] not in {"status_names", "issue_state"} for call in gateway.calls)
+
+
+def test_raw_gh_stderr_is_not_echoed_in_board_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    marker = "synthetic-private-value"
+    gateway = GhBoardGateway()
+    gateway._scope_checked = True
+
+    class Result:
+        returncode = 1
+        stdout = ""
+        stderr = f"request failed at https://example.invalid/?access_token={marker}"
+
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", lambda *args, **kwargs: Result())
+
+    with pytest.raises(BoardError) as raised:
+        gateway._run(("issue", "view", "110"))
+
+    message = str(raised.value)
+    assert message == "GitHub board operation failed; inspect the local gh error."
+    assert marker not in message
+    assert "example.invalid" not in message
+
+
+@pytest.mark.parametrize(
+    ("body", "risk_class", "expected"),
+    (
+        ("not an issue body", "R3", "issue body is not approvable"),
+        (_VALID_BODY, "R9", "unknown risk class: R9"),
+    ),
+)
+def test_arm_refuses_unapprovable_input_before_any_write(
+    body: str,
+    risk_class: str,
+    expected: str,
+) -> None:
+    gateway = FakeGateway()
+
+    with pytest.raises(BoardError, match=expected):
+        _service(gateway).arm(110, body=body, risk_class=risk_class)
+
+    assert not any(call[0] not in {"status_names", "issue_state"} for call in gateway.calls)
+
+
+def test_workflow_documents_the_complete_public_board_command_surface() -> None:
+    text = (_ROOT / "docs" / "engineering" / "workflow.md").read_text(encoding="utf-8")
+    block = text.split("<!-- board-commands:start -->", 1)[1].split(
+        "<!-- board-commands:end -->",
+        1,
+    )[0]
+    documented = {line.split("`", 2)[1] for line in block.splitlines() if line.startswith("| `")}
+    assert documented == set(PUBLIC_COMMANDS)
 
 
 def test_withdraw_cli_dispatches_to_board_service(

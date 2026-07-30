@@ -134,8 +134,7 @@ class GhBoardGateway:
                 "scope" in combined or "resource not accessible" in combined or "404" in combined
             ):
                 raise BoardError(_PROJECT_SCOPE_ERROR)
-            detail = completed.stderr.strip() or completed.stdout.strip() or "unknown GitHub error"
-            raise BoardError(f"GitHub board operation failed: {detail}")
+            raise BoardError("GitHub board operation failed; inspect the local gh error.")
         return completed.stdout
 
     def _json(self, args: Sequence[str], name: str) -> dict[str, object]:
@@ -377,7 +376,7 @@ class BoardService:
             raise BoardError("Done is set only by project automation after merge")
         state = self.gateway.issue_state(issue)
         if state.status is None:
-            raise BoardError(f"issue #{issue} is not on the project")
+            raise BoardError("move refused: " + self._observed_status(state))
         allowed = {
             transition.target
             for transition in self.contract.transitions
@@ -385,12 +384,25 @@ class BoardService:
         }
         if target not in allowed:
             raise BoardError(f"contract does not allow {state.status!r} -> {target!r}")
+        if state.status == "Ready to Implement" and target == "Implementing":
+            raise BoardError(
+                "contract edge 'Ready to Implement' -> 'Implementing' is reserved for `start`"
+            )
+        had_permit = "approved" in state.labels
         withdrawn = self._remove_approved_and_verify(issue, state)
         if withdrawn.status != state.status:
             raise BoardError(
                 "status changed while withdrawing the permit: " + self._observed_status(withdrawn)
             )
-        self.gateway.set_status(issue, target)
+        try:
+            self.gateway.set_status(issue, target)
+        except BoardError as exc:
+            if had_permit:
+                raise BoardError(
+                    "status update failed after the permit was already withdrawn: "
+                    "observed approved=absent"
+                ) from exc
+            raise
         result = self.gateway.issue_state(issue)
         if result.status != target:
             raise BoardError(f"status update did not produce {target!r}")
