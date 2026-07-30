@@ -1,32 +1,38 @@
 # Branch protection for `main`
 
-Jan applies these settings in GitHub after this workflow lands. Repository code cannot enforce
-GitHub's server-side rules, so this page is the exact configuration checklist and audit reference.
+These settings were applied on 2026-07-30. Repository code cannot enforce GitHub's server-side
+rules, so this page records the active configuration and remains its audit reference.
 
 ## Ruleset target
 
-- Create one active branch ruleset named `Protect main`; target the default branch `main`.
+- Use one active branch ruleset named `main`; target the default branch `main`.
 - Set enforcement to `Active`, with no bypass actors (including repository administrators).
-- Enable **Restrict deletions**, **Block force pushes**, and **Require linear history**.
-- Enable **Require a pull request before merging** with one required approval, dismissal of stale
-  approvals after new commits, approval of the most recent reviewable push, and no allowed bypass.
+- Enable **Restrict deletions** and **Block force pushes**.
+- Do not enable **Require linear history**. The pull-request rule permits squash-only merging, which
+  produces linear history without a separate ruleset rule.
+- Enable **Require a pull request before merging** with zero required approvals. GitHub does not
+  allow an account to approve its own pull request, and both review agents push through the same
+  account, so a required approval would make every pull request impossible to merge.
+- Do not dismiss stale approvals after new commits, do not require approval of the most recent
+  reviewable push, and do not require a code-owner review.
 - Enable **Require conversation resolution before merging**.
-- Enable required status checks and require branches to be up to date before merging.
+- Enable required status checks, but do not require branches to be up to date before merging.
+  Non-strict checks avoid forcing every other open branch to rebase and re-run after one pull
+  request merges.
 
 ## Required status checks
 
-Select these exact contexts after one pull request has produced them:
+Require these exact contexts, without a workflow-name prefix:
 
-- `CI / standard-quality`
-- `CI / tests`
-- `CI / task-artifact-validation`
-- `CI / security`
-- `CI / critical-invariants`
-- `CI / pr-evidence-validation`
-- `Critical mutation / mutation-critical`
+- `platform-quality`
+- `full-quality`
+- `critical-change-filter`
+- `mutation-critical`
 
-Do not mark a path-filtered or aggregate substitute as required. Each context maps to a local
-`just` recipe, and the workflows have no path filter that can omit an R3 change.
+The first two contexts are jobs in `.github/workflows/ci.yml`; the latter two are jobs in
+`.github/workflows/mutation.yml`. The mutation filter always reports, while the expensive mutation
+job runs only when its workflow condition selects it. The workflows have no trigger-level path
+filter that can omit an R3 change.
 
 ## Review and merge policy
 
@@ -37,7 +43,8 @@ Do not mark a path-filtered or aggregate substitute as required. Each context ma
 - R3 has no autonomous merge: Jan decides every business, trading, methodology, live-money,
   architecture, risk, scope, go-live, and merge question. Auto-merge is not
   used for R3 even when all technical checks are green.
-- Jan approves every merge; CI, Claude, Codex, and hooks never merge.
+- Jan authorizes every merge; the zero-review setting reflects the single-account limitation, not
+  a transfer of merge authority. CI, Claude, Codex, and hooks never merge.
 
 Audit this ruleset after workflow/job renames and quarterly. A renamed required check must be
 updated here and in GitHub in the same rollout window so protection never silently disappears.

@@ -4,30 +4,52 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 _ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_branch_protection_names_every_required_check_and_setting() -> None:
     text = (_ROOT / "docs/engineering/branch-protection.md").read_text(encoding="utf-8")
-    for check in (
-        "CI / standard-quality",
-        "CI / tests",
-        "CI / task-artifact-validation",
-        "CI / security",
-        "CI / critical-invariants",
-        "CI / pr-evidence-validation",
-        "Critical mutation / mutation-critical",
-    ):
-        assert check in text
+    normalized = " ".join(text.replace("**", "").split())
+    ci = yaml.safe_load(
+        (_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    mutation = yaml.safe_load(
+        (_ROOT / ".github/workflows/mutation.yml").read_text(encoding="utf-8")
+    )
+    required_checks = {
+        line.removeprefix("- `").removesuffix("`")
+        for line in text.splitlines()
+        if line.startswith("- `")
+    }
+    assert required_checks == {
+        "platform-quality",
+        "full-quality",
+        "critical-change-filter",
+        "mutation-critical",
+    }
+    assert required_checks <= set(ci["jobs"]) | set(mutation["jobs"])
     for phrase in (
+        "active branch ruleset named `main`",
         "Require a pull request before merging",
         "Require conversation resolution before merging",
         "Block force pushes",
         "Restrict deletions",
+        "zero required approvals",
+        "same account",
+        "Do not dismiss stale approvals after new commits",
+        "Do not require approval of the most recent reviewable push",
+        "Do not enable Require linear history",
+        "squash-only",
+        "do not require branches to be up to date before merging",
+        "rebase and re-run",
+        "applied on 2026-07-30",
         "no autonomous merge",
         "Codex",
     ):
-        assert phrase.casefold() in text.casefold()
+        assert phrase.casefold() in normalized.casefold()
+    assert "Jan applies these settings" not in text
 
 
 def test_reviewer_findings_policy_closes_the_feedback_loop() -> None:
