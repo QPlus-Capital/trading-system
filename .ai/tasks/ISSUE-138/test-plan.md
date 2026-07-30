@@ -15,6 +15,10 @@
 | INV-02 | `test_arm_and_start_keep_all_verification_reads` | RED: existing tests assert writes but not the three state reads in each sequence | GREEN: both commands retain their initial, intermediate, and final reads |
 | INV-03 | `test_rate_limit_and_state_refusals_do_not_expose_secrets` | RED: no rate-limit-specific output contract exists | GREEN: neither refusal contains token, account number, or credential-bearing URL |
 
+Additional fail-closed defense: `test_incomplete_issue_project_membership_refuses_without_retry`
+proves that a truncated issue-level project connection cannot be mistaken for board absence and
+cannot trigger pagination or retry after the one bounded query.
+
 ## Red-first procedure
 
 1. Add the counting `gh` fake and all named AC/INV tests against unchanged `board.py`.
@@ -31,7 +35,8 @@
 - `just check-security`
 - `just impact origin/main`
 - `validate_task --task-id ISSUE-138`
-- Linux critical mutation where the production policy selects a configured target
+- Linux critical mutation where the production policy selects a configured target; otherwise
+  execute the authoritative selector and record the exact empty target set without a mutation claim
 - independent adversarial and live-money review
 - `pr-ready ISSUE-138`; never merge autonomously
 
