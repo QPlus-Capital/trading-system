@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #67 Linux mutation workflow run 29905820402"
 defect_class = "platform-optional-dependency-imported-at-test-collection"
-severity = "P1"
+severity = "Defect"
 affected = "tests/conftest.py"
 root_cause = "the global no-live-MT5 fixture imported the Windows-only MetaTrader5 package before Linux mutation tests could collect"
 why_tests_missed = "the safety fixture was exercised only on Windows, where the package is installed"

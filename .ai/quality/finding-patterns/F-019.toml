@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #66 (staged secret scan)"
 defect_class = "security-scanner-fixture-false-positive"
-severity = "P2"
+severity = "Suspected defect"
 affected = "scripts/quality/hooks/decisions.py"
 root_cause = "the named-secret value parser truncated a brace-delimited test variable and treated fixture source as a credential"
 why_tests_missed = "the first clean case covered a literal placeholder but not the synthetic fixture's source representation"

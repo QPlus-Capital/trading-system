@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #123 independent live-money review"
 defect_class = "environment-selected-terminal-consumed-without-identity-guard"
-severity = "P2"
+severity = "Suspected defect"
 affected = "research/portfolio/swap_analysis.py, live/parity_check.py, monitoring/dashboard.py"
 root_cause = "read-only consumers resolved an operator-provided terminal path but consumed account-specific bars, deals, positions, or swap rates without verifying the connected account"
 why_tests_missed = "coverage exercised pure calculations and stable snapshots, not a wrong-login terminal at each real entrypoint with downstream read counters"

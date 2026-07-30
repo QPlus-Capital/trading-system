@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #67 task-artifact recipe dogfood"
 defect_class = "validated-identity-not-propagated-to-output"
-severity = "P2"
+severity = "Suspected defect"
 affected = "scripts/quality/validate_task.py"
 root_cause = "the CLI printed the optional raw argument after discovering a concrete task ID, so successful CI output named Task None"
 why_tests_missed = "discovery was tested as a pure function but the no-argument CLI execution path was not exercised"

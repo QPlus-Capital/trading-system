@@ -50,9 +50,31 @@ def test_every_finding_is_complete() -> None:
     for f in _findings():
         missing = [field for field in _REQUIRED_FIELDS if not str(getattr(f, field)).strip()]
         assert not missing, f"finding {f.id} is missing fields: {missing}"
-        assert f.severity in ("P0", "P1", "P2", "P3"), f"bad severity in {f.id}"
+        assert f.severity in (
+            "Blocker",
+            "Defect",
+            "Suspected defect",
+            "Note",
+        ), f"bad severity in {f.id}"
         ids.append(f.id)
     assert len(ids) == len(set(ids)), f"duplicate finding ids: {ids}"
+
+
+def test_old_finding_severity_codes_are_absent_from_active_contracts() -> None:
+    active_files = [
+        _ROOT / "CLAUDE.md",
+        _ROOT / ".ai" / "quality" / "task-artifacts.toml",
+        _ROOT / ".github" / "PULL_REQUEST_TEMPLATE.md",
+        _ROOT / ".ai" / "tasks" / "_templates" / "review.md",
+        *(_ROOT / ".claude").glob("**/*.md"),
+        *(_ROOT / "docs" / "engineering").glob("*.md"),
+    ]
+    stale = {
+        path.relative_to(_ROOT).as_posix(): sorted(set(re.findall(r"\bP[0-3]\b", text)))
+        for path in active_files
+        if (text := path.read_text(encoding="utf-8")) and re.search(r"\bP[0-3]\b", text)
+    }
+    assert not stale
 
 
 def test_representative_defect_classes_are_recorded() -> None:

@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #123 complete independent re-review"
 defect_class = "fixed-width-identity-witness-accepts-short-zero-padded-input"
-severity = "P3"
+severity = "Note"
 affected = "live/accounts.py"
 root_cause = "formatting a short integer to four digits made a login shorter than the code-owned suffix appear to match the suffix"
 why_tests_missed = "suffix tests used only realistic longer logins and never supplied a value shorter than or equal to the witness itself"

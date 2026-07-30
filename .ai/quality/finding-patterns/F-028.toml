@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #67 GitHub-format adversarial review"
 defect_class = "native-template-metadata-omitted"
-severity = "P1"
+severity = "Defect"
 affected = ".github/ISSUE_TEMPLATE/*.md"
 root_cause = "plain Markdown files lacked GitHub's required name/about frontmatter and would not appear correctly in the issue-template chooser"
 why_tests_missed = "the first render test asserted Markdown headings but not the hosting platform's native metadata contract"

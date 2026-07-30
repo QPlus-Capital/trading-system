@@ -139,13 +139,14 @@ def test_role_contracts_preserve_exception_and_human_authority() -> None:
 
 
 def test_claude_runtime_files_match_the_primary_review_role() -> None:
-    adversarial_skill = _text(_CLAUDE_SKILLS / "adversarial-review" / "SKILL.md").lower()
-    assert "claude's primary workflow skill" in adversarial_skill
-    assert "read-only and independent of the builder" in adversarial_skill
+    review_skill = " ".join(_text(_CLAUDE_SKILLS / "review-change" / "SKILL.md").lower().split())
+    assert "claude's primary review skill" in review_skill
+    assert "read-only and independent of the builder" in review_skill
 
     reviewers = (
         "adversarial-code-reviewer.md",
         "live-money-reviewer.md",
+        "methodology-reviewer.md",
         "test-quality-reviewer.md",
     )
     for name in reviewers:
@@ -153,11 +154,20 @@ def test_claude_runtime_files_match_the_primary_review_role() -> None:
         assert "claude's primary" in reviewer, f"{name} must be part of Claude's primary path"
         assert "read-only" in reviewer, f"{name} must retain a read-only remit"
 
-    for name in ("implement-change", "prepare-pr"):
-        builder_skill = _text(_CLAUDE_SKILLS / name / "SKILL.md").lower()
-        assert "only" in builder_skill and "highest-stakes trading" in builder_skill, (
-            f"{name} must be limited to Claude's explicit builder exception"
-        )
+    builder_skill = _text(_CLAUDE_SKILLS / "build-change" / "SKILL.md").lower()
+    assert "only" in builder_skill and "highest-stakes trading" in builder_skill, (
+        "build-change must be limited to Claude's explicit builder exception"
+    )
+
+
+def test_agents_permit_check_is_an_executable_procedure() -> None:
+    agents = _text(_AGENTS)
+    for command in (
+        "gh project item-list",
+        "gh project item-edit",
+        "gh issue edit",
+    ):
+        assert command in agents
 
 
 # --------------------------------------------------------------- the risk model parses and holds

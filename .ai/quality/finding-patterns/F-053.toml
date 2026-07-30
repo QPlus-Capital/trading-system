@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #123 Jan decision on dead guard parameter"
 defect_class = "inert-safety-parameter-implies-nonexistent-strictness-control"
-severity = "P3"
+severity = "Note"
 affected = "live/accounts.py, live/run.py"
 root_cause = "guard_account accepted an execute flag that was deliberately ignored, implying mode-dependent identity strictness and creating permanent equivalent mutants"
 why_tests_missed = "tests proved both boolean values behaved identically but did not assert that a mandatory guard exposes no misleading mode control"

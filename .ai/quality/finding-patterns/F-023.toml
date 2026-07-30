@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #66 (bypass-hook adversarial review)"
 defect_class = "coded-broad-suppression"
-severity = "P2"
+severity = "Suspected defect"
 affected = "scripts/quality/hooks/decisions.py"
 root_cause = "the bypass matcher treated any bracketed type ignore or colon-qualified noqa as narrow, so empty type codes and noqa ALL passed"
 why_tests_missed = "the initial block/allow pair compared only a bare suppression with one valid specific code"

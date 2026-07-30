@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #123 independent live-money review"
 defect_class = "security-scan-passes-vacuously-or-misses-canonical-form"
-severity = "P2"
+severity = "Suspected defect"
 affected = "tests/test_live_accounts.py"
 root_cause = "the anti-recommit regex described the removed source assignment instead of the new environment syntax, excluded tests, and ran git ls-files from a nested mutant copy where it enumerated zero relevant files"
 why_tests_missed = "the test asserted only an empty finding list and never asserted the scanned path set, count, canonical leak forms, or nested-worktree behavior"

@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #105 independent live-money review after mutation remediation"
 defect_class = "external-runtime-representation-or-read-failure-disables-safety-cycle"
-severity = "P2"
+severity = "Suspected defect"
 affected = "live/mt5_bridge.py, live/runner.py"
 root_cause = "the bridge required exact built-in runtime types and the runner let position-read failures occur before or abort its safety halt and best-effort flattening"
 why_tests_missed = "fixtures used only exact int/str values, non-empty single-position accounts, and direct bridge calls; they did not exercise C-extension-like subtypes, flat or multi-position accounts, or bridge rejection through the runner"

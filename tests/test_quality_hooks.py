@@ -113,7 +113,7 @@ def test_bypass_decision_blocks_widened_toml_per_file_ignores() -> None:
 
 
 def test_review_artifact_decision_blocks_invalid_r3_and_allows_valid_review() -> None:
-    issue = ValidationIssue("unresolved-review", "one unresolved P1 finding")
+    issue = ValidationIssue("unresolved-review", "one unresolved Defect finding")
     assert not review_artifact_decision("gh pr ready 66", "R3", (issue,)).allowed
     assert review_artifact_decision("gh pr ready 66", "R3", ()).allowed
     assert review_artifact_decision("gh pr ready 66", "R2", (issue,)).allowed

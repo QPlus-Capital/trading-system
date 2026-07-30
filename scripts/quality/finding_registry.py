@@ -27,7 +27,7 @@ _FIELDS = (
     "generalized",
     "workflow_change",
 )
-_SEVERITIES = frozenset({"P0", "P1", "P2", "P3"})
+_SEVERITIES = frozenset({"Blocker", "Defect", "Suspected defect", "Note"})
 
 
 @dataclass(frozen=True)

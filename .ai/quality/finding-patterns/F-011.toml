@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #70 (mutation execution)"
 defect_class = "correct-code-wrong-entrypoint"
-severity = "P2"
+severity = "Suspected defect"
 affected = "scripts/quality/mutation.py"
 root_cause = "the wrapper launched mutmut with python -m, so trampolines imported mutmut.__main__ under a second identity and repeated multiprocessing setup before any mutant ran"
 why_tests_missed = "native Windows correctly refused mutation, while the initial Linux probe captured the child error without exposing it"

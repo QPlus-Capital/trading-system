@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #66 (mutation-evidence adversarial review)"
 defect_class = "baseline-guard-incomplete-path-set"
-severity = "P1"
+severity = "Defect"
 affected = "scripts/quality/hooks/decisions.py"
 root_cause = "the evidence hook covered files named baseline but not mutation.toml, even though changing mutation scope can weaken the measured baseline"
 why_tests_missed = "the first block/allow pair exercised only mutation-baseline.toml and an unrelated document"

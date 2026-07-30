@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #67 adversarial review"
 defect_class = "manual-risk-upgrade-does-not-upgrade-gates"
-severity = "P1"
+severity = "Defect"
 affected = "scripts/quality/pr_ready.py"
 root_cause = "readiness computed required gates from the path classifier before reading a higher author-declared risk class"
 why_tests_missed = "existing tests covered understatement and already-R3 paths, but not a semantic upgrade above a lower path minimum"
