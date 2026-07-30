@@ -17,7 +17,7 @@ HEAD: 0e56193677a966c80e6c352e8c4ae2f48d376fad
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Fixed seed `20260721` passed twice: 21 plus 21 properties. |
 | `integration-tests` | same 202-test impacted command | 0 | Skill discovery, review selection, registry loading, task validation, workflow rendering, templates, hooks, and readiness integrate cleanly. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id ISSUE-111-112 --base origin/main` | 0 | Valid R3 task: 11 acceptance criteria and 4 invariants mapped. |
-| `adversarial-review` | independent Claude review on the draft pull request | 1 | Pending by design; the builder has not reviewed its own work. |
+| `adversarial-review` | independent Claude review on pull request 133, 2026-07-30 | 0 | GREEN: no findings, 9 counterexamples attempted. Verified independently: the 58-file severity migration line by line (one changed line each), all 55 legacy ids still resolving after the content hash moved, the blocking set under the new names, a repository-wide search for residual old codes, the selection matrix over seven class/path cases, read-only tools on all four agents, the five §4 invariants named, and the empty activation register reproduced on both trees. Recorded by the reviewer in `review.md`, not transcribed by the builder. |
 | `invariants` | `uvx --from rust-just just check-invariants` | 0 | All 529 critical invariant tests passed. |
 | `mutation-on-touched-critical` | production `select_fast_targets(changed_paths("origin/main"), load_policy(), load_model())` | 0 | Exact result `[]`: none of the four changed quality modules is a configured mutation target. Native Mutmut remains Linux-only; no mutation claim or baseline change is made. |
 | `parity-where-applicable` | `git diff --name-only origin/main...HEAD` | 0 | No `core/**`, `research/**`, `live/**`, or `monitoring/**` production path changed; trading parity is not applicable. |
@@ -45,6 +45,13 @@ or survivor classification changed.
 
 ## Deferred checks
 
-Independent Claude review is intentionally deferred until the draft pull request exists. The
-`adversarial-review` gate remains non-zero, so readiness must remain blocked. Jan alone makes the
-pull request ready and merges it.
+The independent Claude review is complete and recorded above; Jan alone makes the pull request ready
+and merges it.
+
+- **No CI run has executed against an empty activation register.** This branch removes two of the
+  three remaining rows and #110 removes the third, so neither reaches that state alone. Merging #110
+  first makes this branch's own CI the first run against a genuinely empty register, before `main`
+  rather than after. That is the recommended order.
+- **`full-quality` has not yet run for this branch.** It is conditional on the pull request being
+  ready, so the 1,615 local passes are a Windows result; the binding Linux run happens at the ready
+  transition.
