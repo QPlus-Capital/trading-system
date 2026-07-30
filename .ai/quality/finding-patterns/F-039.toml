@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #107 Codex independent review of the workflow contract"
 defect_class = "procedural-contract-verified-by-reading-not-by-execution"
-severity = "P1"
+severity = "Defect"
 affected = "docs/engineering/workflow.md, docs/engineering/constitution.md, AGENTS.md, CLAUDE.md"
 root_cause = "a governance document that two agents execute literally was checked section by section, so a consumed build permit still gated resumption, a role summary still promised a ready pull request the constitution had replaced with a draft, a review loop had no transition back, and three capabilities the repository lacks were written in the present tense"
 why_tests_missed = "the test plan mapped every acceptance criterion to manual sentence inspection, and the existing consistency guards assert that individual phrases are present, which no contradiction between two sections can violate"

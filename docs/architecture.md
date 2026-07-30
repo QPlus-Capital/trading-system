@@ -279,6 +279,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `scripts/quality/issue_body.py` | Validates R2/R3 issue specifications and scaffolds risk-scaled task artifacts |
 | `scripts/quality/board.py` | Applies contract-driven, fail-closed GitHub Project and permit transitions |
 | `scripts/quality/workflow_contract.py` | Renders workflow documents from the authoritative TOML contract and rejects drift |
+| `scripts/quality/review_selection.py` | Selects the exact read-only reviewer set from effective risk and touched paths |
 | `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `scripts/quality/hooks/pre_bash.py` | Collects Git/task metadata and emits Claude Code hook responses |
 

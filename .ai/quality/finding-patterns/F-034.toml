@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #91 deterministic counterexample"
 defect_class = "future-high-water-mark-applied-to-earlier-trough"
-severity = "P1"
+severity = "Defect"
 affected = "research/portfolio/sizing.py, research/portfolio/path_risk.py"
 root_cause = "drawdown replay raised the equity high-water mark with a later close before evaluating an earlier intraday or daily minimum"
 why_tests_missed = "existing fixtures checked synchronized minima and shared report surfaces but did not place a profitable close after an earlier trough or an observable intraday high before a later trough"

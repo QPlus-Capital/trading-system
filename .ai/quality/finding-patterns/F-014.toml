@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #70 (Python 3.13 mutation stats)"
 defect_class = "in-process-native-extension-reload"
-severity = "P2"
+severity = "Suspected defect"
 affected = "pyproject.toml, .github/workflows/mutation.yml"
 root_cause = "Mutmut's covered-line prepass and stats pass execute pytest in one process, causing NumPy's native extension to be loaded twice under Linux Python 3.13"
 why_tests_missed = "unit tests exercised policy and parsing without running the repository's NumPy-dependent test selection through Mutmut on Linux"

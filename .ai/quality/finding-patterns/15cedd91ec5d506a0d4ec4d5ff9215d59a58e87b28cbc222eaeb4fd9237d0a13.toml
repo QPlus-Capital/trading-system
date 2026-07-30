@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #130 independent review"
 defect_class = "test-only-change-skips-mutation-ratchet"
-severity = "P1"
+severity = "Defect"
 affected = ".github/workflows/mutation.yml, scripts/quality/impact.py, tests/test_ci_cost_workflows.py"
 root_cause = "the mutation filter selected configured targets only from changed production paths, so weakening a test assertion could create a surviving mutant without starting the ratchet"
 why_tests_missed = "the workflow contract explicitly asserted that a changed test skipped mutation and had no direct, transitive, or unresolved test-import cases"

@@ -62,13 +62,15 @@ A defect is a loss, not a bug report. These constraints are immutable and always
 
 ## Severity
 
-- **P0** — live-money loss, leaked secret, or data corruption.
-- **P1** — correctness defect: wrong result, broken invariant, or silent failure.
-- **P2** — probable defect or risk needing verification, or a missing test for a real edge case.
-- **P3** — optional improvement or style point.
+- **Blocker** — live-money loss, leaked secret, or data corruption.
+- **Defect** — correctness defect: wrong result, broken invariant, or silent failure.
+- **Suspected defect** — probable defect or risk needing verification, or a missing test for a
+  real edge case.
+- **Note** — optional improvement or style point.
 
-Anything on the live-money path, a correctness bug, or a leaked secret is P0/P1. Rank findings by
-severity and lead with the highest.
+Anything on the live-money path, a correctness bug, or a leaked secret is Blocker/Defect. Rank
+findings by severity and lead with the highest. Blocker, Defect, and Suspected defect block
+readiness.
 
 ## Procedure
 
@@ -93,7 +95,7 @@ severity and lead with the highest.
 
 - **Cite `file:line`** for every finding and propose the executable regression that proves it.
 - Categorise each item as a confirmed defect, probable risk, human decision, optional improvement,
-  or no finding. P0–P2 block readiness until resolved.
+  or no finding. Blocker, Defect, and Suspected defect block readiness until resolved.
 - **Do not invent findings** to seem thorough. Explicitly report sound areas and counterexamples
   attempted when no finding survives.
 

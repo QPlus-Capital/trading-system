@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "research/regression.py"
 defect_class = "numeric-boundary"
-severity = "P1"
+severity = "Defect"
 affected = "research/regression.py"
 root_cause = "trade-count drift computed as 0% when the reference count was zero, hiding a real zero->nonzero transition"
 why_tests_missed = "no test covered a zero reference with a nonzero candidate"

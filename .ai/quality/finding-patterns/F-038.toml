@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #99 real-artifact direction reconciliation"
 defect_class = "stable-wrong-categorical-value-hidden-by-drift-gates"
-severity = "P1"
+severity = "Defect"
 affected = "research/portfolio/trades.py"
 root_cause = "closed-position state side=FLAT was mistaken for opening direction even though the independent entry-side field carries BUY or SELL"
 why_tests_missed = "synthetic reports invented side=LONG/SHORT and byte-identity checks only proved the all-false artifact was reproducible"

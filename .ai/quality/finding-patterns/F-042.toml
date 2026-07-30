@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #105 complete independent re-review"
 defect_class = "broad-bridge-exception-triggers-unconditional-liquidation"
-severity = "P1"
+severity = "Defect"
 affected = "live/runner.py, live/mt5_bridge.py"
 root_cause = "the runner used the bridge's general Mt5Error to distinguish an ambiguous position side from routine terminal read failures, so one transient symbol or position read liquidated a healthy book and permanently halted the session"
 why_tests_missed = "the only runner-consumer test used signal-only mode with no open positions, making both the no-close assertion and the single alert vacuous; no test injected a transient read followed by a healthy safety cycle"

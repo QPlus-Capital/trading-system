@@ -4,7 +4,7 @@ Start a fresh session for every non-trivial issue. The task specification and re
 not chat history, are the durable audit trail; restore context by reading the issue, constitution,
 task artifact, current diff, and tests.
 
-Claude uses an isolated subagent as its primary adversarial-review path, with a read-only review
+Claude uses isolated subagents through its primary `review-change` path, with a read-only review
 remit and the complete behavioural contract. Codex is the primary builder. For the highest-stakes
 trading exception, either agent may build, but the builder does not review its own decisions.
 After any material fix, rerun the full adversarial review over the complete branch rather than only

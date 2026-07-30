@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "issue #66 (Claude command hooks)"
 defect_class = "command-spelling-matcher-gap"
-severity = "P1"
+severity = "Defect"
 affected = "scripts/quality/hooks/decisions.py"
 root_cause = "the first live-execute regular expression put a word boundary before the non-word --mode token, so the documented dotted-module command was allowed"
 why_tests_missed = "the implementation had not yet executed the exact command spelling from the acceptance criterion"

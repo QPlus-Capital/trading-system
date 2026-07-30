@@ -24,5 +24,6 @@ Trace the final diff and affected callers for:
 - tests that are hermetic and have no live side effects.
 
 Construct at least one money-loss or false-confidence counterexample for every changed R3 behaviour.
-Return P0-P3 findings with tight file:line citations, concrete inputs and wrong outcomes, executable
-tests, and an explicit statement that no live interaction occurred. Do not invent findings.
+Return Blocker / Defect / Suspected defect / Note findings with tight file:line citations, concrete
+inputs and wrong outcomes, executable tests, and an explicit statement that no live interaction
+occurred. The first three severities block readiness. Do not invent findings.

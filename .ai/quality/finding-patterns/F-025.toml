@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #75 Claude adversarial review"
 defect_class = "runtime-config-unsupported-shape"
-severity = "P1"
+severity = "Defect"
 affected = ".claude/settings.json, tests/test_claude_runtime_files.py"
 root_cause = "the hook used a command-plus-args split that the installed Claude Code version is not known to execute, risking a silent failure of every safety decision"
 why_tests_missed = "the schema test asserted the same unverified split shape and executed the module through a separate sys.executable path"

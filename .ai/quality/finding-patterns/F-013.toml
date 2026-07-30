@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #70 (mutation workflow launcher)"
 defect_class = "package-executable-name-confusion"
-severity = "P2"
+severity = "Suspected defect"
 affected = ".github/workflows/mutation.yml"
 root_cause = "the workflow passed the package name rust-just to uvx although the package exposes only the executable just, so CI never entered mutation-critical"
 why_tests_missed = "the recipe and Python orchestrator were tested, but the workflow's exact launcher command was not"

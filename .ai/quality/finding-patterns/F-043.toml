@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #123 independent live-money review"
 defect_class = "secret-migration-leaves-operator-output-leak"
-severity = "P1"
+severity = "Defect"
 affected = "live/preflight.py"
 root_cause = "account logins moved from source into secret environment configuration, but the documented pre-start report still printed both connected and expected values verbatim"
 why_tests_missed = "tests pinned guard refusal messages and repr redaction but never executed the operator-facing preflight stdout with two distinct full login values"

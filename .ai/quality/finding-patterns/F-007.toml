@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #59 (constitution + risk model)"
 defect_class = "doc-model-drift"
-severity = "P2"
+severity = "Suspected defect"
 affected = "docs/engineering/risk-classes.md, docs/architecture.md"
 root_cause = "prose duplicated a list held authoritatively in the model (and in architecture.md), then drifted from it"
 why_tests_missed = "agreement was checked by keyword presence, not structurally"

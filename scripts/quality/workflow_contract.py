@@ -136,6 +136,13 @@ def _tables(data: Mapping[str, object], field: str) -> tuple[dict[str, object], 
     return tuple(_mapping(row, f"{field}[]") for row in value)
 
 
+def _optional_tables(data: Mapping[str, object], field: str) -> tuple[dict[str, object], ...]:
+    value = data.get(field, [])
+    if not isinstance(value, list):
+        raise ValueError(f"{field} must be a TOML table array")
+    return tuple(_mapping(row, f"{field}[]") for row in value)
+
+
 def _string(data: Mapping[str, object], field: str) -> str:
     value = data.get(field)
     if not isinstance(value, str) or not value.strip():
@@ -205,7 +212,7 @@ def load_contract(path: Path = CONTRACT_PATH) -> WorkflowContract:
             _integer(row, "issue"),
             _string(row, "fallback"),
         )
-        for row in _tables(data, "activation")
+        for row in _optional_tables(data, "activation")
     )
 
     gate = _mapping(data.get("gate_rule"), "gate_rule")

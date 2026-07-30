@@ -23,5 +23,6 @@ Then review:
 - whether changed tests execute the production path that the fix targets;
 - surviving mutants or missing mutation scope that indicate a genuine coverage gap.
 
-Return file:line findings ranked P0-P3, an AC-to-evidence matrix, and the counterexamples attempted.
-Do not invent findings and do not edit the implementation.
+Return file:line findings ranked Blocker / Defect / Suspected defect / Note, an AC-to-evidence
+matrix, and the counterexamples attempted. The first three severities block readiness. Do not
+invent findings and do not edit the implementation.

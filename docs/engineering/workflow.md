@@ -313,8 +313,6 @@ written.
 <!-- workflow-contract:activations:start -->
 | Part of this contract | Lands with | Until then |
 |---|---|---|
-| The `methodology-reviewer` subagent | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | The general code reviewer carries the constitution §4 methodology invariants, as it does today. |
-| Findings named `Blocker` / `Defect` / `Suspected defect` / `Note` | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | Severities are `P0`–`P3`, as the constitution §12 states. |
 <!-- workflow-contract:activations:end -->
 
 A row leaves this table in the same change that lands its dependency. An empty table means the

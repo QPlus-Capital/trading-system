@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #123 complete independent re-review"
 defect_class = "documented-env-format-silently-truncates-safety-configuration"
-severity = "P2"
+severity = "Suspected defect"
 affected = ".env.example, RUN.md, docs/live-runbook.md, live/notify.py"
 root_cause = "the documented Windows backslash path was not quoted in the only form uv parses reliably, while uv returned success after dropping that line and later identity and Telegram variables"
 why_tests_missed = "tests inspected placeholder names but never round-tripped the documented file through the real uv dotenv parser or asserted that loss of the remote alert transport is loud"

@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #70 (mutation result artifact)"
 defect_class = "hidden-artifact-default-exclusion"
-severity = "P2"
+severity = "Suspected defect"
 affected = ".github/workflows/mutation.yml"
 root_cause = "the workflow wrote its machine report below `.ai/`, but actions/upload-artifact excludes hidden paths unless explicitly enabled"
 why_tests_missed = "the upload step had never reached a completed report and no test bound the action's hidden-file option"

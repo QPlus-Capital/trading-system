@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #123 complete independent re-review"
 defect_class = "secret-regression-guard-matches-only-one-serialization"
-severity = "P2"
+severity = "Suspected defect"
 affected = "tests/test_live_accounts.py"
 root_cause = "the login-literal detector recognized an unquoted assignment but not quoted dotenv, JSON, annotated Python, comment, docstring, or task-evidence representations"
 why_tests_missed = "the guard was tested against three canonical-looking examples rather than a committed representation matrix and the known account suffixes in .ai task output"

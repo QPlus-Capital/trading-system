@@ -3,7 +3,7 @@ version = 1
 [finding]
 source = "PR #59 (constitution + risk model)"
 defect_class = "false-confidence-guard"
-severity = "P2"
+severity = "Suspected defect"
 affected = "tests/test_import_boundaries.py"
 root_cause = "a guard asserted a token was PRESENT in source text (f'{engine}(' in src), which a comment, docstring, or annotation satisfies -- it did not prove the behaviour"
 why_tests_missed = "the guard was the test; nothing checked the guard actually binds"
