@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from scripts.quality import board
 from scripts.quality.board import (
     PUBLIC_COMMANDS,
     BoardError,
@@ -50,6 +53,155 @@ None.
 
 _ROOT = Path(__file__).resolve().parents[1]
 _WriteHook = Callable[[IssueState], IssueState]
+
+
+@dataclass(frozen=True)
+class _Completed:
+    returncode: int = 0
+    stdout: str = ""
+    stderr: str = ""
+
+
+class _CountingGh:
+    def __init__(
+        self,
+        *,
+        project_size: int,
+        status: str | None = "Ready to Implement",
+    ) -> None:
+        self.project_size = project_size
+        self.status = status
+        self.query_count = 0
+        self.metadata_queries = 0
+        self.state_queries = 0
+        self.commands: list[tuple[str, ...]] = []
+
+    def __call__(self, command: list[str], **_: object) -> _Completed:
+        self.commands.append(tuple(command))
+        args = command[1:]
+        if args[:3] == ["auth", "status", "--hostname"]:
+            return _Completed(stdout="Token scopes: 'repo', 'project'")
+        if args[:2] == ["api", "graphql"]:
+            self.query_count += 1
+            self.state_queries += 1
+            form = self._form(args)
+            include_project = form["includeProject"] == "true"
+            if include_project:
+                self.metadata_queries += 1
+            return self._graphql_result(include_project=include_project)
+        if args[:2] == ["project", "view"]:
+            self.query_count += 1
+            self.metadata_queries += 1
+            return _Completed(stdout=json.dumps({"id": "PROJECT"}))
+        if args[:2] == ["project", "field-list"]:
+            self.query_count += 1
+            return _Completed(
+                stdout=json.dumps(
+                    {
+                        "fields": [
+                            {
+                                "id": "STATUS_FIELD",
+                                "name": "Status",
+                                "options": self._options(),
+                            }
+                        ]
+                    }
+                )
+            )
+        if args[:2] == ["issue", "view"]:
+            self.query_count += 1
+            self.state_queries += 1
+            return _Completed(stdout=json.dumps(self._issue()))
+        if args[:2] == ["project", "item-list"]:
+            self.query_count += max(1, (self.project_size + 99) // 100)
+            items = [] if self.status is None else [self._legacy_item()]
+            return _Completed(stdout=json.dumps({"items": items}))
+        raise AssertionError(f"unexpected gh command: {command}")
+
+    @staticmethod
+    def _form(args: list[str]) -> dict[str, str]:
+        values: dict[str, str] = {}
+        for index, value in enumerate(args[:-1]):
+            if value not in {"-f", "-F"}:
+                continue
+            key, raw = args[index + 1].split("=", 1)
+            values[key] = raw
+        return values
+
+    @staticmethod
+    def _options() -> list[dict[str, str]]:
+        return [
+            {"id": f"OPTION_{index}", "name": status.name}
+            for index, status in enumerate(load_contract().statuses)
+        ]
+
+    def _issue(self) -> dict[str, object]:
+        return {
+            "body": _VALID_BODY,
+            "labels": [{"name": "risk:R3"}],
+            "url": "https://github.com/QPlus-Capital/trading-system/issues/110",
+        }
+
+    def _legacy_item(self) -> dict[str, object]:
+        return {
+            "id": "ITEM",
+            "status": self.status,
+            "content": {
+                "number": 110,
+                "repository": "https://github.com/QPlus-Capital/trading-system",
+            },
+        }
+
+    def _graphql_result(self, *, include_project: bool) -> _Completed:
+        project_items = []
+        if self.status is not None:
+            project_items.append(
+                {
+                    "id": "ITEM",
+                    "project": {"id": "PROJECT", "number": 1},
+                    "status": {"name": self.status},
+                }
+            )
+        data: dict[str, object] = {
+            "repository": {
+                "issue": {
+                    **self._issue(),
+                    "labels": {"nodes": [{"name": "risk:R3"}]},
+                    "projectItems": {"nodes": project_items},
+                }
+            }
+        }
+        if include_project:
+            data["organization"] = {
+                "project": {
+                    "id": "PROJECT",
+                    "statusField": {
+                        "id": "STATUS_FIELD",
+                        "options": self._options(),
+                    },
+                }
+            }
+        response = json.dumps({"data": data})
+        return _Completed(stdout=f"HTTP/2.0 200 OK\nx-ratelimit-reset: 1785416404\n\n{response}")
+
+
+class _RateLimitGh:
+    def __init__(self) -> None:
+        self.commands: list[tuple[str, ...]] = []
+
+    def __call__(self, command: list[str], **_: object) -> _Completed:
+        self.commands.append(tuple(command))
+        if command[1:3] == ["auth", "status"]:
+            return _Completed(stdout="Token scopes: 'repo', 'project'")
+        return _Completed(
+            returncode=1,
+            stdout="HTTP/2.0 200 OK\nx-ratelimit-reset: 1785416404\n\n",
+            stderr=(
+                "GraphQL: API rate limit exceeded for user ID 298255040; "
+                "token=ghp_not_a_real_token; "
+                "https://github.com/orgs/QPlus-Capital/projects/1?token=secret"
+            ),
+        )
 
 
 class FakeGateway:
@@ -927,3 +1079,167 @@ def test_cli_refusal_returns_two_and_keeps_the_stable_prefix(
 
     assert main(["start", "110"]) == 2
     assert capsys.readouterr().err == "Board operation refused: refused issue 110\n"
+def test_command_query_count_is_independent_of_project_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counts = []
+    for project_size in (5, 905):
+        runner = _CountingGh(project_size=project_size)
+        monkeypatch.setattr(board.subprocess, "run", runner)
+        BoardService(GhBoardGateway()).status(110)
+        counts.append(runner.query_count)
+
+    assert counts == [1, 1]
+
+
+def test_status_uses_one_graphql_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner = _CountingGh(project_size=700)
+    monkeypatch.setattr(board.subprocess, "run", runner)
+
+    state = BoardService(GhBoardGateway()).status(110)
+
+    assert state.status == "Ready to Implement"
+    assert runner.query_count == 1
+    assert sum(command[1:3] == ("api", "graphql") for command in runner.commands) == 1
+    assert not any(command[1:3] == ("project", "item-list") for command in runner.commands)
+
+
+def test_project_metadata_is_loaded_once_across_state_reads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _CountingGh(project_size=700)
+    monkeypatch.setattr(board.subprocess, "run", runner)
+    service = BoardService(GhBoardGateway())
+
+    service.status(110)
+    service.status(110)
+
+    assert runner.metadata_queries == 1
+    assert runner.state_queries == 2
+
+
+def test_rate_limit_error_has_type_reset_time_and_distinct_cli_result(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runner = _RateLimitGh()
+    monkeypatch.setattr(board.subprocess, "run", runner)
+    with pytest.raises(board.BoardRateLimitError) as caught:
+        GhBoardGateway().issue_state(110)
+
+    assert caught.value.reset_at == datetime(2026, 7, 30, 13, 0, 4, tzinfo=UTC)
+    assert caught.value.applied_steps == ()
+    assert "reset at 2026-07-30T13:00:04Z" in str(caught.value)
+
+    runner = _RateLimitGh()
+    monkeypatch.setattr(board.subprocess, "run", runner)
+    assert board.main(["status", "110"]) == 3
+    captured = capsys.readouterr()
+    assert "Board rate limit exhausted:" in captured.err
+    assert "Board operation refused:" not in captured.err
+
+
+class _VerificationRateLimitGateway(FakeGateway):
+    def __init__(self) -> None:
+        super().__init__(labels={"approved", "risk:R3"})
+        self.state_reads = 0
+
+    def issue_state(self, issue: int) -> IssueState:
+        self.state_reads += 1
+        if self.state_reads == 2:
+            self.calls.append(("issue_state", str(issue)))
+            raise board.BoardRateLimitError(datetime(2026, 7, 30, 13, 0, 4, tzinfo=UTC))
+        return super().issue_state(issue)
+
+
+def test_rate_limit_after_a_write_reports_only_confirmed_steps() -> None:
+    gateway = _VerificationRateLimitGateway()
+
+    with pytest.raises(board.BoardRateLimitError) as caught:
+        BoardService(gateway).start(110)
+
+    assert caught.value.applied_steps == ("move the card to Implementing",)
+    assert "applied steps: move the card to Implementing" in str(caught.value)
+    assert gateway.state.status == "Implementing"
+    assert "approved" in gateway.state.labels
+
+
+def test_rate_limit_is_never_retried() -> None:
+    gateway = _VerificationRateLimitGateway()
+
+    with pytest.raises(board.BoardRateLimitError):
+        BoardService(gateway).start(110)
+
+    assert gateway.state_reads == 2
+    assert gateway.calls[-1] == ("issue_state", "110")
+    assert ("remove approved", "approved") not in gateway.calls
+
+
+def test_absent_issue_uses_one_query_and_returns_no_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _CountingGh(project_size=905, status=None)
+    monkeypatch.setattr(board.subprocess, "run", runner)
+
+    state = BoardService(GhBoardGateway()).status(110)
+
+    assert state.status is None
+    assert runner.query_count == 1
+
+
+def test_each_guard_decision_uses_a_fresh_issue_query() -> None:
+    status = FakeGateway()
+    BoardService(status).status(110)
+    assert sum(call[0] == "issue_state" for call in status.calls) == 1
+
+    move = FakeGateway(status="Implementing")
+    BoardService(move).move(110, "Reviewing")
+    assert sum(call[0] == "issue_state" for call in move.calls) == 2
+
+    arm = FakeGateway()
+    BoardService(arm).arm(110, body=_VALID_BODY, risk_class="R3")
+    assert sum(call[0] == "issue_state" for call in arm.calls) == 3
+
+    start = FakeGateway(labels={"approved", "risk:R3"})
+    BoardService(start).start(110)
+    assert sum(call[0] == "issue_state" for call in start.calls) == 3
+
+
+def test_arm_and_start_keep_all_verification_reads() -> None:
+    arm = FakeGateway()
+    BoardService(arm).arm(110, body=_VALID_BODY, risk_class="R3")
+    assert [call for call in arm.calls if call[0] == "issue_state"] == [
+        ("issue_state", "110"),
+        ("issue_state", "110"),
+        ("issue_state", "110"),
+    ]
+
+    start = FakeGateway(labels={"approved", "risk:R3"})
+    BoardService(start).start(110)
+    assert [call for call in start.calls if call[0] == "issue_state"] == [
+        ("issue_state", "110"),
+        ("issue_state", "110"),
+        ("issue_state", "110"),
+    ]
+
+
+def test_rate_limit_and_state_refusals_do_not_expose_secrets(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    runner = _RateLimitGh()
+    monkeypatch.setattr(board.subprocess, "run", runner)
+    assert board.main(["status", "110"]) == 3
+    rate_output = capsys.readouterr().err
+
+    def refuse_state(self: BoardService, issue: int) -> IssueState:
+        raise BoardError(f"issue #{issue} is not on the project")
+
+    monkeypatch.setattr(BoardService, "status", refuse_state)
+    assert board.main(["status", "110"]) == 2
+    state_output = capsys.readouterr().err
+
+    combined = rate_output + state_output
+    assert "ghp_not_a_real_token" not in combined
+    assert "298255040" not in combined
+    assert "?token=secret" not in combined
