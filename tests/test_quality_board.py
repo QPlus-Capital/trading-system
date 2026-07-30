@@ -447,6 +447,7 @@ def test_move_without_a_permit_propagates_the_underlying_failure() -> None:
     assert str(raised.value) == "injected failure: move the card to Specifying"
     assert gateway.state.status == "Ready to Implement"
     assert "approved" not in gateway.state.labels
+    assert not any(call[0].startswith("remove") for call in gateway.calls)
 
 
 @pytest.mark.parametrize("target", ("Backlog", "Reviewing", "Done"))
@@ -506,7 +507,7 @@ def test_start_guard_condition_set_is_unchanged() -> None:
     label_universe = (
         "approved",
         *sorted(contract_risk_labels),
-        "risk:high",
+        "risk:R4",
     )
     statuses = tuple(status.name for status in load_contract().statuses)
 
@@ -522,7 +523,7 @@ def test_start_guard_condition_set_is_unchanged() -> None:
             if expected_accept:
                 assert _service(gateway).start(110).status == "Implementing"
             else:
-                with pytest.raises(BoardError):
+                with pytest.raises(BoardError, match=r"^Start requirements not met: "):
                     _service(gateway).start(110)
 
 
@@ -587,6 +588,28 @@ def test_arm_and_approval_write_refusals_name_observed_status(
     if operation == "approve":
         assert "approved" not in gateway.state.labels
         assert ("add approved", "approved") not in gateway.calls
+
+
+def test_arm_refuses_when_status_changes_before_the_approval_write() -> None:
+    gateway = FakeGateway(
+        labels=set(),
+        sticky_status=True,
+        on_write={
+            "move the card to Ready to Implement": lambda state: replace(
+                state,
+                status="Implementing",
+            )
+        },
+    )
+
+    with pytest.raises(
+        BoardError,
+        match="approved requirements not met: observed status='Implementing'",
+    ):
+        _service(gateway).arm(110, body=_VALID_BODY, risk_class="R3")
+
+    assert gateway.state.status == "Implementing"
+    assert ("add approved", "approved") not in gateway.calls
 
 
 @pytest.mark.parametrize("operation", ("move", "start", "arm", "approve", "withdraw"))
@@ -816,3 +839,21 @@ def test_withdraw_cli_dispatches_to_board_service(
     assert main(["withdraw", "110"]) == 0
     assert calls == [110]
     assert capsys.readouterr().out == "#110: status=Ready to Implement labels=risk:R3\n"
+
+
+def test_cli_refusal_returns_two_and_keeps_the_stable_prefix(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class StubService:
+        def __init__(self, gateway: object) -> None:
+            del gateway
+
+        def start(self, issue: int) -> IssueState:
+            raise BoardError(f"refused issue {issue}")
+
+    monkeypatch.setattr("scripts.quality.board.GhBoardGateway", lambda **kwargs: object())
+    monkeypatch.setattr("scripts.quality.board.BoardService", StubService)
+
+    assert main(["start", "110"]) == 2
+    assert capsys.readouterr().err == "Board operation refused: refused issue 110\n"
