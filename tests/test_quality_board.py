@@ -68,9 +68,11 @@ class _CountingGh:
         *,
         project_size: int,
         status: str | None = "Ready to Implement",
+        has_more_project_items: bool = False,
     ) -> None:
         self.project_size = project_size
         self.status = status
+        self.has_more_project_items = has_more_project_items
         self.query_count = 0
         self.metadata_queries = 0
         self.state_queries = 0
@@ -167,7 +169,10 @@ class _CountingGh:
                 "issue": {
                     **self._issue(),
                     "labels": {"nodes": [{"name": "risk:R3"}]},
-                    "projectItems": {"nodes": project_items},
+                    "projectItems": {
+                        "pageInfo": {"hasNextPage": self.has_more_project_items},
+                        "nodes": project_items,
+                    },
                 }
             }
         }
@@ -348,7 +353,7 @@ def test_every_contract_status_must_resolve_to_a_runtime_option() -> None:
     gateway = FakeGateway(status_names=names)
     with pytest.raises(BoardError, match="Blocked"):
         _service(gateway).status(110)
-    assert [call for call in gateway.calls if call[0] != "status_names"] == []
+    assert [call for call in gateway.calls if call[0] != "status_names"] == [("issue_state", "110")]
 
 
 def test_missing_project_scope_has_one_actionable_error(
@@ -415,7 +420,7 @@ def test_move_cannot_reach_implementing_without_the_start_guard() -> None:
         _service(gateway).move(110, "Implementing")
 
     assert gateway.state.status == "Ready to Implement"
-    assert gateway.calls == [("status_names", ""), ("issue_state", "110")]
+    assert gateway.calls == [("issue_state", "110"), ("status_names", "")]
 
 
 def test_start_refuses_after_demoting_an_approved_card() -> None:
@@ -1085,7 +1090,7 @@ def test_command_query_count_is_independent_of_project_size(
     counts = []
     for project_size in (5, 905):
         runner = _CountingGh(project_size=project_size)
-        monkeypatch.setattr(board.subprocess, "run", runner)
+        monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
         BoardService(GhBoardGateway()).status(110)
         counts.append(runner.query_count)
 
@@ -1094,7 +1099,7 @@ def test_command_query_count_is_independent_of_project_size(
 
 def test_status_uses_one_graphql_query(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = _CountingGh(project_size=700)
-    monkeypatch.setattr(board.subprocess, "run", runner)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
 
     state = BoardService(GhBoardGateway()).status(110)
 
@@ -1108,7 +1113,7 @@ def test_project_metadata_is_loaded_once_across_state_reads(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = _CountingGh(project_size=700)
-    monkeypatch.setattr(board.subprocess, "run", runner)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
     service = BoardService(GhBoardGateway())
 
     service.status(110)
@@ -1123,7 +1128,7 @@ def test_rate_limit_error_has_type_reset_time_and_distinct_cli_result(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     runner = _RateLimitGh()
-    monkeypatch.setattr(board.subprocess, "run", runner)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
     with pytest.raises(board.BoardRateLimitError) as caught:
         GhBoardGateway().issue_state(110)
 
@@ -1132,7 +1137,7 @@ def test_rate_limit_error_has_type_reset_time_and_distinct_cli_result(
     assert "reset at 2026-07-30T13:00:04Z" in str(caught.value)
 
     runner = _RateLimitGh()
-    monkeypatch.setattr(board.subprocess, "run", runner)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
     assert board.main(["status", "110"]) == 3
     captured = capsys.readouterr()
     assert "Board rate limit exhausted:" in captured.err
@@ -1179,11 +1184,27 @@ def test_absent_issue_uses_one_query_and_returns_no_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     runner = _CountingGh(project_size=905, status=None)
-    monkeypatch.setattr(board.subprocess, "run", runner)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
 
     state = BoardService(GhBoardGateway()).status(110)
 
     assert state.status is None
+    assert runner.query_count == 1
+
+
+def test_incomplete_issue_project_membership_refuses_without_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _CountingGh(
+        project_size=1000,
+        status=None,
+        has_more_project_items=True,
+    )
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    with pytest.raises(board.BoardError, match="more project memberships"):
+        BoardService(GhBoardGateway()).status(110)
+
     assert runner.query_count == 1
 
 
@@ -1228,7 +1249,7 @@ def test_rate_limit_and_state_refusals_do_not_expose_secrets(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     runner = _RateLimitGh()
-    monkeypatch.setattr(board.subprocess, "run", runner)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
     assert board.main(["status", "110"]) == 3
     rate_output = capsys.readouterr().err
 
