@@ -32,16 +32,14 @@ Actions minutes: *item added → `Backlog`*, and *item closed → `Done`*.
 
 ### Board command surface
 
-<!-- board-commands:start -->
 | Command | Purpose |
 |---|---|
 | `status` | Read the issue's labels and project status. |
 | `add` | Add an issue to the project without choosing a workflow transition. |
-| `move` | Apply a permitted status transition; leaving `Ready to Implement` first removes and verifies the permit. The build-start edge is refused here and belongs only to `start`. |
+| `move` | Apply a permitted status transition; any successful `move`, whatever its source status, first removes and verifies a present permit. The build-start edge is refused here and belongs only to `start`. |
 | `arm` | Run the complete approval sequence and write `approved` last. |
 | `start` | Verify the Start guard, move to `Implementing`, and then consume the permit. |
 | `withdraw` | Remove and verify `approved` without changing the card's status. |
-<!-- board-commands:end -->
 
 `withdraw` is the explicit permit-revocation operation. A later `arm` still runs issue-body
 validation, risk validation, all approval writes, and the final read-back. Moving an armed card to
@@ -55,7 +53,7 @@ none exist.
 
 | Label | Function | Set by | Removed by |
 |---|---|---|---|
-| `approved` | The build permit. Without it Codex refuses to build. | Claude, at approval | The board tool, at build start, explicit withdrawal, or a move out of `Ready to Implement` |
+| `approved` | The build permit. Without it Codex refuses to build. | Claude, at approval | The board tool, at build start, explicit withdrawal, or any successful `move`, whatever its source status |
 | `risk:R0` … `risk:R3` | Selects gates, artifacts, PR scope, and review agents. | Claude, from the classifier | — |
 
 Priority is the vertical order of the `Backlog` column, not a label.

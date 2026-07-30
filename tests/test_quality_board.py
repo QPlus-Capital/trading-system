@@ -60,6 +60,8 @@ class FakeGateway:
         labels: set[str] | None = None,
         fail_on: str | None = None,
         sticky_remove: bool = False,
+        sticky_status: bool = False,
+        sticky_add_labels: set[str] | None = None,
         status_names: set[str] | None = None,
         on_write: dict[str, _WriteHook] | None = None,
     ) -> None:
@@ -74,6 +76,8 @@ class FakeGateway:
         )
         self.fail_on = fail_on
         self.sticky_remove = sticky_remove
+        self.sticky_status = sticky_status
+        self.sticky_add_labels = frozenset(sticky_add_labels or set())
         self.on_write = dict(on_write or {})
         self.calls: list[tuple[str, str]] = []
 
@@ -92,6 +96,8 @@ class FakeGateway:
 
     def add_label(self, issue: int, label: str) -> None:
         self._write(f"add {label}", label)
+        if label in self.sticky_add_labels:
+            return
         self.state = replace(self.state, labels=self.state.labels | {label})
 
     def remove_label(self, issue: int, label: str) -> None:
@@ -102,6 +108,8 @@ class FakeGateway:
 
     def set_status(self, issue: int, status: str) -> None:
         self._write(f"move the card to {status}", status)
+        if self.sticky_status:
+            return
         self.state = replace(self.state, status=status)
 
     def add_issue(self, issue: int) -> None:
@@ -120,9 +128,16 @@ def _service(gateway: FakeGateway, contract: WorkflowContract | None = None) -> 
     return BoardService(gateway, contract=contract or load_contract())
 
 
-def test_arm_refuses_a_card_outside_ready_without_mutation() -> None:
-    gateway = FakeGateway(status="Specifying")
-    with pytest.raises(BoardError, match="arm requirements not met: observed status='Specifying'"):
+@pytest.mark.parametrize(
+    "status",
+    tuple(item.name for item in load_contract().statuses if item.name != "Ready to Implement"),
+)
+def test_arm_refuses_a_card_outside_ready_without_mutation(status: str) -> None:
+    gateway = FakeGateway(status=status)
+    with pytest.raises(
+        BoardError,
+        match=rf"arm requirements not met: observed status='{status}'",
+    ):
         _service(gateway).arm(110, body=_VALID_BODY, risk_class="R3")
     assert [call for call in gateway.calls if call[0] != "status_names"] == [("issue_state", "110")]
     assert "approved" not in gateway.state.labels
@@ -211,17 +226,9 @@ def test_every_arm_write_failure_leaves_approved_absent(operation: str) -> None:
     assert "approved" not in gateway.state.labels
 
 
-@pytest.mark.parametrize("target", ("Specifying", "Implementing", "Blocked"))
+@pytest.mark.parametrize("target", ("Specifying", "Blocked"))
 def test_move_out_of_ready_removes_approved_before_status_change(target: str) -> None:
     gateway = FakeGateway(labels={"approved", "risk:R3"})
-
-    if target == "Implementing":
-        with pytest.raises(BoardError, match="reserved for `start`"):
-            _service(gateway).move(110, target)
-        assert gateway.state.status == "Ready to Implement"
-        assert "approved" in gateway.state.labels
-        assert not any(call[0].startswith(("remove", "move the card")) for call in gateway.calls)
-        return
 
     state = _service(gateway).move(110, target)
 
@@ -315,6 +322,47 @@ def test_move_refuses_before_status_change_when_permit_removal_does_not_stick() 
     assert not any(call[0].startswith("move the card") for call in gateway.calls)
 
 
+def test_move_refuses_when_the_status_write_does_not_take_effect() -> None:
+    gateway = FakeGateway(
+        status="Implementing",
+        labels={"approved", "risk:R3"},
+        sticky_status=True,
+    )
+
+    with pytest.raises(BoardError, match="status update did not produce 'Reviewing'"):
+        _service(gateway).move(110, "Reviewing")
+
+    assert gateway.state.status == "Implementing"
+    assert "approved" not in gateway.state.labels
+
+
+def test_start_refuses_when_the_status_write_does_not_take_effect() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        sticky_status=True,
+    )
+
+    with pytest.raises(BoardError, match="build-start status update did not produce"):
+        _service(gateway).start(110)
+
+    assert gateway.state.status == "Ready to Implement"
+    assert "approved" in gateway.state.labels
+
+
+def test_arm_refuses_when_the_approved_write_does_not_take_effect() -> None:
+    gateway = FakeGateway(
+        labels=set(),
+        sticky_add_labels={"approved"},
+    )
+
+    with pytest.raises(BoardError, match="completed without the approved label"):
+        _service(gateway).arm(110, body=_VALID_BODY, risk_class="R3")
+
+    assert gateway.state.status == "Ready to Implement"
+    assert "risk:R3" in gateway.state.labels
+    assert "approved" not in gateway.state.labels
+
+
 def test_move_refuses_when_status_changes_during_permit_withdrawal() -> None:
     gateway = FakeGateway(
         labels={"approved", "risk:R3"},
@@ -387,6 +435,20 @@ def test_move_failure_after_withdrawal_reports_the_absent_permit() -> None:
     assert "approved" not in gateway.state.labels
 
 
+def test_move_without_a_permit_propagates_the_underlying_failure() -> None:
+    gateway = FakeGateway(
+        labels={"risk:R3"},
+        fail_on="move the card to Specifying",
+    )
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).move(110, "Specifying")
+
+    assert str(raised.value) == "injected failure: move the card to Specifying"
+    assert gateway.state.status == "Ready to Implement"
+    assert "approved" not in gateway.state.labels
+
+
 @pytest.mark.parametrize("target", ("Backlog", "Reviewing", "Done"))
 def test_a_refused_move_preserves_the_permit(target: str) -> None:
     gateway = FakeGateway(labels={"approved", "risk:R3"})
@@ -440,13 +502,18 @@ def test_start_refuses_a_card_without_any_risk_label() -> None:
 
 
 def test_start_guard_condition_set_is_unchanged() -> None:
-    label_universe = ("approved", "risk:R0", "risk:R1", "risk:R2", "risk:R3")
+    contract_risk_labels = {"risk:R0", "risk:R1", "risk:R2", "risk:R3"}
+    label_universe = (
+        "approved",
+        *sorted(contract_risk_labels),
+        "risk:high",
+    )
     statuses = tuple(status.name for status in load_contract().statuses)
 
     for status in statuses:
         for mask in range(1 << len(label_universe)):
             labels = {label for index, label in enumerate(label_universe) if mask & (1 << index)}
-            risks = {label for label in labels if label.startswith("risk:R")}
+            risks = labels & contract_risk_labels
             expected_accept = (
                 status == "Ready to Implement" and "approved" in labels and len(risks) == 1
             )
@@ -487,6 +554,8 @@ def test_start_refusal_reports_every_observed_failure() -> None:
     assert str(approval_raised.value) == (
         "approved requirements not met: observed status='Blocked'; observed risk labels=[]"
     )
+    assert "approved" not in approval_gateway.state.labels
+    assert ("add approved", "approved") not in approval_gateway.calls
 
 
 @pytest.mark.parametrize(
@@ -515,6 +584,9 @@ def test_arm_and_approval_write_refusals_name_observed_status(
             service._write_approved(110, "R3")
 
     assert str(raised.value) == expected
+    if operation == "approve":
+        assert "approved" not in gateway.state.labels
+        assert ("add approved", "approved") not in gateway.calls
 
 
 @pytest.mark.parametrize("operation", ("move", "start", "arm", "approve", "withdraw"))
@@ -697,13 +769,24 @@ def test_arm_refuses_unapprovable_input_before_any_write(
     assert not any(call[0] not in {"status_names", "issue_state"} for call in gateway.calls)
 
 
+@pytest.mark.parametrize("risk_class", ("R0", "R1", "R2", "R3"))
+def test_arm_writes_the_requested_risk_label_for_every_class(risk_class: str) -> None:
+    body = _VALID_BODY.replace("R3 — approval", f"{risk_class} — approval")
+    gateway = FakeGateway(labels=set())
+
+    state = _service(gateway).arm(110, body=body, risk_class=risk_class)
+
+    assert (f"add risk:{risk_class}", f"risk:{risk_class}") in gateway.calls
+    assert {
+        label for label in state.labels if label in {"risk:R0", "risk:R1", "risk:R2", "risk:R3"}
+    } == {f"risk:{risk_class}"}
+    assert "approved" in state.labels
+
+
 def test_workflow_documents_the_complete_public_board_command_surface() -> None:
     text = (_ROOT / "docs" / "engineering" / "workflow.md").read_text(encoding="utf-8")
-    block = text.split("<!-- board-commands:start -->", 1)[1].split(
-        "<!-- board-commands:end -->",
-        1,
-    )[0]
-    documented = {line.split("`", 2)[1] for line in block.splitlines() if line.startswith("| `")}
+    section = text.split("### Board command surface", 1)[1].split("## The labels", 1)[0]
+    documented = {line.split("`", 2)[1] for line in section.splitlines() if line.startswith("| `")}
     assert documented == set(PUBLIC_COMMANDS)
 
 

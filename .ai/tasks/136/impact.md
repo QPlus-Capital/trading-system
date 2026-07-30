@@ -10,14 +10,17 @@
     share verified permit removal.
   - `GhBoardGateway._run` no longer copies untrusted `gh` stderr into an operator-visible error.
 - `tests/test_quality_board.py`
-  - The fake gateway gains sticky-removal and one-shot write-interleaving faults, and the suite
-    covers the issue criteria plus every accepted review counterexample.
+  - The fake gateway gains sticky-removal, sticky-status, sticky-label-addition, and one-shot
+    write-interleaving faults.
+  - The suite covers the issue criteria, every accepted review counterexample, all `arm` status
+    and risk-class boundaries, exact risk-label recognition, and all three lost-write read-backs.
 - `.ai/quality/finding-patterns/`
-  - Six content-addressed patterns record the original defect and the independently confirmed
-    review gaps.
+  - Three of the six review patterns are strengthened and renamed from their newly derived content
+    hashes so their permanent-protection claims name every executable guard.
 - `docs/engineering/workflow.md` and `.ai/quality/workflow-contract.toml`
-  - The public board command surface and every permit-removal path are documented; the contract's
-    non-generated-document hash is updated without changing a contract fact.
+  - The public board command surface and every permit-removal path are documented without
+    pretending the manually maintained table is generated; the contract's non-generated-document
+    hash is updated without changing a contract fact.
 
 Withdrawal remains a board maintenance operation, not a new workflow transition or approval step.
 The existing `Ready to Implement -> Specifying` demotion requires removal first, while
@@ -28,7 +31,8 @@ The existing `Ready to Implement -> Specifying` demotion requires removal first,
 
 - The command-line surface `uv run python -m scripts.quality.board` is the only production caller.
   `status`, `add`, `move`, `arm`, and `start` retain their existing accepted-input behaviour; the
-  new operation is additive.
+  new operation is additive. Exhaustive status and risk-class tests now bind `arm`'s accepted-input
+  surface.
 - `AGENTS.md`, `CLAUDE.md`, `docs/engineering/workflow.md`, and
   `docs/engineering/constitution.md` define the permit lifecycle consumed by the service. Their
   contract facts and generated blocks do not change.
@@ -54,6 +58,7 @@ The existing `Ready to Implement -> Specifying` demotion requires removal first,
 - The GitHub Project option ids and issue state are resolved dynamically by `GhBoardGateway`; tests
   use fakes and never mutate a real card except through the explicitly requested workflow handovers.
 - Concurrent human or automation changes between a write and its verification cannot be made
-  atomic by GitHub's APIs. The one-shot fake hook now proves every mismatching re-read fails closed.
+  atomic by GitHub's APIs. One-shot interleaving hooks and operation-specific sticky writes prove
+  every concurrent-modification and lost-write re-read fails closed.
 - The CLI's `gh` subprocess and project-scope authentication remain unchanged and are covered by
   existing tests.
