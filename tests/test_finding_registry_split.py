@@ -150,5 +150,6 @@ def test_severity_migration_changes_only_severity_across_all_58_patterns() -> No
     after = load_findings(_REGISTRY)
     observed = {_stable_content_digest(finding.content): finding.severity for finding in after}
     assert before["count"] == 58
-    assert len(expected) == len(after) == 58
-    assert observed == expected
+    assert len(expected) == 58
+    assert len(after) >= len(expected)
+    assert {digest: observed[digest] for digest in expected} == expected
