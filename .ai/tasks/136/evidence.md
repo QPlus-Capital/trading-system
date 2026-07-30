@@ -27,7 +27,7 @@ required gate blocks readiness even when another row passes.
 | `parity-where-applicable` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | Not applicable: only board tooling and its tests changed; no signal, research, portfolio, or live adapter path changed |
 | `live-money-review` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | Not applicable: no `core/**`, `research/**`, `live/**`, or `monitoring/**` path changed and no terminal or runner was contacted |
 | `human-decision-escalation` | issue #136 specification and open-decision audit | 0 | GREEN: issue #136 resolves the permit semantics completely; no unresolved human decision was guessed |
-| `no-autonomous-merge` | draft pull request inspection | 1 | BLOCKED until the draft pull request exists; merge and auto-merge remain prohibited |
+| `no-autonomous-merge` | `gh pr view 140 --json isDraft,state,autoMergeRequest,headRefName,url` | 0 | GREEN: PR #140 is OPEN and draft, `autoMergeRequest` is null, and the card is in `Reviewing` |
 | `security` | `uv run python -m scripts.quality.security`; `uv run pip-audit --skip-editable`; `uv run ruff check core research live monitoring scripts --select S --ignore S101,S110,S603,S607` | 0 | GREEN: no secret findings, no known dependency vulnerabilities, and security lint passed |
 | `impact` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | R3; one production file, two directly related test files, no critical-path escalation or discovered dynamic edge |
 
@@ -48,5 +48,5 @@ required gate blocks readiness even when another row passes.
 
 - Claude's independent R3 adversarial review has not run. The pull request must remain draft and
   `pr-ready` must remain NOT READY until `review.md` and this evidence record the completed review.
-- Required GitHub checks will run on the draft/current head after push. They are not represented as
-  local successes here.
+- Required GitHub checks run on the pushed draft head. Their results are not represented as local
+  successes here; independent review remains the only intentionally incomplete readiness step.
