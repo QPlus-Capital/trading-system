@@ -2,46 +2,79 @@
 
 ## HEAD
 
-HEAD: f2f89ff8122aaa51efaa50e69eaedb31e6125717
+Code HEAD: `0e46ba8e1030124e358a358e6ab47afd7515ecfc`
+
+The later evidence-only commit is permitted by the observed-review currency rule; it changes no
+production, gate, or test behaviour.
+
+## Red-first proof
+
+The guards were exercised against pre-fix HEAD
+`842431d0f661aa583abffc38820011f242c35d7f`.
+
+| Counterexample | Command/result | Exit |
+|---|---|---:|
+| D-01/D-02/D-03 | Focused `validate_task` counterexamples for unresolved R2/R3 findings, empty R2/R3 reviews, strict R2 observation, and legacy severity vocabulary | 1 — 10 failed, 1 passed |
+| D-01 readiness | Focused `pr_ready` counterexamples for unresolved R2/R3 review dispositions and advisory labelling | 1 — 3 failed |
+| D-02 hook | Staged empty `review.md` fixtures for R2 and R3 | 1 — 2 failed |
+| D-03 PR-body path | `pr_body.main` verified/rejected/unverifiable strict cases | 1 — 3 failed |
+| S-07 workflow wiring | Exact command-wiring guard | 1 — 1 failed |
+| S-08 state reduction | A `COMMENTED` review after `CHANGES_REQUESTED` was asserted to remain rejected | 124 — assertion failed before the timeout: old code returned `verified` |
+| S-09 artifact scope | Assert `_templates/review.md` is not a task artifact | 1 — old code returned true |
+| D-05 freshness | A stale review between two deliberately out-of-timestamp-order code commits was asserted rejected | 1 — old code trusted `relevant[-1]` and returned `verified` |
+
+The new review-observation module did not exist on the original implementation base, so the first
+combined focused run also failed during collection. The individual failures above are the
+behavioural red proof and do not rely on that collection error.
 
 ## Commands
 
-Record every cumulative gate printed by `pr-ready` with its exact gate ID and a final exit status
-of 0. Label before-fix failures `red-first`, not with a required gate ID; any non-zero record for a
-required gate blocks readiness even when another row passes.
+Required gate rows record only results actually observed on the code HEAD. A non-zero
+`adversarial-review` row remains until Claude completes the required whole-change re-review.
 
 | Gate | Command | Exit status | Result |
 |---|---|---:|---|
-| `red-first` | `uv run pytest -q tests/test_quality_review_observation.py tests/test_quality_pr_ready.py tests/test_quality_validate_task.py tests/test_ci_cost_workflows.py` | 1 | RED: collection failed because `scripts.quality.review_observation` did not exist |
-| `format` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | 8 changed Python files formatted; R3 impact report completed |
-| `docs-consistency` | `uv run pytest -q tests/test_workflow_contract.py tests/test_engineering_docs.py tests/test_claude_runtime_files.py` | 0 | 99 documentation and workflow-contract tests passed |
-| `check` | `uv run ruff check .` | 0 | All Ruff checks passed |
-| `check` | `uv run mypy` | 0 | No issues in 195 source files |
-| `check` | `uvx vulture core research live monitoring scripts --min-confidence 80` | 0 | No dead-code findings at 80% confidence |
-| `check` | `uv run pytest -q` | 0 | 1,657 tests passed; one Windows Mutmut availability self-test skipped |
-| `check` | `uv run python -m scripts.quality.security` | 0 | Secret scan passed with no findings |
-| `check` | `uv run pip-audit --skip-editable` | 0 | No known dependency vulnerabilities |
-| `check` | `uv run ruff check core research live monitoring scripts --select S --ignore S101,S110,S603,S607` | 0 | Security lint passed |
-| `impacted-tests` | `uv run pytest -q tests/test_ci_cost_workflows.py tests/test_github_templates.py tests/test_quality_board.py tests/test_quality_hooks.py tests/test_quality_issue_body.py tests/test_quality_pr_ready.py tests/test_quality_process_scaling.py tests/test_quality_review_observation.py tests/test_quality_validate_task.py tests/test_workflow_system_validation.py` | 0 | All 142 directly and transitively impacted tests passed |
-| `property-tests-where-applicable` | `uv run pytest -q tests/test_quality_properties.py --hypothesis-seed=20260721` (twice) | 0 | Both deterministic replays passed, 21 tests each |
-| `integration-tests` | `uv run pytest -q` | 0 | Full integration-bearing suite passed: 1,657 passed, 1 platform skip |
-| `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 134 --base origin/main` | 0 | Task 134 valid with 7 AC and 3 INV mappings |
-| `adversarial-review` | `deferred to independent reviewer on the draft pull request` | 1 | Pending; the builder did not review or self-certify the change |
-| `invariants` | `uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_notify.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_quality_classify.py tests/test_quality_pr_ready.py` | 0 | 537 critical-invariant tests passed |
-| `mutation-on-touched-critical` | `uv run --no-sync --with mutmut==3.5.0 python -m scripts.quality.mutation run --scope fast --base origin/main` | 1 | Deferred to Linux CI: no critical target was discovered, and Mutmut correctly refused Windows; WSL is unavailable |
+| `format` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | 12 changed Python files formatted; 190 impacted tests selected |
+| `docs-consistency` | `uv run pytest -q tests/test_workflow_contract.py tests/test_engineering_docs.py tests/test_claude_runtime_files.py` | 0 | 99 passed |
+| `check` | `uvx --from rust-just just check` | 0 | Ruff passed; mypy passed over 195 source files; vulture passed; pytest: 1,701 passed, 1 skipped |
+| `impacted-tests` | `uv run python -m scripts.quality.impact --base origin/main --run-focused` | 0 | 190 directly and transitively impacted tests passed |
+| `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Two deterministic replays passed, 21 tests each |
+| `integration-tests` | `uv run pytest -q` | 0 | 1,701 passed, 1 platform/tool-availability skip |
+| `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 134 --base origin/main` | 0 | Task 134 valid; 7 AC and 3 INV mappings resolved |
+| `adversarial-review` | Complete independent re-review by Claude | 1 | Not yet run on the material fix; the builder does not self-certify |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 541 critical-invariant tests passed |
+| `mutation-on-touched-critical` | Production `critical-change-filter` predicate over `changed_paths("origin/main")`, `select_fast_targets`, and `changed_tests_exercise_targets` | 0 | SKIPPED: `targets=[]`, `dependent=False`; no configured critical production target or dependent critical test is touched |
+| `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean; pip-audit found 0 vulnerabilities; security lint passed |
 | `parity-where-applicable` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | No live/backtest parity path is touched |
-| `live-money-review` | `uv run python -m scripts.quality.classify` | 0 | Not applicable: no `live/**` path or live-money boundary is touched |
-| `human-decision-escalation` | `uv run python -m scripts.quality.board status 134` | 0 | Issue was approved at R3 with no open human decision before the permit was consumed |
+| `live-money-review` | `uv run python -m scripts.quality.classify` | 0 | Not applicable: no live-money or trading path is touched |
+| `human-decision-escalation` | Jan's D-01 decision recorded in the request and implemented literally | 0 | R2/R3 require both observed review and disposition enforcement; no dead review configuration remains |
 | `no-autonomous-merge` | `git status --short --branch` | 0 | Feature branch only; merge and auto-merge remain disabled |
+
+## Additional probes
+
+| Probe | Command | Exit | Result |
+|---|---|---:|---|
+| Focused post-fix suite | Focused review-observation, readiness, validator, hook, PR-body, CI-wiring, and registry tests | 0 | All focused behavioural regressions passed |
+| Local Mutmut capability | `uv run --no-sync --with mutmut==3.5.0 python -m scripts.quality.mutation run --scope fast --base origin/main` | 1 | Windows cannot run Mutmut's fork-based worker; this is not a deferred required gate because impact selects no mutation target |
+| Readiness probe | `uv run python -m scripts.quality.pr_ready 134 --base origin/main` | 1 | Correctly NOT READY until the independent re-review is recorded |
 
 ## Coverage and mutation
 
-Focused behavioural coverage includes review/commit ordering, GitHub verdict states, validator and
-readiness agreement, Markdown-shape independence, evidence-only currency, and synchronize-diff CI
-selection. The full suite passed on the recorded HEAD. Linux mutation execution remains a CI check;
-impact analysis selected no configured critical target for the changed files.
+- D-01/D-02/D-03: R2 and R3 independently require the observed GitHub review, review structure,
+  and resolved dispositions. `resolved_review_statuses`, `unresolved-review`, and
+  `[sections]."review.md"` all execute on the readiness path.
+- D-04: synchronize scope is derived from `git diff --no-renames`; the GitHub commit boundary also
+  unions `filename` and `previous_filename`.
+- D-05: review freshness is bound to GitHub `commit_id` and verified against ordered commit
+  ancestry. Client timestamps and `relevant[-1]` are not freshness anchors.
+- S-06/S-07/S-10/S-12: the strict PR-body path and real `gh` process boundary are exercised,
+  pagination and malformed/unreachable inputs fail closed, and the CI command invokes the tested
+  entrypoint exactly.
+- S-08: reviewer state is reduced deterministically per reviewer; comments cannot clear change
+  requests, later approvals can, dismissed reviews are excluded, and ties remain blocking.
+- S-09: only the four named files inside the current task id are artifact-only changes.
 
 ## Deferred checks
 
-Independent review and Linux mutation execution are deferred to the draft pull request. Both
-required gate rows remain non-zero until their real external checks complete.
+Only the complete independent re-review is outstanding. Mutation is a measured skip for this diff,
+not a deferred execution.
