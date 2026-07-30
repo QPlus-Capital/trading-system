@@ -13,7 +13,7 @@ requires_readiness_check = true
 merge_decider = "Jan"
 
 [document_hashes]
-workflow = [237, 111, 81, 52, 245, 81, 53, 9, 199, 224, 51, 167, 196, 170, 145, 130, 179, 146, 242, 245, 251, 224, 242, 255, 70, 216, 83, 105, 149, 210, 92, 228]
+workflow = [137, 159, 95, 6, 93, 130, 154, 3, 249, 136, 189, 207, 23, 78, 100, 197, 123, 4, 121, 119, 176, 238, 140, 4, 195, 49, 76, 104, 236, 30, 252, 195]
 agents = [250, 136, 112, 59, 183, 24, 109, 39, 138, 248, 54, 99, 68, 163, 143, 46, 124, 61, 186, 63, 174, 9, 49, 190, 165, 97, 214, 160, 135, 9, 103, 2]
 claude = [239, 11, 42, 72, 30, 32, 77, 52, 71, 153, 168, 50, 48, 136, 253, 252, 46, 234, 202, 126, 196, 180, 235, 39, 202, 230, 161, 234, 244, 206, 220, 241]
 constitution = [12, 121, 79, 145, 102, 158, 42, 238, 184, 120, 174, 53, 229, 131, 154, 56, 77, 237, 10, 124, 244, 10, 102, 113, 161, 213, 212, 59, 248, 69, 229, 196]
@@ -175,11 +175,6 @@ source = "Reviewing"
 target = "Done"
 actor = "project automation"
 trigger = "the pull request merged and closed the issue"
-
-[[activation]]
-capability = "Board transitions performed by tooling"
-issue = 110
-fallback = "Agents call `gh` directly and are responsible for the ordering rules themselves."
 
 [[activation]]
 capability = "The `methodology-reviewer` subagent"

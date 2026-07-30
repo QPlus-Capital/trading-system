@@ -276,6 +276,8 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `scripts/quality/mutation.py` | Runs focused Linux mutation scopes and enforces the TOML survivor ratchet |
 | `scripts/quality/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
 | `scripts/quality/pr_body.py` | Selects risk-scaled PR sections and binds R2/R3 bodies to current task evidence |
+| `scripts/quality/issue_body.py` | Validates R2/R3 issue specifications and scaffolds risk-scaled task artifacts |
+| `scripts/quality/board.py` | Applies contract-driven, fail-closed GitHub Project and permit transitions |
 | `scripts/quality/workflow_contract.py` | Renders workflow documents from the authoritative TOML contract and rejects drift |
 | `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `scripts/quality/hooks/pre_bash.py` | Collects Git/task metadata and emits Claude Code hook responses |

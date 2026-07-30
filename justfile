@@ -72,6 +72,10 @@ check-task-artifact task_id="" range="origin/main":
     uv run python -m scripts.quality.impact --base {{range}}
     uv run python -m scripts.quality.validate_task --task-id "{{task_id}}" --base {{range}}
 
+# Scaffold only the task artifacts required by the issue's risk label
+new-task issue:
+    uv run python -m scripts.quality.issue_body scaffold --issue {{issue}}
+
 # Secret scan, dependency vulnerability audit, and high-signal static security checks
 check-security:
     uv run python -m scripts.quality.security

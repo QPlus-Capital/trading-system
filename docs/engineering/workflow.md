@@ -26,7 +26,8 @@ Its `Status` field is the single source of truth for where a change stands.
 | `Done` | Merged. | Project automation (item closed) |
 <!-- workflow-contract:statuses:end -->
 
-Agents move cards through the `gh` CLI. Two built-in project automations do the rest and cost no
+Agents move cards through `uv run python -m scripts.quality.board`; the tool uses `gh` but owns the
+contract checks and mutation ordering. Two built-in project automations do the rest and cost no
 Actions minutes: *item added → `Backlog`*, and *item closed → `Done`*.
 
 ## The labels
@@ -305,14 +306,13 @@ has at least one exit, and every status except `Backlog` has at least one predec
 
 ## Not yet active
 
-Three parts of this contract describe tooling the repository does not have yet. Until each lands,
+Two parts of this contract describe tooling the repository does not have yet. Until each lands,
 the rule in the right-hand column is authoritative — so the procedure above is always executable as
 written.
 
 <!-- workflow-contract:activations:start -->
 | Part of this contract | Lands with | Until then |
 |---|---|---|
-| Board transitions performed by tooling | [#110](https://github.com/QPlus-Capital/trading-system/issues/110) | Agents call `gh` directly and are responsible for the ordering rules themselves. |
 | The `methodology-reviewer` subagent | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | The general code reviewer carries the constitution §4 methodology invariants, as it does today. |
 | Findings named `Blocker` / `Defect` / `Suspected defect` / `Note` | [#112](https://github.com/QPlus-Capital/trading-system/issues/112) | Severities are `P0`–`P3`, as the constitution §12 states. |
 <!-- workflow-contract:activations:end -->
