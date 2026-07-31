@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
+change_explanation = "Issue #142 adds only the board-build-permit target after every existing target and records native Linux Critical mutation runs 30616591967 and 30617552213. The first run measured 314 board mutants: 272 killed and 42 survived before the new behavioral tests. The second measured the same 314 board mutants: 311 killed and three equivalent Done-filter mutants survived; overall it measured 5,485 mutants, 5,072 killed and 413 survived, with every unhealthy status zero. The pre-existing 5,171 mutants, 4,761 kills, 410 exact survivors, target order, survivor groups and reasons remain intact; the new tests killed all 39 observable board survivors. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid board behavior was weakened."
 targets = [
     "live-account-identity",
     "live-preflight-redaction",
@@ -32,13 +32,14 @@ targets = [
     "monitoring-stable-snapshot",
     "forward-cohort-identity",
     "forward-decision",
+    "board-build-permit",
 ]
-policy_fingerprint = "8de06896bfc2c92e7cab3509478f847a03c112f8a5a989f2dc6c811162bd308a" # pragma: allowlist secret
+policy_fingerprint = "5783b118651992534d0c08801ce8e11407ed7059618e47baa92440a8b78b64c5" # pragma: allowlist secret
 
 [summary]
-total = 5171
-killed = 4761
-survived = 410
+total = 5485
+killed = 5072
+survived = 413
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -774,4 +775,13 @@ classification = "equivalent"
 reason = "The private function receives FloatArray opening and close equity inputs, and np.minimum therefore already produces float64 minimum values; later assignments are also floats, so np.asarray without the redundant dtype preserves the same type, bytes, and values."
 names = [
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_318",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "BoardService.move rejects the exact target \"Done\" before constructing allowed targets, so the three mutated comparisons are unreachable for that input. For every other target, comparison with \"Done\", \"XXDoneXX\", \"done\", or \"DONE\" is true and includes the same contract transitions; therefore status, labels, writes, return values, output, and exceptions are identical."
+names = [
+    "scripts.quality.board.x\u01c1BoardService\u01c1move__mutmut_21",
+    "scripts.quality.board.x\u01c1BoardService\u01c1move__mutmut_22",
+    "scripts.quality.board.x\u01c1BoardService\u01c1move__mutmut_23",
 ]
