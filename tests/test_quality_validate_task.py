@@ -398,6 +398,59 @@ def test_observed_review_does_not_clear_an_unresolved_blocking_finding(
     assert any(issue.code == "unresolved-review" for issue in result.issues)
 
 
+def test_an_unresolved_blocking_disposition_row_still_blocks_readiness(
+    tmp_path: Path,
+) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\nSee dispositions.\n\n"
+        "## Dispositions\n\n"
+        "| ID | Severity | Finding | Disposition | Status |\n"
+        "|---|---|---|---|---|\n"
+        "| R-01 | Defect | Broken guard | Pending | unresolved |\n",
+        encoding="utf-8",
+    )
+    observation = ReviewObservation("verified", "review verified", "https://review/1")
+
+    result = validate_task_dir(task, review_observation=observation)
+
+    assert any(issue.code == "unresolved-review" for issue in result.issues)
+
+
+def test_the_severity_header_skip_does_not_apply_to_a_finding_cell(tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\n"
+        "| ID | Severity | Finding | Disposition | Status |\n"
+        "|---|---|---|---|---|\n"
+        "| R-01 | Defect | Severity | Pending | unresolved |\n\n"
+        "## Dispositions\n\nPending.\n",
+        encoding="utf-8",
+    )
+    observation = ReviewObservation("verified", "review verified", "https://review/1")
+
+    result = validate_task_dir(task, review_observation=observation)
+
+    assert any(issue.code == "unresolved-review" for issue in result.issues)
+
+
+def test_a_short_resolved_blocking_finding_row_is_invalid(tmp_path: Path) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\n"
+        "| ID | Severity | Finding | Status |\n"
+        "|---|---|---|---|\n"
+        "| R-01 | Defect | Broken guard | resolved |\n\n"
+        "## Dispositions\n\nResolved.\n",
+        encoding="utf-8",
+    )
+    observation = ReviewObservation("verified", "review verified", "https://review/1")
+
+    result = validate_task_dir(task, review_observation=observation)
+
+    assert any(issue.code == "invalid-review-row" for issue in result.issues)
+
+
 @pytest.mark.parametrize("risk_class", ("R2", "R3"))
 def test_review_sections_bind_independently_of_the_observed_review(
     tmp_path: Path,

@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 from scripts.quality.review_observation import (
+    GH_PR_VIEW_ARGS,
     GhReviewGateway,
     PullRequestCommit,
     PullRequestReview,
@@ -145,12 +146,36 @@ def test_a_comment_cannot_clear_the_same_reviewers_change_request() -> None:
     assert "CHANGES_REQUESTED" in result.detail
 
 
-def test_a_later_approval_clears_the_same_reviewers_change_request() -> None:
+@pytest.mark.parametrize("later_state", ("COMMENTED", "APPROVED"))
+def test_a_current_review_cannot_clear_an_undismissed_earlier_change_request(
+    later_state: str,
+) -> None:
     snapshot = PullRequestSnapshot(
-        commits=(_commit("code", "scripts/quality/pr_ready.py"),),
+        commits=(
+            _commit("earlier", "scripts/quality/pr_ready.py"),
+            _commit("current", "tests/test_quality_pr_ready.py"),
+        ),
         reviews=(
-            _review(2, "CHANGES_REQUESTED", "code", review_id=1),
-            _review(3, "APPROVED", "code", review_id=2),
+            _review(2, "CHANGES_REQUESTED", "earlier", review_id=1),
+            _review(3, later_state, "current", review_id=2),
+        ),
+    )
+
+    result = observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134")
+
+    assert result.status == "rejected"
+    assert "CHANGES_REQUESTED" in result.detail
+
+
+def test_an_explicitly_dismissed_change_request_no_longer_blocks_a_current_review() -> None:
+    snapshot = PullRequestSnapshot(
+        commits=(
+            _commit("earlier", "scripts/quality/pr_ready.py"),
+            _commit("current", "tests/test_quality_pr_ready.py"),
+        ),
+        reviews=(
+            _review(2, "DISMISSED", "earlier", review_id=1),
+            _review(3, "COMMENTED", "current", review_id=2),
         ),
     )
 
@@ -160,10 +185,13 @@ def test_a_later_approval_clears_the_same_reviewers_change_request() -> None:
     )
 
 
-def test_equal_timestamp_review_states_are_order_independent_and_blocking_wins() -> None:
+@pytest.mark.parametrize("other_state", ("COMMENTED", "APPROVED"))
+def test_equal_timestamp_review_states_are_order_independent_and_blocking_wins(
+    other_state: str,
+) -> None:
     blocking = _review(2, "CHANGES_REQUESTED", "code", review_id=1)
-    comment = _review(2, "COMMENTED", "code", review_id=2)
-    for reviews in ((blocking, comment), (comment, blocking)):
+    other = _review(2, other_state, "code", review_id=2)
+    for reviews in ((blocking, other), (other, blocking)):
         snapshot = PullRequestSnapshot(
             commits=(_commit("code", "scripts/quality/pr_ready.py"),),
             reviews=reviews,
@@ -184,6 +212,21 @@ def test_a_dismissed_approval_cannot_verify_the_pull_request() -> None:
         observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134").status
         == "rejected"
     )
+
+
+def test_a_pull_request_with_only_task_artifact_commits_cannot_self_certify() -> None:
+    snapshot = PullRequestSnapshot(
+        commits=(
+            _commit("review", ".ai/tasks/134/review.md"),
+            _commit("evidence", ".ai/tasks/134/evidence.md"),
+        ),
+        reviews=(_review(2, "APPROVED", "evidence"),),
+    )
+
+    result = observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134")
+
+    assert result.status == "rejected"
+    assert "no non-task-artifact commit" in result.detail
 
 
 def test_one_reviewers_current_change_request_blocks_another_reviewers_comment() -> None:
@@ -307,9 +350,22 @@ def test_ci_scope_detector_uses_the_real_no_rename_git_diff(tmp_path: Path) -> N
 
     assert detect_task_artifact_only_synchronization("synchronize", base, "134", root=tmp_path)
 
-    _git(tmp_path, "mv", ".ai/tasks/134/review.md", "live_review.py")
-    _git(tmp_path, "commit", "-m", "rename out of task artifacts")
-    assert not detect_task_artifact_only_synchronization("synchronize", base, "134", root=tmp_path)
+    attack = tmp_path / "attack"
+    attack.mkdir()
+    _git(attack, "init")
+    _git(attack, "config", "user.name", "Test")
+    _git(attack, "config", "user.email", "test@example.com")
+    attack_base = _commit_file(attack, "live/risk_control.py", "preserved production content")
+    (attack / ".ai" / "tasks" / "134").mkdir(parents=True)
+    _git(attack, "mv", "live/risk_control.py", ".ai/tasks/134/review.md")
+    _git(attack, "commit", "-m", "rename production into task artifacts")
+
+    assert not detect_task_artifact_only_synchronization(
+        "synchronize",
+        attack_base,
+        "134",
+        root=attack,
+    )
 
 
 def test_ci_scope_detector_fails_closed_to_the_full_set_for_an_unreachable_base(
@@ -443,6 +499,58 @@ def test_gateway_refuses_a_head_mismatch_before_querying_reviews(
         GhReviewGateway(root=tmp_path).snapshot_for_head("head")
 
 
+def test_local_gateway_refuses_a_pull_request_head_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["gh", *GH_PR_VIEW_ARGS]
+        payload = {
+            "number": 143,
+            "headRefOid": "different",
+            "url": "https://github.com/QPlus-Capital/trading-system/pull/143",
+        }
+        return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr("scripts.quality.review_observation.subprocess.run", fake_run)
+
+    with pytest.raises(ReviewGatewayError, match="head"):
+        GhReviewGateway(root=tmp_path).snapshot_for_head("head")
+
+
+def test_local_gateway_derives_the_base_repository_from_the_pr_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "fork-owner/trading-system")
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        assert args == ["gh", *GH_PR_VIEW_ARGS]
+        payload = {
+            "number": 143,
+            "headRefOid": "head",
+            "url": "https://github.com/QPlus-Capital/trading-system/pull/143",
+        }
+        return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr("scripts.quality.review_observation.subprocess.run", fake_run)
+
+    assert GhReviewGateway(root=tmp_path)._pull_request("head") == (
+        "QPlus-Capital/trading-system",
+        143,
+    )
+
+
 def test_gateway_requires_the_paginated_commit_tail_to_equal_the_checked_out_head(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -455,11 +563,11 @@ def test_gateway_requires_the_paginated_commit_tail_to_equal_the_checked_out_hea
         **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
         command = " ".join(args)
-        if command.startswith("gh pr view"):
+        if args == ["gh", *GH_PR_VIEW_ARGS]:
             payload: object = {
                 "number": 143,
                 "headRefOid": "head",
-                "baseRepository": {"nameWithOwner": "QPlus-Capital/trading-system"},
+                "url": "https://github.com/QPlus-Capital/trading-system/pull/143",
             }
         elif "/commits?per_page=100" in command:
             payload = [[{"sha": "truncated-old-head"}]]
@@ -498,11 +606,11 @@ def test_gateway_refuses_incomplete_commit_file_data(
         **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
         command = " ".join(args)
-        if command.startswith("gh pr view"):
+        if args == ["gh", *GH_PR_VIEW_ARGS]:
             payload: object = {
                 "number": 143,
                 "headRefOid": "head",
-                "baseRepository": {"nameWithOwner": "QPlus-Capital/trading-system"},
+                "url": "https://github.com/QPlus-Capital/trading-system/pull/143",
             }
         elif "/commits?per_page=100" in command:
             payload = [[{"sha": "head"}]]
@@ -530,11 +638,11 @@ def test_gateway_refuses_a_naive_review_timestamp(
         **kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
         command = " ".join(args)
-        if command.startswith("gh pr view"):
+        if args == ["gh", *GH_PR_VIEW_ARGS]:
             payload: object = {
                 "number": 143,
                 "headRefOid": "head",
-                "baseRepository": {"nameWithOwner": "QPlus-Capital/trading-system"},
+                "url": "https://github.com/QPlus-Capital/trading-system/pull/143",
             }
         elif "/commits?per_page=100" in command:
             payload = [[{"sha": "head"}]]

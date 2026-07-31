@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Protocol, cast
+from urllib.parse import urlparse
 
 from scripts.quality.classify import REPO_ROOT
 
@@ -21,6 +22,7 @@ _TASK_ARTIFACT_NAMES = frozenset({"impact.md", "test-plan.md", "review.md", "evi
 _TASK_REFERENCE = re.compile(r"\.ai/tasks/(?P<task_id>[A-Za-z0-9._-]+)/")
 _NON_BLOCKING_STATES = frozenset({"APPROVED", "COMMENTED"})
 _DECISIVE_STATES = frozenset({"APPROVED", "CHANGES_REQUESTED"})
+GH_PR_VIEW_ARGS = ("pr", "view", "--json", "number,headRefOid,url")
 
 
 @dataclass(frozen=True)
@@ -143,7 +145,7 @@ def task_id_from_pr_body(body: str) -> str | None:
 def _reviewer_states(
     reviews: Sequence[PullRequestReview],
 ) -> tuple[PullRequestReview, ...]:
-    """Reduce submitted reviews to each reviewer's current meaningful state."""
+    """Retain each reviewer's blocking state until GitHub marks it dismissed."""
 
     grouped: dict[str, list[PullRequestReview]] = defaultdict(list)
     for review in reviews:
@@ -152,15 +154,24 @@ def _reviewer_states(
 
     current: list[PullRequestReview] = []
     for author_reviews in grouped.values():
+        unresolved_requests = [
+            review for review in author_reviews if review.state == "CHANGES_REQUESTED"
+        ]
+        if unresolved_requests:
+            current.append(
+                max(
+                    unresolved_requests,
+                    key=lambda review: (review.submitted_at, review.review_id),
+                )
+            )
+            continue
+
         selected: PullRequestReview | None = None
         by_time: dict[datetime, list[PullRequestReview]] = defaultdict(list)
         for review in author_reviews:
             by_time[review.submitted_at].append(review)
         for submitted_at in sorted(by_time):
             simultaneous = by_time[submitted_at]
-            changes_requested = [
-                review for review in simultaneous if review.state == "CHANGES_REQUESTED"
-            ]
             approvals = [review for review in simultaneous if review.state == "APPROVED"]
             other_decisive = [
                 review
@@ -168,9 +179,7 @@ def _reviewer_states(
                 if review.state not in _NON_BLOCKING_STATES | {"DISMISSED"}
             ]
             comments = [review for review in simultaneous if review.state == "COMMENTED"]
-            if changes_requested:
-                selected = max(changes_requested, key=lambda review: review.review_id)
-            elif approvals:
+            if approvals:
                 selected = max(approvals, key=lambda review: review.review_id)
             elif other_decisive:
                 selected = max(other_decisive, key=lambda review: review.review_id)
@@ -214,15 +223,18 @@ def observe_independent_review(
     current_reviews = tuple(
         review
         for review in snapshot.reviews
-        if commit_indexes.get(review.commit_id, -1) >= last_change_index
+        if review.state != "DISMISSED"
+        and commit_indexes.get(review.commit_id, -1) >= last_change_index
     )
-    states = _reviewer_states(current_reviews)
-    if not states:
+    if not current_reviews:
         return ReviewObservation(
             "rejected",
             f"no submitted PR review is bound to current non-artifact commit {last_change.sha}",
             None,
         )
+    states = _reviewer_states(
+        tuple(review for review in snapshot.reviews if review.commit_id in commit_indexes)
+    )
     blocking = tuple(review for review in states if review.state not in _NON_BLOCKING_STATES)
     if blocking:
         latest_blocking = max(
@@ -292,6 +304,14 @@ def _commit_paths(files: Sequence[object]) -> tuple[str, ...]:
                 raise ReviewGatewayError("previous_filename must be a non-empty string")
             paths.append(previous)
     return tuple(dict.fromkeys(paths))
+
+
+def _repository_from_pr_url(value: str) -> str:
+    parsed = urlparse(value)
+    parts = tuple(part for part in parsed.path.split("/") if part)
+    if parsed.scheme != "https" or not parsed.netloc or len(parts) < 4 or parts[2] != "pull":
+        raise ReviewGatewayError("url must be an HTTPS GitHub pull-request URL")
+    return f"{parts[0]}/{parts[1]}"
 
 
 class GhReviewGateway:
@@ -369,18 +389,13 @@ class GhReviewGateway:
             return repository, number
 
         view = _object(
-            self._run_json(
-                ("pr", "view", "--json", "number,headRefOid,baseRepository"),
-                "gh pr view",
-            ),
+            self._run_json(GH_PR_VIEW_ARGS, "gh pr view"),
             "gh pr view",
         )
         if _text(view, "headRefOid") != head_sha:
             raise ReviewGatewayError("GitHub pull-request head does not match local HEAD")
         number = _integer(view, "number")
-        if not repository:
-            base_repository = _object(view.get("baseRepository"), "baseRepository")
-            repository = _text(base_repository, "nameWithOwner")
+        repository = _repository_from_pr_url(_text(view, "url"))
         return repository, number
 
     def snapshot_for_head(self, head_sha: str) -> PullRequestSnapshot:

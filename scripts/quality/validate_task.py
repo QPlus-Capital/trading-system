@@ -233,11 +233,14 @@ def _review_disposition_issues(
     resolved: frozenset[str],
 ) -> tuple[ValidationIssue, ...]:
     issues: list[ValidationIssue] = []
-    findings = _sections(text).get("findings", "")
-    rows = _table_rows(findings)
+    rows = _table_rows(text)
     for cells in rows:
         normalized = {cell.casefold() for cell in cells}
-        if "severity" in normalized:
+        if (
+            len(cells) >= 2
+            and cells[0].strip().casefold() in {"id", "finding id"}
+            and cells[1].strip().casefold() == "severity"
+        ):
             continue
         severities = normalized & set(_SEVERITIES)
         legacy = normalized & {"p0", "p1", "p2", "p3"}

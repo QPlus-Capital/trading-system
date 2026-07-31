@@ -8,6 +8,7 @@ from typing import cast
 
 import pytest
 import scripts.quality.pr_body as pr_body
+from scripts.quality.classify import load_model
 from scripts.quality.pr_body import (
     PRBodyPolicy,
     PRBodyValidation,
@@ -157,6 +158,58 @@ def test_pr_body_validator_requires_a_linked_issue_matching_a_numeric_task(tmp_p
     assert any(
         "linked issue #66 does not match task artifact 67" in issue for issue in result.issues
     )
+
+
+def test_real_pr_body_validation_forwards_strict_review_observation(
+    tmp_path: Path,
+) -> None:
+    task = _task(tmp_path)
+    gates = load_model().required_gates("R3")
+    rows = "\n".join(f"| `{gate}` | `verify {gate}` | 0 | passed |" for gate in gates)
+    (task / "evidence.md").write_text(
+        "# Evidence\n\n## HEAD\nHEAD: abc123\n\n## Commands\n"
+        "| Gate | Command | Exit status | Result |\n"
+        "|---|---|---:|---|\n"
+        f"{rows}\n\n"
+        "## Coverage and mutation\nComplete.\n\n## Deferred checks\nNone.\n",
+        encoding="utf-8",
+    )
+    policy = load_pr_body_policy()
+    sections = []
+    for heading in policy.sections_for("R3"):
+        value = "Completed."
+        if heading == "Linked issue":
+            value = "Closes #134"
+        elif heading == "Task artifact":
+            value = f"`.ai/tasks/{task.name}/`"
+        elif heading == "Risk class and reason":
+            value = "R3 — required quality-gate enforcement."
+        elif heading == "Live-runner attestation":
+            value = f"- [x] {policy.required_attestation}"
+        sections.append(f"## {heading}\n\n{value}")
+    body = "\n\n".join(sections)
+    observation = ReviewObservation("unverifiable", "GitHub review API unavailable", None)
+
+    permissive = validate_pr_body(
+        body,
+        task_root=tmp_path,
+        changed=["scripts/tool.py"],
+        head_sha="abc123",
+        review_observation=observation,
+        require_verifiable_review=False,
+    )
+    strict = validate_pr_body(
+        body,
+        task_root=tmp_path,
+        changed=["scripts/tool.py"],
+        head_sha="abc123",
+        review_observation=observation,
+        require_verifiable_review=True,
+    )
+
+    assert permissive.ok, permissive.issues
+    assert not strict.ok
+    assert any("GitHub review API unavailable" in issue for issue in strict.issues)
 
 
 @pytest.mark.parametrize(

@@ -24,3 +24,11 @@
 | S-08 | `tests/test_quality_review_observation.py::test_a_comment_cannot_clear_the_same_reviewers_change_request`, `tests/test_quality_review_observation.py::test_equal_timestamp_review_states_are_order_independent_and_blocking_wins` |
 | S-09 | `tests/test_quality_review_observation.py::test_task_artifact_only_scope_is_derived_from_the_diff`, `tests/test_quality_review_observation.py::test_an_artifact_commit_for_another_task_invalidates_the_review` |
 | S-10 | `tests/test_quality_review_observation.py::test_gateway_reports_process_and_json_failures`, `tests/test_quality_review_observation.py::test_gateway_requires_the_paginated_commit_tail_to_equal_the_checked_out_head` |
+| Review 4823450100 D-01 | `tests/test_quality_review_observation.py::test_local_gateway_derives_the_base_repository_from_the_pr_url`, `tests/test_quality_review_observation.py::test_local_gateway_refuses_a_pull_request_head_mismatch` |
+| Review 4823450100 D-02 | `tests/test_quality_pr_ready.py::test_every_committed_evidence_file_has_a_parseable_full_head_sha` |
+| Review 4823450100 D-03 | `tests/test_quality_validate_task.py::test_an_unresolved_blocking_disposition_row_still_blocks_readiness`, `tests/test_quality_validate_task.py::test_the_severity_header_skip_does_not_apply_to_a_finding_cell` |
+| Review 4823450100 S-01 | `tests/test_quality_review_observation.py::test_a_current_review_cannot_clear_an_undismissed_earlier_change_request`, `tests/test_quality_review_observation.py::test_an_explicitly_dismissed_change_request_no_longer_blocks_a_current_review` |
+| Review 4823450100 S-02 | `tests/test_quality_review_observation.py::test_ci_scope_detector_uses_the_real_no_rename_git_diff` |
+| Review 4823450100 S-03 | `tests/test_github_templates.py::test_real_pr_body_validation_forwards_strict_review_observation` |
+| Review 4823450100 S-04 / S-05 / S-06 | `tests/test_quality_review_observation.py::test_a_pull_request_with_only_task_artifact_commits_cannot_self_certify`, `tests/test_quality_review_observation.py::test_equal_timestamp_review_states_are_order_independent_and_blocking_wins`, `tests/test_quality_review_observation.py::test_local_gateway_refuses_a_pull_request_head_mismatch` |
+| Review 4823450100 S-07 | `tests/test_quality_validate_task.py::test_a_short_resolved_blocking_finding_row_is_invalid` |

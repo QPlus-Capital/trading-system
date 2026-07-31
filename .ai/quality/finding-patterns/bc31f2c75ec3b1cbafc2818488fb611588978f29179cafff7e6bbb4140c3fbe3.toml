@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4823450100 (D-02)"
+defect_class = "committed-evidence-format-bypasses-its-own-parser"
+severity = "Defect"
+affected = ".ai/tasks/134/evidence.md, tests/test_quality_pr_ready.py"
+root_cause = "the task artifact recorded its tested commit in a human-readable variant that the readiness parser could not recognize"
+why_tests_missed = "currency tests built synthetic evidence files and no test parsed every committed evidence artifact through the production parser"
+regression = "test_every_committed_evidence_file_has_a_parseable_full_head_sha"
+generalized = "every committed instance of a machine-read audit record must be enumerated and parsed by the production reader, excluding only the explicit template namespace"
+workflow_change = "all task evidence files now require a bare full commit SHA on a HEAD line and task 134 records the tested code head in that form"

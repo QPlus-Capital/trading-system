@@ -2,7 +2,7 @@
 
 ## HEAD
 
-Code HEAD: `0e46ba8e1030124e358a358e6ab47afd7515ecfc`
+HEAD: 4146a3a7602ed193c61196217ee486791e476ec6
 
 The later evidence-only commit is permitted by the observed-review currency rule; it changes no
 production, gate, or test behaviour.

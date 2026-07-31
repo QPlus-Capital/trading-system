@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4823450100 (D-03, S-07)"
+defect_class = "review-disposition-parser-scans-only-one-valid-placement"
+severity = "Defect"
+affected = "scripts/quality/validate_task.py, tests/test_quality_validate_task.py"
+root_cause = "blocking rows were scanned only under Findings even though Dispositions is also required, while a broad header skip and an unpinned short-row branch created further escapes"
+why_tests_missed = "fixtures placed every finding in one section with a conventional header and did not preserve the prior malformed resolved-row counterexample"
+regression = "test_an_unresolved_blocking_disposition_row_still_blocks_readiness; test_the_severity_header_skip_does_not_apply_to_a_finding_cell; test_a_short_resolved_blocking_finding_row_is_invalid"
+generalized = "a document gate must enumerate every schema-valid placement of a guarded record, bind header exceptions to exact header positions, and retain malformed-row counterexamples"
+workflow_change = "the disposition scan covers the whole review document, recognizes only an ID/Severity header, and rejects short blocking rows even when their final cell says resolved"

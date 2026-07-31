@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 review 4823450100 (S-04, S-05, S-06)"
+defect_class = "safety-outcome-branch-left-unassigned"
+severity = "Suspected defect"
+affected = "scripts/quality/review_observation.py, tests/test_quality_review_observation.py"
+root_cause = "three fail-closed branches had no distinguishing fixture: artifact-only history, equal-time approval versus change request, and local pull-request head mismatch"
+why_tests_missed = "nearby tests exercised plausible adjacent outcomes but did not choose inputs whose result depended on the exact guard under test"
+regression = "test_a_pull_request_with_only_task_artifact_commits_cannot_self_certify; test_equal_timestamp_review_states_are_order_independent_and_blocking_wins; test_local_gateway_refuses_a_pull_request_head_mismatch"
+generalized = "for every safety decision branch, construct a distinguishing input that flips when that branch is removed or reordered; nearby coverage is not branch protection"
+workflow_change = "the review oracle assigns the empty code history, decisive-state tie, and local head-identity outcomes with executable fail-closed assertions"

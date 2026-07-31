@@ -2,17 +2,32 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
 import pytest
 import scripts.quality.pr_ready as pr_ready
-from scripts.quality.classify import load_model
+from scripts.quality.classify import REPO_ROOT, load_model
 from scripts.quality.pr_ready import assess_readiness, evidence_is_current
 from scripts.quality.review_observation import ReviewObservation
 from scripts.quality.validate_task import validate_task_dir
 
 from tests.test_quality_validate_task import _task
+
+
+def test_every_committed_evidence_file_has_a_parseable_full_head_sha() -> None:
+    evidence_files = [
+        path
+        for path in sorted((REPO_ROOT / ".ai" / "tasks").glob("*/evidence.md"))
+        if path.parent.name != "_templates"
+    ]
+
+    assert evidence_files
+    for evidence_file in evidence_files:
+        recorded = pr_ready._recorded_head(evidence_file)
+        assert recorded is not None, evidence_file
+        assert re.fullmatch(r"[0-9a-f]{40}", recorded), evidence_file
 
 
 def _record_gate_evidence(task: Path, risk_class: str) -> None:
