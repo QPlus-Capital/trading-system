@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 364062d1f03f8e5ae7faf45c228c413d613604dd
+HEAD: b547c3ae750f644d579a3083614ad7dbb6423e6b
 
 The later evidence-only commit changes no document, guard, or test behaviour.
 
@@ -11,16 +11,17 @@ The later evidence-only commit changes no document, guard, or test behaviour.
 | Gate | Command | Exit status | Result |
 |---|---|---:|---|
 | `red-first` | `uv run pytest -q tests/test_engineering_workflow_docs.py::test_branch_protection_names_every_required_check_and_setting` against the unchanged page | 1 | The assertion received the seven retired contexts instead of the four active contexts. |
-| `review-red-first` | Strengthened existing documentation test against the pre-remediation document | 1 | The test failed because `Set allowed merge methods to squash only` was not an explicit configured setting; review `4825906480` separately demonstrated that deleting the closing warning, adding `name`/`strategy`, and moving context bullets left the old guard green. |
-| `focused` | `uv run pytest -q tests/test_engineering_workflow_docs.py::test_branch_protection_names_every_required_check_and_setting` | 0 | The page names the exact four effective non-matrix workflow contexts and binds all applied parameters, reasons, and warning clauses. |
+| `review-red-first` | `uv run pytest -q tests/test_engineering_workflow_docs.py` with the round-two counterexamples against the old helpers | 1 | 13 failed and 3 passed: all ten future-action forms escaped, non-matrix strategy was refused, reusable workflows were accepted, and a renamed closing heading widened the parser. |
+| `focused` | `uv run pytest -q tests/test_engineering_workflow_docs.py` | 0 | All 16 tests passed, including the ten future-action cases and the three N-01/N-02 boundary cases. |
+| `finding-registry` | `uv run pytest -q tests/test_finding_registry.py tests/test_finding_registry_split.py tests/test_engineering_workflow_docs.py` | 0 | 26 tests passed; all four new files are valid content-addressed entries and every named regression resolves. |
 | `format` | `just check-standard` | 0 | Ruff, strict mypy over 193 source files, and Vulture passed. |
 | `docs-consistency` | `just check` | 0 | The complete suite includes the engineering-document consistency guards; all passed. |
-| `check` | `just check` | 0 | Ruff, strict mypy, Vulture, and pytest passed: 1,635 passed and one expected unavailable-Mutmut skip. |
-| `impacted-tests` | `uv run pytest -q tests/test_engineering_workflow_docs.py tests/test_gate_consistency.py` | 0 | All 12 directly related documentation and workflow-consistency tests passed. |
+| `check` | `uvx --from rust-just just check` | 0 | Ruff, strict mypy over 193 files, Vulture, and pytest passed: 1,712 passed and one expected unavailable-Mutmut skip. |
+| `impacted-tests` | `uv run pytest -q tests/test_engineering_workflow_docs.py tests/test_finding_registry.py tests/test_finding_registry_split.py` | 0 | All 26 documentation and permanent-finding-registry tests passed. |
 | `property-tests-where-applicable` | `just check-properties` | 0 | All 21 property tests passed twice with seed `20260721`. |
-| `integration-tests` | `just check` | 0 | The full Windows repository integration suite passed with 1,635 tests and one capability skip. |
+| `integration-tests` | `uvx --from rust-just just check` | 0 | The full Windows repository integration suite passed with 1,712 tests and one capability skip. |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 135 --base origin/main` | 0 | Task 135 is valid with five acceptance criteria and three invariants. |
-| `adversarial-review` | Claude review `4825906480` on PR #145 | 1 | Every finding is dispositioned, but the complete independent re-review of the material fix has not run. |
+| `adversarial-review` | Claude review `4826969384` on PR #145 | 1 | Every round-two finding is dispositioned, but the complete independent re-review of this material fix has not run. |
 | `invariants` | `just check-invariants` | 0 | All 529 critical invariant tests passed. |
 | `mutation-on-touched-critical` | Python evaluation of `select_fast_targets(changed_paths("origin/main"), load_policy(), load_model())` | 0 | The production selector found zero mutation targets because no production or configured critical function changed. |
 | `parity-where-applicable` | `just check` on Windows plus impact classification | 0 | The documentation and parsed YAML behavior is platform-independent and the Windows suite passed; no Linux run is claimed. |
@@ -33,14 +34,15 @@ The later evidence-only commit changes no document, guard, or test behaviour.
 
 ## Coverage and mutation
 
-The behavioral guard scopes context parsing to the required-status section, resolves each
-workflow's effective context from `job.name` or its key, refuses matrix jobs, and requires exact
-set equality with the four documented contexts. It also checks Active enforcement, no bypass
-actors, code-owner policy, squash-only merging, the applied date, ruleset name, pull-request
-parameters, deliberate zero-approval and non-strict-check reasons, generalized future-action
-wording, and both closing-warning clauses. The live ruleset was read before and after the
-repository edit; its rules, parameters, bypass actors, and required contexts were unchanged. No
-production or configured mutation target changed.
+The behavioral guard scopes context parsing between two required headings, resolves each
+workflow's effective context from `job.name` or its key, permits non-matrix strategy options,
+refuses matrix and reusable-workflow jobs, and requires exact set equality with the four documented
+contexts. It checks future application claims sentence-by-sentence: all ten measured phrasings are
+committed negative cases. It also binds Active enforcement, no bypass actors, code-owner policy,
+squash-only merging, the applied date, ruleset name, pull-request parameters, deliberate
+zero-approval and non-strict-check reasons, and both closing-warning clauses. Four generalized
+content-addressed findings permanently record the prior confirmed defect classes. No production,
+workflow, ruleset, configured mutation target, threshold, or baseline changed.
 
 The Linux-only mutation command was probed on Windows and correctly refused because Mutmut 3.5.0
 requires `fork`. That refusal is not presented as a passing ratchet. The executable production
@@ -49,7 +51,7 @@ documentation-only implementation.
 
 ## Deferred checks
 
-- Claude's complete independent re-review of `364062d` is pending.
+- Claude's complete independent re-review of `b547c3a` is pending.
 - `pr-ready` remains correctly blocked on that review alone.
 - Linux parity has not been observed for this branch and is not claimed green while the pull
   request remains draft.
