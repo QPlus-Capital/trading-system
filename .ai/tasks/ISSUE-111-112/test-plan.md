@@ -20,7 +20,7 @@
 
 Additional migration and workflow-shape guards:
 
-- `test_severity_migration_preserves_every_pattern_and_rejects_content_duplicates` compares every record
+- `test_severity_migration_changes_only_severity_across_all_58_patterns` compares every record
   against a committed pre-migration fingerprint and requires the exact severity mapping.
 - `test_every_finding_registry_regression_reference_resolves` proves every migrated record still
   names executable permanent protection.

@@ -159,3 +159,8 @@ def test_severity_migration_preserves_every_pattern_and_rejects_content_duplicat
         if observed.get(digest) != severity
     }
     assert not missing, f"migrated findings changed or vanished: {sorted(missing)}"
+
+
+def test_severity_migration_changes_only_severity_across_all_58_patterns() -> None:
+    """Keep the merged audit reference executable until its follow-up correction lands."""
+    test_severity_migration_preserves_every_pattern_and_rejects_content_duplicates()
