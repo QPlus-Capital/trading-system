@@ -30,9 +30,11 @@
 
 ## Unknown or dynamic edges
 
-- Mutmut assigns generated exact names only during native generation. The baseline cannot be
-  inferred from the earlier hand-built approximation and must come from the Linux report artifact.
-- GitHub Actions is the available native Linux executor; Windows must continue to refuse Mutmut
-  before claiming a result.
-- Equivalent or unobservable survivors require source inspection against the generated mutant and
-  a stated reason; aggregate counts are insufficient.
+- Production impact analysis reports no unknown or dynamic import edge for the changed paths.
+- Mutmut's generated exact names were resolved from native Linux reports rather than inferred:
+  runs `30616591967` and `30617552213` exposed the complete before-test and after-test Board sets,
+  and run `30618204290` proved the committed exact ratchet.
+- Windows continues to refuse native Mutmut execution rather than claim a result.
+- Generated-source inspection reduced the Board survivor set to three equivalent comparisons whose
+  exact names and observability reason are recorded in the baseline; aggregate counts were not used
+  as a tolerance.
