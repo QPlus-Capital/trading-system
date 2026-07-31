@@ -30,6 +30,22 @@ Agents move cards through `uv run python -m scripts.quality.board`; the tool use
 contract checks and mutation ordering. Two built-in project automations do the rest and cost no
 Actions minutes: *item added → `Backlog`*, and *item closed → `Done`*.
 
+### Board command surface
+
+| Command | Purpose |
+|---|---|
+| `status` | Read the issue's labels and project status. |
+| `add` | Add an issue to the project without choosing a workflow transition. |
+| `move` | Apply a permitted status transition; any successful `move`, whatever its source status, first removes and verifies a present permit. The build-start edge is refused here and belongs only to `start`. |
+| `arm` | Run the complete approval sequence and write `approved` last. |
+| `start` | Verify the Start guard, move to `Implementing`, and then consume the permit. |
+| `withdraw` | Remove and verify `approved` without changing the card's status. |
+
+`withdraw` is the explicit permit-revocation operation. A later `arm` still runs issue-body
+validation, risk validation, all approval writes, and the final read-back. Moving an armed card to
+`Specifying` or `Blocked` also voids the permit; returning to `Ready to Implement` never restores it
+and requires a fresh `arm`.
+
 ## The labels
 
 Five labels, each with a mechanical function. A label that only decorates is not maintained, so
@@ -37,7 +53,7 @@ none exist.
 
 | Label | Function | Set by | Removed by |
 |---|---|---|---|
-| `approved` | The build permit. Without it Codex refuses to build. | Claude, at approval | **Codex, at build start** |
+| `approved` | The build permit. Without it Codex refuses to build. | Claude, at approval | The board tool, at build start, explicit withdrawal, or any successful `move`, whatever its source status |
 | `risk:R0` … `risk:R3` | Selects gates, artifacts, PR scope, and review agents. | Claude, from the classifier | — |
 
 Priority is the vertical order of the `Backlog` column, not a label.

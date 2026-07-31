@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "issue #136 and PR #140 review 4818275329"
+defect_class = "state-bound-permit-and-dedicated-start-edge-share-an-unguarded-generic-transition"
+severity = "Defect"
+affected = "scripts/quality/board.py, tests/test_quality_board.py"
+root_cause = "generic board moves originally preserved stale permits, then the fix applied demotion semantics to the actor-specific build-start edge and made that guarded edge reachable without start while destroying its permit before the status write"
+why_tests_missed = "the transition walk blessed the Implementing edge as a generic move, asserted only the one edge that ended Ready to Implement, and did not pin either refused-edge ordering or the partial failure after successful permit removal"
+regression = "test_move_out_of_ready_removes_approved_before_status_change; test_move_cannot_reach_implementing_without_the_start_guard; test_move_failure_after_withdrawal_reports_the_absent_permit; test_move_without_a_permit_propagates_the_underlying_failure; test_a_refused_move_preserves_the_permit; test_no_board_operation_path_reaches_armed_ready_without_arm; test_start_refuses_after_demoting_an_approved_card; test_every_permit_removal_is_verified_by_rereading_state; test_start_refusal_reports_every_observed_failure; test_withdraw_removes_approved_without_moving_card"
+generalized = "a generic state mutation must not implement an actor-specific guarded transition; destructive capability cleanup happens only after transition legality is established, and any partial failure must report the state already changed"
+workflow_change = "the generic move command refuses the Codex build-start edge, preserves permits on refused edges, reports a permit removed before a failed demotion, and the transition walk asserts every permitted edge"

@@ -16,7 +16,7 @@ from scripts.quality.classify import CLASSES, REPO_ROOT
 from scripts.quality.issue_body import validate_issue_body
 from scripts.quality.workflow_contract import WorkflowContract, load_contract
 
-PUBLIC_COMMANDS = ("status", "add", "move", "arm", "start")
+PUBLIC_COMMANDS = ("status", "add", "move", "arm", "start", "withdraw")
 _RISK_LABEL = re.compile(r"^risk:(R[0-3])$")
 _PROJECT_SCOPE_ERROR = "GitHub token needs the `project` scope; run `gh auth refresh -s project`."
 
@@ -134,8 +134,7 @@ class GhBoardGateway:
                 "scope" in combined or "resource not accessible" in combined or "404" in combined
             ):
                 raise BoardError(_PROJECT_SCOPE_ERROR)
-            detail = completed.stderr.strip() or completed.stdout.strip() or "unknown GitHub error"
-            raise BoardError(f"GitHub board operation failed: {detail}")
+            raise BoardError("GitHub board operation failed; inspect the local gh error.")
         return completed.stdout
 
     def _json(self, args: Sequence[str], name: str) -> dict[str, object]:
@@ -377,7 +376,7 @@ class BoardService:
             raise BoardError("Done is set only by project automation after merge")
         state = self.gateway.issue_state(issue)
         if state.status is None:
-            raise BoardError(f"issue #{issue} is not on the project")
+            raise BoardError("move refused: " + self._observed_status(state))
         allowed = {
             transition.target
             for transition in self.contract.transitions
@@ -385,10 +384,44 @@ class BoardService:
         }
         if target not in allowed:
             raise BoardError(f"contract does not allow {state.status!r} -> {target!r}")
-        self.gateway.set_status(issue, target)
+        if state.status == "Ready to Implement" and target == "Implementing":
+            raise BoardError(
+                "contract edge 'Ready to Implement' -> 'Implementing' is reserved for `start`"
+            )
+        had_permit = "approved" in state.labels
+        withdrawn = self._remove_approved_and_verify(issue, state)
+        if withdrawn.status != state.status:
+            raise BoardError(
+                "status changed while withdrawing the permit: " + self._observed_status(withdrawn)
+            )
+        try:
+            self.gateway.set_status(issue, target)
+        except BoardError as exc:
+            if had_permit:
+                raise BoardError(
+                    "status update failed after the permit was already withdrawn: "
+                    "observed approved=absent"
+                ) from exc
+            raise
         result = self.gateway.issue_state(issue)
         if result.status != target:
             raise BoardError(f"status update did not produce {target!r}")
+        if "approved" in result.labels:
+            raise BoardError("status update retained a stale permit: observed approved=present")
+        return result
+
+    def withdraw(self, issue: int) -> IssueState:
+        """Remove an existing build permit without changing board status."""
+
+        self._verify_status_options()
+        state = self.gateway.issue_state(issue)
+        if state.status is None:
+            raise BoardError("withdraw refused: observed project status=absent")
+        result = self._remove_approved_and_verify(issue, state)
+        if result.status != state.status:
+            raise BoardError(
+                "status changed while withdrawing the permit: " + self._observed_status(result)
+            )
         return result
 
     def arm(self, issue: int, *, body: str, risk_class: str) -> IssueState:
@@ -398,17 +431,20 @@ class BoardService:
         if risk_class not in CLASSES:
             raise BoardError(f"unknown risk class: {risk_class}")
         initial = self.gateway.issue_state(issue)
+        failures: list[str] = []
         if initial.status != "Ready to Implement":
-            raise BoardError("issue must be in Ready to Implement before it can be armed")
+            failures.append(self._observed_status(initial))
         if "approved" in initial.labels:
-            raise BoardError("issue is already armed")
+            failures.append("observed approved=present")
         requested_risk = f"risk:{risk_class}"
         existing_risks = {label for label in initial.labels if _RISK_LABEL.fullmatch(label)}
         if existing_risks - {requested_risk}:
-            raise BoardError(
-                "issue carries a conflicting risk label: "
-                + ", ".join(sorted(existing_risks - {requested_risk}))
+            failures.append(
+                "observed conflicting risk labels="
+                + repr(sorted(existing_risks - {requested_risk}))
             )
+        if failures:
+            raise BoardError("arm requirements not met: " + "; ".join(failures))
         validation = validate_issue_body(body, risk_class)
         if not validation.ok:
             raise BoardError("issue body is not approvable: " + "; ".join(validation.issues))
@@ -433,11 +469,30 @@ class BoardService:
 
     def _write_approved(self, issue: int, risk_class: str) -> None:
         state = self.gateway.issue_state(issue)
+        failures: list[str] = []
         if state.status != "Ready to Implement":
-            raise BoardError("approved refused: card is not in Ready to Implement")
+            failures.append(self._observed_status(state))
         if f"risk:{risk_class}" not in state.labels:
-            raise BoardError(f"approved refused: risk:{risk_class} is absent")
+            risks = sorted(label for label in state.labels if _RISK_LABEL.fullmatch(label))
+            failures.append(f"observed risk labels={risks!r}")
+        if failures:
+            raise BoardError("approved requirements not met: " + "; ".join(failures))
         self.gateway.add_label(issue, "approved")
+
+    @staticmethod
+    def _observed_status(state: IssueState) -> str:
+        if state.status is None:
+            return "observed project status=absent"
+        return f"observed status={state.status!r}"
+
+    def _remove_approved_and_verify(self, issue: int, state: IssueState) -> IssueState:
+        if "approved" not in state.labels:
+            return state
+        self.gateway.remove_label(issue, "approved")
+        result = self.gateway.issue_state(issue)
+        if "approved" in result.labels:
+            raise BoardError("permit removal did not take effect: observed approved=present")
+        return result
 
     def start(self, issue: int) -> IssueState:
         """Consume the Start guard: status first, permit removal second."""
@@ -448,14 +503,15 @@ class BoardService:
             raise BoardError("workflow contract has no Start builder guard")
         state = self.gateway.issue_state(issue)
         risk_labels = {label for label in state.labels if _RISK_LABEL.fullmatch(label)}
-        if (
-            state.status != "Ready to Implement"
-            or "approved" not in state.labels
-            or len(risk_labels) != 1
-        ):
-            raise BoardError(
-                "Start requires Ready to Implement, approved, and exactly one risk:Rn label"
-            )
+        failures: list[str] = []
+        if state.status != "Ready to Implement":
+            failures.append(self._observed_status(state))
+        if "approved" not in state.labels:
+            failures.append("observed approved=absent")
+        if len(risk_labels) != 1:
+            failures.append(f"observed risk labels={sorted(risk_labels)!r}")
+        if failures:
+            raise BoardError("Start requirements not met: " + "; ".join(failures))
         transitions = [
             item
             for item in self.contract.transitions
@@ -470,11 +526,7 @@ class BoardService:
         moved = self.gateway.issue_state(issue)
         if moved.status != target:
             raise BoardError(f"build-start status update did not produce {target!r}")
-        self.gateway.remove_label(issue, "approved")
-        result = self.gateway.issue_state(issue)
-        if "approved" in result.labels:
-            raise BoardError("build-start permit removal did not take effect")
-        return result
+        return self._remove_approved_and_verify(issue, moved)
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -515,6 +567,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             state = service.arm(args.issue, body=body, risk_class=args.risk)
         elif args.command == "start":
             state = service.start(args.issue)
+        elif args.command == "withdraw":
+            state = service.withdraw(args.issue)
         else:
             raise BoardError(f"unsupported command: {args.command}")
     except (BoardError, OSError, subprocess.SubprocessError) as exc:

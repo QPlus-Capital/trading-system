@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #140 review 4818275329 findings S5 and S6"
+defect_class = "diagnostic-safety-tested-only-on-a-path-that-cannot-carry-sensitive-input"
+severity = "Suspected defect"
+affected = "scripts/quality/board.py, tests/test_quality_board.py"
+root_cause = "absence diagnostics omitted one state-dependent operation and secret assertions exercised an early status refusal while the real raw-body and gh-stderr surfaces remained untested and one passed external error text through verbatim"
+why_tests_missed = "tests seeded secrets into state but selected a branch whose message was structurally constant, and no fake could inject sensitive state at a write-verification boundary"
+regression = "test_refusals_report_a_card_absent_from_project; test_interleaved_state_secrets_are_not_echoed_by_verification_failure; test_unapprovable_body_is_not_echoed_in_refusal; test_raw_gh_stderr_is_not_echoed_in_board_error"
+generalized = "diagnostic tests must drive every operation and each surface that can actually carry untrusted text; external stderr and body content are never safe operator messages by default"
+workflow_change = "move uses the common observed-absence vocabulary, interleaved state is tested, validation errors omit body content, and raw gh stderr is replaced by a non-sensitive actionable message"

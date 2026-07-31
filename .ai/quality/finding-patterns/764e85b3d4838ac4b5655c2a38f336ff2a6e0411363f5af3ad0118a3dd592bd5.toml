@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #140 review 4818275329 finding S8"
+defect_class = "public-workflow-command-ships-outside-the-documented-contract-surface"
+severity = "Suspected defect"
+affected = "scripts/quality/board.py, docs/engineering/workflow.md, tests/test_quality_board.py"
+root_cause = "the public command tuple gained withdrawal and broader permit-removal semantics while the manually maintained label table and workflow prose were outside generated contract blocks"
+why_tests_missed = "documentation consistency checked generated regions but no guard compared the complete public board command set with the operator workflow"
+regression = "test_workflow_documents_the_complete_public_board_command_surface"
+generalized = "every public operational command must appear in one machine-checked documentation surface, and a new command is incomplete until its authority and state effects are documented"
+workflow_change = "workflow.md documents all public board commands, permit removal on demotion and withdrawal, and a test compares the documented command set exactly with PUBLIC_COMMANDS"
