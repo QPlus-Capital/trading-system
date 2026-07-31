@@ -294,3 +294,17 @@ mutant_patterns = [
     "research.forward_decision.x__block_analyses__mutmut_*",
     "research.forward_decision.x_evaluate_forward_test__mutmut_*",
 ]
+
+[[targets]]
+id = "board-build-permit"
+path = "scripts/quality/board.py"
+mutant_patterns = [
+    "scripts.quality.board.x*BoardService*_verify_status_options__mutmut_*",
+    "scripts.quality.board.x*BoardService*add__mutmut_*",
+    "scripts.quality.board.x*BoardService*move__mutmut_*",
+    "scripts.quality.board.x*BoardService*withdraw__mutmut_*",
+    "scripts.quality.board.x*BoardService*arm__mutmut_*",
+    "scripts.quality.board.x*BoardService*_write_approved__mutmut_*",
+    "scripts.quality.board.x*BoardService*_remove_approved_and_verify__mutmut_*",
+    "scripts.quality.board.x*BoardService*start__mutmut_*",
+]

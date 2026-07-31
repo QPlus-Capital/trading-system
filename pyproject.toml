@@ -90,6 +90,7 @@ paths_to_mutate = [
     "research/regression.py",
     "research/forward_test_registry.py",
     "research/forward_decision.py",
+    "scripts/quality/board.py",
 ]
 also_copy = [
     "core",
@@ -140,4 +141,5 @@ pytest_add_cli_args_test_selection = [
     "tests/test_research_forward_decision.py",
     "tests/test_research_forward_decision_power.py",
     "tests/test_quality_properties.py",
+    "tests/test_quality_board.py",
 ]

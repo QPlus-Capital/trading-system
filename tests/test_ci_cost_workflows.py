@@ -274,6 +274,7 @@ def test_mutation_job_runs_for_production_and_direct_critical_test_changes() -> 
     assert not predicate(["tests/test_gate_consistency.py"])
     assert predicate(["tests/test_live_risk_control.py"])
     assert predicate([critical_path])
+    assert predicate(["scripts/quality/board.py"])
     assert "mutation-critical" not in _selected_jobs(
         workflow,
         event_name="pull_request",

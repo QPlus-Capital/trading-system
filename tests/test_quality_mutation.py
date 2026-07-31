@@ -35,6 +35,19 @@ from scripts.quality.mutation import (
     write_report,
 )
 
+_BOARD_TARGET_ID = "board-build-permit"
+_BOARD_TARGET_PATH = "scripts/quality/board.py"
+_BOARD_TARGET_PATTERNS = (
+    "scripts.quality.board.x*BoardService*_verify_status_options__mutmut_*",
+    "scripts.quality.board.x*BoardService*add__mutmut_*",
+    "scripts.quality.board.x*BoardService*move__mutmut_*",
+    "scripts.quality.board.x*BoardService*withdraw__mutmut_*",
+    "scripts.quality.board.x*BoardService*arm__mutmut_*",
+    "scripts.quality.board.x*BoardService*_write_approved__mutmut_*",
+    "scripts.quality.board.x*BoardService*_remove_approved_and_verify__mutmut_*",
+    "scripts.quality.board.x*BoardService*start__mutmut_*",
+)
+
 
 def test_policy_names_every_required_critical_scope() -> None:
     policy = load_policy()
@@ -73,6 +86,38 @@ def test_fast_scope_reuses_the_classifier_and_selects_changed_r3_targets() -> No
     policy = load_policy()
     selected = select_fast_targets(["README.md", "live/risk_control.py"], policy, load_model())
     assert [target.path for target in selected] == ["live/risk_control.py"]
+
+
+def test_board_build_permit_is_a_precisely_bounded_mutation_target() -> None:
+    policy = load_policy()
+    board = next(target for target in policy.targets if target.id == _BOARD_TARGET_ID)
+
+    assert board.path == _BOARD_TARGET_PATH
+    assert board.mutant_patterns == _BOARD_TARGET_PATTERNS
+
+
+def test_fast_scope_selects_only_a_changed_board_build_permit_target() -> None:
+    policy = load_policy()
+    model = load_model()
+
+    selected = select_fast_targets([_BOARD_TARGET_PATH], policy, model)
+    unrelated = select_fast_targets(
+        ["README.md", "tests/test_quality_board.py"],
+        policy,
+        model,
+    )
+
+    assert [target.id for target in selected] == [_BOARD_TARGET_ID]
+    assert unrelated == []
+
+
+def test_mutmut_executes_the_board_behaviour_suite_for_the_board_target() -> None:
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    with pyproject.open("rb") as handle:
+        config = tomllib.load(handle)["tool"]["mutmut"]
+
+    assert _BOARD_TARGET_PATH in config["paths_to_mutate"]
+    assert "tests/test_quality_board.py" in config["pytest_add_cli_args_test_selection"]
 
 
 def test_native_windows_mutation_fails_with_the_documented_linux_direction() -> None:
@@ -142,6 +187,21 @@ def test_committed_critical_baseline_is_complete_and_explained() -> None:
     assert baseline.summary.total > 0
     assert baseline.summary.not_checked == 0
     assert all(item.reason.strip() for item in baseline.survivors)
+
+
+def test_board_baseline_records_exact_named_survivors_with_reasons() -> None:
+    baseline = load_baseline()
+    board_survivors = tuple(
+        item for item in baseline.survivors if item.name.startswith("scripts.quality.board.")
+    )
+
+    assert _BOARD_TARGET_ID in baseline.targets
+    assert len({item.name for item in board_survivors}) == len(board_survivors)
+    assert all(
+        item.classification in {"equivalent", "irrelevant", "meaningful"}
+        for item in board_survivors
+    )
+    assert all(item.reason.strip() for item in board_survivors)
 
 
 def test_baseline_rejects_an_unclassified_survivor(tmp_path: Path) -> None:
@@ -521,6 +581,18 @@ def test_an_unexplained_survivor_fails_whatever_the_total_is(killed_delta: int) 
     )
     issues = check_baseline(report, baseline)
     assert any("live.risk_control.x_position_volume__mutmut_9999" in issue for issue in issues)
+
+
+def test_a_new_board_guard_survivor_fails_the_exact_ratchet() -> None:
+    baseline = load_baseline()
+    assert _BOARD_TARGET_ID in baseline.targets
+    unexplained = "scripts.quality.board.x_BoardService_start__mutmut_9999"
+    report = _synthetic_report(
+        baseline=baseline,
+        extra_survivors=(unexplained,),
+    )
+
+    assert any(unexplained in issue for issue in check_baseline(report, baseline))
 
 
 def test_a_score_regression_fails_although_the_total_is_no_longer_compared() -> None:
