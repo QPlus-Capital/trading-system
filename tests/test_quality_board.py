@@ -173,6 +173,24 @@ def test_start_moves_before_removing_permit_and_preserves_it_on_failure() -> Non
     assert "approved" not in clean.state.labels
 
 
+def test_start_issues_no_removal_when_permit_vanishes_during_move() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        on_write={
+            "move the card to Implementing": lambda state: replace(
+                state,
+                labels=state.labels - {"approved"},
+            ),
+        },
+    )
+
+    state = _service(gateway).start(110)
+
+    writes = [call[0] for call in gateway.calls if call[0] not in {"status_names", "issue_state"}]
+    assert writes == ["move the card to Implementing"]
+    assert "approved" not in state.labels
+
+
 def test_every_contract_status_must_resolve_to_a_runtime_option() -> None:
     names = {item.name for item in load_contract().statuses} - {"Blocked"}
     gateway = FakeGateway(status_names=names)
@@ -270,6 +288,8 @@ def test_withdraw_removes_approved_without_moving_card() -> None:
     assert "approved" not in state.labels
     assert ("remove approved", "approved") in gateway.calls
     assert not any(call[0].startswith("move the card") for call in gateway.calls)
+    with pytest.raises(BoardError, match="observed approved=absent"):
+        _service(gateway).start(110)
 
 
 def test_withdrawn_ready_card_can_run_full_arm_sequence() -> None:
@@ -804,6 +824,53 @@ def test_arm_writes_the_requested_risk_label_for_every_class(risk_class: str) ->
         label for label in state.labels if label in {"risk:R0", "risk:R1", "risk:R2", "risk:R3"}
     } == {f"risk:{risk_class}"}
     assert "approved" in state.labels
+
+
+def test_arm_ignores_a_non_contract_risk_lookalike() -> None:
+    gateway = FakeGateway(labels={"risk:R4"})
+
+    state = _service(gateway).arm(110, body=_VALID_BODY, risk_class="R3")
+
+    assert "approved" in state.labels
+    assert {"risk:R3", "risk:R4"} <= state.labels
+
+
+def test_arm_reports_only_contract_risks_when_risk_write_is_lost() -> None:
+    gateway = FakeGateway(
+        labels={"risk:R4"},
+        sticky_add_labels={"risk:R3"},
+    )
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).arm(110, body=_VALID_BODY, risk_class="R3")
+
+    assert str(raised.value) == "approved requirements not met: observed risk labels=[]"
+    assert "approved" not in gateway.state.labels
+
+
+@pytest.mark.parametrize(
+    ("requested", "existing"),
+    (
+        ("R0", "risk:R3"),
+        ("R1", "risk:R0"),
+        ("R2", "risk:R1"),
+        ("R3", "risk:R2"),
+    ),
+)
+def test_arm_refuses_conflicting_risk_for_every_requested_class(
+    requested: str,
+    existing: str,
+) -> None:
+    body = _VALID_BODY.replace("R3 â€” approval", f"{requested} â€” approval")
+    gateway = FakeGateway(labels={existing})
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).arm(110, body=body, risk_class=requested)
+
+    assert str(raised.value) == (
+        f"arm requirements not met: observed conflicting risk labels=['{existing}']"
+    )
+    assert not any(call[0].startswith(("add", "move", "write")) for call in gateway.calls)
 
 
 def test_workflow_documents_the_complete_public_board_command_surface() -> None:
