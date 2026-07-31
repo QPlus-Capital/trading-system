@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: b6a2de9f7fc0fc79a62f39ed01278830d9a808dc
+HEAD: 4fbbf8f98ab8431d8cd9a9ec8c6de430c898bda5
 
 The later evidence-only commit changes no production code, guard, or test behaviour.
 
@@ -20,10 +20,10 @@ required gate blocks readiness even when another row passes.
 | `risk-classification` | `uv run python -m scripts.quality.classify $(git diff --name-only origin/main...HEAD)` | 0 | R3: `scripts/quality/board.py` and the finding registry govern every later change |
 | `format` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | GREEN: all three changed Python files formatted and impact analysis completed |
 | `docs-consistency` | `uv run pytest -q tests/test_engineering_docs.py tests/test_workflow_contract.py` | 0 | GREEN: 88 passed; the documented command surface and updated non-generated hash match without contract-fact drift |
-| `check` | PowerShell: `$env:PYTHONUTF8='1'; just --shell "C:\Program Files\Git\bin\sh.exe" check` | 0 | GREEN: Ruff, strict mypy over 193 source files, Vulture, and pytest; 1699 passed, 1 skipped because Mutmut is unavailable on Windows |
-| `impacted-tests` | `uv run pytest -q tests/test_quality_board.py tests/test_finding_registry_split.py tests/test_finding_registry.py` | 0 | GREEN: 83 passed |
+| `check` | PowerShell: `$env:PYTHONUTF8='1'; just --shell "C:\Program Files\Git\bin\sh.exe" check` | 0 | GREEN: Ruff, strict mypy over 193 source files, Vulture, and pytest; 1698 passed, 1 skipped because Mutmut is unavailable on Windows |
+| `impacted-tests` | `uv run pytest -q tests/test_quality_board.py tests/test_finding_registry_split.py tests/test_finding_registry.py` | 0 | GREEN: 82 passed |
 | `property-tests-where-applicable` | `uv run pytest -q tests/test_quality_properties.py --hypothesis-seed=20260721` (twice) | 0 | GREEN: 21 passed on each deterministic replay |
-| `integration-tests` | `uv run pytest -q tests/test_quality_board.py tests/test_finding_registry_split.py tests/test_finding_registry.py` | 0 | GREEN: 83 passed, including CLI refusal, concurrent and lost writes, every arm conflict class, exact lookalike handling, reference resolution, and content-addressed registry integration |
+| `integration-tests` | `uv run pytest -q tests/test_quality_board.py tests/test_finding_registry_split.py tests/test_finding_registry.py` | 0 | GREEN: 82 passed, including CLI refusal, concurrent and lost writes, every arm conflict class, exact lookalike handling, reference resolution, and content-addressed registry integration |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 136 --base origin/main` | 0 | GREEN: task 136 valid with 13 AC and 4 INV |
 | `adversarial-review` | Claude review `4826126351` on PR #140, reviewing code head `abc7593c98a247309cba8e34f1f462e24052b004` | 0 | GREEN: no blocker, defect, or suspected defect; R5-N01 was accepted and its dead-substitution fixture was bound, while R5-N02 remains a non-blocking note for the next `board.py` change |
 | `invariants` | `uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_notify.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_quality_classify.py tests/test_quality_pr_ready.py` | 0 | GREEN: 529 passed |
@@ -34,7 +34,7 @@ required gate blocks readiness even when another row passes.
 | `no-autonomous-merge` | `gh pr view 140 --json isDraft,state,autoMergeRequest,headRefName,url` | 0 | GREEN: PR #140 remains OPEN and draft with `autoMergeRequest` null; the card is temporarily `Implementing` for remediation |
 | `security` | `uv run python -m scripts.quality.security`; `uv run pip-audit --skip-editable`; `uv run ruff check core research live monitoring scripts --select S --ignore S101,S110,S603,S607` | 0 | GREEN: no secret findings, no known dependency vulnerabilities, and security lint passed |
 | `impact` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | R3; one production file, two directly related test files, no critical-path escalation or discovered dynamic edge |
-| `pr-ready` | `uv run python -m scripts.quality.pr_ready 136 --base origin/main` | 0 | READY: all 14 required R3 gates pass and the evidence covers code HEAD `b6a2de9f7fc0fc79a62f39ed01278830d9a808dc` |
+| `pr-ready` | `uv run python -m scripts.quality.pr_ready 136 --base origin/main` | 0 | READY locally with explicit task ID 136: all 14 required R3 gates pass and the evidence covers code HEAD `4fbbf8f98ab8431d8cd9a9ec8c6de430c898bda5`; automatic CI discovery remains blocked as recorded below |
 
 ## Coverage and mutation
 
@@ -52,13 +52,14 @@ required gate blocks readiness even when another row passes.
 - Review `4826126351` completed the full re-review with no blocker, defect, or suspected defect.
   Its recommended R5-N01 note is fixed: the conflict fixture now uses the real em dash and asserts
   that every parametrized body differs from `_VALID_BODY`, so a dead substitution cannot pass.
-- Green Board/registry integration suite: 83 passed.
-- Full deterministic suite: 1699 passed and 1 skipped; the skip is the pre-existing Mutmut
+- Green Board/registry integration suite: 82 passed.
+- Full deterministic suite: 1698 passed and 1 skipped; the skip is the pre-existing Mutmut
   console-script availability guard on Windows.
-- CI run `30612593696` exposed that the branch still changed a merged task plan, so automatic
-  task-ID discovery saw two task directories. The historical reference now remains on Main and an
-  executable compatibility test binds it to the strengthened migration assertion; `just
-  check-task-artifact` now discovers only task 136 and passes.
+- CI run `30612593696` exposed that automatic task-ID discovery sees both the current
+  `.ai/tasks/136/` artifact and the correctly repaired
+  `.ai/tasks/ISSUE-111-112/test-plan.md` audit record. Explicit validation of task 136 passes, but
+  `just check-task-artifact` cannot select it automatically. Issue #147 records the separate R3
+  tooling defect; neither the audit correction nor `discover_task_id` is changed in this package.
 - The first Windows `just check` probe omitted `PYTHONUTF8`; Git-diff subprocess output was decoded
   as CP1252, reader threads returned `None`, and 54 lineage tests failed secondarily. The identical
   code passed after forcing Python UTF-8. No test, production file, or gate was changed for this
@@ -77,5 +78,7 @@ required gate blocks readiness even when another row passes.
 - Per Jan's explicit scope, this remediation does not decide R-04/decision 2 (`withdraw` plus
   `arm` without a board trace), decision 1 (constitutional versus contract wording), decision 3
   (`board.py` as a mutation target), or N4 (tracked by #134).
-- Required GitHub checks run on the pushed draft head. Their results are not represented as local
-  successes here; no required local readiness step remains deferred.
+- GitHub `full-quality` remains blocked because its argument-free `just check-task-artifact`
+  invocation cannot distinguish the current task from a corrected historical task. Issue #147 owns
+  that gate-design change. The explicit local `pr_ready 136` result is green, but this CI blocker is
+  not presented as a successful required check.
