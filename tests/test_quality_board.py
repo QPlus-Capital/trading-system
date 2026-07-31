@@ -861,7 +861,10 @@ def test_arm_refuses_conflicting_risk_for_every_requested_class(
     requested: str,
     existing: str,
 ) -> None:
-    body = _VALID_BODY.replace("R3 â€” approval", f"{requested} â€” approval")
+    body = _VALID_BODY.replace("R3 — approval", f"{requested} — approval")
+    if requested == "R3":
+        body = body.replace("Board tooling.", "R3 board tooling.")
+    assert body != _VALID_BODY
     gateway = FakeGateway(labels={existing})
 
     with pytest.raises(BoardError) as raised:
