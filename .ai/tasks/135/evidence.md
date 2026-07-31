@@ -31,6 +31,7 @@ The later evidence-only commit changes no document, guard, or test behaviour.
 | `security` | `just check-security` | 0 | Secret scan and Ruff security checks passed; pip-audit found no known vulnerability. |
 | `impact` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | Only the existing engineering-workflow documentation test is directly related; no production, critical-path, or unknown dynamic edge was found. |
 | `risk-classification` | `uv run python -m scripts.quality.classify --base origin/main` | 0 | R3, because `docs/engineering/**` is governance that protects live-money and result-integrity changes. |
+| `pr-ready` | `uvx --from rust-just just pr-ready 135 origin/main` | 1 | Correctly NOT READY on `adversarial-review` alone; task artifacts, R3 classification, and evidence currency all pass. |
 
 ## Coverage and mutation
 
