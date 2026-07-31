@@ -130,17 +130,30 @@ def _sections(text: str) -> dict[str, str]:
     }
 
 
-def _table_rows(text: str) -> list[list[str]]:
-    rows: list[list[str]] = []
+def _table_rows_with_positions(text: str) -> list[tuple[int, list[str]]]:
+    rows: list[tuple[int, list[str]]] = []
+    row_position = 0
+    in_table = False
     for line in text.splitlines():
         stripped = line.strip()
         if not (stripped.startswith("|") and stripped.endswith("|")):
+            row_position = 0
+            in_table = False
             continue
         cells = [cell.strip() for cell in stripped[1:-1].split("|")]
         if cells and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells):
+            in_table = True
             continue
-        rows.append(cells)
+        if not in_table:
+            row_position = 0
+            in_table = True
+        rows.append((row_position, cells))
+        row_position += 1
     return rows
+
+
+def _table_rows(text: str) -> list[list[str]]:
+    return [cells for _, cells in _table_rows_with_positions(text)]
 
 
 def _traceability_rows(text: str) -> dict[str, list[str]]:
@@ -157,7 +170,7 @@ def _traceability_rows(text: str) -> dict[str, list[str]]:
 
 
 def _plain_cell(value: str) -> str:
-    return value.strip().strip("`").strip()
+    return value.strip().strip("`*_").strip()
 
 
 def evidence_records(text: str) -> tuple[EvidenceRecord, ...]:
@@ -233,14 +246,24 @@ def _review_disposition_issues(
     resolved: frozenset[str],
 ) -> tuple[ValidationIssue, ...]:
     issues: list[ValidationIssue] = []
-    rows = _table_rows(text)
-    for cells in rows:
-        normalized = {cell.casefold() for cell in cells}
-        if (
+    rows = _table_rows_with_positions(text)
+    for row_position, cells in rows:
+        normalized_cells = tuple(_plain_cell(cell).casefold() for cell in cells)
+        normalized = set(normalized_cells)
+        looks_like_header = (
             len(cells) >= 2
-            and cells[0].strip().casefold() in {"id", "finding id"}
-            and cells[1].strip().casefold() == "severity"
-        ):
+            and normalized_cells[0] in {"id", "finding id"}
+            and normalized_cells[1] == "severity"
+        )
+        if looks_like_header:
+            if row_position == 0:
+                continue
+            issues.append(
+                ValidationIssue(
+                    "invalid-review-row",
+                    "review.md repeats a finding-table header in a data row",
+                )
+            )
             continue
         severities = normalized & set(_SEVERITIES)
         legacy = normalized & {"p0", "p1", "p2", "p3"}
@@ -263,7 +286,7 @@ def _review_disposition_issues(
             )
             continue
         for severity in sorted(severities):
-            if severity in _CRITICAL and cells[-1].strip().casefold() not in resolved:
+            if severity in _CRITICAL and _plain_cell(cells[-1]).casefold() not in resolved:
                 issues.append(
                     ValidationIssue(
                         "unresolved-review",

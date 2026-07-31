@@ -442,3 +442,33 @@ def test_local_unverifiable_review_is_labelled_advisory_not_pass(
     output = capsys.readouterr().out
     assert "[ADVISORY] independent-review:" in output
     assert "[PASS] independent-review:" not in output
+
+
+def test_cli_forwards_the_discovered_task_and_rejected_observation_to_readiness(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    task_root = tmp_path / ".ai" / "tasks"
+    task_root.mkdir(parents=True)
+    task = _task(task_root)
+    _record_gate_evidence(task, "R3")
+    observed_task_ids: list[str] = []
+    rejected = ReviewObservation("rejected", "blocking review remains", "https://review/1")
+
+    monkeypatch.setattr(pr_ready, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(pr_ready, "changed_paths", lambda base: ["scripts/quality/pr_ready.py"])
+    monkeypatch.setattr(pr_ready, "discover_task_id", lambda paths: task.name)
+    monkeypatch.setattr(pr_ready, "_head_sha", lambda root: "abc123")
+
+    def observe(gateway: object, head_sha: str, task_id: str) -> ReviewObservation:
+        observed_task_ids.append(task_id)
+        return rejected
+
+    monkeypatch.setattr(pr_ready, "observe_independent_review", observe)
+
+    assert pr_ready.main([]) == 1
+    output = capsys.readouterr().out
+    assert observed_task_ids == [task.name]
+    assert "[FAIL] independent-review: blocking review remains" in output
+    assert output.rstrip().endswith("NOT READY")

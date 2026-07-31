@@ -26,9 +26,10 @@
 
 - The change is R3 because it changes PR readiness and required CI enforcement. The critical
   dependency is GitHub's pull-request commits and reviews APIs, isolated behind a fakeable gateway.
-- `CHANGES_REQUESTED` remains blocking per reviewer across commit windows; neither a later comment
-  nor approval clears it. Only GitHub's explicit `DISMISSED` state removes that blocker. Equal-time
-  events are deterministic, and a dismissed approval cannot verify.
+- Review state is reduced across every non-dismissed record per reviewer. A later `APPROVED` from
+  that reviewer supersedes `CHANGES_REQUESTED`; `COMMENTED` does not. GitHub dismissal removes the
+  dismissed record. Equal-time events use the server review id as the deterministic final order,
+  and an orphaned review can add a blocker but cannot satisfy freshness.
 - Required gates, review sections, resolved-status configuration, and severity vocabulary remain
   active and cumulative.
 
@@ -41,5 +42,6 @@
 - The local gateway requests only `gh pr view` fields supported by the installed CLI and derives
   base-repository identity from the pull-request URL, including when the checkout belongs to a
   fork. Test doubles assert that exact argument vector.
-- GitHub cannot prove a different human account authored the review when builder and reviewer share
-  an account; issue #134 explicitly leaves that limitation out of scope.
+- GitHub cannot prove a different human authored the review when builder and reviewer share an
+  account. A sole current review from the last commit's account remains observable, but its output
+  explicitly says independence is not verified; a second account remains outside issue #134.

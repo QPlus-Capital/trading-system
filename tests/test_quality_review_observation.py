@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from scripts.quality.review_observation import (
     observe_independent_review,
     only_task_artifacts,
     task_artifact_only_synchronization,
+    task_id_from_pr_body,
 )
 
 
@@ -28,8 +30,8 @@ def _at(minute: int) -> datetime:
     return datetime(2026, 7, 30, 12, minute, tzinfo=UTC)
 
 
-def _commit(sha: str, *paths: str) -> PullRequestCommit:
-    return PullRequestCommit(sha, paths)
+def _commit(sha: str, *paths: str, author: str | None = None) -> PullRequestCommit:
+    return PullRequestCommit(sha, paths, author)
 
 
 def _review(
@@ -146,10 +148,7 @@ def test_a_comment_cannot_clear_the_same_reviewers_change_request() -> None:
     assert "CHANGES_REQUESTED" in result.detail
 
 
-@pytest.mark.parametrize("later_state", ("COMMENTED", "APPROVED"))
-def test_a_current_review_cannot_clear_an_undismissed_earlier_change_request(
-    later_state: str,
-) -> None:
+def test_a_current_review_cannot_clear_an_undismissed_earlier_change_request() -> None:
     snapshot = PullRequestSnapshot(
         commits=(
             _commit("earlier", "scripts/quality/pr_ready.py"),
@@ -157,7 +156,7 @@ def test_a_current_review_cannot_clear_an_undismissed_earlier_change_request(
         ),
         reviews=(
             _review(2, "CHANGES_REQUESTED", "earlier", review_id=1),
-            _review(3, later_state, "current", review_id=2),
+            _review(3, "COMMENTED", "current", review_id=2),
         ),
     )
 
@@ -165,6 +164,54 @@ def test_a_current_review_cannot_clear_an_undismissed_earlier_change_request(
 
     assert result.status == "rejected"
     assert "CHANGES_REQUESTED" in result.detail
+
+
+def test_the_same_reviewers_later_approval_clears_their_change_request() -> None:
+    snapshot = PullRequestSnapshot(
+        commits=(
+            _commit("earlier", "scripts/quality/pr_ready.py"),
+            _commit("current", "tests/test_quality_pr_ready.py"),
+        ),
+        reviews=(
+            _review(2, "CHANGES_REQUESTED", "earlier", review_id=1),
+            _review(3, "APPROVED", "current", review_id=2),
+        ),
+    )
+
+    assert (
+        observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134").status
+        == "verified"
+    )
+
+
+def test_a_change_request_orphaned_by_a_rebase_still_blocks() -> None:
+    snapshot = PullRequestSnapshot(
+        commits=(_commit("rebased", "scripts/quality/pr_ready.py"),),
+        reviews=(
+            _review(2, "CHANGES_REQUESTED", "pre-rebase-sha", review_id=1),
+            _review(3, "COMMENTED", "rebased", review_id=2),
+        ),
+    )
+
+    result = observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134")
+
+    assert result.status == "rejected"
+    assert "CHANGES_REQUESTED" in result.detail
+
+
+def test_a_dismissed_change_request_orphaned_by_a_rebase_no_longer_blocks() -> None:
+    snapshot = PullRequestSnapshot(
+        commits=(_commit("rebased", "scripts/quality/pr_ready.py"),),
+        reviews=(
+            _review(2, "DISMISSED", "pre-rebase-sha", review_id=1),
+            _review(3, "COMMENTED", "rebased", review_id=2),
+        ),
+    )
+
+    assert (
+        observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134").status
+        == "verified"
+    )
 
 
 def test_an_explicitly_dismissed_change_request_no_longer_blocks_a_current_review() -> None:
@@ -185,12 +232,9 @@ def test_an_explicitly_dismissed_change_request_no_longer_blocks_a_current_revie
     )
 
 
-@pytest.mark.parametrize("other_state", ("COMMENTED", "APPROVED"))
-def test_equal_timestamp_review_states_are_order_independent_and_blocking_wins(
-    other_state: str,
-) -> None:
+def test_equal_timestamp_review_states_are_order_independent_and_blocking_wins() -> None:
     blocking = _review(2, "CHANGES_REQUESTED", "code", review_id=1)
-    other = _review(2, other_state, "code", review_id=2)
+    other = _review(2, "COMMENTED", "code", review_id=2)
     for reviews in ((blocking, other), (other, blocking)):
         snapshot = PullRequestSnapshot(
             commits=(_commit("code", "scripts/quality/pr_ready.py"),),
@@ -200,6 +244,41 @@ def test_equal_timestamp_review_states_are_order_independent_and_blocking_wins(
             observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134").status
             == "rejected"
         )
+
+
+def test_equal_timestamp_latest_decisive_review_id_wins_independently_of_api_order() -> None:
+    blocking = _review(2, "CHANGES_REQUESTED", "code", review_id=1)
+    approval = _review(2, "APPROVED", "code", review_id=2)
+    for reviews in ((blocking, approval), (approval, blocking)):
+        snapshot = PullRequestSnapshot(
+            commits=(_commit("code", "scripts/quality/pr_ready.py"),),
+            reviews=reviews,
+        )
+        assert (
+            observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134").status
+            == "verified"
+        )
+
+
+def test_same_account_comment_is_observed_but_independence_is_not_verified() -> None:
+    snapshot = PullRequestSnapshot(
+        commits=(_commit("code", "scripts/quality/pr_ready.py", author="shared-account"),),
+        reviews=(
+            _review(
+                2,
+                "COMMENTED",
+                "code",
+                author="shared-account",
+                review_id=1,
+            ),
+        ),
+    )
+
+    result = observe_independent_review(FakeReviewGateway(snapshot), "head", task_id="134")
+
+    assert result.status == "verified"
+    assert "independence is not verified" in result.detail
+    assert "shared-account" in result.detail
 
 
 def test_a_dismissed_approval_cannot_verify_the_pull_request() -> None:
@@ -302,6 +381,32 @@ def test_task_artifact_only_scope_is_derived_from_the_diff(
 
 
 @pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        ("", None),
+        (
+            "`.ai/tasks/134/`\n`.ai/tasks/135/`",
+            None,
+        ),
+        ("`.ai/tasks/_templates/`", None),
+        ("Task artifact: `.ai/tasks/134/`", "134"),
+    ],
+)
+def test_task_id_from_pr_body_requires_one_non_template_task(
+    body: str,
+    expected: str | None,
+) -> None:
+    assert task_id_from_pr_body(body) == expected
+
+
+def test_templates_are_never_artifact_only_even_for_a_template_task_id() -> None:
+    assert not only_task_artifacts(
+        [".ai/tasks/_templates/review.md"],
+        task_id="_templates",
+    )
+
+
+@pytest.mark.parametrize(
     ("action", "paths", "task_id", "expected"),
     [
         ("synchronize", (".ai/tasks/134/review.md",), "134", True),
@@ -381,6 +486,38 @@ def test_ci_scope_detector_fails_closed_to_the_full_set_for_an_unreachable_base(
     )
 
 
+def test_ci_scope_detector_treats_an_empty_diff_as_full_scope(tmp_path: Path) -> None:
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.name", "Test")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    head = _commit_file(tmp_path, ".ai/tasks/134/review.md", "first")
+
+    assert not detect_task_artifact_only_synchronization(
+        "synchronize",
+        head,
+        "134",
+        root=tmp_path,
+    )
+
+
+def test_the_requested_gh_pr_view_fields_exist_in_the_installed_cli() -> None:
+    if shutil.which("gh") is None:
+        pytest.skip("gh is unavailable")
+    probe = subprocess.run(
+        ["gh", "pr", "view", "--json", "__probe__"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    available = {
+        line.strip()
+        for line in f"{probe.stdout}\n{probe.stderr}".splitlines()
+        if line.startswith("  ")
+    }
+
+    assert set(GH_PR_VIEW_ARGS[3].split(",")) <= available
+
+
 def test_gateway_parses_all_pages_and_preserves_rename_sources(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -409,7 +546,10 @@ def test_gateway_parses_all_pages_and_preserves_rename_sources(
         command = " ".join(args)
         commands.append(command)
         if "/commits?per_page=100" in command:
-            payload: object = [[{"sha": "code"}], [{"sha": "head"}]]
+            payload: object = [
+                [{"sha": "code", "author": {"login": "builder"}}],
+                [{"sha": "head", "author": {"login": "builder"}}],
+            ]
         elif "/commits/code?per_page=100" in command:
             payload = [
                 {
@@ -464,8 +604,13 @@ def test_gateway_parses_all_pages_and_preserves_rename_sources(
     snapshot = GhReviewGateway(root=tmp_path).snapshot_for_head("head")
 
     assert snapshot.commits == (
-        _commit("code", ".ai/tasks/134/risk_control.py", "live/risk_control.py"),
-        _commit("head", ".ai/tasks/134/review.md"),
+        _commit(
+            "code",
+            ".ai/tasks/134/risk_control.py",
+            "live/risk_control.py",
+            author="builder",
+        ),
+        _commit("head", ".ai/tasks/134/review.md", author="builder"),
     )
     assert snapshot.reviews == (
         PullRequestReview(_at(3), "DISMISSED", None, "head", "dismissed", 2),
@@ -549,6 +694,29 @@ def test_local_gateway_derives_the_base_repository_from_the_pr_url(
         "QPlus-Capital/trading-system",
         143,
     )
+
+
+def test_local_gateway_rejects_a_malformed_pull_request_url(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+
+    def fake_run(
+        args: list[str],
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        payload = {
+            "number": 143,
+            "headRefOid": "head",
+            "url": "not-a-pull-request-url",
+        }
+        return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
+
+    monkeypatch.setattr("scripts.quality.review_observation.subprocess.run", fake_run)
+
+    with pytest.raises(ReviewGatewayError, match="pull-request URL"):
+        GhReviewGateway(root=tmp_path)._pull_request("head")
 
 
 def test_gateway_requires_the_paginated_commit_tail_to_equal_the_checked_out_head(

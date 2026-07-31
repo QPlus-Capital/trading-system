@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #143 reviews 4823450100 (S-01) and 4828407030 (D-01)"
+defect_class = "freshness-window-erases-undismissed-platform-blocker"
+severity = "Suspected defect"
+affected = "scripts/quality/review_observation.py, tests/test_quality_review_observation.py"
+root_cause = "review freshness filtered out earlier commit windows before reviewer state reduction, allowing a later non-blocking review to erase a CHANGES_REQUESTED state that GitHub still considered decisive"
+why_tests_missed = "state-reduction fixtures kept every review on one current commit and therefore never crossed a rebase-orphaned commit boundary"
+regression = "test_a_change_request_orphaned_by_a_rebase_still_blocks; test_the_same_reviewers_later_approval_clears_their_change_request; test_a_dismissed_change_request_orphaned_by_a_rebase_no_longer_blocks"
+generalized = "use freshness only to prove that current review activity exists; across all non-dismissed review records, reduce each reviewer to their latest APPROVED or CHANGES_REQUESTED state, while COMMENTED never clears a decisive state"
+workflow_change = "the observer requires a current non-dismissed review and reduces each reviewer across all pull-request commit identities; an explicit dismissal removes a review and the same reviewer's later approval supersedes their change request"

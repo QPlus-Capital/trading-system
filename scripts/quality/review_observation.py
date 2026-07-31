@@ -31,6 +31,7 @@ class PullRequestCommit:
 
     sha: str
     paths: tuple[str, ...]
+    author: str | None = None
 
 
 @dataclass(frozen=True)
@@ -145,7 +146,7 @@ def task_id_from_pr_body(body: str) -> str | None:
 def _reviewer_states(
     reviews: Sequence[PullRequestReview],
 ) -> tuple[PullRequestReview, ...]:
-    """Retain each reviewer's blocking state until GitHub marks it dismissed."""
+    """Retain each reviewer's latest decisive non-dismissed GitHub state."""
 
     grouped: dict[str, list[PullRequestReview]] = defaultdict(list)
     for review in reviews:
@@ -154,39 +155,17 @@ def _reviewer_states(
 
     current: list[PullRequestReview] = []
     for author_reviews in grouped.values():
-        unresolved_requests = [
-            review for review in author_reviews if review.state == "CHANGES_REQUESTED"
+        decisive = [review for review in author_reviews if review.state in _DECISIVE_STATES]
+        candidates = decisive or [
+            review for review in author_reviews if review.state == "COMMENTED"
         ]
-        if unresolved_requests:
+        if candidates:
             current.append(
                 max(
-                    unresolved_requests,
+                    candidates,
                     key=lambda review: (review.submitted_at, review.review_id),
                 )
             )
-            continue
-
-        selected: PullRequestReview | None = None
-        by_time: dict[datetime, list[PullRequestReview]] = defaultdict(list)
-        for review in author_reviews:
-            by_time[review.submitted_at].append(review)
-        for submitted_at in sorted(by_time):
-            simultaneous = by_time[submitted_at]
-            approvals = [review for review in simultaneous if review.state == "APPROVED"]
-            other_decisive = [
-                review
-                for review in simultaneous
-                if review.state not in _NON_BLOCKING_STATES | {"DISMISSED"}
-            ]
-            comments = [review for review in simultaneous if review.state == "COMMENTED"]
-            if approvals:
-                selected = max(approvals, key=lambda review: review.review_id)
-            elif other_decisive:
-                selected = max(other_decisive, key=lambda review: review.review_id)
-            elif comments and (selected is None or selected.state not in _DECISIVE_STATES):
-                selected = max(comments, key=lambda review: review.review_id)
-        if selected is not None:
-            current.append(selected)
     return tuple(current)
 
 
@@ -232,9 +211,7 @@ def observe_independent_review(
             f"no submitted PR review is bound to current non-artifact commit {last_change.sha}",
             None,
         )
-    states = _reviewer_states(
-        tuple(review for review in snapshot.reviews if review.commit_id in commit_indexes)
-    )
+    states = _reviewer_states(snapshot.reviews)
     blocking = tuple(review for review in states if review.state not in _NON_BLOCKING_STATES)
     if blocking:
         latest_blocking = max(
@@ -247,12 +224,22 @@ def observe_independent_review(
             latest_blocking.url,
         )
     latest = max(
-        states,
+        current_reviews,
         key=lambda review: (review.submitted_at, review.review_id, review.author),
     )
+    detail = f"independent PR review is bound to current non-artifact commit {last_change.sha}"
+    if (
+        len(current_reviews) == 1
+        and last_change.author is not None
+        and latest.author.casefold() == last_change.author.casefold()
+    ):
+        detail += (
+            "; independence is not verified because the only current review and "
+            f"last commit use GitHub account {latest.author}"
+        )
     return ReviewObservation(
         "verified",
-        f"independent PR review is bound to current non-artifact commit {last_change.sha}",
+        detail,
         latest.url,
     )
 
@@ -281,6 +268,16 @@ def _integer(data: Mapping[str, object], name: str) -> int:
     if type(value) is not int:
         raise ReviewGatewayError(f"{name} must be an integer")
     return value
+
+
+def _commit_author(data: Mapping[str, object]) -> str | None:
+    for field in ("author", "committer"):
+        value = data.get(field)
+        if value is None:
+            continue
+        account = _object(value, f"pull-request commit {field}")
+        return _text(account, "login")
+    return None
 
 
 def _timestamp(value: str, label: str) -> datetime:
@@ -409,7 +406,11 @@ class GhReviewGateway:
             summary = _object(item, "pull-request commit")
             sha = _text(summary, "sha")
             commits.append(
-                PullRequestCommit(sha, _commit_paths(self._commit_files(repository, sha)))
+                PullRequestCommit(
+                    sha,
+                    _commit_paths(self._commit_files(repository, sha)),
+                    _commit_author(summary),
+                )
             )
         if not commits or commits[-1].sha != head_sha:
             raise ReviewGatewayError(

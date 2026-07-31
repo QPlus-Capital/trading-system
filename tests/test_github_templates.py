@@ -223,7 +223,10 @@ def test_ci_pr_body_entrypoint_strictly_binds_the_observed_review(
     expected_exit: int,
 ) -> None:
     event = tmp_path / "event.json"
-    event.write_text(json.dumps({"pull_request": {"body": "body"}}), encoding="utf-8")
+    event.write_text(
+        json.dumps({"pull_request": {"body": "Task artifact: `.ai/tasks/134/`"}}),
+        encoding="utf-8",
+    )
     monkeypatch.setenv("GITHUB_EVENT_PATH", str(event))
     monkeypatch.setattr(pr_body, "_head_sha", lambda root: "head")
     monkeypatch.setattr(pr_body, "changed_paths", lambda base: ["scripts/quality/pr_body.py"])
@@ -232,11 +235,13 @@ def test_ci_pr_body_entrypoint_strictly_binds_the_observed_review(
         f"review {status}",
         "https://review/1" if status == "verified" else None,
     )
-    monkeypatch.setattr(
-        pr_body,
-        "observe_independent_review",
-        lambda gateway, head_sha, task_id: observation,
-    )
+    observed_task_ids: list[str] = []
+
+    def observe(gateway: object, head_sha: str, task_id: str) -> ReviewObservation:
+        observed_task_ids.append(task_id)
+        return observation
+
+    monkeypatch.setattr(pr_body, "observe_independent_review", observe)
 
     def validate(
         body: str,
@@ -249,3 +254,4 @@ def test_ci_pr_body_entrypoint_strictly_binds_the_observed_review(
     monkeypatch.setattr(pr_body, "validate_pr_body", validate)
 
     assert pr_body.main([]) == expected_exit
+    assert observed_task_ids == ["134"]

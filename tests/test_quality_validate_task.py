@@ -434,6 +434,61 @@ def test_the_severity_header_skip_does_not_apply_to_a_finding_cell(tmp_path: Pat
     assert any(issue.code == "unresolved-review" for issue in result.issues)
 
 
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+@pytest.mark.parametrize("severity", ("`Blocker`", "**Blocker**", "_Defect_"))
+def test_markdown_emphasis_cannot_hide_an_unresolved_blocking_finding(
+    tmp_path: Path,
+    risk_class: str,
+    severity: str,
+) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\n"
+        "| ID | Severity | Finding | Disposition | Status |\n"
+        "|---|---|---|---|---|\n"
+        f"| R-01 | {severity} | Broken guard | Pending | unresolved |\n\n"
+        "## Dispositions\n\nPending.\n",
+        encoding="utf-8",
+    )
+
+    result = validate_task_dir(
+        task,
+        risk_class=risk_class,
+        review_observation=ReviewObservation(
+            "verified",
+            "review verified",
+            "https://review/1",
+        ),
+    )
+
+    assert any(issue.code == "unresolved-review" for issue in result.issues)
+
+
+def test_only_the_first_row_of_a_review_table_is_treated_as_its_header(
+    tmp_path: Path,
+) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\n"
+        "| ID | Severity | Finding | Disposition | Status |\n"
+        "|---|---|---|---|---|\n"
+        "| ID | Severity | Repeated header is data | Pending | unresolved |\n\n"
+        "## Dispositions\n\nPending.\n",
+        encoding="utf-8",
+    )
+
+    result = validate_task_dir(
+        task,
+        review_observation=ReviewObservation(
+            "verified",
+            "review verified",
+            "https://review/1",
+        ),
+    )
+
+    assert any(issue.code == "invalid-review-row" for issue in result.issues)
+
+
 def test_a_short_resolved_blocking_finding_row_is_invalid(tmp_path: Path) -> None:
     task = _task(tmp_path)
     (task / "review.md").write_text(
@@ -522,3 +577,29 @@ def test_task_validator_enforces_the_review_severity_vocabulary(tmp_path: Path) 
         result = validate_task_dir(task, review_observation=observation)
         assert not result.ok
         assert any(issue.code == "invalid-review-severity" for issue in result.issues)
+
+
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+def test_an_open_note_remains_non_blocking(
+    tmp_path: Path,
+    risk_class: str,
+) -> None:
+    task = _task(tmp_path)
+    (task / "review.md").write_text(
+        "# Review\n\n## Findings\n\n"
+        "| ID | Severity | Finding | Disposition | Status |\n"
+        "|---|---|---|---|---|\n"
+        "| N-01 | Note | Optional improvement | Deferred | open |\n\n"
+        "## Dispositions\n\nDeferred.\n",
+        encoding="utf-8",
+    )
+
+    assert validate_task_dir(
+        task,
+        risk_class=risk_class,
+        review_observation=ReviewObservation(
+            "verified",
+            "review verified",
+            "https://review/1",
+        ),
+    ).ok

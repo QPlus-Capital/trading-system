@@ -59,7 +59,12 @@ _PLACEHOLDERS = re.compile(
 _TYPE_IGNORE = re.compile(r"#\s*type:\s*ignore\b(?P<suffix>.*)", re.IGNORECASE)
 _NOQA = re.compile(r"#\s*noqa\b(?P<suffix>.*)", re.IGNORECASE)
 _SKIP = re.compile(r"(?:@|\.)pytest\.mark\.skip(?:if)?\b", re.IGNORECASE)
-_REVIEW_CODES = {"missing-adversarial-review", "unresolved-review"}
+_REVIEW_CODES = {
+    "invalid-review-row",
+    "invalid-review-severity",
+    "missing-adversarial-review",
+    "unresolved-review",
+}
 
 
 @dataclass(frozen=True)

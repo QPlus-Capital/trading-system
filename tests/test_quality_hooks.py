@@ -123,6 +123,21 @@ def test_review_artifact_decision_blocks_invalid_r3_and_allows_valid_review() ->
     assert review_artifact_decision("git push origin HEAD", "R3", (issue,)).allowed
 
 
+@pytest.mark.parametrize("code", ("invalid-review-row", "invalid-review-severity"))
+@pytest.mark.parametrize("risk_class", ("R2", "R3"))
+def test_review_artifact_decision_blocks_every_malformed_review_code(
+    code: str,
+    risk_class: str,
+) -> None:
+    issue = ValidationIssue(code, "malformed review finding")
+
+    assert not review_artifact_decision(
+        "gh pr ready 134",
+        risk_class,
+        (issue,),
+    ).allowed
+
+
 @pytest.mark.parametrize("risk_class", ("R2", "R3"))
 def test_real_staged_task_snapshot_blocks_an_empty_review_artifact(
     tmp_path: Path,
