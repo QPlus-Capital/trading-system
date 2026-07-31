@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #140 review 4818275329 finding S4"
+defect_class = "additive-registry-migration-check-drops-content-uniqueness"
+severity = "Suspected defect"
+affected = "tests/test_finding_registry_split.py"
+root_cause = "relaxing an exact registry length to permit new findings preserved legacy membership but stopped comparing the number of unique severity-independent content digests with the number of loaded findings"
+why_tests_missed = "the additive case was tested only on a valid new finding, not on a duplicate of migrated content under a new content-addressed id"
+regression = "test_severity_migration_preserves_every_pattern_and_rejects_content_duplicates"
+generalized = "when an exact-size migration guard becomes additive, preserve every orthogonal property that the old equality enforced, including uniqueness and explicit missing-item diagnostics"
+workflow_change = "the migration guard permits growth while asserting one severity-independent digest per loaded finding and exact preservation of every migrated digest and severity"

@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #140 review 4818275329 finding S2"
+defect_class = "write-verification-defences-cannot-be-exercised-by-the-test-double"
+severity = "Suspected defect"
+affected = "scripts/quality/board.py, tests/test_quality_board.py"
+root_cause = "the fake gateway originally could model neither a third-party interleaving nor a successful external write that did not take effect, leaving both concurrency mismatches and lost-write read-backs unreachable"
+why_tests_missed = "concurrency and lost-write branches were described in impact prose while every fake write deterministically applied its own field"
+regression = "test_move_refuses_when_status_changes_during_permit_withdrawal; test_move_refuses_when_a_third_party_readds_permit_after_status_write; test_withdraw_refuses_when_status_changes_during_permit_removal; test_move_refuses_when_the_status_write_does_not_take_effect; test_start_refuses_when_the_status_write_does_not_take_effect; test_arm_refuses_when_the_approved_write_does_not_take_effect; test_start_issues_no_removal_when_permit_vanishes_during_move"
+generalized = "a fail-closed read-after-write guard needs test doubles for both one-shot external interleaving and an accepted write that does not land; prose about concurrency or verification is not executable evidence"
+workflow_change = "FakeGateway has one-shot interleaving and sticky-write faults, and every concurrent-modification and lost-write refusal is reached by a behavioural test"
