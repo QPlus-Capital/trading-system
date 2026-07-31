@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 884d190b0716af744e86e9e48f25b8edf0a2da78
+HEAD: eac567614a62ed98dee06bcf497b24e3c08a983c
 
 The later evidence-only commit changes no production code, guard, or test behaviour.
 
@@ -25,7 +25,7 @@ required gate blocks readiness even when another row passes.
 | `property-tests-where-applicable` | `uv run pytest -q tests/test_quality_properties.py --hypothesis-seed=20260721` (twice) | 0 | GREEN: 21 passed on each deterministic replay |
 | `integration-tests` | `uv run pytest -q tests/test_quality_board.py tests/test_finding_registry_split.py tests/test_finding_registry.py` | 0 | GREEN: 82 passed, including CLI refusal, concurrent and lost writes, every arm conflict class, exact lookalike handling, reference resolution, and content-addressed registry integration |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 136 --base origin/main` | 0 | GREEN: task 136 valid with 13 AC and 4 INV |
-| `adversarial-review` | Claude reviews `4818275329`, `4819183725`, `4823058968`, and `4823428302` on PR #140 | 1 | BLOCKED: every actionable finding through round four is resolved and recorded, but the required complete re-review of current head has not run |
+| `adversarial-review` | Claude review `4826126351` on PR #140, reviewing code head `abc7593c98a247309cba8e34f1f462e24052b004` | 0 | GREEN: no blocker, defect, or suspected defect; R5-N01 was accepted and its dead-substitution fixture was bound, while R5-N02 remains a non-blocking note for the next `board.py` change |
 | `invariants` | `uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_notify.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_quality_classify.py tests/test_quality_pr_ready.py` | 0 | GREEN: 529 passed |
 | `mutation-on-touched-critical` | `select_fast_targets(changed_paths("origin/main"), load_policy(), load_model())` | 0 | GREEN (vacuous): selector returned `[]`; no configured mutation target is touched directly or through the import graph |
 | `parity-where-applicable` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | Not applicable: only board tooling and its tests changed; no signal, research, portfolio, or live adapter path changed |
@@ -34,6 +34,7 @@ required gate blocks readiness even when another row passes.
 | `no-autonomous-merge` | `gh pr view 140 --json isDraft,state,autoMergeRequest,headRefName,url` | 0 | GREEN: PR #140 remains OPEN and draft with `autoMergeRequest` null; the card is temporarily `Implementing` for remediation |
 | `security` | `uv run python -m scripts.quality.security`; `uv run pip-audit --skip-editable`; `uv run ruff check core research live monitoring scripts --select S --ignore S101,S110,S603,S607` | 0 | GREEN: no secret findings, no known dependency vulnerabilities, and security lint passed |
 | `impact` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | R3; one production file, two directly related test files, no critical-path escalation or discovered dynamic edge |
+| `pr-ready` | `uv run python -m scripts.quality.pr_ready 136 --base origin/main` | 0 | READY: all 14 required R3 gates pass and the evidence covers code HEAD `eac567614a62ed98dee06bcf497b24e3c08a983c` |
 
 ## Coverage and mutation
 
@@ -48,6 +49,9 @@ required gate blocks readiness even when another row passes.
   `_write_approved`. Dedicated production-`arm` tests now bind both exact-risk sites; the conflict
   branch runs at R0, R1, R2, and R3; withdrawal is composed with a refused Start; and Start's
   removal short-circuit is pinned to the post-move state. No production behavior changed.
+- Review `4826126351` completed the full re-review with no blocker, defect, or suspected defect.
+  Its recommended R5-N01 note is fixed: the conflict fixture now uses the real em dash and asserts
+  that every parametrized body differs from `_VALID_BODY`, so a dead substitution cannot pass.
 - Green Board/registry integration suite: 82 passed.
 - Full deterministic suite: 1698 passed and 1 skipped; the skip is the pre-existing Mutmut
   console-script availability guard on Windows.
@@ -66,10 +70,8 @@ required gate blocks readiness even when another row passes.
 
 ## Deferred checks
 
-- Claude's complete independent R3 re-review of `884d190` has not run. The pull request must remain
-  draft and `pr-ready` must remain NOT READY until the reviewer records it.
 - Per Jan's explicit scope, this remediation does not decide R-04/decision 2 (`withdraw` plus
   `arm` without a board trace), decision 1 (constitutional versus contract wording), decision 3
   (`board.py` as a mutation target), or N4 (tracked by #134).
 - Required GitHub checks run on the pushed draft head. Their results are not represented as local
-  successes here; independent review remains the only intentionally incomplete readiness step.
+  successes here; no required local readiness step remains deferred.
