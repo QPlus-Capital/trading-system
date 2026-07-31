@@ -8,6 +8,7 @@ rules, so this page records the active configuration and remains its audit refer
 - Use one active branch ruleset named `main`; target the default branch `main`.
 - Set enforcement to `Active`, with no bypass actors (including repository administrators).
 - Enable **Restrict deletions** and **Block force pushes**.
+- Set allowed merge methods to `squash` only.
 - Do not enable **Require linear history**. The pull-request rule permits squash-only merging, which
   produces linear history without a separate ruleset rule.
 - Enable **Require a pull request before merging** with zero required approvals. GitHub does not
