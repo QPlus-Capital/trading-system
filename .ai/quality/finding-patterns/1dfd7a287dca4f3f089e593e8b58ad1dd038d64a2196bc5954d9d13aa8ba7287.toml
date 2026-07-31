@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "no-retry-contract-tested-above-the-retrying-boundary"
+severity = "Suspected defect"
+affected = "scripts/quality/board.py::GhBoardGateway._run"
+root_cause = "the no-retry test injected at BoardService.issue_state, above the subprocess boundary where a retry could actually be introduced"
+why_tests_missed = "a service fake counted state reads but never observed gh subprocess invocations"
+regression = "tests/test_quality_board.py::test_rate_limit_boundary_never_retries_the_failed_graphql_query"
+generalized = "a no-retry invariant must count attempts at the lowest boundary capable of reissuing the failed operation"
+workflow_change = "the subprocess fake asserts one failed GraphQL command and separately identifies the single permitted reset lookup"

@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "evidence-head-is-not-a-real-tested-commit"
+severity = "Defect"
+affected = ".ai/tasks/*/evidence.md HEAD binding"
+root_cause = "a hand-entered full SHA shared a real short prefix but did not identify any git object, and a later material artifact edit followed the intended tested commit"
+why_tests_missed = "the syntax validator accepted a hexadecimal SHA without proving object existence or evidence-only ancestry"
+regression = "just pr-ready ISSUE-138 origin/main validates a real material HEAD followed only by evidence.md"
+generalized = "evidence must name an existing tested commit and every later commit must be limited to the allowed evidence-only path"
+workflow_change = "the material remediation is committed first and the final commit changes only evidence.md with the verified SHA"

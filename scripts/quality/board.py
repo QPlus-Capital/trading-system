@@ -34,6 +34,9 @@ query BoardIssueSnapshot(
       body
       url
       labels(first: 100) {
+        pageInfo {
+          hasNextPage
+        }
         nodes {
           name
         }
@@ -73,24 +76,6 @@ query BoardIssueSnapshot(
   }
 }
 """
-_PROJECT_QUERY = """
-query BoardProjectMetadata($projectOwner: String!, $projectNumber: Int!) {
-  organization(login: $projectOwner) {
-    project: projectV2(number: $projectNumber) {
-      id
-      statusField: field(name: "Status") {
-        ... on ProjectV2SingleSelectField {
-          id
-          options {
-            id
-            name
-          }
-        }
-      }
-    }
-  }
-}
-"""
 
 
 class BoardError(RuntimeError):
@@ -98,23 +83,26 @@ class BoardError(RuntimeError):
 
 
 class BoardRateLimitError(BoardError):
-    """GitHub GraphQL exhaustion with same-response reset and confirmed progress."""
+    """GitHub API exhaustion with reset time and confirmed progress."""
 
     def __init__(
         self,
         reset_at: datetime | None,
         applied_steps: Sequence[str] = (),
+        safety_note: str | None = None,
     ) -> None:
         self.reset_at = reset_at
         self.applied_steps = tuple(applied_steps)
+        self.safety_note = safety_note
         reset = (
             reset_at.astimezone(UTC).isoformat().replace("+00:00", "Z")
             if reset_at is not None
             else "unavailable"
         )
         steps = ", ".join(self.applied_steps) or "none"
+        note = f"; safety state: {safety_note}" if safety_note is not None else ""
         super().__init__(
-            f"GitHub GraphQL rate limit exhausted; reset at {reset}; applied steps: {steps}"
+            f"GitHub API rate limit exhausted; reset at {reset}; applied steps: {steps}{note}"
         )
 
     def with_applied_steps(self, applied_steps: Sequence[str]) -> BoardRateLimitError:
@@ -122,7 +110,12 @@ class BoardRateLimitError(BoardError):
         return BoardRateLimitError(
             self.reset_at,
             (*applied_steps, *self.applied_steps),
+            self.safety_note,
         )
+
+    def with_safety_note(self, safety_note: str) -> BoardRateLimitError:
+        """Return the same exhaustion with an explicit unverified safety state."""
+        return BoardRateLimitError(self.reset_at, self.applied_steps, safety_note)
 
 
 @dataclass(frozen=True)
@@ -134,6 +127,7 @@ class IssueState:
     body: str
     labels: frozenset[str]
     status: str | None
+    on_project: bool = True
 
 
 class BoardGateway(Protocol):
@@ -245,6 +239,74 @@ class GhBoardGateway:
             raise BoardError("GitHub API response omitted its JSON body")
         return body
 
+    @classmethod
+    def _graphql_error_types(cls, output: str) -> frozenset[str]:
+        try:
+            payload = json.loads(cls._response_body(output))
+        except (BoardError, json.JSONDecodeError):
+            return frozenset()
+        if not isinstance(payload, dict):
+            return frozenset()
+        errors = payload.get("errors")
+        if not isinstance(errors, list):
+            return frozenset()
+        return frozenset(
+            str(error.get("type"))
+            for error in errors
+            if isinstance(error, dict) and isinstance(error.get("type"), str)
+        )
+
+    @staticmethod
+    def _remaining_is_zero(output: str) -> bool:
+        return re.search(r"(?im)^x-ratelimit-remaining:\s*0\s*$", output) is not None
+
+    def _rate_limit_status_reset(self, resource: str) -> datetime | None:
+        try:
+            completed = subprocess.run(
+                ["gh", "api", "rate_limit"],
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if completed.returncode != 0:
+            return None
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(payload, dict):
+            return None
+        resources = payload.get("resources")
+        if not isinstance(resources, dict):
+            return None
+        budget = resources.get(resource)
+        if not isinstance(budget, dict):
+            return None
+        reset = budget.get("reset")
+        if type(reset) is not int:
+            return None
+        try:
+            return datetime.fromtimestamp(reset, tz=UTC)
+        except (OverflowError, OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _safe_error_detail(stdout: str, stderr: str) -> str | None:
+        detail = " ".join(f"{stdout}\n{stderr}".split())
+        if not detail:
+            return None
+        if re.search(
+            r"https?://|(?:token|credential|secret)|\b\d{6,10}\b",
+            detail,
+            re.IGNORECASE,
+        ):
+            return None
+        return detail[:500]
+
     def _run(self, args: Sequence[str], *, include_headers: bool = False) -> str:
         self._ensure_project_scope()
         completed = subprocess.run(
@@ -258,15 +320,30 @@ class GhBoardGateway:
         if completed.returncode != 0:
             raw = f"{completed.stdout}\n{completed.stderr}"
             combined = raw.casefold()
-            if "rate limit" in combined and (
-                "graphql" in combined or "x-ratelimit-remaining: 0" in combined
-            ):
-                raise BoardRateLimitError(self._rate_limit_reset(raw))
+            error_types = self._graphql_error_types(completed.stdout) | self._graphql_error_types(
+                completed.stderr
+            )
+            structured_graphql = "RATE_LIMITED" in error_types
+            structured_header = self._remaining_is_zero(raw)
+            english_fallback = "rate limit" in combined
+            if structured_graphql or structured_header or english_fallback:
+                resource = (
+                    "graphql"
+                    if structured_graphql or tuple(args[:2]) == ("api", "graphql")
+                    else "core"
+                )
+                reset_at = self._rate_limit_reset(raw)
+                if reset_at is None:
+                    reset_at = self._rate_limit_status_reset(resource)
+                raise BoardRateLimitError(reset_at)
             if "project" in combined and (
                 "scope" in combined or "resource not accessible" in combined or "404" in combined
             ):
                 raise BoardError(_PROJECT_SCOPE_ERROR)
-            raise BoardError("GitHub board operation failed; inspect the local gh error.")
+            detail = self._safe_error_detail(completed.stdout, completed.stderr)
+            if detail is None:
+                raise BoardError("GitHub board operation failed; inspect the local gh error.")
+            raise BoardError(f"GitHub board operation failed: {detail}")
         if include_headers:
             return self._response_body(completed.stdout)
         return completed.stdout
@@ -293,9 +370,13 @@ class GhBoardGateway:
         payload = self._json(args, name, include_headers=True)
         return _object(payload.get("data"), f"{name} data")
 
-    @staticmethod
-    def _parse_project(data: Mapping[str, object]) -> _Project:
-        organization = _object(data.get("organization"), "GitHub organization")
+    def _parse_project(self, data: Mapping[str, object]) -> _Project:
+        raw_organization = data.get("organization")
+        if not isinstance(raw_organization, dict):
+            raise BoardError(
+                "--owner must name a GitHub organization; user-owned projects are unsupported"
+            )
+        organization = cast(dict[str, object], raw_organization)
         project = _object(organization.get("project"), "GitHub project")
         status_field = _object(project.get("statusField"), "project Status field")
         options: dict[str, str] = {}
@@ -313,15 +394,7 @@ class GhBoardGateway:
 
     def _project(self) -> _Project:
         if self._project_cache is None:
-            data = self._graphql(
-                _PROJECT_QUERY,
-                {
-                    "projectOwner": self.owner,
-                    "projectNumber": str(self.project_number),
-                },
-                "GitHub project metadata",
-            )
-            self._project_cache = self._parse_project(data)
+            raise BoardError("issue state must load project metadata before board mutation")
         return self._project_cache
 
     def _issue_snapshot(self, issue: int) -> IssueState:
@@ -350,6 +423,15 @@ class GhBoardGateway:
             raise BoardError(f"issue #{issue} does not exist in {self.repository}")
         issue_data = _object(raw_issue, "GitHub issue")
         labels_data = _object(issue_data.get("labels"), "issue labels")
+        label_page_info = _object(labels_data.get("pageInfo"), "issue label pagination")
+        labels_have_next_page = label_page_info.get("hasNextPage")
+        if not isinstance(labels_have_next_page, bool):
+            raise BoardError("GitHub response omitted issue label pagination state")
+        if labels_have_next_page:
+            raise BoardError(
+                f"issue #{issue} label connection exceeds one bounded query; "
+                "permit state is unverifiable"
+            )
         labels = frozenset(
             _text(_object(item, "issue label"), "name")
             for item in _array(labels_data.get("nodes"), "issue label nodes")
@@ -391,6 +473,7 @@ class GhBoardGateway:
             body=str(issue_data.get("body", "")),
             labels=labels,
             status=status,
+            on_project=bool(matching_items),
         )
 
     def status_names(self) -> frozenset[str]:
@@ -537,14 +620,14 @@ class BoardService:
         applied_steps: list[str] = []
         try:
             initial = self._state_and_verify(issue)
-            if initial.status is None:
+            if not initial.on_project:
                 self._apply(
                     applied_steps,
                     "add issue to project",
                     lambda: self.gateway.add_issue(issue),
                 )
             state = self.gateway.issue_state(issue)
-            if state.status is None:
+            if not state.on_project:
                 raise BoardError(f"issue #{issue} was not added to the project")
             return state
         except BoardRateLimitError as exc:
@@ -556,7 +639,7 @@ class BoardService:
             state = self._state_and_verify(issue)
             if target == "Done":
                 raise BoardError("Done is set only by project automation after merge")
-            if state.status is None:
+            if not state.on_project:
                 raise BoardError("move refused: " + self._observed_status(state))
             allowed = {
                 transition.target
@@ -572,16 +655,7 @@ class BoardService:
             had_permit = "approved" in state.labels
             withdrawn = state
             if had_permit:
-                self._apply(
-                    applied_steps,
-                    "remove approved",
-                    lambda: self.gateway.remove_label(issue, "approved"),
-                )
-                withdrawn = self.gateway.issue_state(issue)
-                if "approved" in withdrawn.labels:
-                    raise BoardError(
-                        "permit removal did not take effect: observed approved=present"
-                    )
+                withdrawn = self._remove_approved_and_verify(issue, state, applied_steps)
             if withdrawn.status != state.status:
                 raise BoardError(
                     "status changed while withdrawing the permit: "
@@ -594,6 +668,8 @@ class BoardService:
                     step,
                     lambda: self.gateway.set_status(issue, target),
                 )
+            except BoardRateLimitError:
+                raise
             except BoardError as exc:
                 if had_permit:
                     raise BoardError(
@@ -605,9 +681,7 @@ class BoardService:
             if result.status != target:
                 raise BoardError(f"status update did not produce {target!r}")
             if "approved" in result.labels:
-                raise BoardError(
-                    "status update retained a stale permit: observed approved=present"
-                )
+                raise BoardError("status update retained a stale permit: observed approved=present")
             return result
         except BoardRateLimitError as exc:
             raise self._progress_error(exc, applied_steps) from exc
@@ -618,24 +692,14 @@ class BoardService:
         applied_steps: list[str] = []
         try:
             state = self._state_and_verify(issue)
-            if state.status is None:
+            if not state.on_project:
                 raise BoardError("withdraw refused: observed project status=absent")
             result = state
             if "approved" in state.labels:
-                self._apply(
-                    applied_steps,
-                    "remove approved",
-                    lambda: self.gateway.remove_label(issue, "approved"),
-                )
-                result = self.gateway.issue_state(issue)
-                if "approved" in result.labels:
-                    raise BoardError(
-                        "permit removal did not take effect: observed approved=present"
-                    )
+                result = self._remove_approved_and_verify(issue, state, applied_steps)
             if result.status != state.status:
                 raise BoardError(
-                    "status changed while withdrawing the permit: "
-                    + self._observed_status(result)
+                    "status changed while withdrawing the permit: " + self._observed_status(result)
                 )
             return result
         except BoardRateLimitError as exc:
@@ -703,14 +767,25 @@ class BoardService:
 
     @staticmethod
     def _observed_status(state: IssueState) -> str:
-        if state.status is None:
+        if not state.on_project:
             return "observed project status=absent"
+        if state.status is None:
+            return "observed project status=unset"
         return f"observed status={state.status!r}"
 
-    def _remove_approved_and_verify(self, issue: int, state: IssueState) -> IssueState:
+    def _remove_approved_and_verify(
+        self,
+        issue: int,
+        state: IssueState,
+        applied_steps: list[str],
+    ) -> IssueState:
         if "approved" not in state.labels:
             return state
-        self.gateway.remove_label(issue, "approved")
+        self._apply(
+            applied_steps,
+            "remove approved",
+            lambda: self.gateway.remove_label(issue, "approved"),
+        )
         result = self.gateway.issue_state(issue)
         if "approved" in result.labels:
             raise BoardError("permit removal did not take effect: observed approved=present")
@@ -720,6 +795,7 @@ class BoardService:
         """Consume the Start guard: status first, permit removal second."""
 
         applied_steps: list[str] = []
+        permit_guard_passed = False
         try:
             state = self._state_and_verify(issue)
             guards = {guard.name: guard for guard in self.contract.builder_guards}
@@ -735,6 +811,7 @@ class BoardService:
                 failures.append(f"observed risk labels={sorted(risk_labels)!r}")
             if failures:
                 raise BoardError("Start requirements not met: " + "; ".join(failures))
+            permit_guard_passed = True
             transitions = [
                 item
                 for item in self.contract.transitions
@@ -756,19 +833,13 @@ class BoardService:
                 raise BoardError(f"build-start status update did not produce {target!r}")
             result = moved
             if "approved" in moved.labels:
-                self._apply(
-                    applied_steps,
-                    "remove approved",
-                    lambda: self.gateway.remove_label(issue, "approved"),
-                )
-                result = self.gateway.issue_state(issue)
-                if "approved" in result.labels:
-                    raise BoardError(
-                        "permit removal did not take effect: observed approved=present"
-                    )
+                result = self._remove_approved_and_verify(issue, moved, applied_steps)
             return result
         except BoardRateLimitError as exc:
-            raise self._progress_error(exc, applied_steps) from exc
+            progress = self._progress_error(exc, applied_steps)
+            if permit_guard_passed and "remove approved" not in progress.applied_steps:
+                progress = progress.with_safety_note("approved removal is unconfirmed")
+            raise progress from exc
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -819,9 +890,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (BoardError, OSError, subprocess.SubprocessError) as exc:
         print(f"Board operation refused: {exc}", file=sys.stderr)
         return 2
+    displayed_status = (
+        state.status
+        if state.status is not None
+        else ("unset" if state.on_project else "not on project")
+    )
     print(
-        f"#{state.number}: status={state.status or 'not on project'} "
-        f"labels={','.join(sorted(state.labels)) or '-'}"
+        f"#{state.number}: status={displayed_status} labels={','.join(sorted(state.labels)) or '-'}"
     )
     return 0
 

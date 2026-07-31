@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "fault-injection-fixture-cannot-reach-write-error-handlers"
+severity = "Suspected defect"
+affected = "tests/test_quality_board.py::FakeGateway and BoardService progress handlers"
+root_cause = "the fake could raise BoardError on writes and BoardRateLimitError on reads but could not inject typed exhaustion into any write"
+why_tests_missed = "four progress handlers and the exact move defect remained unexecuted despite broad service coverage"
+regression = "tests/test_quality_board.py::test_arm_write_rate_limits_report_only_completed_steps and tests/test_quality_board.py::test_other_write_handlers_preserve_rate_limit_type"
+generalized = "a safety fixture must inject each exception class at every mutation boundary whose recovery or reporting differs"
+workflow_change = "FakeGateway.rate_limit_on raises typed exhaustion before state mutation and parameterized tests cover every ordered write step"

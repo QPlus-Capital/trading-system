@@ -10,7 +10,8 @@
 - `scripts/quality/board.py::main` distinguishes rate-limit exhaustion from an ordinary board-state
   refusal by exception type, message, and exit status.
 - `tests/test_quality_board.py` gains a counting `gh` fake over small and large projects plus
-  rate-limit, partial-progress, fresh-state, and secret-redaction regressions.
+  rate-limit, partial-progress, fresh-state, connection-boundary, real-write, and secret-redaction
+  regressions.
 
 ## Transitive impact
 
@@ -29,16 +30,18 @@
   ordering, and builder guards.
 - GitHub is the sole board-state source. Only project id, Status field id, option ids, and item ids
   already observed within the current command may be cached; labels and status are always re-read.
-- `gh api graphql --include` must supply the rate-limit reset header in the same failed response.
-  No fallback query, retry, or backoff is permitted after exhaustion.
+- Rate limits are classified from GraphQL error types and response headers before English text. If
+  the failed response has no reset header, exactly one `gh api rate_limit` lookup obtains the reset
+  without retrying the failed operation.
 - Issue ownership is bound to `repository`; project membership is bound to the configured project
-  id, not to the first project item returned for the issue.
+  id, not to the first project item returned for the issue. `--owner` intentionally names an
+  organization because the project query is organization-bound.
 
 ## Unknown or dynamic edges
 
 - GitHub's live GraphQL schema, response headers, and point accounting are external. Tests execute
-  the exact query argument shape against a counting fake; one bounded manual `status` run is
-  deferred until after deterministic verification.
+  the exact query argument shape against a counting fake. The fake counts API calls, not billed
+  GraphQL points; the bounded manual `status` observation is the separate point measurement.
 - A transport failure after GitHub applied a mutation but before the CLI received success remains
   externally ambiguous. Progress reporting names only steps whose calls returned successfully and
   never claims the interrupted step.

@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "external-identity-filter-and-query-bounds-are-unpinned"
+severity = "Suspected defect"
+affected = "scripts/quality/board.py issue-scoped GraphQL query and configured project selection"
+root_cause = "tests returned one matching project item and therefore could not distinguish the configured project from a foreign membership or detect narrowed query parameters"
+why_tests_missed = "the counting fake varied project size but not project identity, archive scope, connection bounds, owner, or project number"
+regression = "tests/test_quality_board.py::test_project_membership_is_selected_by_configured_project_id and tests/test_quality_board.py::test_issue_snapshot_query_keeps_all_bounded_connection_parameters"
+generalized = "a bounded external query must pin every identity filter and completeness parameter whose drift can redirect or hide a mutation target"
+workflow_change = "fixtures include foreign and matching memberships and assert the exact bounded query parameters"

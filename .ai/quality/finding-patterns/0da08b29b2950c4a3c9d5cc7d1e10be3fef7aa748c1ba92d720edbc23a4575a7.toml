@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "write-rate-limit-cannot-carry-reset-metadata"
+severity = "Defect"
+affected = "scripts/quality/board.py::GhBoardGateway write operations"
+root_cause = "reset extraction depended on headers requested only by GraphQL reads, so every write exhaustion structurally produced reset unavailable"
+why_tests_missed = "tests simulated exhaustion only on a read response that already carried the reset header"
+regression = "tests/test_quality_board.py::test_write_rate_limit_fetches_reset_once_without_retrying_write and tests/test_quality_board.py::test_structured_rate_limit_signals_precede_english_text"
+generalized = "an error contract that requires server metadata must make that metadata reachable on every covered transport path without retrying the failed operation"
+workflow_change = "a detected exhaustion performs one separate gh api rate_limit lookup and never retries the failed write"

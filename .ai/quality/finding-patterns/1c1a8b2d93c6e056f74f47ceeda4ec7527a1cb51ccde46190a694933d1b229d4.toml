@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "real-adapter-write-surface-is-untested"
+severity = "Suspected defect"
+affected = "scripts/quality/board.py::GhBoardGateway mutation methods and BoardService.add"
+root_cause = "service tests used a protocol fake while subprocess tests exercised reads only, leaving command construction and changed add idempotence outside executable coverage"
+why_tests_missed = "the counting gh fake rejected every write command and represented only a fixed existing project item"
+regression = "tests/test_quality_board.py::test_real_gateway_write_paths_preserve_fresh_verification_reads and tests/test_quality_board.py::test_existing_project_item_is_not_added_again"
+generalized = "when an adapter's write semantics change, at least one stateful boundary test must drive every real command and verify both mutation order and read-back"
+workflow_change = "a stateful gh fake executes add, arm, move, and start and pins each complete command sequence"

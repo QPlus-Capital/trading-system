@@ -69,10 +69,14 @@ class _CountingGh:
         project_size: int,
         status: str | None = "Ready to Implement",
         has_more_project_items: bool = False,
+        has_more_labels: bool = False,
+        memberships: list[tuple[str, str | None]] | None = None,
     ) -> None:
         self.project_size = project_size
         self.status = status
         self.has_more_project_items = has_more_project_items
+        self.has_more_labels = has_more_labels
+        self.memberships = memberships
         self.query_count = 0
         self.metadata_queries = 0
         self.state_queries = 0
@@ -155,20 +159,25 @@ class _CountingGh:
         }
 
     def _graphql_result(self, *, include_project: bool) -> _Completed:
-        project_items = []
-        if self.status is not None:
-            project_items.append(
-                {
-                    "id": "ITEM",
-                    "project": {"id": "PROJECT", "number": 1},
-                    "status": {"name": self.status},
-                }
-            )
+        memberships = self.memberships
+        if memberships is None:
+            memberships = [] if self.status is None else [("PROJECT", self.status)]
+        project_items = [
+            {
+                "id": f"ITEM_{index}",
+                "project": {"id": project_id, "number": index + 1},
+                "status": None if status is None else {"name": status},
+            }
+            for index, (project_id, status) in enumerate(memberships)
+        ]
         data: dict[str, object] = {
             "repository": {
                 "issue": {
                     **self._issue(),
-                    "labels": {"nodes": [{"name": "risk:R3"}]},
+                    "labels": {
+                        "nodes": [{"name": "risk:R3"}],
+                        "pageInfo": {"hasNextPage": self.has_more_labels},
+                    },
                     "projectItems": {
                         "pageInfo": {"hasNextPage": self.has_more_project_items},
                         "nodes": project_items,
@@ -221,6 +230,7 @@ class FakeGateway:
         sticky_add_labels: set[str] | None = None,
         status_names: set[str] | None = None,
         on_write: dict[str, _WriteHook] | None = None,
+        rate_limit_on: str | None = None,
     ) -> None:
         contract_names = {item.name for item in load_contract().statuses}
         self.available_statuses = status_names if status_names is not None else contract_names
@@ -230,12 +240,14 @@ class FakeGateway:
             body=_VALID_BODY,
             labels=frozenset(labels if labels is not None else {"risk:R3"}),
             status=status,
+            on_project=status is not None,
         )
         self.fail_on = fail_on
         self.sticky_remove = sticky_remove
         self.sticky_status = sticky_status
         self.sticky_add_labels = frozenset(sticky_add_labels or set())
         self.on_write = dict(on_write or {})
+        self.rate_limit_on = rate_limit_on
         self.calls: list[tuple[str, str]] = []
 
     def status_names(self) -> frozenset[str]:
@@ -274,6 +286,8 @@ class FakeGateway:
 
     def _write(self, operation: str, value: str) -> None:
         self.calls.append((operation, value))
+        if self.rate_limit_on == operation:
+            raise board.BoardRateLimitError(datetime(2026, 7, 30, 13, 0, 4, tzinfo=UTC))
         if self.fail_on == operation:
             raise BoardError(f"injected failure: {operation}")
         hook = self.on_write.pop(operation, None)
@@ -371,7 +385,7 @@ def test_missing_project_scope_has_one_actionable_error(
         BoardError,
         match=r"GitHub token needs the `project` scope; run `gh auth refresh -s project`\.",
     ):
-        gateway.status_names()
+        gateway.issue_state(110)
 
 
 def test_public_command_surface_cannot_done_merge_approve_or_create_pr() -> None:
@@ -1038,6 +1052,8 @@ def test_workflow_documents_the_complete_public_board_command_surface() -> None:
     section = text.split("### Board command surface", 1)[1].split("## The labels", 1)[0]
     documented = {line.split("`", 2)[1] for line in section.splitlines() if line.startswith("| `")}
     assert documented == set(PUBLIC_COMMANDS)
+    assert "exit `3`" in section
+    assert "not a retry signal" in section
 
 
 def test_withdraw_cli_dispatches_to_board_service(
@@ -1084,6 +1100,8 @@ def test_cli_refusal_returns_two_and_keeps_the_stable_prefix(
 
     assert main(["start", "110"]) == 2
     assert capsys.readouterr().err == "Board operation refused: refused issue 110\n"
+
+
 def test_command_query_count_is_independent_of_project_size(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1165,6 +1183,7 @@ def test_rate_limit_after_a_write_reports_only_confirmed_steps() -> None:
 
     assert caught.value.applied_steps == ("move the card to Implementing",)
     assert "applied steps: move the card to Implementing" in str(caught.value)
+    assert "approved removal is unconfirmed" in str(caught.value)
     assert gateway.state.status == "Implementing"
     assert "approved" in gateway.state.labels
 
@@ -1189,7 +1208,49 @@ def test_absent_issue_uses_one_query_and_returns_no_status(
     state = BoardService(GhBoardGateway()).status(110)
 
     assert state.status is None
+    assert not state.on_project
     assert runner.query_count == 1
+
+
+def test_project_item_with_unset_status_is_not_reported_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _CountingGh(
+        project_size=5,
+        status=None,
+        memberships=[("PROJECT", None)],
+    )
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    state = GhBoardGateway().issue_state(110)
+
+    assert state.on_project
+    assert state.status is None
+
+
+def test_cli_distinguishes_unset_status_from_absent_project_item(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class StubService:
+        def __init__(self, gateway: object) -> None:
+            del gateway
+
+        def status(self, issue: int) -> IssueState:
+            return IssueState(
+                number=issue,
+                url="https://example.invalid/issue",
+                body="",
+                labels=frozenset(),
+                status=None,
+                on_project=True,
+            )
+
+    monkeypatch.setattr("scripts.quality.board.GhBoardGateway", lambda **kwargs: object())
+    monkeypatch.setattr("scripts.quality.board.BoardService", StubService)
+
+    assert main(["status", "110"]) == 0
+    assert capsys.readouterr().out == "#110: status=unset labels=-\n"
 
 
 def test_incomplete_issue_project_membership_refuses_without_retry(
@@ -1264,3 +1325,437 @@ def test_rate_limit_and_state_refusals_do_not_expose_secrets(
     assert "ghp_not_a_real_token" not in combined
     assert "298255040" not in combined
     assert "?token=secret" not in combined
+
+
+class _FailureGh:
+    def __init__(self, failure: str) -> None:
+        self.failure = failure
+        self.commands: list[tuple[str, ...]] = []
+
+    def __call__(self, command: list[str], **_: object) -> _Completed:
+        self.commands.append(tuple(command))
+        if command[1:4] == ["auth", "status", "--hostname"]:
+            return _Completed(stdout="Token scopes: 'repo', 'project'")
+        if command[1:3] == ["api", "rate_limit"]:
+            return _Completed(
+                stdout=json.dumps(
+                    {
+                        "resources": {
+                            "core": {"remaining": 0, "reset": 1785416404},
+                            "graphql": {"remaining": 0, "reset": 1785416404},
+                        }
+                    }
+                )
+            )
+        if self.failure == "graphql-structured":
+            return _Completed(
+                returncode=1,
+                stderr=json.dumps({"errors": [{"type": "RATE_LIMITED"}]}),
+            )
+        if self.failure == "rest-header":
+            return _Completed(
+                returncode=1,
+                stdout="HTTP/2.0 403 Forbidden\nx-ratelimit-remaining: 0\n\n",
+                stderr="request refused",
+            )
+        if self.failure == "rest-text":
+            return _Completed(returncode=1, stderr="HTTP 403: API rate limit exceeded")
+        if self.failure == "generic":
+            return _Completed(returncode=1, stderr="permission denied by repository policy")
+        raise AssertionError(self.failure)
+
+
+class _StatefulGh:
+    def __init__(
+        self,
+        *,
+        status: str | None = "Ready to Implement",
+        labels: set[str] | None = None,
+        member: bool = True,
+    ) -> None:
+        self.status = status
+        self.labels = set(labels if labels is not None else {"risk:R3"})
+        self.member = member
+        self.body = _VALID_BODY
+        self.commands: list[tuple[str, ...]] = []
+
+    def __call__(self, command: list[str], **_: object) -> _Completed:
+        self.commands.append(tuple(command))
+        args = command[1:]
+        if args[:3] == ["auth", "status", "--hostname"]:
+            return _Completed(stdout="Token scopes: 'repo', 'project'")
+        if args[:2] == ["api", "graphql"]:
+            form = _CountingGh._form(args)
+            include_project = form["includeProject"] == "true"
+            nodes = []
+            if self.member:
+                nodes.append(
+                    {
+                        "id": "ITEM",
+                        "project": {"id": "PROJECT", "number": 1},
+                        "status": None if self.status is None else {"name": self.status},
+                    }
+                )
+            data: dict[str, object] = {
+                "repository": {
+                    "issue": {
+                        "body": self.body,
+                        "url": "https://github.com/QPlus-Capital/trading-system/issues/110",
+                        "labels": {
+                            "nodes": [{"name": label} for label in sorted(self.labels)],
+                            "pageInfo": {"hasNextPage": False},
+                        },
+                        "projectItems": {
+                            "pageInfo": {"hasNextPage": False},
+                            "nodes": nodes,
+                        },
+                    }
+                }
+            }
+            if include_project:
+                data["organization"] = {
+                    "project": {
+                        "id": "PROJECT",
+                        "statusField": {
+                            "id": "STATUS_FIELD",
+                            "options": _CountingGh._options(),
+                        },
+                    }
+                }
+            return _Completed(
+                stdout=(
+                    "HTTP/2.0 200 OK\nx-ratelimit-reset: 1785416404\n\n"
+                    + json.dumps({"data": data})
+                )
+            )
+        if args[:2] == ["issue", "edit"]:
+            if "--body" in args:
+                self.body = args[args.index("--body") + 1]
+            if "--add-label" in args:
+                self.labels.add(args[args.index("--add-label") + 1])
+            if "--remove-label" in args:
+                self.labels.discard(args[args.index("--remove-label") + 1])
+            return _Completed()
+        if args[:2] == ["project", "item-edit"]:
+            option_id = args[args.index("--single-select-option-id") + 1]
+            options = {item["id"]: item["name"] for item in _CountingGh._options()}
+            self.status = options[option_id]
+            return _Completed()
+        if args[:2] == ["project", "item-add"]:
+            self.member = True
+            self.status = "Backlog"
+            return _Completed(stdout=json.dumps({"id": "ITEM"}))
+        raise AssertionError(f"unexpected gh command: {command}")
+
+
+def test_move_rate_limited_after_withdrawal_preserves_type_and_progress() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        rate_limit_on="move the card to Blocked",
+    )
+
+    with pytest.raises(board.BoardRateLimitError) as caught:
+        BoardService(gateway).move(110, "Blocked")
+
+    assert caught.value.reset_at == datetime(2026, 7, 30, 13, 0, 4, tzinfo=UTC)
+    assert caught.value.applied_steps == ("remove approved",)
+    assert "approved" not in gateway.state.labels
+    assert gateway.state.status == "Ready to Implement"
+
+
+def test_move_rate_limit_returns_distinct_cli_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class StubService:
+        def __init__(self, gateway: object) -> None:
+            del gateway
+
+        def move(self, issue: int, status: str) -> IssueState:
+            del issue, status
+            raise board.BoardRateLimitError(
+                datetime(2026, 7, 30, 13, 0, 4, tzinfo=UTC),
+                ("remove approved",),
+            )
+
+    monkeypatch.setattr("scripts.quality.board.GhBoardGateway", lambda **kwargs: object())
+    monkeypatch.setattr("scripts.quality.board.BoardService", StubService)
+
+    assert main(["move", "110", "Blocked"]) == 3
+    assert "applied steps: remove approved" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("rate_limit_on", "expected_steps"),
+    (
+        ("write the final issue body", ()),
+        ("add risk:R3", ("write the final issue body",)),
+        (
+            "move the card to Ready to Implement",
+            ("write the final issue body", "add risk:Rn"),
+        ),
+        (
+            "add approved",
+            (
+                "write the final issue body",
+                "add risk:Rn",
+                "move the card to Ready to Implement",
+            ),
+        ),
+    ),
+)
+def test_arm_write_rate_limits_report_only_completed_steps(
+    rate_limit_on: str,
+    expected_steps: tuple[str, ...],
+) -> None:
+    gateway = FakeGateway(labels=set(), rate_limit_on=rate_limit_on)
+
+    with pytest.raises(board.BoardRateLimitError) as caught:
+        BoardService(gateway).arm(110, body=_VALID_BODY, risk_class="R3")
+
+    assert caught.value.applied_steps == expected_steps
+
+
+@pytest.mark.parametrize("operation", ("add", "withdraw"))
+def test_other_write_handlers_preserve_rate_limit_type(operation: str) -> None:
+    if operation == "add":
+        gateway = FakeGateway(status=None, rate_limit_on="add issue")
+    else:
+        gateway = FakeGateway(
+            labels={"approved", "risk:R3"},
+            rate_limit_on="remove approved",
+        )
+
+    with pytest.raises(board.BoardRateLimitError) as caught:
+        if operation == "add":
+            BoardService(gateway).add(110)
+        else:
+            BoardService(gateway).withdraw(110)
+
+    assert caught.value.applied_steps == ()
+
+
+def test_write_rate_limit_fetches_reset_once_without_retrying_write(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _FailureGh("rest-text")
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    with pytest.raises(board.BoardRateLimitError) as caught:
+        GhBoardGateway().add_label(110, "approved")
+
+    assert caught.value.reset_at == datetime(2026, 7, 30, 13, 0, 4, tzinfo=UTC)
+    writes = [command for command in runner.commands if command[1:3] == ("issue", "edit")]
+    resets = [command for command in runner.commands if command[1:3] == ("api", "rate_limit")]
+    assert len(writes) == 1
+    assert len(resets) == 1
+
+
+@pytest.mark.parametrize("failure", ("graphql-structured", "rest-header"))
+def test_structured_rate_limit_signals_precede_english_text(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _FailureGh(failure)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+    gateway = GhBoardGateway()
+
+    with pytest.raises(board.BoardRateLimitError):
+        if failure == "graphql-structured":
+            gateway.issue_state(110)
+        else:
+            gateway.add_label(110, "approved")
+
+
+def test_generic_gh_refusal_keeps_safe_cli_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _FailureGh("generic")
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    with pytest.raises(BoardError, match="permission denied by repository policy"):
+        GhBoardGateway().add_label(110, "approved")
+
+
+def test_rate_limit_boundary_never_retries_the_failed_graphql_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _FailureGh("graphql-structured")
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    with pytest.raises(board.BoardRateLimitError):
+        GhBoardGateway().issue_state(110)
+
+    assert sum(command[1:3] == ("api", "graphql") for command in runner.commands) == 1
+
+
+def test_label_connection_truncation_refuses_before_permit_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _CountingGh(project_size=5, has_more_labels=True)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    with pytest.raises(BoardError, match="label connection"):
+        GhBoardGateway().issue_state(110)
+
+
+def test_project_membership_is_selected_by_configured_project_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    foreign = _CountingGh(
+        project_size=5,
+        memberships=[("OTHER", "Blocked")],
+    )
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", foreign)
+    assert GhBoardGateway().issue_state(110).status is None
+
+    both = _CountingGh(
+        project_size=5,
+        memberships=[("OTHER", "Blocked"), ("PROJECT", "Reviewing")],
+    )
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", both)
+    assert GhBoardGateway().issue_state(110).status == "Reviewing"
+
+
+def test_issue_snapshot_query_keeps_all_bounded_connection_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _CountingGh(project_size=5)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    GhBoardGateway(owner="QPlus-Capital").issue_state(110)
+
+    graphql = next(command for command in runner.commands if command[1:3] == ("api", "graphql"))
+    query = next(value.removeprefix("query=") for value in graphql if value.startswith("query="))
+    assert "labels(first: 100)" in query
+    assert "projectItems(first: 20, includeArchived: false)" in query
+    assert "projectOwner=QPlus-Capital" in graphql
+    assert "projectNumber=1" in graphql
+
+
+def test_owner_error_names_the_organization_only_contract() -> None:
+    with pytest.raises(BoardError, match="--owner.*GitHub organization"):
+        GhBoardGateway(owner="some-user")._parse_project({"organization": None})
+
+
+@pytest.mark.parametrize(
+    ("initial_status", "operation", "expected_commands"),
+    (
+        (
+            None,
+            "add",
+            (
+                ("auth", "status"),
+                ("api", "graphql"),
+                ("project", "item-add"),
+                ("api", "graphql"),
+            ),
+        ),
+        (
+            "Ready to Implement",
+            "arm",
+            (
+                ("auth", "status"),
+                ("api", "graphql"),
+                ("issue", "edit"),
+                ("issue", "edit"),
+                ("project", "item-edit"),
+                ("api", "graphql"),
+                ("issue", "edit"),
+                ("api", "graphql"),
+            ),
+        ),
+        (
+            "Ready to Implement",
+            "move",
+            (
+                ("auth", "status"),
+                ("api", "graphql"),
+                ("issue", "edit"),
+                ("api", "graphql"),
+                ("project", "item-edit"),
+                ("api", "graphql"),
+            ),
+        ),
+        (
+            "Ready to Implement",
+            "start",
+            (
+                ("auth", "status"),
+                ("api", "graphql"),
+                ("project", "item-edit"),
+                ("api", "graphql"),
+                ("issue", "edit"),
+                ("api", "graphql"),
+            ),
+        ),
+    ),
+)
+def test_real_gateway_write_paths_preserve_fresh_verification_reads(
+    initial_status: str | None,
+    operation: str,
+    expected_commands: tuple[tuple[str, str], ...],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    member = initial_status is not None
+    labels = {"approved", "risk:R3"} if operation in {"move", "start"} else {"risk:R3"}
+    runner = _StatefulGh(status=initial_status, labels=labels, member=member)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+    service = BoardService(GhBoardGateway())
+
+    if operation == "add":
+        state = service.add(110)
+        assert state.status == "Backlog"
+        assert sum(command[1:3] == ("project", "item-add") for command in runner.commands) == 1
+    elif operation == "arm":
+        state = service.arm(110, body=_VALID_BODY, risk_class="R3")
+        assert "approved" in state.labels
+    elif operation == "move":
+        state = service.move(110, "Specifying")
+        assert state.status == "Specifying"
+        assert "approved" not in state.labels
+    else:
+        state = service.start(110)
+        assert state.status == "Implementing"
+        assert "approved" not in state.labels
+
+    assert tuple(command[1:3] for command in runner.commands) == expected_commands
+
+
+@pytest.mark.parametrize("status", (None, "Backlog"))
+def test_existing_project_item_is_not_added_again(
+    status: str | None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _StatefulGh(status=status, member=True)
+    monkeypatch.setattr("scripts.quality.board.subprocess.run", runner)
+
+    state = BoardService(GhBoardGateway()).add(110)
+
+    assert state.on_project
+    assert state.status == status
+    assert not any(command[1:3] == ("project", "item-add") for command in runner.commands)
+
+
+def test_every_permit_removal_uses_the_single_verified_helper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[str] = []
+    original = BoardService._remove_approved_and_verify
+
+    def spy(
+        self: BoardService,
+        issue: int,
+        state: IssueState,
+        applied_steps: list[str],
+    ) -> IssueState:
+        calls.append(state.status or "absent")
+        return original(self, issue, state, applied_steps)
+
+    monkeypatch.setattr(BoardService, "_remove_approved_and_verify", spy)
+
+    BoardService(FakeGateway(labels={"approved", "risk:R3"})).move(110, "Specifying")
+    BoardService(FakeGateway(labels={"approved", "risk:R3"})).withdraw(110)
+    BoardService(FakeGateway(labels={"approved", "risk:R3"})).start(110)
+
+    assert calls == ["Ready to Implement", "Ready to Implement", "Implementing"]

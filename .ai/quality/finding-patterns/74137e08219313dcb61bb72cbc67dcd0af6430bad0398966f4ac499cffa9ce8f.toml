@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "evidence-claims-format-gate-success-without-formatting"
+severity = "Defect"
+affected = ".ai/tasks/*/evidence.md and changed Python files"
+root_cause = "the evidence row inferred formatting from a broader check whose recipe did not fail on formatter output"
+why_tests_missed = "ruff lint, mypy, and pytest were green while ruff format --check still reported both changed files"
+regression = "tests/test_quality_board.py plus an explicit uv run ruff format --check command recorded in task evidence"
+generalized = "a gate result must come from the exact command whose property is claimed, especially when a wrapper can print a warning and still exit zero"
+workflow_change = "the changed files are formatted first and the evidence records the direct formatter check"

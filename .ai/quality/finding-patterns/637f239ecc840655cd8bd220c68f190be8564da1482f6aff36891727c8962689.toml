@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "rate-limit-subclass-erased-by-base-exception-handler"
+severity = "Defect"
+affected = "scripts/quality/board.py::BoardService.move and typed CLI handling"
+root_cause = "an inner except BoardError caught BoardRateLimitError first and replaced it with a plain BoardError"
+why_tests_missed = "tests exercised typed exhaustion on start but could not inject it into move's status write"
+regression = "tests/test_quality_board.py::test_move_rate_limited_after_withdrawal_preserves_type_and_progress and tests/test_quality_board.py::test_move_rate_limit_returns_distinct_cli_exit"
+generalized = "specific exception semantics must be preserved through every broader base-class handler on an ordered safety mutation path"
+workflow_change = "the handler re-raises BoardRateLimitError unchanged so the outer progress wrapper preserves reset time and confirmed steps"

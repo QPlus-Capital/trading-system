@@ -41,6 +41,10 @@ Actions minutes: *item added → `Backlog`*, and *item closed → `Done`*.
 | `start` | Verify the Start guard, move to `Implementing`, and then consume the permit. |
 | `withdraw` | Remove and verify `approved` without changing the card's status. |
 
+Board commands exit `0` on success and `2` on a state or transport refusal. They exit `3`
+specifically on API rate-limit exhaustion. Exit `3` is not a retry signal: wait until the reported
+reset time.
+
 `withdraw` is the explicit permit-revocation operation. A later `arm` still runs issue-body
 validation, risk validation, all approval writes, and the final read-back. Moving an armed card to
 `Specifying` or `Blocked` also voids the permit; returning to `Ready to Implement` never restores it

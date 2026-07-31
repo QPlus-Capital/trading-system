@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #144 independent review 4827246531"
+defect_class = "paginated-permit-input-is-consumed-without-completeness-proof"
+severity = "Suspected defect"
+affected = "scripts/quality/board.py::_issue_snapshot label connection"
+root_cause = "the issue query bounded labels but omitted pageInfo, so a hidden approved label could make both the decision and verification agree on a truncated false value"
+why_tests_missed = "the only pagination test covered projectItems even though labels carry the build permit"
+regression = "tests/test_quality_board.py::test_label_connection_truncation_refuses_before_permit_decision"
+generalized = "every bounded connection that feeds a safety decision must prove completeness or fail closed before interpreting absence"
+workflow_change = "the query requests label pageInfo and refuses any truncated label connection"
