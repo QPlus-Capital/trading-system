@@ -15,7 +15,13 @@ from scripts.quality.board import (
     IssueState,
     main,
 )
-from scripts.quality.workflow_contract import WorkflowContract, load_contract
+from scripts.quality.issue_body import validate_issue_body
+from scripts.quality.workflow_contract import (
+    ApprovalStep,
+    Transition,
+    WorkflowContract,
+    load_contract,
+)
 
 _VALID_BODY = """## Problem
 Problem.
@@ -124,8 +130,226 @@ class FakeGateway:
             self.state = hook(self.state)
 
 
+class StrictIssueGateway(FakeGateway):
+    """Reject every write that loses the selected issue or its body."""
+
+    @staticmethod
+    def _assert_issue(issue: int) -> None:
+        assert issue == 110
+
+    def update_issue_body(self, issue: int, body: str) -> None:
+        self._assert_issue(issue)
+        assert isinstance(body, str)
+        super().update_issue_body(issue, body)
+
+    def add_label(self, issue: int, label: str) -> None:
+        self._assert_issue(issue)
+        super().add_label(issue, label)
+
+    def remove_label(self, issue: int, label: str) -> None:
+        self._assert_issue(issue)
+        super().remove_label(issue, label)
+
+    def set_status(self, issue: int, status: str) -> None:
+        self._assert_issue(issue)
+        super().set_status(issue, status)
+
+    def add_issue(self, issue: int) -> None:
+        self._assert_issue(issue)
+        super().add_issue(issue)
+
+
 def _service(gateway: FakeGateway, contract: WorkflowContract | None = None) -> BoardService:
     return BoardService(gateway, contract=contract or load_contract())
+
+
+def test_every_board_write_preserves_the_selected_issue_and_body() -> None:
+    _service(StrictIssueGateway()).add(110)
+
+    armed = StrictIssueGateway(labels=set())
+    _service(armed).arm(110, body=_VALID_BODY, risk_class="R3")
+
+    moved = StrictIssueGateway(labels={"approved", "risk:R3"})
+    _service(moved).move(110, "Specifying")
+
+    started = StrictIssueGateway(labels={"approved", "risk:R3"})
+    _service(started).start(110)
+
+
+def test_missing_status_options_report_the_complete_exact_set() -> None:
+    names = {item.name for item in load_contract().statuses} - {"Blocked", "Done"}
+    gateway = FakeGateway(status_names=names)
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).status(110)
+
+    assert str(raised.value) == "project is missing contract Status option(s): Blocked, Done"
+
+
+def test_add_requires_project_membership_readback() -> None:
+    gateway = FakeGateway(status=None)
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).add(110)
+
+    assert str(raised.value) == "issue #110 was not added to the project"
+
+
+def test_arm_reports_the_complete_issue_body_validation() -> None:
+    gateway = FakeGateway()
+    expected = "issue body is not approvable: " + "; ".join(validate_issue_body("", "R3").issues)
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).arm(110, body="", risk_class="R3")
+
+    assert str(raised.value) == expected
+
+
+def test_arm_rejects_an_unimplemented_approval_action_exactly() -> None:
+    contract = replace(
+        load_contract(),
+        approval_steps=(ApprovalStep(1, "unknown action", False),),
+    )
+
+    with pytest.raises(BoardError) as raised:
+        _service(FakeGateway(labels=set()), contract).arm(
+            110,
+            body=_VALID_BODY,
+            risk_class="R3",
+        )
+
+    assert str(raised.value) == ("no board operation implements approval action 'unknown action'")
+
+
+def test_arm_reports_a_lost_approval_write_exactly() -> None:
+    gateway = FakeGateway(labels=set(), sticky_add_labels={"approved"})
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).arm(110, body=_VALID_BODY, risk_class="R3")
+
+    assert str(raised.value) == "approval operation completed without the approved label"
+
+
+def test_permit_removal_failure_is_reported_exactly() -> None:
+    gateway = FakeGateway(labels={"approved", "risk:R3"}, sticky_remove=True)
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).withdraw(110)
+
+    assert str(raised.value) == ("permit removal did not take effect: observed approved=present")
+
+
+def test_move_reports_absent_project_membership_exactly() -> None:
+    with pytest.raises(BoardError) as raised:
+        _service(FakeGateway(status=None)).move(110, "Specifying")
+
+    assert str(raised.value) == "move refused: observed project status=absent"
+
+
+def test_withdraw_reports_absent_project_membership_exactly() -> None:
+    with pytest.raises(BoardError) as raised:
+        _service(FakeGateway(status=None)).withdraw(110)
+
+    assert str(raised.value) == "withdraw refused: observed project status=absent"
+
+
+def test_done_remains_reserved_for_project_automation_exactly() -> None:
+    with pytest.raises(BoardError) as raised:
+        _service(FakeGateway(status="Reviewing")).move(110, "Done")
+
+    assert str(raised.value) == "Done is set only by project automation after merge"
+
+
+def test_move_reports_a_disallowed_contract_edge_exactly() -> None:
+    with pytest.raises(BoardError) as raised:
+        _service(FakeGateway(status="Backlog")).move(110, "Reviewing")
+
+    assert str(raised.value) == "contract does not allow 'Backlog' -> 'Reviewing'"
+
+
+def test_move_reports_the_reserved_start_edge_exactly() -> None:
+    with pytest.raises(BoardError) as raised:
+        _service(FakeGateway()).move(110, "Implementing")
+
+    assert str(raised.value) == (
+        "contract edge 'Ready to Implement' -> 'Implementing' is reserved for `start`"
+    )
+
+
+def test_move_reports_the_complete_post_withdrawal_failure_exactly() -> None:
+    gateway = FakeGateway(
+        labels={"approved", "risk:R3"},
+        fail_on="move the card to Specifying",
+    )
+
+    with pytest.raises(BoardError) as raised:
+        _service(gateway).move(110, "Specifying")
+
+    assert str(raised.value) == (
+        "status update failed after the permit was already withdrawn: observed approved=absent"
+    )
+
+
+def test_start_requires_the_named_builder_guard_exactly() -> None:
+    contract = load_contract()
+    without_start = replace(
+        contract,
+        builder_guards=tuple(guard for guard in contract.builder_guards if guard.name != "Start"),
+    )
+
+    with pytest.raises(BoardError) as raised:
+        _service(
+            FakeGateway(labels={"approved", "risk:R3"}),
+            without_start,
+        ).start(110)
+
+    assert str(raised.value) == "workflow contract has no Start builder guard"
+
+
+def test_start_ignores_build_start_triggers_for_other_sources_and_actors() -> None:
+    contract = load_contract()
+    with_distractor = replace(
+        contract,
+        transitions=contract.transitions
+        + (
+            Transition(
+                source="Backlog",
+                target="Specifying",
+                actor="Claude",
+                trigger="build starts; synthetic distractor",
+            ),
+        ),
+    )
+    gateway = FakeGateway(labels={"approved", "risk:R3"})
+
+    state = _service(gateway, with_distractor).start(110)
+
+    assert state.status == "Implementing"
+    assert "approved" not in state.labels
+
+
+def test_start_requires_exactly_one_codex_build_start_transition() -> None:
+    contract = load_contract()
+    without_start_transition = replace(
+        contract,
+        transitions=tuple(
+            transition
+            for transition in contract.transitions
+            if not (
+                transition.source == "Ready to Implement"
+                and transition.actor == "Codex"
+                and transition.trigger.startswith("build starts;")
+            )
+        ),
+    )
+
+    with pytest.raises(BoardError) as raised:
+        _service(
+            FakeGateway(labels={"approved", "risk:R3"}),
+            without_start_transition,
+        ).start(110)
+
+    assert str(raised.value) == ("workflow contract must define one Codex build-start transition")
 
 
 @pytest.mark.parametrize(
