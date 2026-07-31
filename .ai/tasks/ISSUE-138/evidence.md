@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: c93d0d39e7c160a872ddae92bd4ddf1551895a7c
+HEAD: 4ba5a58eb6d8bdb6a700ddc0be87939f31ef0243
 
 ## Commands
 
@@ -12,7 +12,7 @@ HEAD: c93d0d39e7c160a872ddae92bd4ddf1551895a7c
 | `risk-classification` | `uv run python -m scripts.quality.classify` | 0 | R3 because `scripts/quality/**` controls repository-wide guards; six changed paths, with `board.py` the only changed production file. |
 | `format` | `just check-fast origin/main` | 0 | Both changed Python files were already formatted after the initial format-only correction. |
 | `docs-consistency` | `uv run python -m scripts.quality.workflow_contract` | 0 | Generated workflow-contract blocks and digests are current. |
-| `check` | PowerShell: `$env:PYTHONUTF8='1'; just --shell "C:\Program Files\Git\bin\sh.exe" check` after rebasing onto `origin/main` at `90fdb04` | 0 | Ruff, strict MyPy over 193 source files, Vulture, and the complete deterministic suite passed: 1,710 passed, one unavailable-Mutmut skip, 98 existing warnings. |
+| `check` | PowerShell: `$env:PYTHONUTF8='1'; just --shell "C:\Program Files\Git\bin\sh.exe" check` after rebasing onto current `origin/main` at `87032dd` | 0 | Ruff, strict MyPy over 193 source files, Vulture, and the complete deterministic suite passed: 1,710 passed, one unavailable-Mutmut skip, 98 existing warnings. |
 | `impacted-tests` | `uv run pytest -q tests/test_quality_board.py` after the semantic #136/#138 union | 0 | All 84 combined Permit, interleaving, query-cost, rate-limit, gateway, service, CLI, boundary, and pagination tests passed. |
 | `property-tests-where-applicable` | `just check-properties` | 0 | Fixed Hypothesis seed `20260721` passed twice: 21 tests plus 21 tests. |
 | `integration-tests` | `just check` | 0 | The full repository suite passed, including Board workflow/service integration and all existing consumers. |
