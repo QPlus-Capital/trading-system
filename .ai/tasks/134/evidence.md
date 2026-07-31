@@ -2,7 +2,7 @@
 
 ## HEAD
 
-HEAD: 4146a3a7602ed193c61196217ee486791e476ec6
+HEAD: 76a32dff46bfab216b4f3a114fd4ea86a931108e
 
 The later evidence-only commit is permitted by the observed-review currency rule; it changes no
 production, gate, or test behaviour.
@@ -22,6 +22,10 @@ The guards were exercised against pre-fix HEAD
 | S-08 state reduction | A `COMMENTED` review after `CHANGES_REQUESTED` was asserted to remain rejected | 124 — assertion failed before the timeout: old code returned `verified` |
 | S-09 artifact scope | Assert `_templates/review.md` is not a task artifact | 1 — old code returned true |
 | D-05 freshness | A stale review between two deliberately out-of-timestamp-order code commits was asserted rejected | 1 — old code trusted `relevant[-1]` and returned `verified` |
+| Review 4823450100 D-03 / S-01 | Focused production-path regressions over the review observer, disposition scanner, evidence parser, and PR-body validator | 1 — 5 failed, 112 passed: cross-window change requests and both disposition placements escaped |
+| Review 4823450100 D-01 | `gh pr view 143 --json number,headRefOid,baseRepository` against the installed CLI | 1 — `Unknown JSON field: "baseRepository"` |
+| Review 4823450100 D-02 | Production `_recorded_head` over task 134's former `Code HEAD: \`...\`` spelling | 1 — returned `None`; the repository-wide parser guard identified task 134 |
+| Review 4823450100 S-02 to S-07 | Distinguishing rename-into-artifacts, real PR-body hop, artifact-only history, approval tie, local head mismatch, and malformed resolved-row regressions | 0 on fixed code; each input is the review's verified counterexample and now reaches the production decision |
 
 The new review-observation module did not exist on the original implementation base, so the first
 combined focused run also failed during collection. The individual failures above are the
@@ -34,34 +38,42 @@ Required gate rows record only results actually observed on the code HEAD. A non
 
 | Gate | Command | Exit status | Result |
 |---|---|---:|---|
-| `format` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | 12 changed Python files formatted; 190 impacted tests selected |
+| `format` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | All 12 changed Python files already formatted |
 | `docs-consistency` | `uv run pytest -q tests/test_workflow_contract.py tests/test_engineering_docs.py tests/test_claude_runtime_files.py` | 0 | 99 passed |
-| `check` | `uvx --from rust-just just check` | 0 | Ruff passed; mypy passed over 195 source files; vulture passed; pytest: 1,701 passed, 1 skipped |
-| `impacted-tests` | `uv run python -m scripts.quality.impact --base origin/main --run-focused` | 0 | 190 directly and transitively impacted tests passed |
+| `check` | `uvx --from rust-just just check` | 0 | Ruff passed; mypy passed over 195 source files; vulture passed; pytest: 1,712 passed, 1 Mutmut-availability skip |
+| `impacted-tests` | `uv run python -m scripts.quality.impact --base origin/main --run-focused` | 0 | 201 directly and transitively impacted tests passed |
 | `property-tests-where-applicable` | `uvx --from rust-just just check-properties` | 0 | Two deterministic replays passed, 21 tests each |
-| `integration-tests` | `uv run pytest -q` | 0 | 1,701 passed, 1 platform/tool-availability skip |
+| `integration-tests` | `uvx --from rust-just just check` (`uv run pytest -q` subcommand) | 0 | Full suite: 1,712 passed, 1 Mutmut-availability skip |
 | `artifact-schema` | `uv run python -m scripts.quality.validate_task --task-id 134 --base origin/main` | 0 | Task 134 valid; 7 AC and 3 INV mappings resolved |
-| `adversarial-review` | Complete independent re-review by Claude | 1 | Not yet run on the material fix; the builder does not self-certify |
-| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 541 critical-invariant tests passed |
-| `mutation-on-touched-critical` | Production `critical-change-filter` predicate over `changed_paths("origin/main")`, `select_fast_targets`, and `changed_tests_exercise_targets` | 0 | SKIPPED: `targets=[]`, `dependent=False`; no configured critical production target or dependent critical test is touched |
+| `adversarial-review` | Complete independent re-review by Claude after review 4823450100 | 1 | Pending on the remediated head; the builder does not self-certify |
+| `invariants` | `uvx --from rust-just just check-invariants` | 0 | 542 critical-invariant tests passed |
+| `mutation-on-touched-critical` | Production predicate over `changed_paths("origin/main")`, `select_fast_targets`, and `changed_tests_exercise_targets` | 0 | SKIPPED by the production selector: `targets=[]`, `dependent=False` |
 | `security` | `uvx --from rust-just just check-security` | 0 | Secret scan clean; pip-audit found 0 vulnerabilities; security lint passed |
 | `parity-where-applicable` | `uv run python -m scripts.quality.impact --base origin/main --check-format` | 0 | No live/backtest parity path is touched |
 | `live-money-review` | `uv run python -m scripts.quality.classify` | 0 | Not applicable: no live-money or trading path is touched |
-| `human-decision-escalation` | Jan's D-01 decision recorded in the request and implemented literally | 0 | R2/R3 require both observed review and disposition enforcement; no dead review configuration remains |
+| `human-decision-escalation` | Jan's S-01 decision recorded in the request and implemented literally | 0 | Undismissed `CHANGES_REQUESTED` remains blocking across commit windows; only explicit GitHub dismissal clears it |
 | `no-autonomous-merge` | `git status --short --branch` | 0 | Feature branch only; merge and auto-merge remain disabled |
 
 ## Additional probes
 
 | Probe | Command | Exit | Result |
 |---|---|---:|---|
-| Focused post-fix suite | Focused review-observation, readiness, validator, hook, PR-body, CI-wiring, and registry tests | 0 | All focused behavioural regressions passed |
+| Focused post-fix suite | Focused review-observation, readiness, validator, hook, PR-body, CI-wiring, and registry tests | 0 | All focused behavioural regressions passed; the complete impact-selected set passed 201 tests |
 | Local Mutmut capability | `uv run --no-sync --with mutmut==3.5.0 python -m scripts.quality.mutation run --scope fast --base origin/main` | 1 | Windows cannot run Mutmut's fork-based worker; this is not a deferred required gate because impact selects no mutation target |
-| Readiness probe | `uv run python -m scripts.quality.pr_ready 134 --base origin/main` | 1 | Correctly NOT READY until the independent re-review is recorded |
+| Real local GitHub gateway | `uv run python -m scripts.quality.pr_ready 134 --base origin/main` before the remediation commit | 1 | The supported `gh` field set executed successfully and the old head was review-current; readiness failed only on the intentionally non-zero adversarial-review evidence row |
 
 ## Coverage and mutation
 
-- D-01/D-02/D-03: R2 and R3 independently require the observed GitHub review, review structure,
-  and resolved dispositions. `resolved_review_statuses`, `unresolved-review`, and
+- Review 4823450100 D-01/D-02/D-03: the local gateway uses a CLI-supported exact argv and URL-derived
+  base repository; every committed task evidence file parses a bare full SHA; blocking rows bind
+  under Findings and Dispositions without a cell-level header escape.
+- Review 4823450100 S-01: freshness proves a current non-dismissed review exists, while each
+  reviewer's undismissed change request remains blocking across commit windows.
+- Review 4823450100 S-02 through S-07: the rename flag, real PR-body call chain, artifact-only
+  outcome, decisive tie, local head check, and malformed resolved row each have a distinguishing
+  executable counterexample.
+- Earlier D-01/D-02/D-03: R2 and R3 independently require the observed GitHub review, review
+  structure, and resolved dispositions. `resolved_review_statuses`, `unresolved-review`, and
   `[sections]."review.md"` all execute on the readiness path.
 - D-04: synchronize scope is derived from `git diff --no-renames`; the GitHub commit boundary also
   unions `filename` and `previous_filename`.
