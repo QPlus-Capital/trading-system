@@ -25,6 +25,7 @@ The later evidence-only commit changes no policy, baseline, test, production cod
 | `parity-where-applicable` | `uv run python -m scripts.quality.impact --base origin/main` plus `git diff --exit-code origin/main -- scripts/quality/board.py` | 0 | Not applicable: no signal, adapter, research, portfolio, live, or production Board behavior changed; the Board module is byte-identical |
 | `live-money-review` | Changed-path and production-diff inspection | 0 | Not applicable: no `core/**`, `research/**`, `live/**`, or `monitoring/**` path changed, and no runner, account, order, threshold, or risk limit was touched |
 | `human-decision-escalation` | Issue #142 contract and approved scope inspection | 0 | GREEN: Jan selected the exact-target variant after #136 merged; no open business, methodology, architecture, live-money, or risk decision was inferred |
+| `no-autonomous-merge` | `gh pr view 149 --json isDraft,state,autoMergeRequest,headRefName,url` | 0 | GREEN: PR #149 is open and draft, `autoMergeRequest` is null, and the Board is `Reviewing` |
 | `security` | `just --shell powershell.exe --shell-arg -NoProfile --shell-arg -Command check-security` | 0 | GREEN: secret scan, locked dependency audit, and security lint all passed with no findings |
 | `impact` | `uv run python -m scripts.quality.impact --base origin/main` | 0 | R3; no changed production file, unknown/dynamic edge, or critical escalation; exactly 3 directly related tests |
 
@@ -47,10 +48,12 @@ The later evidence-only commit changes no policy, baseline, test, production cod
   `caught_by_type_check` outcomes.
 - The full deterministic suite ran on Windows. Linux executed the complete critical mutation
   scope; a separate Linux full pytest suite was not run and is not claimed.
+- Draft-PR CI run `30619005931` passed `platform-quality`; `full-quality` and the PR-triggered
+  mutation job correctly remain skipped while the pull request is draft.
 
 ## Deferred checks
 
 - A fresh independent Claude review on the draft pull request is pending. Until it is complete,
-  `adversarial-review`, `no-autonomous-merge`, `check-pr-evidence`, and `pr-ready` are deliberately
-  not recorded as passing.
+  `adversarial-review`, `check-pr-evidence`, and `pr-ready` are deliberately not recorded as
+  passing.
 - No validation is deferred from the implementation or exact mutation baseline.
