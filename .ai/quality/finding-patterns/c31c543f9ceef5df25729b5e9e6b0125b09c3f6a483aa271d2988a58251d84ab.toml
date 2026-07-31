@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #145 independent review 4825906480"
+defect_class = "documented-safety-rationale-depends-on-unstated-setting"
+severity = "Suspected defect"
+affected = "docs/engineering/branch-protection.md and its executable documentation guard"
+root_cause = "the rationale for omitting linear-history enforcement assumed squash-only merging without listing squash-only as a setting operators must configure"
+why_tests_missed = "the documentation test searched for the rationale and linear-history statement but did not require the configuration premise that made them true"
+regression = "tests/test_engineering_workflow_docs.py::test_branch_protection_names_every_required_check_and_setting requires the explicit squash-only merge-method setting"
+generalized = "when a safety decision relies on another configuration value, the operational checklist must state and guard that prerequisite explicitly"
+workflow_change = "the branch-protection checklist now lists squash as the only allowed merge method and the documentation guard binds that setting"

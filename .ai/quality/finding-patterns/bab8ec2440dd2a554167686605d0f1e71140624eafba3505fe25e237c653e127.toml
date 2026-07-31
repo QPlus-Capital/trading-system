@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #145 independent review 4825906480"
+defect_class = "task-plan-claims-nonexistent-executable-guard"
+severity = "Defect"
+affected = ".ai/tasks/*/test-plan.md and the executable regression cited by the plan"
+root_cause = "traceability asserted that an invariant was covered by an existing test without verifying that the cited test exercised that invariant"
+why_tests_missed = "task validation checked that the invariant identifier appeared in the plan but did not establish that the named test asserted the promised behavior"
+regression = "tests/test_engineering_workflow_docs.py::test_branch_protection_names_every_required_check_and_setting requires both clauses of the rollout warning claimed for INV-03"
+generalized = "a task plan must not claim executable protection unless the cited guard fails when the protected property is violated"
+workflow_change = "review findings must compare every task-plan coverage claim with the behavior of its cited executable guard before readiness is reassessed"

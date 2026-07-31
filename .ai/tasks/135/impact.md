@@ -8,8 +8,8 @@
 - `tests/test_engineering_workflow_docs.py` stops pinning retired contexts and instead checks that
   the documented contexts are exactly the four approved names and are producible by current
   workflow jobs.
-- `.ai/tasks/135/` records the R3 specification, traceability, evidence, and independent-review
-  disposition.
+- `.ai/tasks/135/` records R3 impact, test traceability, evidence, and independent-review
+  disposition; the approved issue remains the sole specification.
 
 ## Transitive impact
 

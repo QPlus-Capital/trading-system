@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #145 independent review 4825906480"
+defect_class = "local-task-artifact-redefines-approved-issue-contract"
+severity = "Suspected defect"
+affected = ".ai/tasks/* and the approved issue specification boundary"
+root_cause = "a forbidden local spec.md restated and weakened acceptance criteria and non-goals instead of treating the approved issue as authoritative"
+why_tests_missed = "the task schema prohibited spec.md as a required artifact but did not reject every extra file already present in a task directory"
+regression = "tests/test_quality_process_scaling.py::test_validate_task_schema_has_no_spec_and_scales_files keeps spec.md outside the schema, and task 135 contains no local specification copy"
+generalized = "an implementation artifact must not restate, weaken, or extend its approved specification; ambiguities return to the authority that owns the issue"
+workflow_change = "the local specification copy was deleted and Jan amended the issue body itself; the generic extra-artifact validator remains tracked by issue #146"

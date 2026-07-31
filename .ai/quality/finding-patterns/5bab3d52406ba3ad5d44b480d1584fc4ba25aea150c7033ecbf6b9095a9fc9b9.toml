@@ -1,0 +1,12 @@
+version = 1
+
+[finding]
+source = "PR #145 independent review 4825906480"
+defect_class = "external-status-drift-guard-compares-internal-job-keys"
+severity = "Suspected defect"
+affected = "tests/test_engineering_workflow_docs.py and GitHub Actions required status contexts"
+root_cause = "the drift guard compared workflow mapping keys instead of the effective status contexts GitHub emits"
+why_tests_missed = "the original workflows used identical job keys and emitted names and had no matrix or reusable-workflow jobs, so the weaker oracle agreed on the current fixture"
+regression = "test_branch_protection_names_every_required_check_and_setting, test_effective_contexts_allow_non_matrix_strategy, and test_effective_contexts_refuse_reusable_workflow_jobs"
+generalized = "a guard for an external platform identity must derive the platform-visible value and reject constructs that change it rather than comparing an internal configuration key"
+workflow_change = "the documentation guard resolves job.name with key fallback, refuses matrices and reusable-workflow jobs, and compares the complete documented and effective context sets"
