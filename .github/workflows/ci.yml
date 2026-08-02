@@ -24,6 +24,11 @@ jobs:
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # `metatrader5` has no Linux wheel, so any `uv run` that re-resolves the environment fails
+      # here. The sync step below installs everything except that package; this keeps every later
+      # `uv run` on the environment it produced. Removing the marker is issue #150.
+      UV_NO_SYNC: "1"
     outputs:
       needs_mt5: ${{ steps.scope.outputs.needs_mt5 }}
       needs_mutation: ${{ steps.scope.outputs.needs_mutation }}
