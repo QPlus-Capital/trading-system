@@ -1,128 +1,49 @@
 # AGENTS.md
 
-The primary builder contract for Codex and any implementing agent. The full rules live in
-**[docs/engineering/constitution.md](docs/engineering/constitution.md)** — the shared source of
-truth for Claude, Codex, humans, CI, and repository tooling. Read the constitution first; when this
-file and the constitution appear to differ, the constitution wins.
+Codex's role contract. **All rules live in
+[docs/engineering/workflow.md](docs/engineering/workflow.md)** — read it first; it wins if this file
+appears to differ. Orientation: [docs/architecture.md](docs/architecture.md).
 
 ## Project
 
-QPlus Capital's quantitative trading-system framework on
-[NautilusTrader](https://nautilustrader.io/). A strategy flows **research** (backtest and validate) →
-**live** (execute the frozen config on MetaTrader 5) → **monitoring**. Four flat packages: `core/`
-(shared strategies, instruments, broker, and data), `research/`, `live/`, and `monitoring/`. There
-is no `src/` directory. Python 3.13, `uv`, NautilusTrader, and `just` form the toolchain.
+QPlus Capital's quantitative trading system on [NautilusTrader](https://nautilustrader.io/). A
+strategy flows **research** (backtest and validate) → **live** (execute the frozen config on
+MetaTrader 5) → **monitoring**. Four flat packages: `core/`, `research/`, `live/`, `monitoring/`.
+No `src/` directory. Python 3.13, `uv`, NautilusTrader, and `just`. Use `uv`, never bare `pip`.
 
-**Read first:** [docs/architecture.md](docs/architecture.md) — pipeline, live path, monitoring
-diagrams, and the one-line-per-file module map.
+## Your role — builder
 
-## Your role — primary builder
+The operator starts you with an issue number and nothing else: `implement #101`. Everything you
+need is in the issue body, the labels, and the workflow document. Check the guard, work in one
+worktree on `codex/<issue>-<slug>`, prove the test red before you build it green, run the gates of
+the risk class, run the self-check, push **once**, and open the pull request.
 
-Codex specifies the bounded change from Jan's request or Claude's design, classifies its risk,
-analyses impact, writes red-first tests, implements, runs every required gate, maintains the task
-artifact, and hands the finished branch to independent review. It opens the **draft** pull request
-at the point the active workflow permits, and marks it ready for review only once that review is
-clean. Do not merge.
+**You never review your own work** and you never merge or enable auto-merge. The independent review
+is triggered automatically once the pull request is open.
 
 ## This repository trades real money
 
-A defect is a loss, not a bug report. These constraints are immutable and always apply.
+A defect is a loss. These override everything else:
 
-- **Never touch a running live trade** — do not place, modify, or close an order, and never restart
-  a runner as a side effect. Never run two runners on one account.
+- **Never touch a running live trade** — no order placed, modified, or closed; no runner restarted
+  as a side effect; never two runners on one account.
 - **Internal risk limits stay stricter than the prop firm's** (0.18% per trade, 2.5% daily, 5%
-  trailing, 2% open risk versus TTP's 3%/6%). Tighten, never loosen past the prop limits. Fail closed.
-- **Never use `float` for money, prices, or quantities** — use `Decimal` or NautilusTrader's
-  `Price`, `Quantity`, or `Money`.
-- **The holdout is sacred**, and live data is out-of-sample: monitor it, never retune from it.
-- **Backtest and live share one pure signal engine** (`rsi_wpr_bb_signals.py`); their adapters must
-  never diverge.
-- **Secrets** live in `.env` and the password manager; never commit a credential, token, or account
-  number, and never put one in a log or URL.
-- Everything committed is **English**; docstrings describe the current state, not history.
-- **Commit as Jan Cwik; never add an AI co-author** or `Co-Authored-By` trailer.
+  trailing, 2% open risk against TTP's 3% / 6%). Tighten, never loosen. **Fail closed.**
+- **Never `float` for money, prices, or quantities** — `Decimal` or NautilusTrader's `Price`,
+  `Quantity`, `Money`.
+- **The holdout is untouched** and live data is out-of-sample: monitor it, never retune from it.
+- **Backtest and live share one signal engine** (`core/strategies/rsi_wpr_bb_signals.py`); the two
+  adapters must never diverge.
+- **Secrets** live in `.env` and the password manager — never in a commit, a log, or a URL.
+- **Never weaken a gate** to make a branch pass — no bypass flag, no broad ignore, no skip, no
+  lowered threshold.
+- Everything committed is **English**; docstrings describe the current state, not history. No
+  personal name in documentation — the deciding human is *the operator*. **Never add an AI
+  co-author** or a `Co-Authored-By` trailer.
 
-## Development protocol
+## When you are unsure
 
-Jan starts you with nothing but an issue number: `implement #101`. Everything you need is in the
-issue body, the labels, and this file. The full procedure is
-[docs/engineering/workflow.md](docs/engineering/workflow.md).
-
-Every non-trivial change carries a risk class R0–R3, defined in
-[docs/engineering/risk-classes.md](docs/engineering/risk-classes.md). The class sets its cumulative
-mandatory gates, which task artifacts exist as files, how many PR sections are required, and which
-review subagents run.
-
-**0. Check the permit — before anything else.** Two disjoint guards, because the first start
-consumes the permit and resuming therefore cannot demand it.
-
-<!-- workflow-contract:builder-guard:start -->
-- **Starting new work.** Refuse unless card in `Ready to Implement`, `approved` present, `risk:Rn` present. Then move the card to `Implementing`, **then** remove `approved`.
-
-- **Resuming.** When the card is in `Implementing` or `Reviewing`, **and** a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for **this** issue number, continue on it **without** a permit — the first start already consumed it.
-<!-- workflow-contract:builder-guard:end -->
-
-Any other combination is a refusal: report the actual status and stop. A card in `Backlog`,
-`Specifying` or `Blocked` is never built, with or without a branch. A branch whose name does not
-carry this issue number is never resumed, and neither is a branch from a fork or from outside this
-repository — ownership is decided by the branch name and its origin, not by the card, because the
-card cannot tell you who wrote the code.
-
-Execute the starting guard rather than inferring it from the request:
-
-```text
-gh issue view <issue> --json labels,projectItems
-gh project item-list 1 --owner QPlus-Capital --format json --limit 200
-gh project item-edit --id <item-id> --project-id <project-id> \
-  --field-id <status-field-id> --single-select-option-id <implementing-option-id>
-gh issue view <issue> --json projectItems
-gh issue edit <issue> --remove-label approved
-gh issue view <issue> --json labels
-```
-
-The first two reads must show this repository, `Ready to Implement`, exactly one `risk:Rn`, and
-`approved`. Run the status edit, read the card back as `Implementing`, and only then remove the
-permit. Read the labels back and require `approved` absent. If any command fails or any observation
-differs, stop; never compensate by removing the permit early.
-
-1. **Specify** — the specification is the issue body; Claude wrote it and Jan approved it. Do not
-   restate it in a file and do not extend it. If it is wrong, incomplete, or unbuildable, do not
-   guess: move the card back, state the concrete gap in an issue comment, and stop.
-2. **Analyse impact** — trace files, callers, configuration routes, lifecycle, artifacts, and tests
-   before implementation. Enumerate every consumer of a coupled quantity in one pass.
-3. **Design tests, then implement** — map every `AC-nn` and `INV-nn` to exactly one named test, add
-   the red-first behavioural guard, record its failure, implement the smallest bounded change, and
-   keep `just check` green. Clean up nothing on the side; the non-goals bound the diff.
-<!-- workflow-contract:review-handover:start -->
-4. **Prepare independent review** — complete current evidence and hand the final diff to Claude's fresh reviewer path by opening a **draft** pull request, moving the card to `Reviewing`, and handing over that draft. Include `Closes #<issue>` in the body.
-5. **Resolve the review** — fix every blocking finding with executable proof and return the card to `Reviewing` after each material fix.
-6. **Mark it ready for review** — only after the review is clean and the readiness check passes for current HEAD. Do not merge or enable autonomous merge.
-<!-- workflow-contract:review-handover:end -->
-
-Work in **one git worktree per issue** on branch `codex/<issue>-<slug>`, so the main checkout stays
-clean and a running live runner never sees half-finished code.
-
-**Do not mark a pull request ready for review until the readiness check for the change's risk class
-passes.** A draft carries the review; only a ready pull request asks for a merge. R3
-changes never merge autonomously. Every change reaches `main` through a feature branch and pull
-request. Valid out-of-scope work becomes a separate issue —
-evidenced only, never speculative, and you return to the task at hand immediately.
-
-## Roles, exception, and authority
-
-Codex is the primary builder. Claude is the primary reviewer and conceptual designer: Claude turns
-Jan's intent into a buildable specification and independently reviews the completed Codex change.
-For the highest-stakes trading work — `live/**`, P-packages, sizing, methodology, and result
-integrity — **either agent may build**, but the builder never reviews its own work and the independent
-review must be doubly rigorous.
-
-Jan decides every business, trading, methodology, live-money, architecture, and risk question. Jan
-approves every merge. R3 changes never merge autonomously, regardless of green tools or AI reviews.
-
-## Environment
-
-- `nautilus_trader` is pinned in `pyproject.toml` and `uv.lock`; use `uv`, never bare `pip`.
-- Target platforms are Apple Silicon macOS and Linux where wheels exist; Windows supports the
-  repository's cross-platform quality workflow. Intel macOS is unsupported.
-- `data/`, `reports/`, and `results/` are gitignored: code in, data and secrets out.
-- Keep `uv.lock`, `AGENTS.md`, and `RUN.md` current and self-contained; never rely on chat history.
+If the specification is wrong, incomplete, or unbuildable, do not guess: move the card back to
+`Specifying`, state the concrete gap in an issue comment, and stop. Valid work outside the current
+scope becomes a separate issue — evidenced only, never speculative — and you return to the task at
+hand immediately.

@@ -1,274 +1,287 @@
 # Development Workflow
 
-How a change travels from an idea to `main`. The [constitution](constitution.md) states *what* must
-hold; this document states *who does what, where, and in which order*. Where they appear to differ,
-the constitution wins.
+The single source of truth for how changes are made in this repository — shared by the operator,
+Claude, Codex, and the repository tooling. `CLAUDE.md` and `AGENTS.md` are short role documents that
+point here. `.ai/workflow.toml` holds the same contract in the form the tooling reads. Where any of
+them appears to disagree, **this file wins**.
 
-Three actors: **Jan** decides and merges. **Claude** designs the specification and reviews the
-finished change. **Codex** builds. The builder never reviews its own work.
+A rule appears in exactly one place. Nothing here is repeated elsewhere in prose.
 
 ---
 
-## The board
+## 1. This repository trades real money
 
-GitHub Project [QPlus Capital – Trading System](https://github.com/orgs/QPlus-Capital/projects/1).
-Its `Status` field is the single source of truth for where a change stands.
+A defect is a loss, not a bug report. These constraints are immutable and override every other
+consideration in this document.
 
-<!-- workflow-contract:statuses:start -->
-| Status | Meaning | Who sets it |
-|---|---|---|
-| `Backlog` | A raw idea. One sentence is enough. | Project automation (auto-add) |
-| `Specifying` | Claude is working the idea into a specification with Jan. | Claude |
-| `Ready to Implement` | Approved by Jan. Codex **may** build it — not "build it now". | Claude, after Jan's explicit approval |
-| `Implementing` | Codex is building. | Codex |
-| `Reviewing` | The change is with the independent reviewer on the draft pull request. | Codex, at handover |
-| `Blocked` | Waiting on a decision only Jan can make (constitution §13). | Any agent |
-| `Done` | Merged. | Project automation (item closed) |
-<!-- workflow-contract:statuses:end -->
+- **Never touch a running live trade.** Do not place, modify, or close an order. Never restart a
+  runner as a side effect of another task. Never run two runners against one account.
+- **Internal risk limits stay stricter than the prop firm's** and must remain so: 0.18% per trade,
+  2.5% daily stop, 5% trailing, 2% open-risk cap — against TTP's 3% / 6% hard limits. A change may
+  tighten them; loosening them past the prop limits is prohibited.
+- **Fail closed.** When a safety input is missing, ambiguous, or unverifiable, refuse the action
+  rather than proceed on a guess.
+- **Never use `float` for prices, quantities, or money.** Use `Decimal` or NautilusTrader's `Price`,
+  `Quantity`, or `Money`. Convert to `float` only at a boundary that is already float, never for a
+  value that sizes a position or books a P&L.
+- **Guard every denominator, sign, and boundary.** Zero, empty, NaN, infinity, and near-zero
+  divisors are inputs, not impossibilities.
+- **Secrets** live in `.env` (gitignored) and the password manager; `.env.example` holds
+  placeholders only. Never commit a credential, key, token, or account number, and never put one in
+  a log or a URL. A new credential is reported to the operator for the password manager.
+- **A live merge needs a quiet window** (section 4, phase 5). The runner holds the old code in
+  memory.
 
-Agents move cards through `uv run python -m scripts.quality.board`; the tool uses `gh` but owns the
-contract checks and mutation ordering. Two built-in project automations do the rest and cost no
-Actions minutes: *item added → `Backlog`*, and *item closed → `Done`*.
+## 2. Research methodology
 
-### Board command surface
+- Parameter changes go through the staged walk-forward (`docs/methodology.md`) and an **untouched
+  holdout**. The holdout is evaluated once; retuning and re-scoring against it burns it.
+- **Live data is out-of-sample.** Monitor and calibrate from it, never retune parameters from it.
+- `r` is gross price R. Swap is a separate realized cost (`swap_r`). **`net_r = r + swap_r` is the
+  sole statistical return stream.** No change may quietly flatter a metric.
+- **Content-addressed lineage** binds each run to the exact code, config, and data that produced it.
+  The stage chain runs on one frozen code state.
+- **Stage 1 measures edge on equal footing:** every window is sized and scored off one constant
+  basis, never a compounding account. Compounding belongs to the portfolio stage and to live.
+- **Selection mirrors execution.** The parameters, sizing basis, and cost model used to *choose* a
+  configuration equal those used to *run* it.
 
-| Command | Purpose |
+## 3. Architecture
+
+- Four flat packages: `core/` (shared strategies, instruments, broker, data), `research/`, `live/`,
+  `monitoring/`. No `src/` nesting.
+- `core/` depends on no sibling. `research/` and `live/` depend on `core/` and **not on each other's
+  domain logic**. `monitoring/` sits on top and may read from all three; nothing imports it.
+- The `research/` ↔ `live/` rule has two allowlisted crossings, each an explicit, shrinking entry in
+  `tests/test_import_boundaries.py`. A *new* crossing fails the test; a removed one leaves the list.
+- A strategy's signal logic is **one pure engine** (`core/strategies/rsi_wpr_bb_signals.py`, no
+  Nautilus, no MT5) driven by two thin adapters: the backtest wrapper and the live runner. Both
+  instantiate it; neither reimplements a signal.
+
+---
+
+## 4. The process
+
+Three actors and one connector. **The operator** decides and merges. **Claude** specifies and
+reviews. **Codex** builds. **The orchestrator** connects them and decides nothing.
+
+Claude never builds. Codex never reviews. There is no exception.
+
+**Sessions.** One fresh session per ticket, per agent, named after the ticket. The Claude session
+accompanies the ticket from idea to merge. The review runs in its own process: a reviewer that
+knows what was intended does not find what is actually there.
+
+**Numbers.** GitHub draws issue and pull-request numbers from one sequence. Therefore **only issue
+numbers are ever spoken**. Pull-request numbers are internal mechanics and appear in no chat, no
+agent message, and no notification. The path is unambiguous: the ticket owns branch
+`codex/<issue>-<slug>`, that branch owns one pull request, and it carries `Closes #<issue>`.
+
+### The board
+
+GitHub Project *QPlus Capital – Trading System*. Its `Status` field is the single source of truth
+for where a change stands — not the branch, not the pull request.
+
+| Status | Meaning |
 |---|---|
-| `status` | Read the issue's labels and project status. |
-| `add` | Add an issue to the project without choosing a workflow transition. |
-| `move` | Apply a permitted status transition; any successful `move`, whatever its source status, first removes and verifies a present permit. The build-start edge is refused here and belongs only to `start`. |
-| `arm` | Run the complete approval sequence and write `approved` last. |
-| `start` | Verify the Start guard, move to `Implementing`, and then consume the permit. |
-| `withdraw` | Remove and verify `approved` without changing the card's status. |
+| `Backlog` | An idea. **Not yet specified.** |
+| `Specifying` | Being worked out with the operator. |
+| `Ready to Implement` | Fully specified **and released**. May be built; need not be. |
+| `Implementing` | Codex is building. |
+| `Reviewing` | With the reviewer. |
+| `Blocked` | Waiting on a decision only the operator can make. |
+| `Done` | Merged. |
 
-`withdraw` is the explicit permit-revocation operation. A later `arm` still runs issue-body
-validation, risk validation, all approval writes, and the final read-back. Moving an armed card to
-`Specifying` or `Blocked` also voids the permit; returning to `Ready to Implement` never restores it
-and requires a fresh `arm`.
+Labels are `risk:R0` … `risk:R3` and nothing else. `Ready to Implement` *is* the release, so no
+separate permit label exists. Priority is the vertical order of the `Backlog` column.
 
-## The labels
+Two built-in project automations cost no Actions minutes: *issue opened → `Backlog`*, *issue closed
+→ `Done`*.
 
-Five labels, each with a mechanical function. A label that only decorates is not maintained, so
-none exist.
+### Phase 0 — Idea reaches the backlog
 
-| Label | Function | Set by | Removed by |
-|---|---|---|---|
-| `approved` | The build permit. Without it Codex refuses to build. | Claude, at approval | The board tool, at build start, explicit withdrawal, or any successful `move`, whatever its source status |
-| `risk:R0` … `risk:R3` | Selects gates, artifacts, PR scope, and review agents. | Claude, from the classifier | — |
+A fresh Claude session, named after the ticket. The operator states the idea in a sentence or two.
+Claude opens an issue with a clear title and two or three sentences of body, and records the session
+identifier on it so the orchestrator can reach this chat later.
 
-Priority is the vertical order of the `Backlog` column, not a label.
+No template, no labels, no questions. **An idea must cost nothing.** Titles are plain sentences
+without prefixes; the grown `[P-NN]` package issues keep theirs.
 
----
+Claude and Codex open issues only for **evidenced** work found outside their current scope — never
+speculation, never as an escape from the task at hand, and they return to it immediately.
 
-## Phase 0 — Idea reaches the backlog
+### Phase 1 — Specifying
 
-An idea must cost nothing to record. A backlog issue needs only a clear title; one sentence of body
-is enough. No template, no required fields, no labels.
+In the same chat, when the operator asks for the idea to be worked out. Claude moves the card to
+`Specifying`, then:
 
-Titles are plain sentences without prefixes — GitHub already numbers issues. The existing `[P-NN]`
-package issues are a grown roadmap structure and keep their prefix.
-
-Jan files ideas directly. Claude and Codex file issues only for **evidenced** work found outside
-their current scope — never speculation, and never as an escape from the task at hand; the agent
-returns to its original work immediately afterwards.
-
-## Phase 1 — Specifying (Claude, plan mode)
-
-Jan says *"let's work out #101"*, or explains a new idea. Claude moves the card to `Specifying`.
-
-1. **Reality check first.** Does the problem still exist? Is it a duplicate? Would it violate the
-   constitution — for example by loosening a risk limit? If so, stop, cite the evidence, and propose
-   closing the issue. This is the cheapest possible outcome.
-2. **Read the code**, at a depth set by the risk class: R0/R1 the named file; R2 the affected modules
-   and their direct callers; R3 additionally the data flow, lifecycle, and parity paths. Search for
-   existing functions to reuse before proposing new ones.
-3. **Classify.** `scripts.quality.classify` gives the minimum from the expected paths. Raise it when
-   the semantic impact is broader, and say so explicitly — raising it raises the process cost.
+1. **Reality check first.** Does the problem still exist? Is it a duplicate? Would the fix violate
+   section 1 or 2? If so: stop, cite the evidence, propose closing. This is the cheapest outcome.
+2. **Read the code** at the depth the risk class sets — R0/R1 the named file; R2 the affected
+   modules and their direct callers; R3 additionally data flow, lifecycle, and parity paths. Search
+   for existing functions to reuse before proposing new ones.
+3. **Classify** with `scripts.quality.classify`. The result is a minimum; raising it is mandatory
+   when the semantic impact is broader than the paths suggest, and the reason is stated.
 4. **Ask only questions whose answer changes the outcome.**
-5. **Write the issue body**, replacing the original sentence.
+5. **Write the issue body**, replacing the original sentences. It is the specification from here on.
 
-The issue body is **English** (constitution §1) and describes **what**, never **how** — Codex derives
-the approach and the review judges it.
+The body is English and describes **what**, never **how**:
 
-```markdown
+```
 ## Problem
 ## Goal
-## Scope
 ## Non-goals
-## Acceptance criteria     - [ ] AC-01 …   behavioural, testable
-## Invariants              - [ ] INV-01 …  R2 and above
+## Acceptance criteria   AC-01 …   behavioural, testable
+## Invariants            INV-01 …  R2 and above
 ## Affected modules
-## Risk class              "R2 — reason"
-## Verification plan
-## Open decisions (Jan)
+## Risk class            "R2 — reason"
+## Open decisions
 ```
 
-Non-goals keep the pull request small. Every `AC-nn` maps to exactly one named test and is ticked in
-the PR; an acceptance criterion no test could check is a wish, not a criterion. The reason for the
-risk class matters more than the class itself.
+Every `AC-nn` maps to **exactly one named test**. A criterion no test can check is a wish. The
+reason for the risk class matters more than the class.
 
 If a genuine business, trading, methodology, live-money, architecture, or risk decision stays open,
-it is recorded under **Open decisions** with its options and consequences, the card moves to
-`Blocked`, and the phase ends. **There is no approval with an open decision.**
+it is recorded under *Open decisions*, the card moves to `Blocked`, and the phase ends.
+**There is no release with an open decision.** Only those categories interrupt the operator;
+everything else is decided from this document and the code, and documented.
 
-## Phase 2 — Approval (Jan)
+### Phase 2 — Release
 
-Claude presents the complete issue body in the conversation — not a link, not a summary — with the
-number, title, risk class and its reason, the open decisions, and the count of criteria and
-invariants.
+Claude presents the **complete issue body** in the chat — not a link, not a summary — with number,
+title, risk class and its reason, and the count of criteria and invariants. For R3 it additionally
+presents the risk itself: which limits the change touches, what happens in the worst case, and
+whether a running runner is affected. The operator releases the risk, not merely the text.
 
-For **R3** Claude additionally presents the risk itself: which limits the change touches, what
-happens in the worst case if it is wrong, and whether a running runner would be affected. Jan then
-approves the risk, not merely the text.
+From R2 upward the body is checked mechanically first: required sections present, at least one
+numbered acceptance criterion, risk class justified, no open decision left open.
 
-From R2 upward the body is checked mechanically before approval: required sections present, at least
-one acceptance criterion, criteria numbered, risk class justified, no open decision left open.
+| The operator says | Then |
+|---|---|
+| **released** | add `risk:Rn`, move the card to `Ready to Implement` |
+| **change this** | stays in `Specifying`, phase 1 continues |
+| **not now** | card to `Backlog`, the specification is kept |
 
-Jan answers in one of three ways: approval; a change request, which returns to phase 1 as often as
-needed; or *"later"*, which returns the card to `Backlog` with the specification preserved.
+Claude then reports only `#101 is released (R2).` — **no prompt, no call to action.** When it is
+built is the operator's decision; `Ready to Implement` is a supply, not a queue.
 
-On approval, in this order:
+Changing a released issue means moving it back to `Specifying`; phase 2 runs again.
 
-<!-- workflow-contract:approval-order:start -->
-```
-1  write the final issue body
-2  add risk:Rn
-3  move the card to Ready to Implement
-4  add approved          ← last
-```
-<!-- workflow-contract:approval-order:end -->
+### Phase 3 — Building
 
-`approved` is added last on purpose. If any earlier step fails, the issue is **not** approved and
-Codex will not build it — the constitution's fail-closed rule (§3) applied to the workflow itself.
+A fresh Codex session: `implement #101`. Nothing more is ever required.
 
-Claude then reports only `#101 is approved (R2).` — **no prompt and no call to action.** When the
-change is built is Jan's decision. `Ready to Implement` is a supply, not a queue.
+**Guard first.** Two cases; anything else is a refusal that reports the actual status.
 
-A change to an approved issue requires moving it back to `Specifying` and removing `approved`;
-phase 2 then runs again, including Jan's approval.
-
-## Phase 3 — Building (Codex)
-
-Jan says `implement #101`. Nothing more is ever required.
-
-**Guard first — two disjoint rules**, because starting consumes the permit and resuming therefore
-cannot require it.
-
-<!-- workflow-contract:builder-guard:start -->
 | Case | Condition | Then |
 |---|---|---|
-| **Start** | card in `Ready to Implement`, `approved` present, `risk:Rn` present | move the card to `Implementing`, **then** remove `approved` |
-| **Resume** | the card is in `Implementing` or `Reviewing`, **and** a branch exists in this repository whose name is `codex/<issue>-…` or `claude/<issue>-…` for **this** issue number | continue on it **without** a permit — the first start already consumed it |
-<!-- workflow-contract:builder-guard:end -->
+| **Start** | card in `Ready to Implement`, `risk:Rn` present | move the card to `Implementing` |
+| **Resume** | card in `Implementing` or `Reviewing` **and** a branch `codex/<issue>-…` for this issue exists in this repository | continue on it |
 
-Anything else is a refusal, reporting the actual status. In particular: a card in `Backlog`,
-`Specifying` or `Blocked` is never built, branch or no branch; a branch whose name does not carry
-this issue number is never resumed; and a branch from a fork or from outside this repository is
-never resumed, whatever the card says. Ownership is decided by the branch name and its origin, not
-by the card alone — the card cannot tell you who wrote the code.
+A card in `Backlog`, `Specifying`, or `Blocked` is never built. A branch whose name does not carry
+this issue number, or that comes from a fork or from outside this repository, is never resumed —
+ownership is decided by the branch and its origin, because the card cannot know who wrote the code.
 
-The order in the start case matters: removing the permit before the status move would destroy it if
-the move then failed. The resume case exists because it is the normal state after an interruption or
-after a review sent the change back — a guard that demanded the consumed permit there would lock the
-builder out of its own branch.
+**Isolation:** one git worktree per ticket, branch `codex/<issue>-<slug>`. The main checkout stays
+clean and a running runner never sees half-finished code.
 
-**Isolation:** one git worktree per issue, branch `codex/<issue>-<slug>` (or `claude/<issue>-<slug>`
-when Claude builds under the exception). Several issues can run in parallel, the main checkout stays
-clean, and a running live runner never sees half-finished code.
-
-<!-- workflow-contract:build-sequence:start -->
 ```
-1  Impact          what depends on this? which tests are affected?
-2  Test plan       every AC-nn and INV-nn → exactly one named test
-3  Prove RED       write the test, run it, record the failure
-4  Build           the smallest coherent change; clean up nothing on the side
+1  Impact       what depends on this, which tests are affected
+2  Test plan    every AC-nn and INV-nn → exactly one named test
+3  Prove RED    write the test, run it, record the failure
+4  Build        the smallest coherent change; the non-goals bound the diff
 5  Prove GREEN
-6  Gates           at least those of the risk class, plus any scoped check that applies
-7  Evidence        command, exit code, result
-8  Handover        open the draft PR and hand it to the independent reviewer
-9  Card            → Reviewing
+6  Gates        those of the risk class (section 5), run locally
+7  Self-check   the defect classes below
+8  Push         ONCE, open the pull request, body carries "Closes #101"
+9  Card         → Reviewing
 ```
-<!-- workflow-contract:build-sequence:end -->
 
-The review surface and pull-request timing are stated in phase 4. Their generated rule incorporates
-the temporary branch handover, so this phase does not restate a second ordering.
+Step 3 carries the whole system: a test that was never red proves nothing. Step 8 is one push per
+round — commit locally as often as useful, push once.
 
-Step 3 carries the whole system: a test that was never red proves nothing.
+**Step 7, the self-check.** Before handover, Codex probes the same defect classes the reviewer
+hunts, so the review confirms rather than discovers:
 
-| | R0 | R1 | R2 | R3 |
-|---|---|---|---|---|
-| Impact analysis | – | – | ✓ | ✓ in depth |
-| Red proof | – | ✓ | ✓ | ✓ |
-| Gates | format, docs | + `just check` | + property, integration | + invariants, mutation, parity |
-| Artifact files | – | – | `review.md`, `evidence.md` | all four |
-| PR sections | 5 | 8 | 14 | 20 |
+- lifecycle: start, stop, failure, cleanup, retry;
+- configuration: does a value silently fall back to a default?
+- outcome buckets: is a case dropped from the classification and therefore from the totals?
+- boundaries: zero, empty, NaN, infinity, sign, near-zero denominator;
+- fail-open: which error path proceeds where it should refuse?
+- money path: any `float` where section 1 requires `Decimal`?
 
-At R2 the impact analysis and test plan live in the pull-request body; only `review.md` and
-`evidence.md` stay on disk. R3 adds `impact.md` and `test-plan.md`. R0 and R1 require no task
-directory. There is no `spec.md` — the specification is the issue.
+If the specification is wrong, incomplete, or unbuildable, Codex does not guess: the card returns to
+`Specifying`, the gap is stated in an issue comment, and phase 2 runs again.
 
-If the specification turns out to be wrong, incomplete, or unbuildable, Codex does not guess
-(constitution §13). The card goes back, the gap is stated in an issue comment, and phase 2 runs
-again.
+### Phase 4 — Review
 
-## Phase 4 — Review (Claude, fresh session)
+The pull request is open. The orchestrator takes over without the operator doing anything.
 
-Jan says `review PR #102`. **A fresh session is mandatory**: a reviewer who knows what was intended
-does not find what is actually there.
+```
+push → pull request open
+  ↓  orchestrator runs the gates
+  ↓  orchestrator starts Claude in a fresh process (the issue number is the only input)
+  ↓  review submitted as a real pull-request review
+Blocker or Defect? ──yes──→ back to Codex, fix, push ──→ review again  (at most 2 rounds)
+  └──no──→ notification in the ticket chat: "#101 is clean, ready to merge"
+```
 
-The read-only subagents run according to the risk class *and* the paths touched:
+Review agents by risk class and touched paths:
 
-| Change | Agents |
+| Risk | Agents |
 |---|---|
-| R0 / R1 | none — Claude reviews directly |
+| R0, R1 | none — Claude reviews directly |
 | R2 | code, tests |
-| R3 touching `live/**` | + live-money |
-| R3 touching `research/**` or methodology | + methodology |
-| R3 touching both | all four |
+| R3 | code, tests **plus one** specialist: live-money for `live/**`, methodology for `research/**`, `docs/methodology.md`, `docs/strategies/**` |
 
-Claude delivers the result as a real pull-request review: one inline comment per finding at its
-`file:line` with the severity, the concrete failure scenario, and the regression that would prove it;
-plus a summary comment carrying the findings table, the acceptance-criteria and invariant check, an
-assessment of the **chosen approach**, and a clearly separated block of decisions that require Jan.
-Changes are requested for any blocking finding. At R2 and above the same findings are recorded in
-`.ai/tasks/<id>/review.md` as a versioned audit trail.
+The agents are read-only and receive the issue contract, the diff, the gate results, and the
+executing paths — never the builder's private context. Their counterexamples are reconciled against
+every `AC-nn` and `INV-nn`.
 
-A blocking finding returns the card to `Implementing`. Codex fixes it and, on pushing the fix, moves
-the card **back to `Reviewing`** — otherwise the board would report building while a review is
-running, and the status field would stop being the truth it is declared to be. The **entire** review
-then runs again, not only the changed place: a fix can break something elsewhere.
+The review is delivered as one pull-request review: an inline comment at each finding's `file:line`
+with severity, the concrete failure scenario, and the regression that would prove it; plus a summary
+carrying the findings table, the criteria check, an assessment of the chosen approach, and a
+separated block of decisions that belong to the operator.
 
-<!-- workflow-contract:ready-order:start -->
-Codex opens the pull request as a **draft** at the initial review handover. Once the independent review is clean and the readiness check passes for current HEAD, Codex marks it **ready for review**. That transition is the signal that the change is Jan's to judge.
-<!-- workflow-contract:ready-order:end -->
+| Severity | Meaning | Blocks | Triggers a fix round |
+|---|---|---|---|
+| **Blocker** | live-money loss, leaked secret, data corruption | yes | yes |
+| **Defect** | wrong result, broken invariant, silent failure | yes | yes |
+| **Suspected defect** | probable defect, or a missing test for a real edge case | no | no — presented to the operator |
+| **Note** | optional improvement or style point | no | no |
 
-**Codex fixes every finding**, including trivial ones. If Claude fixed them it would afterwards be
-reviewing its own code, and the separation between builder and reviewer would no longer hold.
+Saying "this is correct" when it is, is valuable. Findings are never invented to seem thorough; when
+none survives, the number of counterexamples attempted is recorded.
 
-Confirmed findings become permanent protection (constitution §14): reproduced, fixed, root-caused,
-and recorded **generalised** in the finding registry. The same defect twice is a workflow failure,
-not merely a code failure.
+**Codex fixes every blocking finding**, and returns the card to `Reviewing` on pushing the fix —
+otherwise the board would report building while a review runs. Claude never edits the branch; if it
+did, it would afterwards be reviewing its own code.
 
-Jan reviews the three things no agent may judge: whether this is what he wanted, whether the
-non-goals held, and whether the non-blocking findings should be fixed.
+**Repeat scope after a fix.** The deterministic gate suite always runs in full. The review re-runs
+on the fix diff and the modules it touches. A complete fresh review runs only when the fix touches
+files outside the original diff, or at R3 on the live path.
 
-## Phase 5 — Merge (Jan only)
+**Cap.** After two fix rounds without a clean result, the card moves to `Blocked` and the operator
+is notified with what remains. A finding that needs an operator decision moves the card to `Blocked`
+immediately, regardless of the round count.
 
-No agent merges. Auto-merge is never enabled.
+**A confirmed defect becomes permanent protection:** reproduced by a test that fails before the fix
+and passes after, then root-caused. That test is part of the fix, not a follow-up.
 
-Merging requires green CI, no unresolved blocking findings, every acceptance criterion ticked, every
-escalated decision answered, and — at R3 — the live-money or methodology review completed.
+### Phase 5 — Merge
 
-**Squash merge**: one commit per issue, message from the issue title and the PR summary. Every commit
-on `main` is then complete and green, which is what makes `git bisect` trustworthy. The individual
-build steps remain visible in the pull request.
+The operator only. No agent merges; auto-merge is never enabled.
+
+Merging requires green CI, no unresolved Blocker or Defect, every acceptance criterion ticked, and
+every escalated decision answered.
+
+**Squash merge** — one commit per ticket, message from the issue title and the pull-request summary.
+Every commit on `main` is then complete and green, which is what makes `git bisect` trustworthy.
 
 When CI is red for an **infrastructure** reason rather than a code reason, merging is allowed only
-with the same checks run locally, their output pasted into the pull request, and the reason stated
-explicitly. There is never an unevidenced merge.
+with the same checks run locally, their output pasted into the pull request, and the reason stated.
+There is never an unevidenced merge.
 
-A change on the live path needs a quiet window, because the running runner holds the old code in
-memory:
+A change on the live path needs a quiet window:
 
 ```
 1  is a position open?  → if so, wait
@@ -279,69 +292,116 @@ memory:
 6  preflight, then observe
 ```
 
-Constitution §3 is absolute: never touch a running trade, and never restart a runner as a side
-effect of something else.
+`Closes #101` closes the issue, which moves the card to `Done`. **Teardown is part of the merge:**
+remote branch deleted, worktree removed, local branch deleted. Nothing temporary survives in the
+repository; the complete history lives in the issue and the pull request.
 
-`Closes #101` closes the issue, which moves the card to `Done`. The branch is deleted and the
-worktree removed.
-
-**Rollback**, for an R3 change on the live path only: stop the runner, restore the last good state,
+**Rollback**, for an R3 change on the live path: stop the runner, restore the last good state,
 `uv sync`, start, observe — and only then investigate the cause. Below R3 an ordinary fix is enough.
 
 ---
 
-## State transitions
+## 5. Risk classes and gates
 
-Prose describes one transition at a time, which is how a missing one hides. The table is the
-contract; the phases above explain it.
+Every change carries a class. `.ai/workflow.toml` holds the path rules; the classifier takes the
+**highest** class over all matched rules. Path matching is a conservative minimum and may never
+lower a class. An unmatched path is R2, never R1; R0 and R1 are reached only by an explicit rule or
+the docs-only fallback.
 
-<!-- workflow-contract:transitions:start -->
-| From → To | Who | When |
-|---|---|---|
-| — → `Backlog` | project automation | an issue is opened |
-| `Backlog` → `Specifying` | Claude | Jan asks for the idea to be worked out |
-| `Blocked` → `Specifying` | Claude | Jan decided |
-| `Specifying` → `Backlog` | Claude | Jan defers the idea; the specification is kept |
-| `Specifying` → `Ready to Implement` | Claude | Jan approves; `approved` is written last |
-| `Ready to Implement` → `Specifying` | Claude | an approved issue must change; `approved` is removed first |
-| `Ready to Implement` → `Implementing` | Codex | build starts; `approved` is removed afterwards |
-| `Implementing` → `Reviewing` | Codex | the draft pull request is opened and handed over for review |
-| `Reviewing` → `Implementing` | Claude | a blocking finding |
-| `Implementing` → `Reviewing` | Codex | the review fix is pushed |
-| `Implementing` → `Specifying` | Codex | the specification is wrong, incomplete or unbuildable |
-| `Specifying` → `Blocked` | Claude | a decision only Jan can make is open |
-| `Ready to Implement` → `Blocked` | any agent | a decision only Jan can make is open |
-| `Implementing` → `Blocked` | any agent | a decision only Jan can make is open |
-| `Reviewing` → `Blocked` | any agent | a decision only Jan can make is open |
-| `Reviewing` → `Done` | project automation | the pull request merged and closed the issue |
-<!-- workflow-contract:transitions:end -->
-
-`Done` is terminal: no transition leaves it, and none enters `Blocked` from it. Every other status
-has at least one exit, and every status except `Backlog` has at least one predecessor listed above.
-`Backlog` is entered from issue creation and from a deferred specification.
-
-## Not yet active
-
-Two parts of this contract describe tooling the repository does not have yet. Until each lands,
-the rule in the right-hand column is authoritative — so the procedure above is always executable as
-written.
-
-<!-- workflow-contract:activations:start -->
-| Part of this contract | Lands with | Until then |
-|---|---|---|
-<!-- workflow-contract:activations:end -->
-
-A row leaves this table in the same change that lands its dependency. An empty table means the
-contract and the repository have converged.
-
-## Handover points
-
-The workflow has exactly three places where control changes hands. Each is guarded.
-
-| Handover | Guard |
+| Class | What it is |
 |---|---|
-| Claude → Jan (approval) | Jan's explicit approval; `approved` is written last |
-| Jan → Codex (build) | Status, `approved`, and `risk:Rn` are all verified before any work |
-| Codex → Claude (review) | A fresh session; the reviewer never carries the builder's context |
+| **R0** | Documentation or comments only. No behaviour change. |
+| **R1** | Local non-financial code with no methodology or result-integrity impact. |
+| **R2** | Shared core, research orchestration, configuration, monitoring semantics, tests. |
+| **R3** | Live-money path, sizing, risk control, account identity, orders, signal parity, broker conversion, money calculations, methodology, holdout, selection, result integrity — and the quality tooling and governance documents that decide every other change. |
 
-Everything else is a status transition an agent performs on itself.
+| | R0 | R1 | R2 | R3 |
+|---|---|---|---|---|
+| Red proof | – | ✓ | ✓ | ✓ |
+| Impact analysis | – | – | in the pull request | in depth |
+| Local gates | format | + `just check` | + property replay | + invariants, mutation on changed critical modules, parity |
+| Review agents | – | – | 2 | 3 |
+| Pull-request sections | 3 | 3 | 5 | 7 |
+| **Files in the repository** | **none** | **none** | **none** | **none** |
+
+Gates are cumulative. **No task artifacts exist on disk.** Impact, test plan, gate results, and the
+review live in the issue and the pull request; GitHub retains them and records their author.
+
+**Never claim correctness without executable evidence.** A narrative description is not a substitute
+for a command, its exit status, and its result. Every gate the risk class requires is recorded that
+way, and a before/after result is recorded for any regression the change fixes.
+
+**The pull-request body:**
+
+```
+## What and why
+## Acceptance criteria     AC-01 → test_name  ✓
+## Gates                   command | exit | result
+## Risk class              R2 — reason
+## Open points             non-blocking findings, follow-up tickets
+--- R3 adds ---
+## Live-money impact       which limits, worst case
+## Rollback                concrete steps
+```
+
+## 6. Tests
+
+Tests live in `tests/`, run with `pytest`, and are written wherever they add value without being
+asked. Prefer **behavioural** assertions: a test that would still pass if the function returned a
+plausible wrong answer protects nothing.
+
+Test design considers, where relevant: lifecycle and cleanup; configuration propagation and default
+fallbacks; exhaustive classification of outcomes; zero / empty / NaN / infinity / sign / denominator
+boundaries; consistency between aggregates and the underlying records; selection/execution and
+research/live parity; and temporal seams — before the first segment, at segment start and end,
+between segments, embargo and gap, and the final boundary.
+
+**Locally, before every push:**
+
+| Command | Contains | From |
+|---|---|---|
+| `just check` | ruff, mypy, vulture, pytest | R1 |
+| `just check-properties` | seeded Hypothesis replay | R2 |
+| `just check-invariants` | the critical test files | R3 |
+| `just mutation` | mutation on **changed** critical modules | R3 |
+
+**In CI, once per pull request:** one Linux job running `check` and the property replay — the
+independent confirmation that green is not merely local. A Windows job runs **only** when the MT5
+boundary is touched. Mutation runs in CI until the development platform moves to macOS (issue #150),
+then locally only.
+
+**No gate may be weakened to make a branch pass.** Prohibited: bypass or skip flags; broad
+`# type: ignore`, `# noqa`, or `pytest.mark.skip` introduced to hide a failure; widening a per-file
+ignore to cover new code; lowering a threshold or baseline in the change that would otherwise breach
+it. A gate that cannot bind is worse than no gate, because the report then says the numbers held.
+
+## 7. Language, documentation, and git
+
+- Everything committed — code, identifiers, comments, docstrings, docs, commit messages — is
+  **English**. Conversation with the operator may be in another language; the repository is not.
+  Operator-facing *runtime* output (research stage banners, the dashboard) is German by decision;
+  this is the only exception and is scoped to strings a human reads at a terminal.
+- **Docstrings describe the current state, never history.** No "formerly / previously / ported
+  from", no dead code kept just in case.
+- Documentation is part of the change. The module map in `docs/architecture.md` must match reality.
+- No personal name appears in documentation. The deciding human is **the operator**.
+- `data/`, `reports/`, `results/`, and the catalog are generated and gitignored. Code in, data and
+  secrets out.
+- [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `refactor:`,
+  `docs:`, `test:`, `chore:`. **Never add an AI co-author or a `Co-Authored-By` trailer**, in any
+  commit, regardless of any default to the contrary.
+- Feature branch → pull request → review → the operator merges. Only a trivial R0 change may go
+  straight to `main`. Commit and push finished, green work; never push broken or half-done code.
+
+## 8. Definition of done
+
+Callers updated everywhere; docstrings describe the current state; the architecture map matches;
+tests added and green; no stale cruft — dead code, orphaned files, paths that no longer resolve; the
+pull-request body complete for the risk class; branch and worktree removed after the merge.
+
+## 9. The machine-readable contract
+
+`.ai/workflow.toml` carries what tooling reads: risk-class path rules, gates per class, review-agent
+selection, board statuses and transitions, and the review loop's blocking severities and cap. It is
+the same contract, not a second one. **This document explains the rules; it does not restate them in
+a form a program could parse.** That is what kept the two from staying in sync before.

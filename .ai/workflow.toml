@@ -1,0 +1,398 @@
+# The machine-readable half of docs/engineering/workflow.md.
+#
+# Everything the tooling reads lives here and nowhere else: risk-class path rules, the gates each
+# class requires, review-agent selection, the board's statuses and transitions, and the review
+# loop's blocking severities and cap. The prose document explains these rules; it deliberately does
+# not restate them in a parseable form, so the two cannot drift apart.
+#
+# Read with stdlib `tomllib` — no third-party dependency.
+
+version = 2
+
+# ---------------------------------------------------------------------------
+# Risk classification
+# ---------------------------------------------------------------------------
+# SAFE BY DEFAULT. This repository is almost entirely on the money or methodology path, so the model
+# defaults high and downgrades only clearly safe things. Classification of one path:
+#   1. matches any rule  -> the HIGHEST class among the matched rules;
+#   2. else matches a docs-only glob -> R0;
+#   3. else -> default_min_class.
+# Path matching is a conservative MINIMUM. The author must raise the class when the semantic impact
+# is broader than the paths suggest. It may never lower one.
+
+[risk]
+default_min_class = "R2"
+docs_only_globs = ["*.md", "**/*.md", "docs/**", "LICENSE"]
+
+[risk.classes.R0]
+name = "Documentation or comments only"
+gates = ["format"]
+
+[risk.classes.R1]
+name = "Local non-financial implementation"
+gates = ["format", "check"]
+
+[risk.classes.R2]
+name = "Shared core, research orchestration, configuration, monitoring, tests"
+gates = ["format", "check", "properties"]
+
+[risk.classes.R3]
+name = "Live money, sizing, risk, methodology, result integrity"
+gates = ["format", "check", "properties", "invariants", "mutation", "parity"]
+
+# ---- R3: the live-money path ----
+[[risk.rules]]
+glob = "live/risk_control.py"
+min_class = "R3"
+reason = "internal risk limits must stay stricter than the prop firm's"
+
+[[risk.rules]]
+glob = "live/runner.py"
+min_class = "R3"
+reason = "live order placement and position sizing"
+
+[[risk.rules]]
+glob = "live/accounts.py"
+min_class = "R3"
+reason = "account identity guard"
+
+[[risk.rules]]
+glob = "live/mt5_bridge.py"
+min_class = "R3"
+reason = "broker bridge - orders, fills, money legs"
+
+[[risk.rules]]
+glob = "live/preflight.py"
+min_class = "R3"
+reason = "go/no-go safety pre-flight for the live account"
+
+[[risk.rules]]
+glob = "live/config/**"
+min_class = "R3"
+reason = "configuration promoted to live"
+
+[[risk.rules]]
+glob = "live/**"
+min_class = "R3"
+reason = "the live trading package"
+
+# ---- R3: strategy, broker, money, methodology, result integrity ----
+[[risk.rules]]
+glob = "core/strategies/**"
+min_class = "R3"
+reason = "signal parity, sizing and exit logic shared by backtest and live"
+
+[[risk.rules]]
+glob = "core/broker.py"
+min_class = "R3"
+reason = "broker/instrument conversion and money calculations"
+
+[[risk.rules]]
+glob = "core/instruments.py"
+min_class = "R3"
+reason = "instrument definitions feed sizing and money conversion"
+
+[[risk.rules]]
+glob = "core/config/broker/**"
+min_class = "R3"
+reason = "broker swap and cost snapshots feed swap_r and net returns"
+
+[[risk.rules]]
+glob = "core/data/**"
+min_class = "R3"
+reason = "reconstructs bid/ask, timestamps, spreads and bars - a parser change alters every result"
+
+[[risk.rules]]
+glob = "research/engine/**"
+min_class = "R3"
+reason = "selection, parameter search, and the config loader that live shares"
+
+[[risk.rules]]
+glob = "research/portfolio/**"
+min_class = "R3"
+reason = "equity, swap, holdout and reported-result computation"
+
+[[risk.rules]]
+glob = "research/stages/**"
+min_class = "R3"
+reason = "selection, holdout handling, verdict and lineage"
+
+[[risk.rules]]
+glob = "research/config/**"
+min_class = "R3"
+reason = "methodology configuration promoted to live"
+
+[[risk.rules]]
+glob = "research/regression.py"
+min_class = "R3"
+reason = "result-integrity gate for numerical changes"
+
+# ---- R3: the engine pins and the gates themselves ----
+[[risk.rules]]
+glob = "pyproject.toml"
+min_class = "R3"
+reason = "selects the NautilusTrader engine and MetaTrader bridge versions"
+
+[[risk.rules]]
+glob = "uv.lock"
+min_class = "R3"
+reason = "pins every dependency version that produces the numbers"
+
+[[risk.rules]]
+glob = "justfile"
+min_class = "R3"
+reason = "defines the gate commands; disabling one weakens every other change's checks"
+
+[[risk.rules]]
+glob = ".github/workflows/**"
+min_class = "R3"
+reason = "runs the gates in CI; a change here can stop enforcing them"
+
+[[risk.rules]]
+glob = ".ai/**"
+min_class = "R3"
+reason = "this contract governs every other change"
+
+[[risk.rules]]
+glob = "scripts/quality/**"
+min_class = "R3"
+reason = "the classifier and the orchestrator decide every other change's gates"
+
+[[risk.rules]]
+glob = ".claude/**"
+min_class = "R3"
+reason = "executable agent contracts govern building, review and safety boundaries"
+
+# ---- R3: governance and methodology documents ----
+[[risk.rules]]
+glob = "docs/engineering/**"
+min_class = "R3"
+reason = "the workflow contract - the governance itself"
+
+[[risk.rules]]
+glob = "docs/methodology.md"
+min_class = "R3"
+reason = "the trading methodology and holdout discipline"
+
+[[risk.rules]]
+glob = "docs/live-runbook.md"
+min_class = "R3"
+reason = "real-account execution and risk-state reset instructions"
+
+[[risk.rules]]
+glob = "docs/strategies/**"
+min_class = "R3"
+reason = "the pre-registered trial universe and DSR denominator"
+
+[[risk.rules]]
+glob = "CLAUDE.md"
+min_class = "R3"
+reason = "the reviewer and designer contract"
+
+[[risk.rules]]
+glob = "AGENTS.md"
+min_class = "R3"
+reason = "the builder contract"
+
+# ---- R2: shared core, orchestration, monitoring, tests ----
+[[risk.rules]]
+glob = "core/**"
+min_class = "R2"
+reason = "shared core"
+
+[[risk.rules]]
+glob = "research/**"
+min_class = "R2"
+reason = "research orchestration and reporting"
+
+[[risk.rules]]
+glob = "monitoring/**"
+min_class = "R2"
+reason = "live-versus-backtest monitoring semantics"
+
+[[risk.rules]]
+glob = "docs/architecture.md"
+min_class = "R2"
+reason = "load-bearing architecture and module-map contract"
+
+# Tests are the guards. A test-only change can delete a money-path check, so it is reviewed.
+[[risk.rules]]
+glob = "tests/**"
+min_class = "R2"
+reason = "the guards themselves - a deleted check must be reviewed"
+
+# ---- R1: repository tooling with no gate role ----
+[[risk.rules]]
+glob = "scripts/**"
+min_class = "R1"
+reason = "repository tooling with no gate role"
+
+# ---------------------------------------------------------------------------
+# Gates
+# ---------------------------------------------------------------------------
+# Each gate names the command that runs it. Gates are cumulative by risk class above.
+
+[gates.format]
+command = "just check-standard"
+
+[gates.check]
+command = "just check"
+
+[gates.properties]
+command = "just check-properties"
+
+[gates.invariants]
+command = "just check-invariants"
+
+[gates.mutation]
+command = "just mutation"
+# mutmut requires fork; until the development platform moves to macOS (issue #150) this gate runs
+# in CI rather than locally on Windows.
+local_platforms = ["darwin", "linux"]
+
+[gates.parity]
+command = "just check-parity"
+
+# ---------------------------------------------------------------------------
+# Review
+# ---------------------------------------------------------------------------
+
+[review]
+# Agents that always run, by risk class. R0 and R1 have none - Claude reviews directly.
+agents_by_class = { R0 = [], R1 = [], R2 = [
+  "code",
+  "tests",
+], R3 = [
+  "code",
+  "tests",
+] }
+
+# Exactly one specialist joins at R3, selected by the paths the change touches.
+[[review.specialists]]
+agent = "live-money"
+min_class = "R3"
+path_prefixes = ["live/"]
+
+[[review.specialists]]
+agent = "methodology"
+min_class = "R3"
+path_prefixes = ["research/", "docs/strategies/"]
+paths = ["docs/methodology.md"]
+
+[review.loop]
+# Only these severities block readiness and trigger an automatic fix round.
+blocking_severities = ["blocker", "defect"]
+# Severities collected and presented to the operator instead.
+advisory_severities = ["suspected-defect", "note"]
+max_fix_rounds = 2
+# After a fix, the full gate suite always reruns; the review rewalks the fix diff and the modules it
+# touches. A complete fresh review is required only under these conditions.
+full_rereview_when = ["touches-files-outside-original-diff", "R3-on-live-path"]
+
+# ---------------------------------------------------------------------------
+# Board
+# ---------------------------------------------------------------------------
+
+[board]
+project = "QPlus Capital - Trading System"
+risk_label_prefix = "risk:"
+statuses = [
+  "Backlog",
+  "Specifying",
+  "Ready to Implement",
+  "Implementing",
+  "Reviewing",
+  "Blocked",
+  "Done",
+]
+# Set by GitHub project automation, never by an agent.
+automated_statuses = ["Backlog", "Done"]
+
+[[board.transitions]]
+from = "Backlog"
+to = "Specifying"
+actor = "claude"
+trigger = "the operator asks for the idea to be worked out"
+
+[[board.transitions]]
+from = "Specifying"
+to = "Ready to Implement"
+actor = "claude"
+trigger = "the operator releases the specification"
+
+[[board.transitions]]
+from = "Specifying"
+to = "Backlog"
+actor = "claude"
+trigger = "the operator defers; the specification is kept"
+
+[[board.transitions]]
+from = "Ready to Implement"
+to = "Specifying"
+actor = "claude"
+trigger = "a released issue must change"
+
+[[board.transitions]]
+from = "Ready to Implement"
+to = "Implementing"
+actor = "codex"
+trigger = "the build starts"
+
+[[board.transitions]]
+from = "Implementing"
+to = "Reviewing"
+actor = "codex"
+trigger = "the pull request is opened, or a review fix is pushed"
+
+[[board.transitions]]
+from = "Implementing"
+to = "Specifying"
+actor = "codex"
+trigger = "the specification is wrong, incomplete or unbuildable"
+
+[[board.transitions]]
+from = "Reviewing"
+to = "Implementing"
+actor = "orchestrator"
+trigger = "a blocking finding"
+
+[[board.transitions]]
+from = "Specifying"
+to = "Blocked"
+actor = "claude"
+trigger = "a decision only the operator can make is open"
+
+[[board.transitions]]
+from = "Ready to Implement"
+to = "Blocked"
+actor = "any"
+trigger = "a decision only the operator can make is open"
+
+[[board.transitions]]
+from = "Implementing"
+to = "Blocked"
+actor = "any"
+trigger = "a decision only the operator can make is open"
+
+[[board.transitions]]
+from = "Reviewing"
+to = "Blocked"
+actor = "any"
+trigger = "a decision only the operator can make is open, or the fix-round cap is reached"
+
+[[board.transitions]]
+from = "Blocked"
+to = "Specifying"
+actor = "claude"
+trigger = "the operator decided"
+
+# ---------------------------------------------------------------------------
+# Branches and numbering
+# ---------------------------------------------------------------------------
+
+[naming]
+# Only issue numbers appear in operator-facing text. The pull request is reached through the branch.
+branch_pattern = "codex/{issue}-{slug}"
+claude_branch_pattern = "claude/{issue}-{slug}"
+pull_request_title = "#{issue} - {title}"
+closes_keyword = "Closes #{issue}"
