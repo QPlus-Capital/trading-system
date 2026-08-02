@@ -56,6 +56,14 @@ check: check-standard check-tests
 classify *paths:
     uv run python -m workflow.classify {{paths}}
 
+# Run exactly the gates this branch's risk class requires, and print the evidence table
+gates range="origin/main":
+    uv run python -m workflow.gates --base {{range}}
+
+# Read or move one card on the project board
+board *args:
+    uv run python -m workflow.board {{args}}
+
 # Conservative changed-file impact report and ignored local workflow/impact/test-map.json
 impact range="origin/main":
     uv run python -m workflow.impact --base {{range}}
@@ -76,6 +84,10 @@ check-security:
 # Critical invariant suite; separate CI visibility, never a substitute for the full tests
 check-invariants:
     uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_notify.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_workflow_classify.py tests/test_workflow_contract_docs.py
+
+# Backtest/live parity: the two adapters must produce identical signals from one engine
+check-parity:
+    uv run pytest -q tests/test_signal_adapter_parity.py tests/test_live_parity_check.py tests/test_strategy_sizing_basis.py
 
 # Mutation on the critical modules this branch changed (macOS/Linux; needs fork)
 mutation range="origin/main":

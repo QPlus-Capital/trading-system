@@ -1,5 +1,14 @@
 name: CI
 
+# The gates run locally before every push (`just gates`). CI is the independent confirmation that
+# green was not merely green on one machine. It therefore runs once per pull request, on Linux,
+# with the expensive platform-specific jobs conditional on the paths that actually need them.
+#
+# `required-checks` is the only context branch protection should require. GitHub counts a SKIPPED
+# required check as satisfied, so a conditional job must never be required directly -- that is
+# fail-open on the protection guarding `main`. This job always runs and fails if any needed job
+# failed, whatever the conditions decided.
+
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
@@ -12,35 +21,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  platform-quality:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-        with:
-          python-version: "3.13"
-          enable-cache: true
-          cache-dependency-glob: uv.lock
-      - name: Install locked dependencies including the Windows-only MT5 bridge
-        run: uv sync --locked
-      - name: "Gate: Standard Quality"
-        timeout-minutes: 20
-        run: uvx --from rust-just just check-standard
-      - name: Run the real-MT5 pytest boundary self-test
-        if: github.event.pull_request.draft == false
-        timeout-minutes: 30
-        run: uv run pytest -q tests/test_workflow_test_boundaries.py::test_pytest_blocks_real_mt5_boundaries
-
-  full-quality:
-    if: github.event.pull_request.draft == false
+  quality:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      UV_NO_SYNC: "1"
+    outputs:
+      needs_mt5: ${{ steps.scope.outputs.needs_mt5 }}
+      needs_mutation: ${{ steps.scope.outputs.needs_mutation }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -53,15 +39,134 @@ jobs:
           cache-dependency-glob: uv.lock
       - name: Install locked dependencies except the Windows-only MT5 bridge
         run: uv sync --locked --no-install-package metatrader5
-      - name: "Gate: Tests"
+
+      - name: Decide which conditional jobs this change needs
+        id: scope
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        shell: bash
+        run: |
+          uv run python - <<'PY'
+          import os
+
+          from workflow.classify import changed_paths, load_model
+          from workflow.impact import changed_tests_exercise_targets
+          from workflow.mutation import load_policy, select_fast_targets
+
+          paths = changed_paths(f"origin/{os.environ['BASE_REF']}")
+          policy = load_policy()
+
+          # The same production policy the local gate uses, so CI and `just gates` cannot disagree.
+          needs_mutation = bool(
+              select_fast_targets(paths, policy, load_model())
+              or changed_tests_exercise_targets(
+                  paths, tuple(target.path for target in policy.targets)
+              )
+          )
+          needs_mt5 = any(
+              path.startswith("live/mt5_bridge") or path.startswith("live/preflight")
+              or path == "tests/conftest.py"
+              or path.startswith("tests/test_live_mt5_bridge")
+              or path.startswith("tests/test_workflow_test_boundaries")
+              for path in paths
+          )
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"needs_mutation={str(needs_mutation).lower()}\n")
+              output.write(f"needs_mt5={str(needs_mt5).lower()}\n")
+          PY
+
+      - name: "Gate: check"
         timeout-minutes: 30
-        run: uvx --from rust-just just check-tests
-      - name: "Gate: Deterministic Property Replay"
-        timeout-minutes: 30
+        run: uvx --from rust-just just check
+      - name: "Gate: properties"
+        timeout-minutes: 20
         run: uvx --from rust-just just check-properties
-      - name: "Gate: Security"
+      - name: "Gate: security"
         timeout-minutes: 20
         run: uvx --from rust-just just check-security
-      - name: "Gate: Critical Invariants"
+      - name: "Gate: invariants"
         timeout-minutes: 20
         run: uvx --from rust-just just check-invariants
+      - name: "Gate: parity"
+        timeout-minutes: 20
+        run: uvx --from rust-just just check-parity
+
+  mt5-boundary:
+    needs: quality
+    if: needs.quality.outputs.needs_mt5 == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies including the Windows-only MT5 bridge
+        run: uv sync --locked
+      - name: Prove pytest cannot reach a real broker
+        run: uv run pytest -q tests/test_workflow_test_boundaries.py
+
+  mutation:
+    needs: quality
+    if: needs.quality.outputs.needs_mutation == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          python-version: "3.13"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Install locked dependencies except the Windows-only MT5 bridge
+        run: uv sync --locked --no-install-package metatrader5
+      - name: Prove a real weakened test creates a caught survivor
+        run: uvx --from rust-just just mutation-self-test
+      - name: Run the focused critical mutation ratchet
+        run: uvx --from rust-just just mutation-critical
+      - name: Retain the machine-readable mutation result
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-critical-result
+          path: workflow/mutation-results/critical.toml
+          if-no-files-found: error
+          include-hidden-files: true
+
+  required-checks:
+    needs: [quality, mt5-boundary, mutation]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any needed job failed or was cancelled
+        shell: bash
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          results = json.loads(os.environ["RESULTS"])
+          bad = {
+              name: job["result"]
+              for name, job in results.items()
+              if job["result"] not in {"success", "skipped"}
+          }
+          for name, job in results.items():
+              print(f"{name}: {job['result']}")
+          if bad:
+              print(f"\nFAILED: {bad}")
+              sys.exit(1)
+          print("\nAll required jobs passed or were legitimately skipped.")
+          PY

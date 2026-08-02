@@ -400,7 +400,29 @@ Callers updated everywhere; docstrings describe the current state; the architect
 tests added and green; no stale cruft — dead code, orphaned files, paths that no longer resolve; the
 pull-request body complete for the risk class; branch and worktree removed after the merge.
 
-## 9. The machine-readable contract
+## 9. The tooling
+
+Four commands, each doing one thing. None of them decides policy: the class comes from the
+classifier, the gates and transitions from the contract, and the findings from the reviewer.
+
+| Command | Does |
+|---|---|
+| `just classify` | the risk class of this branch, and why |
+| `just gates` | runs exactly the gates that class requires, and prints the evidence table for the pull request |
+| `just board status <issue>` / `just board move <issue> "<Status>"` | reads or moves one card; refuses any transition the contract does not list |
+| `uv run python -m workflow.orchestrate run <issue>` | the review cycle: gates → review → fix → review, capped, then one notification |
+
+The board tool answers by **issue number in one request**. Listing a whole project to find one card
+is what exhausted the GraphQL budget and left the board unreadable for forty minutes.
+
+The orchestrator reads the reviewer's verdict from a structured marker the review comment carries,
+never from its prose — otherwise the loop's exit condition would be a matter of phrasing. It never
+merges, approves, or marks anything ready.
+
+A gate the platform cannot run is reported **deferred**, never passed. Mutation needs `fork`, which
+Windows does not have; until the development platform moves to macOS (issue #150) it runs in CI.
+
+## 10. The machine-readable contract
 
 `workflow/workflow.toml` carries what tooling reads: risk-class path rules, gates per class, review-agent
 selection, board statuses and transitions, and the review loop's blocking severities and cap. It is

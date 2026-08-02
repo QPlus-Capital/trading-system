@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import io
 import re
+import shlex
 import tokenize
 from dataclasses import dataclass
 
@@ -58,12 +59,65 @@ _SKIP = re.compile(r"(?:@|\.)pytest\.mark\.skip(?:if)?\b", re.IGNORECASE)
 _VERIFY_BYPASS = re.compile(r"(?:^|\s)--no-" + "verify(?:\\s|$)")
 
 
+#: Flags whose following token is free text the user wrote, never something the shell executes.
+#: A commit message that *mentions* a live command must not read as one.
+#:
+#: These are only honoured for `git` and `gh`, because `-m` is overloaded: `git commit -m <text>`
+#: takes a message, but `python -m <module>` names the module to RUN. Stripping it unconditionally
+#: would hide `python -m live.run` from the live-trading guard.
+_DATA_FLAGS = frozenset(
+    {"-m", "--message", "-F", "--file", "-b", "--body", "--body-file", "-d", "--description"}
+)
+_TEXT_TAKING_PROGRAMS = frozenset({"git", "gh"})
+#: `cmd <<EOF ... EOF` and `cmd <<-'EOF' ... EOF`: the body is input, not command text.
+_HEREDOC = re.compile(r"<<-?\s*(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1.*?^\s*(?P=tag)\s*$",
+                      re.DOTALL | re.MULTILINE)
+_SEGMENT = re.compile(r"(?:\|\||&&|[;|&\n])")
+
+
 @dataclass(frozen=True)
 class Decision:
     """One deterministic hook decision with a fixed, non-sensitive explanation."""
 
     allowed: bool
     reason: str = ""
+
+
+def executable_surface(command: str) -> str:
+    """The part of a shell command that actually names programs and flags.
+
+    Heredoc bodies and the values of message-like flags are data the user wrote, not instructions
+    the shell will run. Matching safety patterns against them produced false refusals -- a commit
+    message describing a live command read exactly like invoking one. Everything else is kept, so a
+    real invocation still matches: this narrows *where* the patterns look, never *what* they catch.
+
+    Falls back to the raw command when the text cannot be tokenised, which fails closed.
+    """
+
+    stripped = _HEREDOC.sub(" ", command)
+    surfaces: list[str] = []
+    for segment in _SEGMENT.split(stripped):
+        if not segment.strip():
+            continue
+        try:
+            tokens = shlex.split(segment, posix=True)
+        except ValueError:
+            surfaces.append(segment)
+            continue
+        strips_text = any(token in _TEXT_TAKING_PROGRAMS for token in tokens)
+        kept: list[str] = []
+        skip_next = False
+        for token in tokens:
+            if skip_next:
+                skip_next = False
+                continue
+            flag, separator, _ = token.partition("=")
+            if strips_text and flag in _DATA_FLAGS:
+                skip_next = not separator
+                continue
+            kept.append(token)
+        surfaces.append(" ".join(kept))
+    return "\n".join(surfaces)
 
 
 def _allow() -> Decision:
@@ -157,13 +211,14 @@ def _widens_per_file_ignores(diff: str) -> bool:
 def dangerous_command_decision(command: str) -> Decision:
     """Block live execution, runner control, order actions, and forced pushes to main."""
 
+    surface = executable_surface(command)
     forced_main = bool(
-        _PUSH.search(command) and _FORCE.search(command) and _MAIN_REF.search(command)
+        _PUSH.search(surface) and _FORCE.search(surface) and _MAIN_REF.search(surface)
     )
     if (
-        _LIVE_COMMAND.search(command)
-        or _RUNNER_CONTROL.search(command)
-        or _ORDER_ACTION.search(command)
+        _LIVE_COMMAND.search(surface)
+        or _RUNNER_CONTROL.search(surface)
+        or _ORDER_ACTION.search(surface)
     ):
         return _deny(
             "Blocked: live execution, runner control, and order operations are prohibited."
@@ -188,10 +243,11 @@ def secret_decision(staged_diff: str) -> Decision:
 def main_branch_decision(command: str, branch: str, risk_class: str) -> Decision:
     """Allow direct main commits and pushes only for changes classified as trivial R0."""
 
-    if not (_COMMIT.search(command) or _PUSH.search(command)) or risk_class == "R0":
+    surface = executable_surface(command)
+    if not (_COMMIT.search(surface) or _PUSH.search(surface)) or risk_class == "R0":
         return _allow()
     targets_main = branch.casefold() == "main" or bool(
-        _PUSH.search(command) and _MAIN_REF.search(command)
+        _PUSH.search(surface) and _MAIN_REF.search(surface)
     )
     if targets_main:
         return _deny("Blocked: R1-R3 changes must use a feature branch and pull request.")
@@ -201,9 +257,10 @@ def main_branch_decision(command: str, branch: str, risk_class: str) -> Decision
 def bypass_decision(command: str, diff: str) -> Decision:
     """Block verification bypass flags and newly added broad suppressions or skips."""
 
-    if _VERIFY_BYPASS.search(command):
+    surface = executable_surface(command)
+    if _VERIFY_BYPASS.search(surface):
         return _deny("Blocked: bypassing commit verification is prohibited.")
-    if _BOUNDARY.search(command) is None:
+    if _BOUNDARY.search(surface) is None:
         return _allow()
     for line in _added_python_lines(diff):
         code, comments = _python_controls(line)

@@ -106,7 +106,7 @@ def test_mutmut_all_results_passes_the_required_boolean_value() -> None:
 
 
 def test_mutation_workflow_invokes_the_just_executable() -> None:
-    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "mutation.yml").read_text(
+    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"
     )
     assert "uvx --from rust-just just mutation-critical" in workflow
@@ -129,7 +129,7 @@ def test_mutation_copies_the_classifier_model_into_the_mutant_tree() -> None:
 
 
 def test_mutation_workflow_uploads_the_hidden_machine_report() -> None:
-    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "mutation.yml").read_text(
+    workflow = (Path(__file__).parents[1] / ".github" / "workflows" / "ci.yml").read_text(
         encoding="utf-8"
     )
     assert "include-hidden-files: true" in workflow
