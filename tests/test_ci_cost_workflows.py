@@ -19,10 +19,8 @@ _FULL_RECIPES = {
     "check-standard",
     "check-tests",
     "check-properties",
-    "check-task-artifact",
     "check-security",
     "check-invariants",
-    "check-pr-evidence",
 }
 _FAST_RECIPES = {"check-standard"}
 _TOKEN = re.compile(
@@ -425,10 +423,8 @@ def test_each_consolidated_gate_keeps_its_previous_timeout_ceiling() -> None:
     expected = {
         "Gate: Tests": 30,
         "Gate: Deterministic Property Replay": 30,
-        "Gate: Task-Artifact Validation": 10,
         "Gate: Security": 20,
         "Gate: Critical Invariants": 20,
-        "Gate: PR-Evidence Validation": 10,
     }
     full = {
         str(step.get("name", "")): int(str(step["timeout-minutes"]))

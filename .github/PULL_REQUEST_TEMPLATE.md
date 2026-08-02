@@ -1,84 +1,46 @@
 <!--
-Keep the exact section set required by the declared risk class:
-R0 = 5, R1 = 8, R2 = 14, R3 = all 20. The machine policy is authoritative.
+Five sections; R3 adds the last two. docs/engineering/workflow.md section 5 is authoritative.
+Delete the R3 block for anything below R3.
 -->
 
-## Linked issue
+## What and why
 
 Closes #<!-- issue number -->
 
-## Task artifact
-
-`.ai/tasks/<issue-number>/`
-
-## Summary
-
-<!-- Observable behaviour changed and why. -->
-
-## Risk class and reason
-
-<!-- R0-R3 plus the classifier/manual-upgrade reason. -->
+<!-- Two to four sentences: the observable behaviour that changed, and why. -->
 
 ## Acceptance criteria
 
-- [ ] <!-- Map each issue AC to an executable test. -->
+<!-- One row per AC from the issue. Every criterion maps to exactly one named test. -->
 
-## Invariant checklist
+| | Criterion | Test | Met |
+|---|---|---|---|
+| AC-01 | | `test_...` | ☐ |
 
-- [ ] <!-- Map each invariant to its proof. -->
+## Gates
 
-## Affected modules
+<!-- Every gate the risk class requires, with the command actually run and its exit status.
+     Never claim correctness without executable evidence. -->
 
-<!-- Direct and transitive production/tooling paths. -->
+| Gate | Command | Exit | Result |
+|---|---|---|---|
+| | | | |
 
-## Impact-analysis summary
+## Risk class
 
-<!-- Summarize `just impact`; include unknown/dynamic edges. -->
+<!-- R0-R3 and the reason. State it explicitly when the class was raised above the classifier. -->
 
-## Tests added
+## Open points
 
-<!-- Behavioural and boundary tests. -->
+<!-- Non-blocking findings, follow-up issues, anything deliberately left out. "None" is an answer. -->
 
-## Proof of red-first regression
-
-<!-- Exact failing command and failure before implementation, when applicable. -->
-
-## Commands and outcomes
-
-<!-- Exact command, exit status, and concise result; artifact evidence remains authoritative. -->
-
-## Property-test summary
-
-<!-- Seed, examples, repeated result, or not applicable with reason. -->
-
-## Mutation summary
-
-<!-- Linux run, ratchet result, artifact, or not applicable with reason. -->
-
-## Security summary
-
-<!-- Secret scan, dependency audit, and static-security result. -->
+<!-- ------------------------- R3 only below ------------------------- -->
 
 ## Live-money impact
 
-<!-- Explicitly state affected live/risk/order paths or none. -->
+<!-- Which limits this touches, what happens in the worst case if it is wrong, and whether a
+     running runner is affected. -->
 
-## Deferred validations
+## Rollback
 
-<!-- Validation, owner, and completion condition; or none. -->
-
-## Adversarial-review summary
-
-<!-- Counterexamples, findings, fixes, and dispositions. -->
-
-## Codex status
-
-<!-- Builder status: implementation complete / readiness passed / review fixes pending. -->
-
-## Human decisions required
-
-<!-- Jan's decisions, especially R3 scope/go-live/merge; or none. -->
-
-## Live-runner attestation
-
-- [ ] No live runner was touched.
+<!-- The concrete steps to get back to the last good state. -->

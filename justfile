@@ -67,15 +67,6 @@ check-fast range="origin/main":
     uv run mypy
     uv run python -m scripts.quality.impact --base {{range}} --run-focused
 
-# Validate the one changed task artifact (or pass its ID explicitly)
-check-task-artifact task_id="" range="origin/main":
-    uv run python -m scripts.quality.impact --base {{range}}
-    uv run python -m scripts.quality.validate_task --task-id "{{task_id}}" --base {{range}}
-
-# Scaffold only the task artifacts required by the issue's risk label
-new-task issue:
-    uv run python -m scripts.quality.issue_body scaffold --issue {{issue}}
-
 # Secret scan, dependency vulnerability audit, and high-signal static security checks
 check-security:
     uv run python -m scripts.quality.security
@@ -84,28 +75,16 @@ check-security:
 
 # Critical invariant suite; separate CI visibility, never a substitute for the full tests
 check-invariants:
-    uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_notify.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_quality_classify.py tests/test_quality_pr_ready.py
+    uv run pytest -q tests/test_live_risk_control.py tests/test_live_accounts.py tests/test_live_mt5_bridge.py tests/test_live_runner_cycle.py tests/test_live_notify.py tests/test_live_run_cli.py tests/test_live_parity_check.py tests/test_signal_adapter_parity.py tests/test_strategy_sizing_basis.py tests/test_research_h4_path.py tests/test_research_sizing.py tests/test_research_portfolio_dd.py tests/test_research_risk.py tests/test_research_stats.py tests/test_research_scenarios.py tests/test_research_path_risk.py tests/test_research_continuous_windows.py tests/test_research_regression.py tests/test_research_forward_test_registry.py tests/test_research_forward_decision.py tests/test_research_forward_decision_power.py tests/test_quality_classify.py tests/test_engineering_docs.py
 
-# Validate the PR template and bind its task reference to current readiness evidence
-check-pr-evidence body_file="" range="origin/main":
-    uv run python -m scripts.quality.pr_body --body-file "{{body_file}}" --base {{range}}
-
-# Fast mutation feedback for configured R3 modules changed on this branch (Linux/WSL only)
-mutation-fast range="origin/main":
+# Mutation on the critical modules this branch changed (macOS/Linux; needs fork)
+mutation range="origin/main":
     uv run --no-sync --with mutmut==3.5.0 python -m scripts.quality.mutation run --scope fast --base {{range}}
 
-# Full focused critical mutation scope with the committed TOML ratchet (Linux/WSL only)
+# Full focused critical mutation scope with the committed TOML ratchet (macOS/Linux)
 mutation-critical:
     uv run --no-sync --with mutmut==3.5.0 python -m scripts.quality.mutation run --scope critical
 
-# Prove the mutation ratchet catches a real weakened test (Linux/WSL only)
+# Prove the mutation ratchet catches a real weakened test (macOS/Linux)
 mutation-self-test:
     uv run --no-sync --with mutmut==3.5.0 pytest -q tests/test_quality_mutation.py::test_a_real_weakened_test_increases_survivors_and_is_caught
-
-# Critical-path gate; never substitutes for `just check`
-check-critical range="origin/main":
-    just mutation-fast {{range}}
-
-# Validate task artifacts, traceability, risk classification, review findings, and HEAD evidence
-pr-ready task_id="" range="origin/main":
-    uv run python -m scripts.quality.pr_ready {{task_id}} --base {{range}}

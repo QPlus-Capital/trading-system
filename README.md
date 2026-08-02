@@ -43,8 +43,8 @@ just check           # ruff + mypy + pytest (before every commit)
 ```
 
 Getting from a fresh clone to a runnable setup: **[RUN.md](RUN.md)**. The shared engineering rules
-are the **[constitution](docs/engineering/constitution.md)**; **[AGENTS.md](AGENTS.md)** is Codex's
-builder contract and **[CLAUDE.md](CLAUDE.md)** is Claude's reviewer and conceptual-designer
+are the **[development workflow](docs/engineering/workflow.md)**; **[AGENTS.md](AGENTS.md)** is
+Codex's builder contract and **[CLAUDE.md](CLAUDE.md)** is Claude's specification and review
 contract.
 
 ## Tech stack

@@ -44,10 +44,8 @@ def test_every_ci_gate_invokes_a_local_just_recipe() -> None:
         "check-standard",
         "check-tests",
         "check-properties",
-        "check-task-artifact",
         "check-security",
         "check-invariants",
-        "check-pr-evidence",
     ):
         assert re.search(rf"^{re.escape(recipe)}(?:\s+[^:]*)?:", _JUSTFILE, re.MULTILINE)
         assert f"just {recipe}" in _CI
@@ -106,7 +104,7 @@ def test_ci_does_not_hide_gate_logic_outside_just_recipes() -> None:
     assert "uv run --no-sync --with mutmut" not in _MUTATION
 
 
-def test_task_artifact_recipe_reuses_the_existing_impact_engine() -> None:
-    recipe = _JUSTFILE.split("check-task-artifact", 1)[1].split("\n\n", 1)[0]
+def test_the_focused_test_recipe_reuses_the_existing_impact_engine() -> None:
+    recipe = _JUSTFILE.split("check-fast", 1)[1].split("\n\n", 1)[0]
     assert "scripts.quality.impact" in recipe
-    assert "scripts.quality.validate_task" in recipe
+    assert "--run-focused" in recipe

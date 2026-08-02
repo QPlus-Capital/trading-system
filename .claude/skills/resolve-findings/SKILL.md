@@ -29,7 +29,7 @@ hands executable remediations to the builder. The builder alone changes the bran
 
 ## Stop conditions
 
-- Stop if the correction needs a Jan-owned decision, expands scope, or passes only at a helper the
+- Stop if the correction needs an operator decision, expands scope, or passes only at a helper the
   production path does not execute.
 
 ## Prohibited shortcuts

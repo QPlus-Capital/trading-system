@@ -30,15 +30,15 @@ gates = ["format"]
 
 [risk.classes.R1]
 name = "Local non-financial implementation"
-gates = ["format", "check"]
+gates = ["format", "check", "security"]
 
 [risk.classes.R2]
 name = "Shared core, research orchestration, configuration, monitoring, tests"
-gates = ["format", "check", "properties"]
+gates = ["format", "check", "security", "properties"]
 
 [risk.classes.R3]
 name = "Live money, sizing, risk, methodology, result integrity"
-gates = ["format", "check", "properties", "invariants", "mutation", "parity"]
+gates = ["format", "check", "security", "properties", "invariants", "mutation", "parity"]
 
 # ---- R3: the live-money path ----
 [[risk.rules]]
@@ -159,6 +159,11 @@ min_class = "R3"
 reason = "the classifier and the orchestrator decide every other change's gates"
 
 [[risk.rules]]
+glob = ".claude/settings.json"
+min_class = "R3"
+reason = "project hooks can block or permit every commit and push"
+
+[[risk.rules]]
 glob = ".claude/**"
 min_class = "R3"
 reason = "executable agent contracts govern building, review and safety boundaries"
@@ -237,6 +242,9 @@ command = "just check-standard"
 
 [gates.check]
 command = "just check"
+
+[gates.security]
+command = "just check-security"
 
 [gates.properties]
 command = "just check-properties"

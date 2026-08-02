@@ -1,10 +1,10 @@
 """Change-risk classifier: map changed paths to their R0-R3 class from the authoritative model.
 
-Reads ``.ai/quality/risk-classes.toml`` (safe-by-default) and reports the highest class over a
-change set, with the reason for each contributing path. Path matching is a **conservative
+Reads the ``[risk]`` table of ``.ai/workflow.toml`` (safe-by-default) and reports the highest class
+over a change set, with the reason for each contributing path. Path matching is a **conservative
 minimum**: the author must upgrade when the semantic impact is broader than the paths suggest
-(constitution section 9). This module is the single implementation of the matcher -- the guard test
-imports it, so the model, the tests and the tooling cannot disagree.
+(``docs/engineering/workflow.md`` section 5). This module is the single implementation of the
+matcher -- the guard test imports it, so the model, the tests and the tooling cannot disagree.
 
 CLI::
 
@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MODEL_PATH = REPO_ROOT / ".ai" / "quality" / "risk-classes.toml"
+MODEL_PATH = REPO_ROOT / ".ai" / "workflow.toml"
 
 CLASSES = ("R0", "R1", "R2", "R3")
 _RANK = {c: i for i, c in enumerate(CLASSES)}
@@ -56,7 +56,8 @@ class Model:
 
 
 def load_model(path: Path = MODEL_PATH) -> Model:
-    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    """Load the risk model from the ``[risk]`` table of the workflow contract."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))["risk"]
     default = str(data["default_min_class"])
     if default not in CLASSES:
         raise ValueError(f"default_min_class {default!r} is not one of {CLASSES}")

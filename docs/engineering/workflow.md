@@ -319,7 +319,7 @@ the docs-only fallback.
 |---|---|---|---|---|
 | Red proof | – | ✓ | ✓ | ✓ |
 | Impact analysis | – | – | in the pull request | in depth |
-| Local gates | format | + `just check` | + property replay | + invariants, mutation on changed critical modules, parity |
+| Local gates | format | + `just check`, security | + property replay | + invariants, mutation on changed critical modules, parity |
 | Review agents | – | – | 2 | 3 |
 | Pull-request sections | 3 | 3 | 5 | 7 |
 | **Files in the repository** | **none** | **none** | **none** | **none** |
@@ -361,6 +361,7 @@ between segments, embargo and gap, and the final boundary.
 | Command | Contains | From |
 |---|---|---|
 | `just check` | ruff, mypy, vulture, pytest | R1 |
+| `just check-security` | secret scan, dependency audit, security lint | R1 |
 | `just check-properties` | seeded Hypothesis replay | R2 |
 | `just check-invariants` | the critical test files | R3 |
 | `just mutation` | mutation on **changed** critical modules | R3 |

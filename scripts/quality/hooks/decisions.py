@@ -3,6 +3,11 @@
 These functions receive only already-collected metadata. They never read files, run Git, invoke a
 quality gate, or interact with live trading, which keeps every policy decision deterministic and
 unit-testable.
+
+The hook guards the boundaries that must hold regardless of which agent is driving and regardless
+of process state: live trading is never touched, a credential never reaches a commit, a code change
+never lands directly on ``main``, and a gate is never weakened to make a branch pass. Process
+sequencing is not enforced here -- the board and the orchestrator own that.
 """
 
 from __future__ import annotations
@@ -10,20 +15,11 @@ from __future__ import annotations
 import io
 import re
 import tokenize
-from collections.abc import Sequence
 from dataclasses import dataclass
 
-from scripts.quality.validate_task import EvidenceRecord, ValidationIssue
-
-_BOUNDARY = re.compile(
-    r"\b(?:git\s+(?:commit|push)|gh\s+pr\s+(?:create|ready))\b",
-    re.IGNORECASE,
-)
+_BOUNDARY = re.compile(r"\bgit\s+(?:commit|push)\b", re.IGNORECASE)
 _COMMIT = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
 _PUSH = re.compile(r"\bgit\s+push\b", re.IGNORECASE)
-_PR_CREATE = re.compile(r"\bgh\s+pr\s+create\b", re.IGNORECASE)
-_PR_READY = re.compile(r"\bgh\s+pr\s+ready\b", re.IGNORECASE)
-_DRAFT = re.compile(r"(?:^|\s)--draft(?:\s|$)", re.IGNORECASE)
 _LIVE_COMMAND = re.compile(
     r"(?:\b(?:uv\s+run\s+)?python(?:\.exe)?\s+-m\s+"
     r"live\.(?:run|preflight|parity_check)\b|\bjust\s+live(?:-[\w]+)*(?:-execute)?\b)",
@@ -59,7 +55,7 @@ _PLACEHOLDERS = re.compile(
 _TYPE_IGNORE = re.compile(r"#\s*type:\s*ignore\b(?P<suffix>.*)", re.IGNORECASE)
 _NOQA = re.compile(r"#\s*noqa\b(?P<suffix>.*)", re.IGNORECASE)
 _SKIP = re.compile(r"(?:@|\.)pytest\.mark\.skip(?:if)?\b", re.IGNORECASE)
-_REVIEW_CODES = {"missing-adversarial-review", "unresolved-review"}
+_VERIFY_BYPASS = re.compile(r"(?:^|\s)--no-" + "verify(?:\\s|$)")
 
 
 @dataclass(frozen=True)
@@ -101,6 +97,9 @@ def _added_python_lines(diff: str) -> tuple[str, ...]:
 
 
 def _python_controls(line: str) -> tuple[str, str]:
+    """Split one added line into its code and its comments, so a string literal cannot trip a
+    suppression check and a comment cannot hide one."""
+
     try:
         tokens = tuple(tokenize.generate_tokens(io.StringIO(f"{line.lstrip()}\n").readline))
     except (IndentationError, tokenize.TokenError):
@@ -113,6 +112,8 @@ def _python_controls(line: str) -> tuple[str, str]:
 
 
 def _has_broad_ignore(comments: str) -> bool:
+    """A suppression is broad when it names no specific rule, which silences future errors too."""
+
     type_ignore = _TYPE_IGNORE.search(comments)
     if type_ignore is not None:
         suffix = type_ignore.group("suffix").strip()
@@ -154,7 +155,7 @@ def _widens_per_file_ignores(diff: str) -> bool:
 
 
 def dangerous_command_decision(command: str) -> Decision:
-    """Block live execution/control, order actions, and forced pushes to main."""
+    """Block live execution, runner control, order actions, and forced pushes to main."""
 
     forced_main = bool(
         _PUSH.search(command) and _FORCE.search(command) and _MAIN_REF.search(command)
@@ -185,7 +186,7 @@ def secret_decision(staged_diff: str) -> Decision:
 
 
 def main_branch_decision(command: str, branch: str, risk_class: str) -> Decision:
-    """Allow direct main commits/pushes only for changes classified as trivial R0."""
+    """Allow direct main commits and pushes only for changes classified as trivial R0."""
 
     if not (_COMMIT.search(command) or _PUSH.search(command)) or risk_class == "R0":
         return _allow()
@@ -197,61 +198,11 @@ def main_branch_decision(command: str, branch: str, risk_class: str) -> Decision
     return _allow()
 
 
-def pr_transition_decision(
-    command: str, readiness_passed: bool, task_id: str | None = None
-) -> Decision:
-    """Require draft creation and gate only the later ready-for-review transition."""
-
-    if _PR_CREATE.search(command):
-        if _DRAFT.search(command):
-            return _allow()
-        return _deny("Blocked: pull requests must be created as drafts for independent review.")
-    if not _PR_READY.search(command) or readiness_passed:
-        return _allow()
-    task = task_id or "<task-id>"
-    return _deny(
-        "Blocked: run "
-        f"uv run python -m scripts.quality.pr_ready {task} --base origin/main "
-        "and resolve every failure before marking the pull request ready for review."
-    )
-
-
-def baseline_evidence_decision(
-    command: str,
-    changed: Sequence[str],
-    evidence: Sequence[EvidenceRecord],
-) -> Decision:
-    """Require passing mutation evidence when a committed quality baseline changes."""
-
-    if _BOUNDARY.search(command) is None:
-        return _allow()
-    baseline_changed = any(
-        (normalized := path.replace("\\", "/")).startswith(".ai/quality/")
-        and (
-            "baseline" in normalized.rsplit("/", maxsplit=1)[-1].casefold()
-            or normalized == ".ai/quality/mutation.toml"
-        )
-        for path in changed
-    )
-    if not baseline_changed:
-        return _allow()
-    has_evidence = any(
-        record.gate == "mutation-on-touched-critical" and record.exit_status == 0
-        for record in evidence
-    )
-    if has_evidence:
-        return _allow()
-    return _deny(
-        "Blocked: a quality baseline changed without successful mutation-on-touched-critical "
-        "evidence."
-    )
-
-
 def bypass_decision(command: str, diff: str) -> Decision:
     """Block verification bypass flags and newly added broad suppressions or skips."""
 
-    if re.search(r"(?:^|\s)--no-verify(?:\s|$)", command):
-        return _deny("Blocked: --no-verify is prohibited.")
+    if _VERIFY_BYPASS.search(command):
+        return _deny("Blocked: bypassing commit verification is prohibited.")
     if _BOUNDARY.search(command) is None:
         return _allow()
     for line in _added_python_lines(diff):
@@ -260,28 +211,4 @@ def bypass_decision(command: str, diff: str) -> Decision:
             return _deny("Blocked: newly added broad ignores or test skips require removal.")
     if _widens_per_file_ignores(diff):
         return _deny("Blocked: widening per-file ignores is prohibited.")
-    return _allow()
-
-
-def review_artifact_decision(
-    command: str,
-    risk_class: str,
-    validation_issues: Sequence[ValidationIssue],
-) -> Decision:
-    """Require a present, executed, and resolved adversarial review for R3 boundaries."""
-
-    if risk_class != "R3" or _PR_READY.search(command) is None:
-        return _allow()
-    review_invalid = any(
-        issue.code in _REVIEW_CODES
-        or (
-            issue.code in {"missing-file", "missing-section", "empty-section"}
-            and "review" in issue.message
-        )
-        for issue in validation_issues
-    )
-    if review_invalid:
-        return _deny(
-            "Blocked: the R3 review artifact is missing, did not run, or has unresolved findings."
-        )
     return _allow()

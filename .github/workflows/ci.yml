@@ -59,15 +59,9 @@ jobs:
       - name: "Gate: Deterministic Property Replay"
         timeout-minutes: 30
         run: uvx --from rust-just just check-properties
-      - name: "Gate: Task-Artifact Validation"
-        timeout-minutes: 10
-        run: uvx --from rust-just just check-task-artifact
       - name: "Gate: Security"
         timeout-minutes: 20
         run: uvx --from rust-just just check-security
       - name: "Gate: Critical Invariants"
         timeout-minutes: 20
         run: uvx --from rust-just just check-invariants
-      - name: "Gate: PR-Evidence Validation"
-        timeout-minutes: 10
-        run: uvx --from rust-just just check-pr-evidence

@@ -11,7 +11,6 @@ from pathlib import Path
 from scripts.quality.classify import REPO_ROOT, classify_path, load_model
 
 _SKILLS = {
-    "build-change",
     "create-issue",
     "resolve-findings",
     "review-change",
@@ -75,38 +74,40 @@ def test_expected_agents_are_read_only_and_name_their_role() -> None:
         assert "do not edit" in re.sub(r"\s+", " ", body.casefold())
 
 
-def test_exactly_five_workflow_skills_remain() -> None:
+def test_exactly_four_workflow_skills_remain() -> None:
     discovered = {
         path.parent.name for path in (REPO_ROOT / ".claude" / "skills").glob("*/SKILL.md")
     }
     assert discovered == _SKILLS
-    assert len(discovered) == 5
+    assert len(discovered) == 4
 
 
-def test_build_change_is_limited_to_the_explicit_builder_exception() -> None:
-    _, body = _frontmatter(REPO_ROOT / ".claude" / "skills" / "build-change" / "SKILL.md")
-    normalized = re.sub(r"\s+", " ", body.casefold())
-    assert "jan explicitly assigns" in normalized
-    assert "highest-stakes trading" in normalized
-    assert "never review" in normalized
-    assert "fresh independent reviewer" in normalized
+def test_no_skill_lets_claude_build() -> None:
+    """Claude specifies and reviews. A builder skill would reintroduce the reviewer editing its own
+    work, which is the one thing the split of roles exists to prevent."""
+    skills_root = REPO_ROOT / ".claude" / "skills"
+    assert not (skills_root / "build-change").exists()
+    for name in ("specify-change", "review-change"):
+        _, body = _frontmatter(skills_root / name / "SKILL.md")
+        assert "you never build" in re.sub(r"\s+", " ", body.casefold())
 
 
-def test_specify_change_drives_the_issue_and_stops_before_arming() -> None:
+def test_specify_change_drives_the_issue_and_stops_before_releasing() -> None:
     _, body = _frontmatter(REPO_ROOT / ".claude" / "skills" / "specify-change" / "SKILL.md")
     normalized = re.sub(r"\s+", " ", body.casefold())
     assert "issue body" in normalized
     assert "specifying" in normalized
-    assert "stop before" in normalized and "approved" in normalized
-    assert "jan's explicit approval" in normalized
+    assert "stop before" in normalized
+    assert "explicit release" in normalized
 
 
-def test_review_change_is_fresh_read_only_and_uses_executable_selection() -> None:
+def test_review_change_is_fresh_read_only_and_reads_the_contract_for_its_agents() -> None:
     _, body = _frontmatter(REPO_ROOT / ".claude" / "skills" / "review-change" / "SKILL.md")
     normalized = re.sub(r"\s+", " ", body.casefold())
     assert "fresh session" in normalized
     assert "read-only" in normalized
-    assert "scripts.quality.review_selection" in body
+    assert ".ai/workflow.toml" in body
+    assert "do not select agents from prose or memory" in normalized
 
 
 def test_every_review_skill_and_agent_is_read_only() -> None:

@@ -268,25 +268,15 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 
 | File | Purpose |
 |---|---|
-| `scripts/quality/classify.py` | Applies the authoritative TOML risk model to changed paths |
-| `scripts/quality/validate_task.py` | Validates task sections, AC/INV test traceability, and review dispositions |
-| `scripts/quality/finding_registry.py` | Loads split finding files, derives content IDs, and verifies the lossless legacy migration |
+| `scripts/quality/classify.py` | Applies the authoritative risk model to changed paths |
 | `scripts/quality/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
-| `scripts/quality/pr_ready.py` | Composes risk, task, review, traceability, and evidence-freshness gates |
-| `scripts/quality/mutation.py` | Runs focused Linux mutation scopes and enforces the TOML survivor ratchet |
+| `scripts/quality/mutation.py` | Runs focused mutation scopes and enforces the TOML survivor ratchet |
 | `scripts/quality/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
-| `scripts/quality/pr_body.py` | Selects risk-scaled PR sections and binds R2/R3 bodies to current task evidence |
-| `scripts/quality/issue_body.py` | Validates R2/R3 issue specifications and scaffolds risk-scaled task artifacts |
-| `scripts/quality/board.py` | Applies contract-driven, fail-closed GitHub Project and permit transitions |
-| `scripts/quality/workflow_contract.py` | Renders workflow documents from the authoritative TOML contract and rejects drift |
-| `scripts/quality/review_selection.py` | Selects the exact read-only reviewer set from effective risk and touched paths |
 | `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
-| `scripts/quality/hooks/pre_bash.py` | Collects Git/task metadata and emits Claude Code hook responses |
+| `scripts/quality/hooks/pre_bash.py` | Collects Git metadata and emits Claude Code hook responses |
 
-Test design matrices, reusable semantic assertions, deterministic property strategies, and the
-Windows/Linux mutation split are specified in `docs/engineering/testing.md`.
-Claude Code skill, reviewer-agent, settings, and hook schemas are specified in
-`docs/engineering/claude-code.md`.
+The rules these tools enforce, the risk classes, and the gates each class requires are stated in
+`docs/engineering/workflow.md` and carried machine-readably in `.ai/workflow.toml`.
 
 ---
 
@@ -328,8 +318,8 @@ flowchart TD
 | `live/config/` | frozen live configs (promotion == adding one) | yes |
 | `core/config/broker/` | pulled swap snapshots per broker | yes |
 | `docs/` | methodology (the spec), runbook, this file | yes |
-| `.ai/quality/` | TOML risk, workflow, finding, task-schema, critical-dependency, and mutation models | yes |
-| `.ai/tasks/` | concise task specifications, test traceability, review, and evidence | yes |
+| `.ai/workflow.toml` | the machine-readable half of the workflow contract | yes |
+| `.ai/quality/` | security, critical-dependency, and mutation models | yes |
 | `.ai/impact/test-map.json` | local conservative changed-file test-impact recommendation | no |
 | `.claude/skills/` | Claude Code workflow procedures with trigger frontmatter | yes |
 | `.claude/agents/` | least-privilege read-only reviewer subagents | yes |

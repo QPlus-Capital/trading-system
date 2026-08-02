@@ -3,18 +3,20 @@
 Claude Code sends a tool payload as JSON on stdin. Safe commands exit zero without output. A denial
 uses Claude Code's documented structured permission response and never echoes the command, diff,
 file contents, or a detected credential.
+
+The hook guards what must hold whatever the process state: live trading is never touched, a
+credential never reaches a commit, an R1+ change never lands directly on ``main``, and a gate is
+never weakened to make a branch pass. Everything that depends on where a ticket stands is the
+board's and the orchestrator's business, not this hook's.
 """
 
 from __future__ import annotations
 
-import contextlib
-import io
 import json
 import os
 import re
 import subprocess
 import sys
-import tempfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -22,29 +24,14 @@ from typing import Any
 from scripts.quality.classify import REPO_ROOT, changed_paths, classify_paths, load_model
 from scripts.quality.hooks.decisions import (
     Decision,
-    baseline_evidence_decision,
     bypass_decision,
     dangerous_command_decision,
     main_branch_decision,
-    pr_transition_decision,
-    review_artifact_decision,
     secret_decision,
 )
-from scripts.quality.pr_ready import main as pr_ready_main
-from scripts.quality.validate_task import (
-    EvidenceRecord,
-    ValidationIssue,
-    evidence_records,
-    validate_task_dir,
-)
 
-_BOUNDARY = re.compile(
-    r"\b(?:git\s+(?:commit|push)|gh\s+pr\s+(?:create|ready))\b",
-    re.IGNORECASE,
-)
+_BOUNDARY = re.compile(r"\bgit\s+(?:commit|push)\b", re.IGNORECASE)
 _COMMIT = re.compile(r"\bgit\s+commit\b", re.IGNORECASE)
-_PR_READY = re.compile(r"\bgh\s+pr\s+ready\b", re.IGNORECASE)
-_TASK_FILES = ("impact.md", "test-plan.md", "review.md", "evidence.md")
 
 
 def denied_payload(reason: str) -> dict[str, object]:
@@ -83,55 +70,6 @@ def _staged_diff(root: Path = REPO_ROOT) -> str:
     return _git(["diff", "--cached", "--no-renames", "--unified=1"], root=root)
 
 
-def _task_id(paths: Sequence[str]) -> str | None:
-    ids = {
-        parts[2]
-        for path in paths
-        if len(parts := path.replace("\\", "/").split("/")) >= 4
-        and parts[:2] == [".ai", "tasks"]
-        and parts[2] != "_templates"
-    }
-    return next(iter(ids)) if len(ids) == 1 else None
-
-
-def _readiness(task_id: str | None, base: str) -> bool:
-    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        args = ["--base", base]
-        if task_id is not None:
-            args.insert(0, task_id)
-        return pr_ready_main(args) == 0
-
-
-def _task_state(
-    task_id: str,
-    risk_class: str,
-    *,
-    index: bool,
-    root: Path = REPO_ROOT,
-) -> tuple[tuple[ValidationIssue, ...], tuple[EvidenceRecord, ...]]:
-    """Validate and parse the task snapshot that the commit or push actually carries."""
-
-    with tempfile.TemporaryDirectory(prefix="qplus-task-hook-") as raw_temp:
-        task_dir = Path(raw_temp) / task_id
-        task_dir.mkdir()
-        for name in _TASK_FILES:
-            path = f".ai/tasks/{task_id}/{name}"
-            revision = f":{path}" if index else f"HEAD:{path}"
-            try:
-                content = _git(["show", revision], root=root)
-            except subprocess.CalledProcessError:
-                continue
-            (task_dir / name).write_text(f"{content}\n", encoding="utf-8")
-        validation = validate_task_dir(task_dir, risk_class=risk_class)
-        evidence_path = task_dir / "evidence.md"
-        evidence = (
-            evidence_records(evidence_path.read_text(encoding="utf-8"))
-            if evidence_path.is_file()
-            else ()
-        )
-        return validation.issues, evidence
-
-
 def _command(payload: Mapping[str, Any]) -> str | None:
     if payload.get("hook_event_name") != "PreToolUse" or payload.get("tool_name") != "Bash":
         return None
@@ -145,7 +83,7 @@ def _command(payload: Mapping[str, Any]) -> str | None:
 
 
 def evaluate(command: str, *, base: str = "origin/main", root: Path = REPO_ROOT) -> Decision:
-    """Evaluate one Bash command, collecting Git/task metadata only at change boundaries."""
+    """Evaluate one Bash command, collecting Git metadata only at a commit or push boundary."""
 
     decision = dangerous_command_decision(command)
     if not decision.allowed:
@@ -164,29 +102,12 @@ def evaluate(command: str, *, base: str = "origin/main", root: Path = REPO_ROOT)
     diff = f"{_branch_diff(base, root)}\n{staged_diff}" if committing else _branch_diff(base, root)
     classification = classify_paths(paths, load_model())
     branch = _git(["branch", "--show-current"], root=root)
-    task_id = _task_id(paths)
-    validation_issues: tuple[ValidationIssue, ...]
-    evidence: tuple[EvidenceRecord, ...]
-    if task_id is None:
-        validation_issues = (ValidationIssue("missing-file", "missing review.md task artifact"),)
-        evidence = ()
-    else:
-        validation_issues, evidence = _task_state(
-            task_id,
-            classification.risk_class,
-            index=committing,
-            root=root,
-        )
 
     checks = [
         secret_decision(staged_diff) if committing else Decision(True),
         main_branch_decision(command, branch, classification.risk_class),
         bypass_decision(command, diff),
-        baseline_evidence_decision(command, paths, evidence),
-        review_artifact_decision(command, classification.risk_class, validation_issues),
     ]
-    readiness = _readiness(task_id, base) if _PR_READY.search(command) else True
-    checks.append(pr_transition_decision(command, readiness, task_id))
     return next((check for check in checks if not check.allowed), Decision(True))
 
 

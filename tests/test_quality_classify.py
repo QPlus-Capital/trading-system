@@ -26,7 +26,7 @@ def _model() -> Model:
     return load_model()
 
 
-_ISSUE_109_CASES = (
+_AGENT_CONTRACT_CASES = (
     (".claude/skills/specify-change/SKILL.md", "R3"),
     (".claude/agents/adversarial-code-reviewer.md", "R3"),
     (".claude/settings.json", "R3"),
@@ -36,19 +36,21 @@ _ISSUE_109_CASES = (
 )
 
 
-@pytest.mark.parametrize("path,expected", _ISSUE_109_CASES, ids=lambda value: value)
-def test_issue_109_classifications(path: str, expected: str) -> None:
-    """Issue 109's expected classes are literals, not values derived from the TOML under test."""
+@pytest.mark.parametrize("path,expected", _AGENT_CONTRACT_CASES, ids=lambda value: value)
+def test_agent_contract_classifications(path: str, expected: str) -> None:
+    """The expected classes are literals, not values derived from the TOML under test."""
     assert classify_path(path, _model()).risk_class == expected
 
 
-def test_issue_109_adds_the_claude_catch_all_without_replacing_settings() -> None:
+def test_the_claude_catch_all_does_not_replace_the_settings_rule() -> None:
+    """The catch-all keeps any future agent file at R3; the explicit rule keeps the sharper reason
+    for the one file that can disable every hook."""
     globs = [rule.glob for rule in _model().rules]
     assert globs.count(".claude/**") == 1
     assert globs.count(".claude/settings.json") == 1
 
 
-def test_issue_109_removes_the_dead_workflow_r2_rule() -> None:
+def test_the_ci_workflow_rule_is_r3_and_unique() -> None:
     workflow_rules = [rule for rule in _model().rules if rule.glob == ".github/workflows/**"]
     assert [(rule.min_class, rule.reason) for rule in workflow_rules] == [
         ("R3", "runs the gates in CI; a change here can stop enforcing them")
@@ -133,7 +135,7 @@ def test_an_empty_change_set_is_r0() -> None:
 def test_load_model_rejects_an_unknown_default(tmp_path: Path) -> None:
     bad = tmp_path / "m.toml"
     bad.write_text(
-        'default_min_class = "R9"\ndocs_only_globs = ["*.md"]\n[[rules]]\n'
+        '[risk]\ndefault_min_class = "R9"\ndocs_only_globs = ["*.md"]\n[[risk.rules]]\n'
         'glob = "x"\nmin_class = "R3"\nreason = "y"\n',
         encoding="utf-8",
     )
@@ -144,7 +146,7 @@ def test_load_model_rejects_an_unknown_default(tmp_path: Path) -> None:
 def test_load_model_rejects_an_unknown_rule_class(tmp_path: Path) -> None:
     bad = tmp_path / "m.toml"
     bad.write_text(
-        'default_min_class = "R2"\ndocs_only_globs = ["*.md"]\n[[rules]]\n'
+        '[risk]\ndefault_min_class = "R2"\ndocs_only_globs = ["*.md"]\n[[risk.rules]]\n'
         'glob = "x"\nmin_class = "R7"\nreason = "y"\n',
         encoding="utf-8",
     )
@@ -158,8 +160,9 @@ def test_required_gates_are_cumulative() -> None:
     r1 = set(model.required_gates("R1"))
     r3 = set(model.required_gates("R3"))
     assert r1 <= r3, "higher classes must require at least the lower classes' gates"
-    assert "no-autonomous-merge" in r3, "R3 must require a human merge"
-    assert "no-autonomous-merge" not in r1, "R1 must not"
+    assert {"mutation", "invariants", "parity"} <= r3, "R3 must require the money-path gates"
+    assert not {"mutation", "invariants", "parity"} & r1, "R1 must not"
+    assert "security" in r1, "a secret must never reach a commit, whatever the class"
 
 
 # ------------------------------------------------------------------ git integration
@@ -183,67 +186,32 @@ def _tracked_paths() -> tuple[str, ...]:
     )
     paths = tuple(raw.decode("utf-8") for raw in result.stdout.split(b"\0") if raw)
     assert "scripts/quality/classify.py" in paths
-    assert ".ai/quality/risk-classes.toml" in paths
-    assert len(paths) > 300
+    assert ".ai/workflow.toml" in paths
+    assert len(paths) > 150, "the sweep must cover the real repository, not an empty checkout"
     return paths
 
 
-def _model_before_issue_109(post_change: Model) -> Model:
-    """Reverse only issue 109's three rule changes to reconstruct the committed predecessor."""
-    removed = {".claude/**", "docs/architecture.md"}
-    assert {rule.glob for rule in post_change.rules} >= removed
-    rules = tuple(rule for rule in post_change.rules if rule.glob not in removed)
-    rules += (
-        Rule(
-            ".github/workflows/**",
-            "R2",
-            "CI is a quality gate",
+def test_a_lower_rule_can_never_pull_a_tracked_path_below_its_highest_match() -> None:
+    """Max-wins over the real repository: adding a *lower* rule for a path that already matches a
+    higher one changes nothing. This is what makes the model safe to extend -- a new, well-meant
+    R2 entry cannot quietly strip the R3 gates from a money path."""
+    model = _model()
+    weakened = Model(
+        model.default_min_class,
+        model.docs_only_globs,
+        model.rules
+        + (
+            Rule(".github/workflows/**", "R2", "a well-meant but lower rule"),
+            Rule("live/**", "R1", "a well-meant but lower rule"),
+            Rule(".ai/**", "R0", "a well-meant but lower rule"),
         ),
-    )
-    return Model(
-        post_change.default_min_class,
-        post_change.docs_only_globs,
-        rules,
-        post_change.gates,
-    )
-
-
-def test_issue_109_never_lowers_a_tracked_path_and_only_upgrades_its_scope() -> None:
-    """INV-02 over the real repository, including an exact guard against an over-broad glob."""
-    post_change = _model()
-    pre_change = _model_before_issue_109(post_change)
-    rank = {"R0": 0, "R1": 1, "R2": 2, "R3": 3}
-    decreases: list[tuple[str, str, str]] = []
-    unexpected_increases: list[tuple[str, str, str]] = []
-
-    for path in _tracked_paths():
-        before = classify_path(path, pre_change).risk_class
-        after = classify_path(path, post_change).risk_class
-        if rank[after] < rank[before]:
-            decreases.append((path, before, after))
-        expected_increase = path == "docs/architecture.md" or path.startswith(".claude/")
-        if rank[after] > rank[before] and not expected_increase:
-            unexpected_increases.append((path, before, after))
-
-    assert decreases == []
-    assert unexpected_increases == []
-
-
-def test_removing_the_dead_workflow_r2_rule_changes_no_tracked_path_class() -> None:
-    """Max-wins, rather than assumption, proves the removed R2 rule had no effect."""
-    without_dead_rule = _model()
-    with_dead_rule = Model(
-        without_dead_rule.default_min_class,
-        without_dead_rule.docs_only_globs,
-        without_dead_rule.rules + (Rule(".github/workflows/**", "R2", "CI is a quality gate"),),
-        without_dead_rule.gates,
+        model.gates,
     )
 
     changed = [
         path
         for path in _tracked_paths()
-        if classify_path(path, without_dead_rule).risk_class
-        != classify_path(path, with_dead_rule).risk_class
+        if classify_path(path, model).risk_class != classify_path(path, weakened).risk_class
     ]
     assert changed == []
 
