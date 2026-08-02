@@ -88,7 +88,7 @@ for where a change stands — not the branch, not the pull request.
 | `Ready to Implement` | Fully specified **and released**. May be built; need not be. |
 | `Implementing` | Codex is building. |
 | `Reviewing` | With the reviewer. |
-| `Blocked` | Waiting on a decision only the operator can make. |
+| `Blocked` | Waiting on something it cannot proceed without: a decision only the operator can make, or another ticket. |
 | `Done` | Merged. |
 
 Labels are `risk:R0` … `risk:R3` and nothing else. `Ready to Implement` *is* the release, so no
@@ -144,6 +144,12 @@ If a genuine business, trading, methodology, live-money, architecture, or risk d
 it is recorded under *Open decisions*, the card moves to `Blocked`, and the phase ends.
 **There is no release with an open decision.** Only those categories interrupt the operator;
 everything else is decided from this document and the code, and documented.
+
+A ticket that is **fully specified but depends on another ticket** goes to `Blocked` as well, with
+the dependency named in the body. `Ready to Implement` means a builder may start *now*; a ticket
+that would have to wait does not belong there, because a supply nobody can draw from is not a
+supply. When the dependency merges, the card returns to `Specifying` and phase 2 runs — the
+specification is presented again, because what it waited for has since changed.
 
 ### Phase 2 — Release
 

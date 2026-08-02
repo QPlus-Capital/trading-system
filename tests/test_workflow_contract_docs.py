@@ -83,6 +83,7 @@ _REQUIRED: tuple[tuple[str, tuple[Path, ...]], ...] = (
     ("no gate may be weakened", (_WORKFLOW,)),
     ("feature branch", (_WORKFLOW,)),
     ("never red proves nothing", (_WORKFLOW,)),
+    ("depends on another ticket", (_WORKFLOW,)),
 )
 
 
@@ -104,6 +105,26 @@ def test_the_builder_and_reviewer_roles_stay_separated() -> None:
     assert "there is no exception" in workflow
     assert "you never build" in " ".join(_text(_CLAUDE).lower().split())
     assert "you never review your own work" in " ".join(_text(_AGENTS).lower().split())
+
+
+def test_ready_to_implement_never_holds_work_that_cannot_start() -> None:
+    """`Ready to Implement` is a supply a builder may draw from now. A ticket that would have to
+    wait for another ticket belongs in `Blocked`, or the column stops meaning anything."""
+    workflow = " ".join(_text(_WORKFLOW).lower().split())
+    assert "a builder may start *now*" in workflow or "may start *now*" in workflow
+    assert "depends on another ticket" in workflow
+
+    contract = tomllib.loads(_text(_CONTRACT))["board"]
+    to_blocked = [t for t in contract["transitions"] if t["to"] == "Blocked"]
+    assert to_blocked, "there must be a way into Blocked"
+    assert any("another ticket" in t["trigger"] for t in to_blocked), (
+        "at least one route into Blocked must cover a dependency, not only an operator decision"
+    )
+    # Coming back re-runs the release, because what the ticket waited for has since changed.
+    exits = {t["to"] for t in contract["transitions"] if t["from"] == "Blocked"}
+    assert exits == {"Specifying"}, (
+        "leaving Blocked must return through Specifying so the release is given again"
+    )
 
 
 def test_governance_documents_name_no_person() -> None:
