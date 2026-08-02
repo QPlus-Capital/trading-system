@@ -1,4 +1,4 @@
-"""The package dependency direction from the constitution (section 2), enforced.
+"""The package dependency direction from workflow/workflow.md (section 3), enforced.
 
 `research/` and `live/` do not import each other's domain logic. The single documented exception is
 `live/` importing the generic config-module loader `research.engine.config` to read its own config.
@@ -15,7 +15,7 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[1]
 
-#: The one live -> research crossing the constitution and docs/architecture.md permit: the generic
+#: The one live -> research crossing workflow/workflow.md and docs/architecture.md permit: generic
 #: config-module loader.
 _ALLOWED_LIVE_TO_RESEARCH = {"research.engine.config"}
 
@@ -58,8 +58,8 @@ def test_live_imports_only_the_allowed_research_loader(path: Path) -> None:
     disallowed = [m for m in crossings if m not in _ALLOWED_LIVE_TO_RESEARCH]
     assert not disallowed, (
         f"{_rid(path)} imports {disallowed} from research; only "
-        f"{sorted(_ALLOWED_LIVE_TO_RESEARCH)} is allowed (constitution section 2). Move shared "
-        "code into core/, or change the documented exception in the constitution and here together."
+        f"{sorted(_ALLOWED_LIVE_TO_RESEARCH)} is allowed (workflow.md section 3). Move shared "
+        "code into core/, or change the documented exception in workflow.md and here together."
     )
 
 
@@ -70,7 +70,7 @@ def test_research_imports_live_only_where_already_allowlisted(path: Path) -> Non
     new = crossings - allowed
     assert not new, (
         f"{_rid(path)} newly imports {sorted(new)} from live. research must not depend on the live "
-        "trading path (constitution section 2); this ratchet only shrinks."
+        "trading path (workflow.md section 3); this ratchet only shrinks."
     )
 
 
@@ -114,7 +114,7 @@ def _constructs(path: Path, name: str) -> bool:
 
 
 def test_both_execution_adapters_construct_the_shared_signal_engine() -> None:
-    """Parity boundary (constitution section 5): the backtest wrapper and the live runner both
+    """Parity boundary (workflow.md sections 2 and 3): the backtest wrapper and the live runner both
     CONSTRUCT the same pure signal engine, so neither can reimplement a signal.
     """
     for rel in ("core/strategies/rsi_wpr_bb.py", "live/runner.py"):

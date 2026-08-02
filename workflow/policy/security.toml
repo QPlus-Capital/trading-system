@@ -1,0 +1,12 @@
+# Security policy consumed by workflow/security.py with stdlib tomllib.
+version = 1
+
+# Only non-text assets are excluded. Source, configuration, documentation, task artifacts, and lock
+# files remain in scope because all can carry credentials.
+exclude_globs = ["*.ico", "*.jpg", "*.jpeg", "*.pdf", "*.png", "*.webp"]
+
+# Ruff's security family is the static-security gate. These existing patterns are excluded:
+# assertions used as invariant checks (S101); best-effort local notification (S110); and fixed-list
+# subprocess calls required by repository tooling (S603/S607). All remaining S rules bind.
+static_ruff_ignores = ["S101", "S110", "S603", "S607"]
+static_roots = ["core", "research", "live", "monitoring", "workflow"]

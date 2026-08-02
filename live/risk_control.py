@@ -2,7 +2,7 @@
 
 Pure decision logic; the live runner feeds it the account equity/balance and the open
 positions. It enforces, with safety margins BELOW the hard TTP limits (6% trailing / 3%
-daily), the values Jan chose:
+daily), the values the operator chose:
 
 - **risk per trade** 0.18% (position sizing; from the config -- the gap tail cap for no_bb_wpr),
 - **daily loss stop** 2.5% (hard limit 3%),
@@ -26,7 +26,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class RiskLimits:
-    """Risk parameters (fractions of balance/equity). Defaults = Jan's chosen values."""
+    """Risk parameters (fractions of balance/equity). Defaults = the operator's chosen values."""
 
     risk_per_trade: float = 0.0018  # 0.18% of the initial balance per trade (config is source)
     daily_stop: float = 0.025  # HALT for the day at 2.5% loss (hard TTP = 3%)

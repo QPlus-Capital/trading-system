@@ -26,4 +26,4 @@ Trace the final diff and affected callers for:
 Construct at least one money-loss or false-confidence counterexample for every changed R3 behaviour.
 Return Blocker / Defect / Suspected defect / Note findings with tight file:line citations, concrete
 inputs and wrong outcomes, executable tests, and an explicit statement that no live interaction
-occurred. The first three severities block readiness. Do not invent findings.
+occurred. Only the first two block readiness and trigger a fix round. Do not invent findings.

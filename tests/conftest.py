@@ -2,11 +2,20 @@
 
 import importlib
 import importlib.util
+import tempfile
+from pathlib import Path
 from types import ModuleType
 from typing import NoReturn
 
 import pytest
 from hypothesis import settings
+from hypothesis.configuration import set_hypothesis_home_dir
+
+# Hypothesis caches scraped constants under `.hypothesis/` in the working directory. The example
+# database is already off (see the profile below), so nothing here is load-bearing -- it is a cache
+# that regenerates. Keeping it out of the repository root is purely so the checkout shows only
+# things that belong to the project. Must run before Hypothesis first touches its storage.
+set_hypothesis_home_dir(str(Path(tempfile.gettempdir()) / "qplus-hypothesis"))
 
 _MT5_BOUNDARIES = (
     "initialize",

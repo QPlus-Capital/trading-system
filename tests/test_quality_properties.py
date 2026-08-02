@@ -41,7 +41,7 @@ from research.portfolio.scenarios import (
 )
 from research.portfolio.sizing import flat, simulate
 from research.regression import Thresholds, compare
-from scripts.quality.classify import classify_paths, load_model
+from workflow.classify import classify_paths, load_model
 
 from tests.support.assertions import assert_limit_monotonicity
 from tests.support.strategies import (
