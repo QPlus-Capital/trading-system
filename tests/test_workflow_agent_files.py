@@ -8,7 +8,7 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from scripts.quality.classify import REPO_ROOT, classify_path, load_model
+from workflow.classify import REPO_ROOT, classify_path, load_model
 
 _SKILLS = {
     "create-issue",
@@ -106,7 +106,7 @@ def test_review_change_is_fresh_read_only_and_reads_the_contract_for_its_agents(
     normalized = re.sub(r"\s+", " ", body.casefold())
     assert "fresh session" in normalized
     assert "read-only" in normalized
-    assert ".ai/workflow.toml" in body
+    assert "workflow/workflow.toml" in body
     assert "do not select agents from prose or memory" in normalized
 
 
@@ -147,7 +147,7 @@ def test_settings_use_thin_documented_pre_tool_hook_schema() -> None:
     assert handlers == [
         {
             "type": "command",
-            "command": "uv run python -m scripts.quality.hooks.pre_bash",
+            "command": "uv run python -m workflow.hooks.pre_bash",
             "timeout": 30,
         }
     ]
@@ -161,7 +161,7 @@ def test_configured_hook_module_executes_a_safe_payload_without_output() -> None
     settings = json.loads((REPO_ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
     command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
     invocation = shlex.split(command, posix=True)
-    assert invocation == ["uv", "run", "python", "-m", "scripts.quality.hooks.pre_bash"]
+    assert invocation == ["uv", "run", "python", "-m", "workflow.hooks.pre_bash"]
     payload = {
         "hook_event_name": "PreToolUse",
         "tool_name": "Bash",

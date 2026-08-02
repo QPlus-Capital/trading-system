@@ -9,12 +9,12 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
-from scripts.quality.mutation import load_policy
+from workflow.mutation import load_policy
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CI_PATH = _ROOT / ".github" / "workflows" / "ci.yml"
 _MUTATION_PATH = _ROOT / ".github" / "workflows" / "mutation.yml"
-_MT5_NODE = "tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries"
+_MT5_NODE = "tests/test_workflow_test_boundaries.py::test_pytest_blocks_real_mt5_boundaries"
 _FULL_RECIPES = {
     "check-standard",
     "check-tests",
@@ -269,7 +269,7 @@ def test_mutation_job_runs_for_production_and_direct_critical_test_changes() -> 
     critical_path = load_policy().targets[0].path
 
     assert not predicate(["README.md"])
-    assert not predicate(["tests/test_gate_consistency.py"])
+    assert not predicate(["tests/test_workflow_gate_consistency.py"])
     assert predicate(["tests/test_live_risk_control.py"])
     assert predicate([critical_path])
     assert "mutation-critical" not in _selected_jobs(
@@ -377,7 +377,7 @@ def test_ready_test_node_inventory_is_partitioned_without_loss() -> None:
         if "pytest" in str(step.get("run", ""))
     )
 
-    source = (_ROOT / "tests" / "test_workflow_system_validation.py").read_text(encoding="utf-8")
+    source = (_ROOT / "tests" / "test_workflow_test_boundaries.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
     assert not any(
         isinstance(node, (ast.Import, ast.ImportFrom))

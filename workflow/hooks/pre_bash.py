@@ -21,8 +21,8 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from scripts.quality.classify import REPO_ROOT, changed_paths, classify_paths, load_model
-from scripts.quality.hooks.decisions import (
+from workflow.classify import REPO_ROOT, changed_paths, classify_paths, load_model
+from workflow.hooks.decisions import (
     Decision,
     bypass_decision,
     dangerous_command_decision,

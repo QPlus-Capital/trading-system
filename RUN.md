@@ -91,7 +91,7 @@ full list. (One-time: install `just` — `winget install --id Casey.Just`.)
 | Live — demo account | `just live-demo` |
 | Pre-flight before going live | `just preflight` (TTP) |
 | Monitoring dashboard | `just monitor` |
-| Quality gates (before every commit) | `just check` (ruff + mypy + pytest) |
+| Quality gates (before every commit) | `just check` (ruff + mypy + vulture + pytest) |
 
 Under the hood these are plain `uv run python -m <world>.<module>` calls — the
 `justfile` is just the discoverable front door. The three worlds are `research`,
@@ -113,5 +113,8 @@ operations guide is **[docs/live-runbook.md](docs/live-runbook.md)**. In short:
   MetaTrader 5 CSVs in `data/` (also gitignored); the backtest seeds it on first use.
 - **The strategy code** lives once in `core/strategies/` — the same pure signal
   engine drives both the backtest and the live MT5 runner, so **live == backtest**.
-- **Configs** under `config/` are where you turn the knobs: `study/` for the research
-  sweep, `live/` for the frozen tradeable config.
+- **Configs** are where you turn the knobs: `research/config/` for the research sweep,
+  `live/config/` for the frozen tradeable config.
+
+How a change travels from an idea to `main` — the board, the risk classes, the gates — is
+**[workflow/workflow.md](workflow/workflow.md)**.

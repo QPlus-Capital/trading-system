@@ -41,9 +41,9 @@ jobs:
           import os
           from collections.abc import Sequence
 
-          from scripts.quality.classify import changed_paths, load_model
-          from scripts.quality.impact import changed_tests_exercise_targets
-          from scripts.quality.mutation import load_policy, select_fast_targets
+          from workflow.classify import changed_paths, load_model
+          from workflow.impact import changed_tests_exercise_targets
+          from workflow.mutation import load_policy, select_fast_targets
 
 
           def critical_changed(paths: Sequence[str]) -> bool:
@@ -95,6 +95,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: mutation-critical-result
-          path: .ai/mutation/critical.toml
+          path: workflow/mutation-results/critical.toml
           if-no-files-found: error
           include-hidden-files: true

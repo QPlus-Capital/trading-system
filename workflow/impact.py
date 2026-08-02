@@ -19,10 +19,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from scripts.quality.classify import REPO_ROOT, changed_paths, classify_paths, load_model, normalize
+from workflow.classify import REPO_ROOT, changed_paths, classify_paths, load_model, normalize
 
-CRITICAL_MAP_PATH = REPO_ROOT / ".ai" / "quality" / "critical-dependencies.toml"
-DEFAULT_OUTPUT = REPO_ROOT / ".ai" / "impact" / "test-map.json"
+CRITICAL_MAP_PATH = REPO_ROOT / "workflow" / "policy" / "critical-dependencies.toml"
+DEFAULT_OUTPUT = REPO_ROOT / "workflow" / "impact" / "test-map.json"
 _SOURCE_ROOTS = ("core", "research", "live", "monitoring", "scripts", "tests")
 
 

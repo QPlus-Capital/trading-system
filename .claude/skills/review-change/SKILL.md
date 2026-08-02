@@ -14,7 +14,7 @@ issue number; the branch and its pull request follow from that.
 
 ## Procedure
 
-1. In a fresh session, read the agent selection from the `[review]` table of `.ai/workflow.toml`
+1. In a fresh session, read the agent selection from the `[review]` table of `workflow/workflow.toml`
    for the effective risk class and the touched paths. Do not select agents from prose or memory.
 2. Invoke each selected read-only subagent with the issue contract, the diff, the gate results, and
    the executing paths. Never pass the builder's private context.

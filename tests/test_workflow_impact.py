@@ -6,8 +6,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from scripts.quality.classify import REPO_ROOT
-from scripts.quality.impact import (
+from workflow.classify import REPO_ROOT
+from workflow.impact import (
     analyze_impact,
     changed_tests_exercise_targets,
     format_check_command,
@@ -33,8 +33,8 @@ def test_live_risk_control_surfaces_direct_and_transitive_tests() -> None:
 
 
 def test_changed_test_files_are_always_recommended() -> None:
-    report = analyze_impact(["tests/test_quality_classify.py"])
-    assert "tests/test_quality_classify.py" in report.direct_tests
+    report = analyze_impact(["tests/test_workflow_classify.py"])
+    assert "tests/test_workflow_classify.py" in report.direct_tests
 
 
 def test_changed_tests_are_mapped_to_mutation_targets_transitively() -> None:
@@ -114,14 +114,14 @@ def test_changed_noncritical_tests_and_docs_do_not_select_mutation(tmp_path: Pat
 
 
 def test_format_check_is_limited_to_changed_python_files() -> None:
-    report = analyze_impact(["scripts/quality/impact.py", "justfile", "docs/architecture.md"])
+    report = analyze_impact(["workflow/impact.py", "justfile", "docs/architecture.md"])
     assert format_check_command(report) == (
         "uv",
         "run",
         "ruff",
         "format",
         "--check",
-        "scripts/quality/impact.py",
+        "workflow/impact.py",
     )
 
 
@@ -165,7 +165,7 @@ def test_impact_artifact_is_machine_readable(tmp_path: Path) -> None:
 
 
 def test_impact_artifact_is_independent_of_input_path_order() -> None:
-    paths = ["scripts/quality/impact.py", "docs/architecture.md", "justfile"]
+    paths = ["workflow/impact.py", "docs/architecture.md", "justfile"]
     forward = analyze_impact(paths)
     reverse = analyze_impact(list(reversed(paths)))
     assert forward == reverse
@@ -173,7 +173,7 @@ def test_impact_artifact_is_independent_of_input_path_order() -> None:
 
 def test_default_impact_artifact_is_gitignored() -> None:
     completed = subprocess.run(
-        ["git", "check-ignore", ".ai/impact/test-map.json"],
+        ["git", "check-ignore", "workflow/impact/test-map.json"],
         cwd=REPO_ROOT,
         check=False,
         capture_output=True,

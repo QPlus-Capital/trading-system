@@ -1,7 +1,7 @@
 """Focused mutation testing with a committed, fail-closed TOML baseline.
 
 The changed-file fast scope delegates both range discovery and risk classification to
-``scripts.quality.classify``. Mutmut is only the execution engine; this module owns the narrow
+``workflow.classify``. Mutmut is only the execution engine; this module owns the narrow
 target policy, machine-readable result, and survivor ratchet.
 """
 
@@ -23,7 +23,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from scripts.quality.classify import (
+from workflow.classify import (
     MODEL_PATH,
     Model,
     changed_paths,
@@ -32,10 +32,10 @@ from scripts.quality.classify import (
     normalize,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-POLICY_PATH = REPO_ROOT / ".ai" / "quality" / "mutation.toml"
-BASELINE_PATH = REPO_ROOT / ".ai" / "quality" / "mutation-baseline.toml"
-RESULT_ROOT = REPO_ROOT / ".ai" / "mutation"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+POLICY_PATH = REPO_ROOT / "workflow" / "policy" / "mutation.toml"
+BASELINE_PATH = REPO_ROOT / "workflow" / "policy" / "mutation-baseline.toml"
+RESULT_ROOT = REPO_ROOT / "workflow" / "mutation-results"
 _RESULT_LINE = re.compile(r"^\s*(?P<name>\S+):\s+(?P<status>[a-z ]+)\s*$")
 _POLICY_FINGERPRINT = re.compile(r"[0-9a-f]{64}")
 _STATUS_FIELDS = {

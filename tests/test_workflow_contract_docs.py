@@ -1,8 +1,8 @@
 """The workflow document and the machine-readable contract must keep stating what they promise.
 
-``docs/engineering/workflow.md`` is the single source of truth; ``CLAUDE.md`` and ``AGENTS.md`` are
-short role documents that point to it, and ``.ai/workflow.toml`` is the same contract in the form
-the tooling reads.
+``workflow/workflow.md`` is the single source of truth; ``CLAUDE.md`` and ``AGENTS.md`` are short
+role documents that point to it, and ``workflow/workflow.toml`` is the same contract in the form the
+tooling reads.
 
 These guards do not compare the prose to the TOML -- that mirroring is exactly what drifted before.
 They check the two things a merge of four documents into one can silently lose: a load-bearing
@@ -16,13 +16,13 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from scripts.quality.classify import classify_path, load_model
+from workflow.classify import classify_path, load_model
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CLAUDE = _ROOT / "CLAUDE.md"
 _AGENTS = _ROOT / "AGENTS.md"
-_WORKFLOW = _ROOT / "docs" / "engineering" / "workflow.md"
-_CONTRACT = _ROOT / ".ai" / "workflow.toml"
+_WORKFLOW = _ROOT / "workflow" / "workflow.md"
+_CONTRACT = _ROOT / "workflow" / "workflow.toml"
 
 _CLASSES = ("R0", "R1", "R2", "R3")
 
@@ -41,7 +41,7 @@ def _class_of(path: str) -> str:
 # --------------------------------------------------------------- the role documents stay short
 def test_role_documents_point_to_the_workflow() -> None:
     """Neither role document may become a second source of truth."""
-    link = "docs/engineering/workflow.md"
+    link = "workflow/workflow.md"
     for path in (_CLAUDE, _AGENTS):
         assert link in _text(path), f"{path.name} must link to the workflow document"
 
@@ -192,7 +192,7 @@ _MUST_BE_R3 = (
     "research/engine/schedule_builder.py",  # selected execution params and protective exits
     "research/stages/select.py",
     "core/data/mt5_csv.py",  # data ingestion -> every result
-    ".ai/workflow.toml",  # the contract must not be able to weaken itself below R3
+    "workflow/workflow.toml",  # the contract must not be able to weaken itself below R3
     "pyproject.toml",  # pins the engine / bridge versions
     "uv.lock",
     "justfile",  # the gate commands
@@ -200,7 +200,7 @@ _MUST_BE_R3 = (
     ".claude/settings.json",  # project hooks gate every change
     ".claude/skills/specify-change/SKILL.md",  # executable workflow contract
     ".claude/agents/adversarial-code-reviewer.md",  # executable reviewer remit
-    "docs/engineering/workflow.md",  # governance -- not a docs-only R0
+    "workflow/workflow.md",  # governance -- not a docs-only R0
     "docs/methodology.md",
     "docs/live-runbook.md",  # real-account ops -- not a docs-only R0
     "docs/strategies/rsi_wpr_bb.md",  # trial universe / DSR denominator
@@ -225,8 +225,8 @@ def test_money_path_classifies_as_R3(path: str) -> None:
 _CLASSIFY_CASES = (
     ("README.md", "R0"),
     ("docs/architecture.md", "R2"),
-    ("docs/engineering/workflow.md", "R3"),  # governance overrides docs-only
-    ("scripts/foo.py", "R1"),
+    ("workflow/workflow.md", "R3"),  # the contract governs every other change
+    ("workflow/classify.py", "R3"),
     ("core/paths.py", "R2"),
     ("monitoring/dashboard.py", "R2"),
     ("tests/test_live_runner_cycle.py", "R2"),  # a deleted guard must be reviewed

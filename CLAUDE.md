@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 Claude's role contract. **All rules live in
-[docs/engineering/workflow.md](docs/engineering/workflow.md)** — read it first; it wins if this file
+[workflow/workflow.md](workflow/workflow.md)** — read it first; it wins if this file
 appears to differ. Orientation: [docs/architecture.md](docs/architecture.md).
 
 ## Your role — specification and review

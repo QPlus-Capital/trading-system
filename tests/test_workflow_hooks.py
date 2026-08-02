@@ -7,15 +7,15 @@ import json
 import sys
 
 import pytest
-from scripts.quality.classify import Classification
-from scripts.quality.hooks import pre_bash
-from scripts.quality.hooks.decisions import (
+from workflow.classify import Classification
+from workflow.hooks import pre_bash
+from workflow.hooks.decisions import (
     bypass_decision,
     dangerous_command_decision,
     main_branch_decision,
     secret_decision,
 )
-from scripts.quality.hooks.pre_bash import denied_payload
+from workflow.hooks.pre_bash import denied_payload
 
 
 @pytest.fixture
@@ -107,7 +107,7 @@ def test_denied_payload_uses_documented_schema_and_never_echoes_input(
 def test_evaluate_classifies_the_paths_the_commit_actually_carries(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    paths = ["scripts/quality/hooks/pre_bash.py"]
+    paths = ["workflow/hooks/pre_bash.py"]
     observed: dict[str, object] = {}
 
     monkeypatch.setattr(pre_bash, "_staged_paths", lambda root: paths)
@@ -131,7 +131,7 @@ def test_evaluate_classifies_the_paths_the_commit_actually_carries(
 
 def test_evaluate_blocks_an_r3_commit_that_targets_main(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        pre_bash, "_staged_paths", lambda root: ["scripts/quality/hooks/pre_bash.py"]
+        pre_bash, "_staged_paths", lambda root: ["workflow/hooks/pre_bash.py"]
     )
     monkeypatch.setattr(pre_bash, "changed_paths", lambda base, root: [])
     monkeypatch.setattr(pre_bash, "_staged_diff", lambda root: "+safe = True\n")

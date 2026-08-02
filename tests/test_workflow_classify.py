@@ -10,7 +10,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from scripts.quality.classify import (
+from workflow.classify import (
     REPO_ROOT,
     Classification,
     Model,
@@ -67,12 +67,12 @@ def test_the_ci_workflow_rule_is_r3_and_unique() -> None:
         ("pyproject.toml", "R3"),  # pins the engine
         ("justfile", "R3"),  # the gates
         ("docs/methodology.md", "R3"),  # governance overrides docs-only
-        ("docs/engineering/constitution.md", "R3"),
-        (".ai/quality/risk-classes.toml", "R3"),  # the model cannot weaken itself
-        ("scripts/quality/classify.py", "R3"),  # the classifier decides everything else's gates
+        ("workflow/workflow.md", "R3"),
+        ("workflow/policy/risk-classes.toml", "R3"),  # the model cannot weaken itself
+        ("workflow/classify.py", "R3"),  # the classifier decides everything else's gates
         ("README.md", "R0"),  # plain doc
         ("docs/architecture.md", "R2"),
-        ("scripts/seed_data.py", "R1"),  # tooling with no gate role
+        ("docs/roadmap.md", "R0"),  # a plain document
         ("core/paths.py", "R2"),  # matched by core/** fallback
         (".env.example", "R2"),  # unmatched -> safe default, never R1
     ],
@@ -97,10 +97,11 @@ def test_path_spellings_classify_identically(spelling: str) -> None:
 
 
 def test_an_explicit_rule_beats_the_docs_only_shortcut() -> None:
-    """A governance .md matches its R3 rule, not the docs-only R0 fallback."""
-    gov = classify_path("docs/engineering/risk-classes.md", _model())
+    """A methodology document matches its R3 rule, not the docs-only R0 fallback -- otherwise the
+    holdout discipline could be rewritten as a documentation change."""
+    gov = classify_path("docs/methodology.md", _model())
     assert gov.risk_class == "R3"
-    assert gov.reason and "governance" in gov.reason.lower()
+    assert gov.reason and gov.reason != "plain documentation"
 
 
 def test_a_plain_document_reports_the_docs_only_reason() -> None:
@@ -185,8 +186,8 @@ def _tracked_paths() -> tuple[str, ...]:
         capture_output=True,
     )
     paths = tuple(raw.decode("utf-8") for raw in result.stdout.split(b"\0") if raw)
-    assert "scripts/quality/classify.py" in paths
-    assert ".ai/workflow.toml" in paths
+    assert "workflow/classify.py" in paths
+    assert "workflow/workflow.toml" in paths
     assert len(paths) > 150, "the sweep must cover the real repository, not an empty checkout"
     return paths
 
@@ -203,7 +204,7 @@ def test_a_lower_rule_can_never_pull_a_tracked_path_below_its_highest_match() ->
         + (
             Rule(".github/workflows/**", "R2", "a well-meant but lower rule"),
             Rule("live/**", "R1", "a well-meant but lower rule"),
-            Rule(".ai/**", "R0", "a well-meant but lower rule"),
+            Rule("workflow/**", "R0", "a well-meant but lower rule"),
         ),
         model.gates,
     )

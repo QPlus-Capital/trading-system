@@ -1,5 +1,5 @@
 # Focused mutation policy. The Python orchestrator reads this with stdlib tomllib and delegates
-# R3 classification and changed-path discovery to scripts/quality/classify.py.
+# R3 classification and changed-path discovery to workflow/classify.py.
 version = 1
 
 [tool]

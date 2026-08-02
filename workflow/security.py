@@ -18,9 +18,9 @@ from pathlib import Path
 from detect_secrets.core.scan import scan_file
 from detect_secrets.settings import default_settings
 
-from scripts.quality.classify import REPO_ROOT
+from workflow.classify import REPO_ROOT
 
-POLICY_PATH = REPO_ROOT / ".ai" / "quality" / "security.toml"
+POLICY_PATH = REPO_ROOT / "workflow" / "policy" / "security.toml"
 
 
 @dataclass(frozen=True)

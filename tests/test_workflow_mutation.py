@@ -14,9 +14,9 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-import scripts.quality.mutation as mutation_module
-from scripts.quality.classify import load_model
-from scripts.quality.mutation import (
+import workflow.mutation as mutation_module
+from workflow.classify import load_model
+from workflow.mutation import (
     MutationBaseline,
     MutationPolicy,
     MutationReport,
@@ -125,7 +125,7 @@ def test_mutation_copies_the_classifier_model_into_the_mutant_tree() -> None:
     pyproject = Path(__file__).parents[1] / "pyproject.toml"
     with pyproject.open("rb") as handle:
         config = tomllib.load(handle)
-    assert ".ai" in config["tool"]["mutmut"]["also_copy"]
+    assert "workflow" in config["tool"]["mutmut"]["also_copy"]
 
 
 def test_mutation_workflow_uploads_the_hidden_machine_report() -> None:
@@ -447,7 +447,7 @@ def test_fast_report_fingerprints_the_whole_policy(
         lambda _paths, _policy, _model: [policy.targets[0]],
     )
     monkeypatch.setattr(mutation_module, "_tool_command", lambda _policy: ["mutmut"])
-    monkeypatch.setattr("scripts.quality.mutation.subprocess.run", fake_run)
+    monkeypatch.setattr("workflow.mutation.subprocess.run", fake_run)
     monkeypatch.setattr(mutation_module, "load_baseline", lambda: baseline)
 
     assert mutation_module.run("fast", "origin/main", output) == 0

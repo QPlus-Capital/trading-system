@@ -1,4 +1,4 @@
-# The machine-readable half of docs/engineering/workflow.md.
+# The machine-readable half of workflow/workflow.md.
 #
 # Everything the tooling reads lives here and nowhere else: risk-class path rules, the gates each
 # class requires, review-agent selection, the board's statuses and transitions, and the review
@@ -149,14 +149,9 @@ min_class = "R3"
 reason = "runs the gates in CI; a change here can stop enforcing them"
 
 [[risk.rules]]
-glob = ".ai/**"
+glob = "workflow/**"
 min_class = "R3"
-reason = "this contract governs every other change"
-
-[[risk.rules]]
-glob = "scripts/quality/**"
-min_class = "R3"
-reason = "the classifier and the orchestrator decide every other change's gates"
+reason = "the contract and its tooling decide every other change's gates"
 
 [[risk.rules]]
 glob = ".claude/settings.json"
@@ -169,11 +164,6 @@ min_class = "R3"
 reason = "executable agent contracts govern building, review and safety boundaries"
 
 # ---- R3: governance and methodology documents ----
-[[risk.rules]]
-glob = "docs/engineering/**"
-min_class = "R3"
-reason = "the workflow contract - the governance itself"
-
 [[risk.rules]]
 glob = "docs/methodology.md"
 min_class = "R3"
@@ -225,12 +215,6 @@ reason = "load-bearing architecture and module-map contract"
 glob = "tests/**"
 min_class = "R2"
 reason = "the guards themselves - a deleted check must be reviewed"
-
-# ---- R1: repository tooling with no gate role ----
-[[risk.rules]]
-glob = "scripts/**"
-min_class = "R1"
-reason = "repository tooling with no gate role"
 
 # ---------------------------------------------------------------------------
 # Gates

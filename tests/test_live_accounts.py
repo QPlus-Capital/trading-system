@@ -79,7 +79,7 @@ _UNDERSCORE_REINTRODUCTION_TEMPLATES = [
 _DOCUMENTATION_PATHS = {".env.example", "README.md", "RUN.md"}
 _DOCUMENTATION_NUMBER_ALLOWLIST = {
     ("docs/architecture.md", "770077"),  # public MT5 magic number
-    ("docs/engineering/testing.md", "20260721"),  # deterministic property-test seed
+    ("workflow/workflow.md", "20260721"),  # deterministic property-test seed
     ("docs/methodology.md", "20260719"),  # deterministic bootstrap seed
     ("docs/methodology.md", "2460551"),  # SSRN paper identifier
     ("docs/methodology.md", "2326253"),  # SSRN paper identifier
@@ -346,7 +346,7 @@ def test_login_literal_guard_matches_plausible_reintroduction_forms(template: st
 
 
 def test_ai_task_login_suffix_is_detected_without_a_bare_number_scan() -> None:
-    path = ".ai/tasks/fixture/evidence.md"
+    path = "docs/fixture/evidence.md"
     texts = {path: "captured account login " + "999" + "001681"}
 
     assert _login_literal_hits(texts) == [path]
@@ -416,7 +416,7 @@ def test_tracked_text_includes_tests_and_is_non_vacuous() -> None:
 def test_tracked_text_resolves_the_git_root_from_a_nested_copy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setitem(_tracked_text.__globals__, "REPO_ROOT", REPO_ROOT / ".ai")
+    monkeypatch.setitem(_tracked_text.__globals__, "REPO_ROOT", REPO_ROOT / "workflow")
 
     texts = _tracked_text()
 

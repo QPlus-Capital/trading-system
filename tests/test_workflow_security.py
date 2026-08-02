@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from scripts.quality.security import load_security_policy, main, scan_secret_paths
+from workflow.security import load_security_policy, main, scan_secret_paths
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -52,7 +52,7 @@ def test_secret_scan_cli_returns_nonzero_without_disclosing_value(
 def test_security_recipe_runs_all_three_security_classes() -> None:
     justfile = (_ROOT / "justfile").read_text(encoding="utf-8")
     recipe = justfile.split("check-security:", 1)[1].split("\n\n", 1)[0]
-    assert "scripts.quality.security" in recipe
+    assert "workflow.security" in recipe
     assert "pip-audit" in recipe
     assert "ruff check" in recipe and "--select S" in recipe
     policy = load_security_policy()

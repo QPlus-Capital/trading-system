@@ -26,6 +26,10 @@ core/         # shared, strategy-/venue-neutral: strategies, instruments, broker
 research/     # WORLD 1 — the backtesting framework (engine · portfolio · stages · config)
 live/         # WORLD 2 — the live runner, broker bridge, risk control (+ its config)
 monitoring/   # WORLD 3 — the live-vs-backtest dashboard
+
+tests/        # the guards
+docs/         # about the trading system: architecture, methodology, runbook, strategies
+workflow/     # about how we build it: the contract, its tooling, its policies
 ```
 
 Full map with diagrams: **[docs/architecture.md](docs/architecture.md)**.
@@ -35,15 +39,17 @@ Full map with diagrams: **[docs/architecture.md](docs/architecture.md)**.
 All day-to-day commands live in the **[`justfile`](justfile)** — type `just` to see them:
 
 ```
+just                 # the full list — the justfile is the authority
 just backtest        # run the research pipeline  -> reports/research/run_*/
 just report          # open the latest backtest report
-just live-ttp        # start the live runner (add `execute` for real orders)
+just live-ttp        # start the live runner, signal-only (no orders)
+just live-ttp-execute  # start the live runner with REAL orders
 just monitor         # the monitoring dashboard
-just check           # ruff + mypy + pytest (before every commit)
+just check           # ruff + mypy + vulture + pytest (before every commit)
 ```
 
 Getting from a fresh clone to a runnable setup: **[RUN.md](RUN.md)**. The shared engineering rules
-are the **[development workflow](docs/engineering/workflow.md)**; **[AGENTS.md](AGENTS.md)** is
+are the **[development workflow](workflow/workflow.md)**; **[AGENTS.md](AGENTS.md)** is
 Codex's builder contract and **[CLAUDE.md](CLAUDE.md)** is Claude's specification and review
 contract.
 
@@ -74,10 +80,11 @@ Two-person team, lightweight by design:
 - Every change reaches `main` through a feature branch and pull request.
 - [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`,
   `chore:`, `docs:`, `refactor:`, `test:` …).
-- Codex is the primary builder; Claude is the primary conceptual designer and independent reviewer.
-  Either agent may build the highest-stakes trading work, but never review its own implementation.
-  Jan decides business, trading, methodology, live-money, architecture, and risk questions and
-  approves every merge; R3 never merges autonomously.
+- **Codex builds, Claude specifies and reviews**, and neither does the other's job. The
+  operator decides every business, trading, methodology, live-money, architecture, and risk
+  question, and approves every merge. No agent merges.
+
+The full procedure is **[workflow/workflow.md](workflow/workflow.md)**.
 
 ## Principle: code in, data and secrets out
 

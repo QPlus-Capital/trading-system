@@ -1,5 +1,5 @@
 <!--
-Five sections; R3 adds the last two. docs/engineering/workflow.md section 5 is authoritative.
+Five sections; R3 adds the last two. workflow/workflow.md section 5 is authoritative.
 Delete the R3 block for anything below R3.
 -->
 

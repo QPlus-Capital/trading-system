@@ -268,15 +268,15 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 
 | File | Purpose |
 |---|---|
-| `scripts/quality/classify.py` | Applies the authoritative risk model to changed paths |
-| `scripts/quality/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
-| `scripts/quality/mutation.py` | Runs focused mutation scopes and enforces the TOML survivor ratchet |
-| `scripts/quality/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
-| `scripts/quality/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
-| `scripts/quality/hooks/pre_bash.py` | Collects Git metadata and emits Claude Code hook responses |
+| `workflow/classify.py` | Applies the authoritative risk model to changed paths |
+| `workflow/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
+| `workflow/mutation.py` | Runs focused mutation scopes and enforces the TOML survivor ratchet |
+| `workflow/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
+| `workflow/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
+| `workflow/hooks/pre_bash.py` | Collects Git metadata and emits Claude Code hook responses |
 
 The rules these tools enforce, the risk classes, and the gates each class requires are stated in
-`docs/engineering/workflow.md` and carried machine-readably in `.ai/workflow.toml`.
+`workflow/workflow.md` and carried machine-readably in `workflow/workflow.toml`.
 
 ---
 
@@ -318,9 +318,9 @@ flowchart TD
 | `live/config/` | frozen live configs (promotion == adding one) | yes |
 | `core/config/broker/` | pulled swap snapshots per broker | yes |
 | `docs/` | methodology (the spec), runbook, this file | yes |
-| `.ai/workflow.toml` | the machine-readable half of the workflow contract | yes |
-| `.ai/quality/` | security, critical-dependency, and mutation models | yes |
-| `.ai/impact/test-map.json` | local conservative changed-file test-impact recommendation | no |
+| `workflow/` | the development contract, its tooling, and its policies | yes |
+| `workflow/impact/test-map.json` | local conservative changed-file test-impact recommendation | no |
+| `workflow/mutation-results/` | machine-readable mutation output (CI uploads it as an artifact) | no |
 | `.claude/skills/` | Claude Code workflow procedures with trigger frontmatter | yes |
 | `.claude/agents/` | least-privilege read-only reviewer subagents | yes |
 | `.claude/settings.json` | thin project hook event wiring | yes |

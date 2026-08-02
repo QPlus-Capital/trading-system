@@ -1,16 +1,16 @@
 """Change-risk classifier: map changed paths to their R0-R3 class from the authoritative model.
 
-Reads the ``[risk]`` table of ``.ai/workflow.toml`` (safe-by-default) and reports the highest class
-over a change set, with the reason for each contributing path. Path matching is a **conservative
-minimum**: the author must upgrade when the semantic impact is broader than the paths suggest
-(``docs/engineering/workflow.md`` section 5). This module is the single implementation of the
+Reads the ``[risk]`` table of ``workflow/workflow.toml`` (safe-by-default) and reports the highest
+class over a change set, with the reason for each contributing path. Path matching is a
+**conservative minimum**: the author must upgrade when the semantic impact is broader than the paths
+suggest (``workflow/workflow.md`` section 5). This module is the single implementation of the
 matcher -- the guard test imports it, so the model, the tests and the tooling cannot disagree.
 
 CLI::
 
-    uv run python -m scripts.quality.classify              # branch vs origin/main
-    uv run python -m scripts.quality.classify --base HEAD~1
-    uv run python -m scripts.quality.classify a/b.py c/d.md # explicit paths
+    uv run python -m workflow.classify              # branch vs origin/main
+    uv run python -m workflow.classify --base HEAD~1
+    uv run python -m workflow.classify a/b.py c/d.md # explicit paths
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-MODEL_PATH = REPO_ROOT / ".ai" / "workflow.toml"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MODEL_PATH = REPO_ROOT / "workflow" / "workflow.toml"
 
 CLASSES = ("R0", "R1", "R2", "R3")
 _RANK = {c: i for i, c in enumerate(CLASSES)}

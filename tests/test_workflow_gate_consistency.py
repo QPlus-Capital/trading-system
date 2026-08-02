@@ -27,7 +27,7 @@ def _vulture_packages(text: str) -> set[str]:
 
 def test_vulture_scans_the_same_packages_locally_and_in_ci() -> None:
     local = _vulture_packages(_JUSTFILE)
-    assert local == {"core", "research", "live", "monitoring", "scripts"}
+    assert local == {"core", "research", "live", "monitoring", "workflow"}
     assert "just check-standard" in _CI
 
 
@@ -94,7 +94,7 @@ def test_pr_body_edits_do_not_rerun_ci() -> None:
 
 def test_ci_does_not_hide_gate_logic_outside_just_recipes() -> None:
     mt5_boundary = (
-        "uv run pytest -q tests/test_workflow_system_validation.py"
+        "uv run pytest -q tests/test_workflow_test_boundaries.py"
         "::test_pytest_blocks_real_mt5_boundaries"
     )
     assert _CI.count(mt5_boundary) == 1
@@ -106,5 +106,5 @@ def test_ci_does_not_hide_gate_logic_outside_just_recipes() -> None:
 
 def test_the_focused_test_recipe_reuses_the_existing_impact_engine() -> None:
     recipe = _JUSTFILE.split("check-fast", 1)[1].split("\n\n", 1)[0]
-    assert "scripts.quality.impact" in recipe
+    assert "workflow.impact" in recipe
     assert "--run-focused" in recipe

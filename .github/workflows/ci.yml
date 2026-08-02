@@ -33,7 +33,7 @@ jobs:
       - name: Run the real-MT5 pytest boundary self-test
         if: github.event.pull_request.draft == false
         timeout-minutes: 30
-        run: uv run pytest -q tests/test_workflow_system_validation.py::test_pytest_blocks_real_mt5_boundaries
+        run: uv run pytest -q tests/test_workflow_test_boundaries.py::test_pytest_blocks_real_mt5_boundaries
 
   full-quality:
     if: github.event.pull_request.draft == false

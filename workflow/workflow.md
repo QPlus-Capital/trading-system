@@ -2,7 +2,7 @@
 
 The single source of truth for how changes are made in this repository — shared by the operator,
 Claude, Codex, and the repository tooling. `CLAUDE.md` and `AGENTS.md` are short role documents that
-point here. `.ai/workflow.toml` holds the same contract in the form the tooling reads. Where any of
+point here. `workflow/workflow.toml` holds the same contract in the form the tooling reads. Where any of
 them appears to disagree, **this file wins**.
 
 A rule appears in exactly one place. Nothing here is repeated elsewhere in prose.
@@ -119,7 +119,7 @@ In the same chat, when the operator asks for the idea to be worked out. Claude m
 2. **Read the code** at the depth the risk class sets — R0/R1 the named file; R2 the affected
    modules and their direct callers; R3 additionally data flow, lifecycle, and parity paths. Search
    for existing functions to reuse before proposing new ones.
-3. **Classify** with `scripts.quality.classify`. The result is a minimum; raising it is mandatory
+3. **Classify** with `workflow.classify`. The result is a minimum; raising it is mandatory
    when the semantic impact is broader than the paths suggest, and the reason is stated.
 4. **Ask only questions whose answer changes the outcome.**
 5. **Write the issue body**, replacing the original sentences. It is the specification from here on.
@@ -303,7 +303,7 @@ repository; the complete history lives in the issue and the pull request.
 
 ## 5. Risk classes and gates
 
-Every change carries a class. `.ai/workflow.toml` holds the path rules; the classifier takes the
+Every change carries a class. `workflow/workflow.toml` holds the path rules; the classifier takes the
 **highest** class over all matched rules. Path matching is a conservative minimum and may never
 lower a class. An unmatched path is R2, never R1; R0 and R1 are reached only by an explicit rule or
 the docs-only fallback.
@@ -402,7 +402,7 @@ pull-request body complete for the risk class; branch and worktree removed after
 
 ## 9. The machine-readable contract
 
-`.ai/workflow.toml` carries what tooling reads: risk-class path rules, gates per class, review-agent
+`workflow/workflow.toml` carries what tooling reads: risk-class path rules, gates per class, review-agent
 selection, board statuses and transitions, and the review loop's blocking severities and cap. It is
 the same contract, not a second one. **This document explains the rules; it does not restate them in
 a form a program could parse.** That is what kept the two from staying in sync before.
