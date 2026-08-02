@@ -8,7 +8,7 @@ specification and moves the card. It never releases work without the operator's 
 
 ## Required inputs
 
-- The issue or operator request, `docs/engineering/workflow.md`, and the repository state.
+- The issue or operator request, `workflow/workflow.md`, and the repository state.
 - The issue number and its current board status.
 
 ## Procedure
@@ -16,7 +16,7 @@ specification and moves the card. It never releases work without the operator's 
 1. Move the project card to `Specifying`.
 2. Reality check: does the problem still exist, is it a duplicate, would the fix violate a safety
    or methodology rule? If so, cite the evidence and propose closing.
-3. Classify the expected paths with `scripts.quality.classify`; treat the result as a minimum and
+3. Classify the expected paths with `workflow.classify`; treat the result as a minimum and
    raise it out loud when the semantic impact is broader.
 4. Read the code to the depth the class sets, and search for existing functions to reuse.
 5. Write the complete specification into the issue body: problem, goal, non-goals, numbered

@@ -130,7 +130,7 @@ flowchart TD
     CLI --> ACC["live/accounts.py<br/>account profile: expected login/currency,<br/>terminal path, symbol overrides<br/>+ identity guard (refuses on mismatch)"]
     ACC --> BRIDGE["live/mt5_bridge.py<br/>data + orders against ONE terminal<br/>(symbol map, magic 770077)"]
     BRIDGE <--> MT5A["MT5 terminal mex (demo)<br/>C:\\Program Files\\MetaTrader 5"]
-    BRIDGE <--> MT5B["MT5 terminal ttp (real $50k)<br/>C:\\Users\\jancw\\MT5\\ttp"]
+    BRIDGE <--> MT5B["MT5 terminal ttp (real $50k)<br/>path from MT5_TTP_TERMINAL_PATH"]
 
     CLI --> RUNNER["live/runner.py — the H4 cycle"]
     RUNNER --> C1["1 fetch bars, drop the forming bar"]

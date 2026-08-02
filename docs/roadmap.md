@@ -41,9 +41,9 @@ from idea to a tradeable, prop-firm-compliant config — is [methodology.md](met
 
 ## Next
 
-- **Two-agent build/review separation.** Codex is the primary builder; Claude turns Jan's intent
-  into the design and performs the independent adversarial review. The highest-stakes trading work
-  may be built by either agent but is always reviewed by the other, and Jan approves every merge.
+- **Two-agent build/review separation.** Codex builds; Claude turns the operator's intent into the
+  specification and performs the independent review. Neither does the other's job, and the operator
+  approves every merge. See [workflow.md](../workflow/workflow.md).
 - **Slippage calibration.** Calibrate `prob_slippage` against the live accounts' actual fills as
   trades close — the one standing reason to keep the monitor alive.
 
@@ -58,6 +58,6 @@ from idea to a tradeable, prop-firm-compliant config — is [methodology.md](met
 ## Parked / future
 
 - **Second, uncorrelated strategy (trend-following complement).** The biggest structural upgrade —
-  it diversifies the single-strategy risk. Pending Jan's discussion with his partner; the pipeline
-  is built to plug a new strategy in.
+  it diversifies the single-strategy risk. Pending an operator decision; the pipeline is built to
+  plug a new strategy in.
 - **24/7 hosting (VPS).** Part of the end-state; defer the setup until stable on a real account.

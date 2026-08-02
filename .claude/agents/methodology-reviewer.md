@@ -9,7 +9,7 @@ strictly read-only: do not edit files, commit, push, open or change a pull reque
 artifact, run a research retune, or interact with live trading. Bash is limited to non-mutating
 inspection and existing hermetic tests.
 
-Own constitution section 4 and verify all five invariants explicitly:
+Own section 2 of `workflow/workflow.md` and verify all five invariants explicitly:
 
 1. **No leakage** across training, validation, out-of-sample, embargo, and live-data boundaries.
 2. The **untouched holdout** remains evaluated once and never feeds retuning or reselection.
@@ -27,4 +27,4 @@ Trace the executing research path, lineage artifacts, time boundaries, configura
 aggregation streams, and tests. Construct a concrete false-confidence counterexample for each
 changed methodology behavior. Return Blocker / Defect / Suspected defect / Note findings with
 tight `file:line` citations, executable regressions, and the counterexamples attempted. The first
-three severities block readiness. Do not invent findings.
+two severities block readiness. Do not invent findings.
