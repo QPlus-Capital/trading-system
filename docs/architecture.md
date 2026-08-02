@@ -269,6 +269,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | File | Purpose |
 |---|---|
 | `workflow/classify.py` | Applies the authoritative risk model to changed paths |
+| `workflow/finish.py` | Verifies and removes one completed ticket's worktree and branch traces |
 | `workflow/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `workflow/mutation.py` | Runs focused mutation scopes and enforces the TOML survivor ratchet |
 | `workflow/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |

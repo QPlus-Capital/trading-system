@@ -299,8 +299,10 @@ A change on the live path needs a quiet window:
 ```
 
 `Closes #101` closes the issue, which moves the card to `Done`. **Teardown is part of the merge:**
-remote branch deleted, worktree removed, local branch deleted. Nothing temporary survives in the
-repository; the complete history lives in the issue and the pull request.
+the operator runs `just finish 101`, which first proves the issue is closed, its card is `Done`, and
+its branch tip is preserved on GitHub. It then removes the worktree, local branch, remote branch,
+and remote-tracking reference. Nothing temporary survives in the repository; the complete history
+lives in the issue and the pull request.
 
 **Rollback**, for an R3 change on the live path: stop the runner, restore the last good state,
 `uv sync`, start, observe — and only then investigate the cause. Below R3 an ordinary fix is enough.
@@ -408,7 +410,7 @@ pull-request body complete for the risk class; branch and worktree removed after
 
 ## 9. The tooling
 
-Four commands, each doing one thing. None of them decides policy: the class comes from the
+Five commands, each doing one thing. None of them decides policy: the class comes from the
 classifier, the gates and transitions from the contract, and the findings from the reviewer.
 
 | Command | Does |
@@ -416,6 +418,7 @@ classifier, the gates and transitions from the contract, and the findings from t
 | `just classify` | the risk class of this branch, and why |
 | `just gates` | runs exactly the gates that class requires, and prints the evidence table for the pull request |
 | `just board status <issue>` / `just board move <issue> "<Status>"` | reads or moves one card; refuses any transition the contract does not list |
+| `just finish <issue>` | verifies a merged ticket and removes only that ticket's worktree and branch traces |
 | `uv run python -m workflow.orchestrate run <issue>` | the review cycle: gates → review → fix → review, capped, then one notification |
 
 The board tool answers by **issue number in one request**. Listing a whole project to find one card
