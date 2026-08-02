@@ -352,7 +352,7 @@ trigger = "a blocking finding"
 from = "Specifying"
 to = "Blocked"
 actor = "claude"
-trigger = "a decision only the operator can make is open"
+trigger = "a decision only the operator can make is open, or the ticket depends on another ticket"
 
 [[board.transitions]]
 from = "Ready to Implement"
