@@ -85,11 +85,15 @@ class Notifier:
             self._send_telegram(f"[{kind}] {text}")
 
     def _do_beep(self, urgent: bool) -> None:
+        # `winsound` ships only on Windows; `self._beep` is already false anywhere else. The
+        # attribute is fetched by name because the type checker runs on Linux in CI, where the
+        # module has no `Beep` -- and a pinned ignore would then be flagged as unused on Windows.
         try:
             import winsound
 
+            beep = getattr(winsound, "Beep")  # noqa: B009 -- platform-conditional attribute
             for _ in range(3 if urgent else 1):
-                winsound.Beep(1200 if urgent else 800, 250)
+                beep(1200 if urgent else 800, 250)
         except Exception:  # noqa: BLE001 -- a failed beep must not matter
             pass
 
