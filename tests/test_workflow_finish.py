@@ -574,6 +574,24 @@ def test_an_empty_protected_directory_does_not_block_the_teardown(
     assert not ticket_repository.worktree.exists()
 
 
+def test_an_empty_protected_directory_does_not_mask_later_protected_state(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    """The allowance is per entry: an empty `catalog/` must not end the scan before a later
+    protected path with real content is seen."""
+    _prepare(monkeypatch, ticket_repository)
+    (ticket_repository.worktree / "catalog").mkdir()
+    results = ticket_repository.worktree / "results"
+    results.mkdir()
+    (results / "run.json").write_text("real\n", encoding="utf-8")
+
+    with pytest.raises(finish.FinishError, match="results"):
+        _finish(ticket_repository)
+
+    assert (results / "run.json").exists()
+
+
 def test_a_protected_directory_with_content_still_refuses(
     monkeypatch: pytest.MonkeyPatch,
     ticket_repository: TicketRepository,
