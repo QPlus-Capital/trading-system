@@ -26,6 +26,7 @@ import argparse
 import contextlib
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterator, Sequence
@@ -59,6 +60,21 @@ class Verdict:
     @property
     def clean(self) -> bool:
         return self.blocking == 0
+
+
+def _executable(name: str) -> str:
+    """Resolve an agent CLI to a concrete path, or stop.
+
+    On Windows, ``codex`` resolves through a ``.cmd`` shim that ``CreateProcess`` cannot start by
+    bare name — the spawn raised ``FileNotFoundError`` and the fix round silently never began.
+    ``shutil.which`` honours PATHEXT and finds it; a missing CLI is an explicit refusal rather than
+    a traceback.
+    """
+
+    path = shutil.which(name)
+    if path is None:
+        raise OrchestrationError(f"the {name!r} CLI is not on PATH; the cycle cannot run headless")
+    return path
 
 
 def _run(
@@ -169,7 +185,7 @@ def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
     session = session_for(issue)
     if session:
         subprocess.run(
-            ["claude", "-p", "--resume", session, f"Status zu #{issue}: {message}"],
+            [_executable("claude"), "-p", "--resume", session, f"Status zu #{issue}: {message}"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -223,7 +239,7 @@ def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
         "and Defect findings and M counts Suspected defect and Note findings."
     )
     command = [
-        "claude",
+        _executable("claude"),
         "-p",
         "--add-dir",
         str(worktree),
@@ -252,7 +268,14 @@ def hand_back(issue: int, verdict: Verdict, *, dry_run: bool = False) -> None:
         "— with a regression test that fails before the fix where the finding is in code — push "
         "once, and move the card back to Reviewing."
     )
-    command = ["codex", "exec", "--sandbox", "danger-full-access", "--skip-git-repo-check", prompt]
+    command = [
+        _executable("codex"),
+        "exec",
+        "--sandbox",
+        "danger-full-access",
+        "--skip-git-repo-check",
+        prompt,
+    ]
     if dry_run:
         print(f"[dry-run] codex exec --sandbox danger-full-access {prompt[:60]!r}")
         return
