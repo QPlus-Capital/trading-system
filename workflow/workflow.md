@@ -67,9 +67,13 @@ reviews. **Codex** builds. **The orchestrator** connects them and decides nothin
 
 Claude never builds. Codex never reviews. There is no exception.
 
-**Sessions.** One fresh session per ticket, per agent, named after the ticket. The Claude session
-accompanies the ticket from idea to merge. The review runs in its own process: a reviewer that
-knows what was intended does not find what is actually there.
+**Sessions.** The operator holds **exactly one chat per ticket per agent**, each named
+`Issue #<number>`: one Claude chat that accompanies the ticket from idea to merge, and one Codex
+chat that carries the build and every fix round. The operator never opens a second chat for a
+ticket — not for a repeat round, not for a fix. Every further process the loop needs (the review,
+an automatic fix hand-back) is the orchestrator's, runs headless, and asks the operator to open
+nothing. The review always runs in its own fresh process: a reviewer that knows what was intended
+does not find what is actually there.
 
 **Numbers.** GitHub draws issue and pull-request numbers from one sequence. Therefore **only issue
 numbers are ever spoken**. Pull-request numbers are internal mechanics and appear in no chat, no
@@ -99,7 +103,8 @@ Two built-in project automations cost no Actions minutes: *issue opened → `Bac
 
 ### Phase 0 — Idea reaches the backlog
 
-A fresh Claude session, named after the ticket. The operator states the idea in a sentence or two.
+A fresh Claude chat — after the issue exists, the operator names it `Issue #<number>`, and it stays
+the ticket's one Claude chat until the merge. The operator states the idea in a sentence or two.
 Claude opens an issue with a clear title and two or three sentences of body, and records the session
 identifier on it so the orchestrator can reach this chat later.
 
@@ -202,7 +207,8 @@ Changing a released issue means moving it back to `Specifying`; phase 2 runs aga
 
 ### Phase 3 — Building
 
-A fresh Codex session: `implement #101`. Nothing more is ever required.
+The ticket's Codex chat — `Issue #101` — opens with: `implement #101`. Nothing more is ever
+required, and the same chat carries every later fix round.
 
 **Guard first.** Two cases; anything else is a refusal that reports the actual status.
 
@@ -261,7 +267,8 @@ If the specification is wrong, incomplete, or unbuildable, Codex does not guess:
 
 The pull request is open. **The builder starts the cycle as the last step of phase 3**; the
 operator can always start it by hand — one command
-(`uv run python -m workflow.orchestrate run <issue>`) or one sentence in a fresh session — when a
+(`uv run python -m workflow.orchestrate run <issue>`) or one sentence in the ticket's Claude
+chat — when a
 build session ended before step 10, or to repeat a cycle deliberately.
 
 ```
