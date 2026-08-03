@@ -22,7 +22,9 @@ Apply this procedure in order:
 9. Reconcile aggregates against their underlying records and alternate reported views.
 10. Identify every error path that fails open rather than closed.
 11. Challenge tests that mock away the lifecycle or merely restate implementation details.
-12. Construct one concrete counterexample per changed behaviour.
+12. Construct counterexamples proportionate to the diff: target the behaviours whose
+    failure costs the most, and stop when further ones stop changing the verdict. Never a
+    fixed quota per changed behaviour.
 13. Propose an executable regression test for every confirmed or probable defect.
 14. Categorise each observation as confirmed defect, probable defect, human decision, optional
     improvement, or no finding.

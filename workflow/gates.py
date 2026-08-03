@@ -93,8 +93,15 @@ def required_gates(
     return risk, model.required_gates(risk)
 
 
-def run(paths: Sequence[str], declared: str | None = None) -> tuple[str, list[GateResult]]:
-    """Run every required gate in contract order, stopping at the first real failure."""
+def run(
+    paths: Sequence[str], declared: str | None = None, *, root: Path = REPO_ROOT
+) -> tuple[str, list[GateResult]]:
+    """Run every required gate in contract order, stopping at the first real failure.
+
+    ``root`` is where the gates *measure* — for a review it is a worktree at the branch tip, so
+    the evidence belongs to the change under review. The gate definitions and the risk model are
+    always read from this checkout, so a branch cannot weaken the gates that judge it.
+    """
 
     risk, gates = required_gates(paths, declared)
     commands = load_gate_commands()
@@ -104,7 +111,7 @@ def run(paths: Sequence[str], declared: str | None = None) -> tuple[str, list[Ga
         if spec is None:
             results.append(GateResult(name, "(undefined)", 1, 0.0, "no command defined"))
             break
-        result = run_gate(name, spec)
+        result = run_gate(name, spec, root=root)
         results.append(result)
         if result.exit_status not in (0, None):
             break

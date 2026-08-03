@@ -5,7 +5,10 @@ description: Invoke as Claude's primary review path for a completed pull request
 
 This is Claude's primary review skill. It runs in a fresh session, is read-only and independent of
 the builder, and delivers its result as a pull-request review. The orchestrator starts it with the
-issue number; the branch and its pull request follow from that.
+issue number; the branch and its pull request follow from that. **Lean is the default**: one pass by
+Claude directly, no subagents. The full panel engages only when `[review.scope]` of
+`workflow/workflow.toml` says so — a carve-out path, a diff over the size bound, or the operator's
+ask — and the *actual* diff decides, whatever the issue declared.
 
 ## Required inputs
 
@@ -14,21 +17,33 @@ issue number; the branch and its pull request follow from that.
 
 ## Procedure
 
-1. In a fresh session, read the agent selection from the `[review]` table of `workflow/workflow.toml`
-   for the effective risk class and the touched paths. Do not select agents from prose or memory.
-2. Invoke each selected read-only subagent with the issue contract, the diff, the gate results, and
-   the executing paths. Never pass the builder's private context.
-3. Reconcile their counterexamples against every acceptance criterion and invariant.
-4. Submit one pull-request review: an inline `file:line` comment per finding, and a summary with the
-   findings table, the contract check, an assessment of the chosen approach, and the decisions that
-   belong to the operator.
-5. Use `Blocker`, `Defect`, `Suspected defect`, or `Note`. Only the first two block and trigger a
+1. In a fresh session, decide the lane from `[review.scope]` and the actual diff, then read the
+   agent selection from the `[review]` table of `workflow/workflow.toml` for the effective risk
+   class and touched paths. Do not select agents from prose or memory. In the lean lane no
+   subagents run — review directly, one pass.
+2. In the full program, invoke each selected read-only subagent with the issue contract, the diff,
+   the gate results, and the executing paths. Never pass the builder's private context.
+3. **Search effort is proportionate to the diff.** Target the behaviours whose failure costs the
+   most; stop when further counterexamples stop changing the verdict. Never a fixed quota per
+   changed behaviour.
+4. Reconcile findings against every criterion the issue states.
+5. **On a repeat round, review only the fix diff and the modules it touches** — a complete fresh
+   review only when the fix reaches outside the original diff, or at R3 on the live path. Report
+   only the findings table and the verdict; no fresh contract check, no counterexample appendix.
+6. Submit one pull-request review: an inline `file:line` comment per finding, and a summary with
+   the findings table, the contract check (first round only), and the decisions that belong to the
+   operator. End it with `<!-- workflow-verdict blocking:N advisory:M -->`.
+7. Use `Blocker`, `Defect`, `Suspected defect`, or `Note`. Only the first two block and trigger a
    fix round; the other two are collected for the operator.
-6. If no finding survives, record the exact number of counterexamples attempted.
+8. If no finding survives, record the number of counterexamples attempted.
 
 ## Outputs
 
-- A read-only, fresh-context pull-request review that names its severities and its counterexamples.
+- A read-only, fresh-context pull-request review that names its severities and carries the verdict
+  marker.
+- **The chat output ends with a summary in German**, in this order: *Was gemacht wird* ·
+  *Was du entscheiden musst* · *Wo es klemmt* · *Was als Nächstes passiert*. "Nichts" is an answer
+  and is stated when true.
 
 ## Stop conditions
 
@@ -40,3 +55,5 @@ issue number; the branch and its pull request follow from that.
 - Do not edit files, commit, push, change pull-request state, merge, or interact with live trading.
 - Do not review your own implementation. You never build.
 - Do not invent findings, and do not accept narrative reassurance instead of executable evidence.
+- Do not open follow-up issues; non-blocking observations go to the operator, who decides what
+  becomes a ticket.
