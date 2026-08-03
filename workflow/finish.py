@@ -13,17 +13,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
+import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from workflow import board, orchestrate
 from workflow.classify import REPO_ROOT
 
-_REPOSITORY = "QPlus-Capital/trading-system"
-_OWNER, _NAME = _REPOSITORY.split("/", maxsplit=1)
+_REPOSITORY = f"{board._OWNER}/{board._REPO}"
+
+REFUSAL_EXIT = 1
+PARTIAL_EXIT = 2
 
 _CLOSING_PULL_REQUESTS = """
 query($owner:String!, $repo:String!, $number:Int!) {
@@ -120,9 +124,9 @@ def _read_merged_pull_requests(issue: int, repo_root: Path) -> tuple[MergedPullR
             "-f",
             f"query={_CLOSING_PULL_REQUESTS}",
             "-f",
-            f"owner={_OWNER}",
+            f"owner={board._OWNER}",
             "-f",
-            f"repo={_NAME}",
+            f"repo={board._REPO}",
             "-F",
             f"number={issue}",
         ],
@@ -150,6 +154,34 @@ def _read_merged_pull_requests(issue: int, repo_root: Path) -> tuple[MergedPullR
         oid = str(entry.get("headRefOid") or "")
         if branch and oid:
             result.append(MergedPullRequest(branch, oid))
+    return tuple(result)
+
+
+def load_protected_paths(path: Path = board.CONTRACT_PATH) -> tuple[str, ...]:
+    """Read and validate the exact worktree paths the contract protects."""
+
+    try:
+        values = tomllib.loads(path.read_text(encoding="utf-8"))["finish"][
+            "protected_worktree_paths"
+        ]
+    except (OSError, KeyError, tomllib.TOMLDecodeError) as error:
+        raise FinishError("the contract has no usable protected worktree path list") from error
+    if not isinstance(values, list) or not values:
+        raise FinishError("the contract protected worktree path list must be non-empty")
+
+    result: list[str] = []
+    normalized_paths: set[str] = set()
+    for value in values:
+        if not isinstance(value, str):
+            raise FinishError("every protected worktree path must be a string")
+        candidate = PurePosixPath(value)
+        if candidate.is_absolute() or not candidate.parts or ".." in candidate.parts:
+            raise FinishError(f"protected worktree path {value!r} is not repository-relative")
+        normalized = candidate.as_posix()
+        if normalized in {"", "."} or normalized in normalized_paths:
+            raise FinishError(f"protected worktree path {value!r} is invalid or duplicated")
+        normalized_paths.add(normalized)
+        result.append(value)
     return tuple(result)
 
 
@@ -194,27 +226,41 @@ def _worktrees(repo_root: Path) -> tuple[Worktree, ...]:
     return tuple(result)
 
 
-def _current_issue_branch_names(issue: int, repo_root: Path) -> set[str]:
-    """Use the orchestrator's branch rule; teardown does not define ownership itself."""
-
-    names = set(orchestrate.branches_for(issue, repo_root=repo_root))
+def _branch_names(repo_root: Path) -> set[str]:
+    local = _run(
+        ["git", "branch", "--list", "--format=%(refname:short)"],
+        cwd=repo_root,
+    )
     tracking = _run(
         ["git", "for-each-ref", "--format=%(refname)", "refs/remotes/origin"],
         cwd=repo_root,
     )
     remote = _run(["git", "ls-remote", "--heads", "origin"], cwd=repo_root)
-    candidates = {
+    names = {line.strip() for line in local.splitlines() if line.strip()}
+    names.update(
         line.strip().removeprefix("refs/remotes/origin/")
         for line in tracking.splitlines()
         if line.strip()
-    }
-    candidates.update(
+    )
+    names.update(
         line.split(maxsplit=1)[1].removeprefix("refs/heads/")
         for line in remote.splitlines()
         if len(line.split(maxsplit=1)) == 2
     )
-    names.update(branch for branch in candidates if orchestrate.issue_branch_matches(issue, branch))
     return names
+
+
+def _carries_issue_number(issue: int, branch: str) -> bool:
+    return str(issue) in re.split(r"[/_.-]+", branch)
+
+
+def _protected_local_state(worktree: Path, protected_paths: Sequence[str]) -> tuple[str, ...]:
+    found: list[str] = []
+    for value in protected_paths:
+        candidate = worktree.joinpath(*PurePosixPath(value).parts)
+        if candidate.exists() or candidate.is_symlink():
+            found.append(value)
+    return tuple(found)
 
 
 def _is_inside(path: Path, directory: Path) -> bool:
@@ -243,8 +289,24 @@ def _plan(issue: int, repo_root: Path, invocation_dir: Path) -> FinishPlan | Non
     if card.status != "Done":
         raise FinishError(f"issue #{issue} card is {card.status!r}; expected 'Done'")
 
+    protected_paths = load_protected_paths()
     pull_requests = _read_merged_pull_requests(issue, repo_root)
-    local_branches = _current_issue_branch_names(issue, repo_root)
+    branch_names = _branch_names(repo_root)
+    invalid_names = {
+        branch
+        for branch in branch_names | {request.head_branch for request in pull_requests}
+        if _carries_issue_number(issue, branch)
+        and not orchestrate.issue_branch_matches(issue, branch)
+    }
+    if invalid_names:
+        joined = ", ".join(repr(branch) for branch in sorted(invalid_names))
+        raise FinishError(
+            f"branch {joined} is outside the contract pattern for issue #{issue}; remove it by hand"
+        )
+
+    local_branches = {
+        branch for branch in branch_names if orchestrate.issue_branch_matches(issue, branch)
+    }
     if len(local_branches) > 1:
         raise FinishError(
             f"expected exactly one branch carrying issue #{issue}, found {len(local_branches)}"
@@ -292,6 +354,11 @@ def _plan(issue: int, repo_root: Path, invocation_dir: Path) -> FinishPlan | Non
             raise FinishError("the repository's own checkout is never removed")
         if _is_inside(invocation_dir, target_worktree.path):
             raise FinishError("refusing while running inside the target worktree")
+        protected = _protected_local_state(target_worktree.path, protected_paths)
+        if protected:
+            raise FinishError(
+                f"the target worktree contains protected local state at {protected[0]!r}"
+            )
         if not target_worktree.prunable:
             status = _run(
                 ["git", "status", "--porcelain", "--untracked-files=all"],
@@ -371,10 +438,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"PARTIAL: removed {', '.join(error.removed)}; {error}; re-run to finish")
         else:
             print(f"REFUSED: {error}")
-        return 1
+        return PARTIAL_EXIT if error.removed else REFUSAL_EXIT
     except (board.BoardError, orchestrate.OrchestrationError) as error:
         print(f"REFUSED: {error}")
-        return 1
+        return REFUSAL_EXIT
     if result.nothing_to_finish:
         print(f"#{args.issue}: nothing left to finish")
     else:

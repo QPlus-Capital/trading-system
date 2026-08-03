@@ -2,17 +2,29 @@
 
 from __future__ import annotations
 
+import json
+import re
 import shutil
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 from workflow import board, finish
 
 ISSUE = 152
 BRANCH = "codex/152-finish-command"
+_REAL_SUBPROCESS_RUN = subprocess.run
+PROTECTED_LOCAL_STATE = (
+    ".env",
+    "data/",
+    "catalog/",
+    "results/",
+    "reports/",
+    "workflow/mutation-results/",
+)
 
 
 @dataclass(frozen=True)
@@ -24,7 +36,7 @@ class TicketRepository:
 
 
 def _git(cwd: Path, *args: str, check: bool = True) -> str:
-    completed = subprocess.run(
+    completed = _REAL_SUBPROCESS_RUN(
         ["git", *args],
         cwd=cwd,
         capture_output=True,
@@ -61,7 +73,11 @@ def ticket_repository(tmp_path: Path) -> TicketRepository:
     _git(repository, "config", "user.email", "tests@example.invalid")
     _git(repository, "config", "user.name", "Workflow tests")
     (repository / "README.md").write_text("main\n", encoding="utf-8")
-    _git(repository, "add", "README.md")
+    (repository / ".gitignore").write_text(
+        ".env\ndata/\ncatalog/\nresults/\nreports/\nworkflow/mutation-results/\n.venv/\n",
+        encoding="utf-8",
+    )
+    _git(repository, "add", "README.md", ".gitignore")
     _git(repository, "commit", "-m", "initial")
     _git(repository, "remote", "add", "origin", str(remote))
     _git(repository, "push", "-u", "origin", "main")
@@ -145,15 +161,162 @@ def _finish(ticket: TicketRepository) -> finish.FinishResult:
     )
 
 
-def _record_commands(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
+def _card_payload() -> dict[str, object]:
+    return {
+        "data": {
+            "repository": {
+                "issue": {
+                    "number": ISSUE,
+                    "title": "Finish a merged ticket",
+                    "state": "CLOSED",
+                    "labels": {"nodes": [{"name": "risk:R3"}]},
+                    "projectItems": {
+                        "nodes": [
+                            {
+                                "id": "item",
+                                "project": {"id": "project", "number": 1, "title": "Workflow"},
+                                "fieldValueByName": {
+                                    "name": "Done",
+                                    "field": {
+                                        "id": "field",
+                                        "options": [{"id": "done", "name": "Done"}],
+                                    },
+                                },
+                            }
+                        ]
+                    },
+                }
+            }
+        }
+    }
+
+
+def _pull_request_payload(ticket: TicketRepository) -> dict[str, object]:
+    return {
+        "data": {
+            "repository": {
+                "issue": {
+                    "closedByPullRequestsReferences": {
+                        "nodes": [
+                            {
+                                "state": "MERGED",
+                                "headRefName": BRANCH,
+                                "headRefOid": ticket.branch_tip,
+                                "headRepository": {"nameWithOwner": "QPlus-Capital/trading-system"},
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+
+def _board_read_command() -> tuple[str, ...]:
+    return (
+        "gh",
+        "api",
+        "graphql",
+        "-f",
+        f"query={board._CARD_QUERY}",
+        "-f",
+        f"owner={board._OWNER}",
+        "-f",
+        f"repo={board._REPO}",
+        "-F",
+        f"number={ISSUE}",
+    )
+
+
+def _pull_request_read_command() -> tuple[str, ...]:
+    return (
+        "gh",
+        "api",
+        "graphql",
+        "-f",
+        f"query={finish._CLOSING_PULL_REQUESTS}",
+        "-f",
+        f"owner={board._OWNER}",
+        "-f",
+        f"repo={board._REPO}",
+        "-F",
+        f"number={ISSUE}",
+    )
+
+
+def _allowed_finish_command(command: tuple[str, ...], ticket: TicketRepository) -> bool:
+    exact = {
+        ("git", "branch", "--list", "--format=%(refname:short)"),
+        ("git", "for-each-ref", "--format=%(refname)", "refs/remotes/origin"),
+        ("git", "fetch", "origin", "main"),
+        ("git", "worktree", "list", "--porcelain"),
+        ("git", "status", "--porcelain", "--untracked-files=all"),
+        ("git", "worktree", "remove", str(ticket.worktree.resolve())),
+        ("git", "branch", "-D", "--", BRANCH),
+        ("git", "ls-remote", "--heads", "origin"),
+        ("git", "ls-remote", "--heads", "origin", f"refs/heads/{BRANCH}"),
+        ("git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main"),
+        ("git", "rev-parse", "--verify", "--quiet", f"refs/heads/{BRANCH}"),
+        (
+            "git",
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            f"refs/remotes/origin/{BRANCH}",
+        ),
+        (
+            "git",
+            "merge-base",
+            "--is-ancestor",
+            ticket.branch_tip,
+            "refs/remotes/origin/main",
+        ),
+        (
+            "git",
+            "push",
+            f"--force-with-lease=refs/heads/{BRANCH}:{ticket.branch_tip}",
+            "origin",
+            f":refs/heads/{BRANCH}",
+        ),
+        (
+            "git",
+            "update-ref",
+            "-d",
+            f"refs/remotes/origin/{BRANCH}",
+            ticket.branch_tip,
+        ),
+        _board_read_command(),
+        _pull_request_read_command(),
+    }
+    return command in exact
+
+
+def _record_commands(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket: TicketRepository,
+) -> list[tuple[str, ...]]:
     commands: list[tuple[str, ...]] = []
-    real_execute = finish._execute
 
-    def record(args: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
-        commands.append(tuple(str(part) for part in args))
-        return real_execute(args, cwd=cwd)
+    def record(
+        args: Sequence[str],
+        *positional: Any,
+        **keywords: Any,
+    ) -> subprocess.CompletedProcess[str]:
+        command = tuple(str(part) for part in args)
+        commands.append(command)
+        if command == _board_read_command():
+            return subprocess.CompletedProcess(
+                list(args), 0, stdout=json.dumps(_card_payload()), stderr=""
+            )
+        if command == _pull_request_read_command():
+            return subprocess.CompletedProcess(
+                list(args), 0, stdout=json.dumps(_pull_request_payload(ticket)), stderr=""
+            )
+        if not _allowed_finish_command(command, ticket):
+            return subprocess.CompletedProcess(list(args), 0, stdout="", stderr="")
+        return _REAL_SUBPROCESS_RUN(args, *positional, **keywords)
 
-    monkeypatch.setattr(finish, "_execute", record)
+    monkeypatch.setattr(subprocess, "run", record)
     return commands
 
 
@@ -210,12 +373,17 @@ def test_uncommitted_or_untracked_work_is_refused(
     path = ticket_repository.worktree / ("new.txt" if untracked else "ticket.txt")
     path.write_text("not committed\n", encoding="utf-8")
     before = _artifact_snapshot(ticket_repository)
+    commands = _record_commands(monkeypatch, ticket_repository)
 
-    with pytest.raises(finish.FinishError, match="modified or untracked"):
+    with pytest.raises(
+        finish.FinishError,
+        match=r"^the target worktree contains modified or untracked files$",
+    ):
         _finish(ticket_repository)
 
     assert path.exists()
     assert _artifact_snapshot(ticket_repository) == before
+    assert not any(command[:3] == ("git", "worktree", "remove") for command in commands)
 
 
 def test_a_branch_tip_github_never_saw_is_refused(
@@ -256,12 +424,14 @@ def test_running_from_inside_the_target_worktree_is_refused(
 ) -> None:
     _prepare(monkeypatch, ticket_repository)
     before = _artifact_snapshot(ticket_repository)
+    invocation_dir = ticket_repository.worktree / "nested" / "directory"
+    invocation_dir.mkdir(parents=True)
 
     with pytest.raises(finish.FinishError, match="running inside"):
         finish.finish_ticket(
             ISSUE,
             repo_root=ticket_repository.repository,
-            invocation_dir=ticket_repository.worktree,
+            invocation_dir=invocation_dir,
         )
 
     assert _artifact_snapshot(ticket_repository) == before
@@ -298,12 +468,35 @@ def test_only_this_tickets_remote_tracking_reference_is_pruned(
     _git(ticket_repository.repository, "branch", other, "main")
     _git(ticket_repository.repository, "push", "-u", "origin", other)
     other_tracking = _tracking_ref(ticket_repository.repository, other)
+    _git(
+        ticket_repository.repository,
+        f"--git-dir={ticket_repository.remote}",
+        "update-ref",
+        "-d",
+        f"refs/heads/{other}",
+    )
+    _git(
+        ticket_repository.repository,
+        f"--git-dir={ticket_repository.remote}",
+        "update-ref",
+        "-d",
+        f"refs/heads/{BRANCH}",
+    )
     _prepare(monkeypatch, ticket_repository)
+    commands = _record_commands(monkeypatch, ticket_repository)
 
     _finish(ticket_repository)
 
     assert _tracking_ref(ticket_repository.repository, other) == other_tracking
-    assert _remote_ref(ticket_repository, other) is not None
+    assert _remote_ref(ticket_repository, other) is None
+    assert (
+        "git",
+        "update-ref",
+        "-d",
+        f"refs/remotes/origin/{BRANCH}",
+        ticket_repository.branch_tip,
+    ) in commands
+    assert not any("--prune" in command for command in commands)
 
 
 def test_a_second_run_reports_nothing_left_to_finish(
@@ -317,6 +510,44 @@ def test_a_second_run_reports_nothing_left_to_finish(
 
     assert result.nothing_to_finish
     assert result.removed == ()
+
+
+@pytest.mark.parametrize("state_path", PROTECTED_LOCAL_STATE)
+def test_protected_local_state_in_the_worktree_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+    state_path: str,
+) -> None:
+    _prepare(monkeypatch, ticket_repository)
+    assert finish.load_protected_paths() == PROTECTED_LOCAL_STATE
+    protected = ticket_repository.worktree / state_path
+    if state_path == ".env":
+        protected.write_text("secret\n", encoding="utf-8")
+    else:
+        protected.mkdir(parents=True)
+    before = _artifact_snapshot(ticket_repository)
+    commands = _record_commands(monkeypatch, ticket_repository)
+
+    with pytest.raises(finish.FinishError, match=re.escape(state_path)):
+        _finish(ticket_repository)
+
+    assert protected.exists()
+    assert _artifact_snapshot(ticket_repository) == before
+    assert not any(command[:3] == ("git", "worktree", "remove") for command in commands)
+
+
+def test_regenerable_ignored_state_is_removed_with_the_worktree(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    _prepare(monkeypatch, ticket_repository)
+    cache = ticket_repository.worktree / ".venv" / "cache"
+    cache.mkdir(parents=True)
+    (cache / "regenerable.bin").write_bytes(b"cache")
+
+    _finish(ticket_repository)
+
+    assert not ticket_repository.worktree.exists()
 
 
 def test_an_interrupted_run_finishes_the_remaining_remote_artifacts(
@@ -346,7 +577,7 @@ def test_a_worktree_directory_already_deleted_by_hand_still_finishes(
     assert _artifact_snapshot(ticket_repository) == (False, None, None, None)
 
 
-def test_a_failure_after_the_first_removal_is_reported_as_partial(
+def test_a_failure_after_the_first_removal_is_not_a_refusal(
     monkeypatch: pytest.MonkeyPatch,
     ticket_repository: TicketRepository,
     capsys: pytest.CaptureFixture[str],
@@ -371,10 +602,53 @@ def test_a_failure_after_the_first_removal_is_reported_as_partial(
         ),
     )
 
-    assert finish.main([str(ISSUE)]) == 1
+    assert finish.main([str(ISSUE)]) == 2
     output = capsys.readouterr().out
     assert output.startswith("PARTIAL: removed worktree, local branch;")
     assert "re-run to finish" in output
+
+    def refuse(issue: int) -> finish.FinishResult:
+        raise finish.FinishError("precondition failed")
+
+    monkeypatch.setattr(finish, "finish_ticket", refuse)
+    assert finish.main([str(ISSUE)]) == 1
+    assert capsys.readouterr().out == "REFUSED: precondition failed\n"
+
+
+@pytest.mark.parametrize("arrival", ["local", "pull-request"])
+def test_a_legacy_branch_name_is_never_removed(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+    arrival: str,
+) -> None:
+    legacy = "codex/issue-152-finish-command"
+    if arrival == "local":
+        _git(ticket_repository.worktree, "branch", "-m", legacy)
+        _git(
+            ticket_repository.repository,
+            f"--git-dir={ticket_repository.remote}",
+            "update-ref",
+            "-d",
+            f"refs/heads/{BRANCH}",
+        )
+        _git(
+            ticket_repository.repository,
+            "update-ref",
+            "-d",
+            f"refs/remotes/origin/{BRANCH}",
+        )
+        pull_requests = (finish.MergedPullRequest(BRANCH, ticket_repository.branch_tip),)
+    else:
+        pull_requests = (finish.MergedPullRequest(legacy, ticket_repository.branch_tip),)
+    _prepare(monkeypatch, ticket_repository, pull_requests=pull_requests)
+    before = _artifact_snapshot(ticket_repository)
+    legacy_oid = _local_ref(ticket_repository.repository, legacy)
+
+    with pytest.raises(finish.FinishError, match="outside the contract pattern"):
+        _finish(ticket_repository)
+
+    assert _artifact_snapshot(ticket_repository) == before
+    assert _local_ref(ticket_repository.repository, legacy) == legacy_oid
 
 
 @pytest.mark.parametrize("preserved_by", ["main", "pull-request"])
@@ -396,6 +670,47 @@ def test_the_branch_is_deleted_only_when_its_tip_is_preserved(
     assert _local_ref(ticket_repository.repository) is None
 
 
+def test_a_tip_ahead_of_main_without_a_pull_request_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    _git(ticket_repository.worktree, "reset", "--hard", "origin/main")
+    (ticket_repository.worktree / "ahead.txt").write_text("ahead\n", encoding="utf-8")
+    _git(ticket_repository.worktree, "add", "ahead.txt")
+    _git(ticket_repository.worktree, "commit", "-m", "ahead of main")
+    _git(ticket_repository.worktree, "push", "--force", "origin", BRANCH)
+    _prepare(monkeypatch, ticket_repository, pull_requests=())
+    before = _artifact_snapshot(ticket_repository)
+
+    with pytest.raises(finish.FinishError, match="not preserved"):
+        _finish(ticket_repository)
+
+    assert _artifact_snapshot(ticket_repository) == before
+
+
+def test_the_merged_pull_request_record_is_read_from_github(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    monkeypatch.setattr(board, "read_card", lambda issue: _card())
+    real_execute = finish._execute
+    github_calls: list[tuple[str, ...]] = []
+    payload = _pull_request_payload(ticket_repository)
+
+    def execute(args: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        if tuple(args[:3]) == ("gh", "api", "graphql"):
+            github_calls.append(tuple(args))
+            return subprocess.CompletedProcess(list(args), 0, json.dumps(payload), "")
+        return real_execute(args, cwd=cwd)
+
+    monkeypatch.setattr(finish, "_execute", execute)
+
+    _finish(ticket_repository)
+
+    assert len(github_calls) == 1
+    assert _local_ref(ticket_repository.repository) is None
+
+
 def test_main_and_the_main_checkout_are_never_removable(
     monkeypatch: pytest.MonkeyPatch,
     ticket_repository: TicketRepository,
@@ -405,7 +720,7 @@ def test_main_and_the_main_checkout_are_never_removable(
         ticket_repository,
         pull_requests=(finish.MergedPullRequest("main", ticket_repository.branch_tip),),
     )
-    monkeypatch.setattr(finish, "_current_issue_branch_names", lambda *args: {"main"})
+    monkeypatch.setattr(finish, "_branch_names", lambda *args: {"main"})
     before = _git(ticket_repository.repository, "rev-parse", "main")
 
     with pytest.raises(finish.FinishError, match="main"):
@@ -434,12 +749,9 @@ def test_finish_never_touches_live_trading(
     ticket_repository: TicketRepository,
     refused: bool,
 ) -> None:
-    _prepare(
-        monkeypatch,
-        ticket_repository,
-        card=_card(open_state=refused),
-    )
-    commands = _record_commands(monkeypatch)
+    if refused:
+        (ticket_repository.worktree / "untracked.txt").write_text("refuse\n", encoding="utf-8")
+    commands = _record_commands(monkeypatch, ticket_repository)
 
     if refused:
         with pytest.raises(finish.FinishError):
@@ -447,14 +759,8 @@ def test_finish_never_touches_live_trading(
     else:
         _finish(ticket_repository)
 
-    forbidden = {"live", "live.run", "live-stop", "live-start", "runner"}
-    assert not any(
-        part.lower() in forbidden
-        or part.lower().startswith("live-")
-        or part.lower().startswith("runner-")
-        for command in commands
-        for part in command
-    )
+    assert commands
+    assert all(_allowed_finish_command(command, ticket_repository) for command in commands)
 
 
 @pytest.mark.parametrize("refused", [False, True], ids=["success", "refusal"])
@@ -463,12 +769,9 @@ def test_finish_never_writes_the_board_or_merges(
     ticket_repository: TicketRepository,
     refused: bool,
 ) -> None:
-    _prepare(
-        monkeypatch,
-        ticket_repository,
-        card=_card(open_state=refused),
-    )
-    commands = _record_commands(monkeypatch)
+    if refused:
+        (ticket_repository.worktree / "untracked.txt").write_text("refuse\n", encoding="utf-8")
+    commands = _record_commands(monkeypatch, ticket_repository)
 
     def unexpected_board_write(*args: object, **kwargs: object) -> None:
         raise AssertionError("finish must never write the board")
@@ -480,15 +783,5 @@ def test_finish_never_writes_the_board_or_merges(
     else:
         _finish(ticket_repository)
 
-    lowered = [tuple(part.lower() for part in command) for command in commands]
-    assert not any(command[:2] == ("gh", "issue") for command in lowered)
-    assert not any(
-        command[:3]
-        in {
-            ("gh", "pr", "merge"),
-            ("gh", "pr", "review"),
-            ("gh", "pr", "ready"),
-        }
-        for command in lowered
-    )
-    assert not any("workflow.board move" in " ".join(command) for command in lowered)
+    assert commands
+    assert all(_allowed_finish_command(command, ticket_repository) for command in commands)

@@ -304,6 +304,12 @@ its branch tip is preserved on GitHub. It then removes the worktree, local branc
 and remote-tracking reference. Nothing temporary survives in the repository; the complete history
 lives in the issue and the pull request.
 
+Before removing a worktree, `just finish` checks the protected paths named by the contract and
+refuses if any exists. The protected list is `.env`, `data/`, `catalog/`, `results/`, `reports/`, and
+`workflow/mutation-results/`. These hold credentials, market data, research output, live risk state,
+or mutation evidence. Other ignored state — `.venv/`, tool caches, `mutants/`, and the generated
+impact map — is regenerable and is removed with the worktree.
+
 **Rollback**, for an R3 change on the live path: stop the runner, restore the last good state,
 `uv sync`, start, observe — and only then investigate the cause. Below R3 an ordinary fix is enough.
 
