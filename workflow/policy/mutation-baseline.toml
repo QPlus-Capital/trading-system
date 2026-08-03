@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "Linux dispatch run 30815348927 measured the workflow-board-guards and workflow-hook-decisions targets: 5,497 mutants, 4,996 killed, 501 survived; the 91 workflow survivors are classified below as measured test-strength gaps per the operator's issue #166 decision, and no previously classified survivor changed state. workflow-finish-teardown remains unmeasured until this branch's first Linux run, which fails closed on any survivor there. Prior explanation: PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
+change_explanation = "Linux dispatch run 30815348927 measured the workflow-board-guards and workflow-hook-decisions targets: 5,497 mutants, 4,996 killed, 501 survived; the 91 workflow survivors are classified below as measured test-strength gaps per the operator's issue #166 decision, and no previously classified survivor changed state. The branch's Linux run then measured workflow-finish-teardown: 5,866 mutants, 5,328 killed, 538 survived; the 42 finish survivors are classified below, and the round-four regression tests killed five previously classified read_card survivors, which leave the ratchet. Prior explanation: PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
 targets = [
     "workflow-finish-teardown",
     "workflow-board-guards",
@@ -39,9 +39,9 @@ targets = [
 policy_fingerprint = "fb5cdad3a56f2a87b989846a0ecfe4b1244f2e751977578e9f790633365c009f" # pragma: allowlist secret
 
 [summary]
-total = 5497
-killed = 4996
-survived = 501
+total = 5866
+killed = 5328
+survived = 538
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -813,8 +813,6 @@ names = [
     "workflow.board.x_read_card__mutmut_114",
     "workflow.board.x_read_card__mutmut_117",
     "workflow.board.x_read_card__mutmut_122",
-    "workflow.board.x_read_card__mutmut_3",
-    "workflow.board.x_read_card__mutmut_4",
     "workflow.board.x_read_card__mutmut_42",
     "workflow.board.x_read_card__mutmut_56",
     "workflow.board.x_read_card__mutmut_58",
@@ -824,9 +822,7 @@ names = [
     "workflow.board.x_read_card__mutmut_65",
     "workflow.board.x_read_card__mutmut_68",
     "workflow.board.x_read_card__mutmut_69",
-    "workflow.board.x_read_card__mutmut_7",
     "workflow.board.x_read_card__mutmut_70",
-    "workflow.board.x_read_card__mutmut_8",
     "workflow.board.x_read_card__mutmut_84",
     "workflow.board.x_read_card__mutmut_85",
     "workflow.board.x_read_card__mutmut_86",
@@ -837,7 +833,6 @@ names = [
     "workflow.board.x_read_card__mutmut_91",
     "workflow.board.x_read_card__mutmut_92",
     "workflow.board.x_read_card__mutmut_93",
-    "workflow.board.x_read_card__mutmut_94",
     "workflow.board.x_read_card__mutmut_95",
     "workflow.board.x_read_card__mutmut_96",
 ]
@@ -916,4 +911,64 @@ names = [
     "workflow.hooks.decisions.x_secret_decision__mutmut_3",
     "workflow.hooks.decisions.x_secret_decision__mutmut_8",
     "workflow.hooks.decisions.x_secret_decision__mutmut_9",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "One message-text mutation on the fail-closed error; the fail-closed branch itself (exit codes outside 0/1 raise) is pinned and its mutants are killed."
+names = [
+    "workflow.finish.x__is_ancestor__mutmut_15",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Resolution-order and message-text mutations the behavioural suite does not separate; the destructive outcomes (what is deleted, what is refused, what survives) are pinned by the fifty finish tests and their mutants are killed. The reviewer's advisory findings S-2 through S-4 describe the same territory and were left to the operator by decision. Retained as measured test-strength gaps."
+names = [
+    "workflow.finish.x__plan__mutmut_119",
+    "workflow.finish.x__plan__mutmut_12",
+    "workflow.finish.x__plan__mutmut_120",
+    "workflow.finish.x__plan__mutmut_125",
+    "workflow.finish.x__plan__mutmut_132",
+    "workflow.finish.x__plan__mutmut_133",
+    "workflow.finish.x__plan__mutmut_134",
+    "workflow.finish.x__plan__mutmut_135",
+    "workflow.finish.x__plan__mutmut_136",
+    "workflow.finish.x__plan__mutmut_142",
+    "workflow.finish.x__plan__mutmut_149",
+    "workflow.finish.x__plan__mutmut_28",
+    "workflow.finish.x__plan__mutmut_30",
+    "workflow.finish.x__plan__mutmut_31",
+    "workflow.finish.x__plan__mutmut_44",
+    "workflow.finish.x__plan__mutmut_62",
+    "workflow.finish.x__plan__mutmut_69",
+    "workflow.finish.x__plan__mutmut_70",
+    "workflow.finish.x__plan__mutmut_73",
+    "workflow.finish.x__plan__mutmut_77",
+    "workflow.finish.x__plan__mutmut_88",
+    "workflow.finish.x__plan__mutmut_95",
+    "workflow.finish.x__plan__mutmut_96",
+    "workflow.finish.x__plan__mutmut_97",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Validation-message and duplicate-bookkeeping mutations; every rejection outcome (absolute, rooted, backslash, empty, duplicated) is pinned by tests whose mutants are killed. Retained as measured gaps."
+names = [
+    "workflow.finish.x_load_protected_paths__mutmut_11",
+    "workflow.finish.x_load_protected_paths__mutmut_17",
+    "workflow.finish.x_load_protected_paths__mutmut_23",
+    "workflow.finish.x_load_protected_paths__mutmut_29",
+    "workflow.finish.x_load_protected_paths__mutmut_3",
+    "workflow.finish.x_load_protected_paths__mutmut_30",
+    "workflow.finish.x_load_protected_paths__mutmut_31",
+    "workflow.finish.x_load_protected_paths__mutmut_32",
+    "workflow.finish.x_load_protected_paths__mutmut_33",
+    "workflow.finish.x_load_protected_paths__mutmut_39",
+    "workflow.finish.x_load_protected_paths__mutmut_41",
+    "workflow.finish.x_load_protected_paths__mutmut_45",
+    "workflow.finish.x_load_protected_paths__mutmut_47",
+    "workflow.finish.x_load_protected_paths__mutmut_48",
+    "workflow.finish.x_load_protected_paths__mutmut_5",
+    "workflow.finish.x_load_protected_paths__mutmut_50",
+    "workflow.finish.x_load_protected_paths__mutmut_51",
 ]
