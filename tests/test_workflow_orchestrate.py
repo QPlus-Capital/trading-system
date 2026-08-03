@@ -165,6 +165,28 @@ def test_the_session_marker_binds_a_ticket_to_its_chat() -> None:
     assert SESSION_MARKER.search("no marker here") is None
 
 
+@pytest.mark.parametrize(
+    ("branch", "owned"),
+    [
+        ("codex/152-finish-command", True),
+        ("claude/152-finish-command", True),
+        ("codex/issue-152-finish-command", False),
+        ("codex/1523-finish-command", False),
+        ("codex/15-finish-command", False),
+        ("feature/152-finish-command", False),
+        ("codex/152", False),
+        ("codex/152-", False),
+        ("Codex/152-finish-command", False),
+        ("codex/152-finish/command", False),
+    ],
+)
+def test_issue_branch_ownership_is_exactly_the_contract_pattern(
+    branch: str,
+    owned: bool,
+) -> None:
+    assert orchestrate.issue_branch_matches(152, branch) is owned
+
+
 def test_the_orchestrator_never_merges() -> None:
     """It sequences and reports. Merging is the operator's, and nothing else's."""
     source = Path(orchestrate.__file__).read_text(encoding="utf-8")

@@ -61,10 +61,15 @@ class Verdict:
         return self.blocking == 0
 
 
-def _run(args: Sequence[str], *, capture: bool = True) -> str:
+def _run(
+    args: Sequence[str],
+    *,
+    capture: bool = True,
+    cwd: Path = REPO_ROOT,
+) -> str:
     completed = subprocess.run(
         list(args),
-        cwd=REPO_ROOT,
+        cwd=cwd,
         capture_output=capture,
         text=True,
         check=False,
@@ -74,15 +79,31 @@ def _run(args: Sequence[str], *, capture: bool = True) -> str:
     return (completed.stdout or "").strip()
 
 
-def branch_for(issue: int) -> str:
+def issue_branch_matches(issue: int, branch: str) -> bool:
+    """Whether ``branch`` is an agent branch owned by ``issue`` under the contract."""
+
+    return re.fullmatch(rf"(?:codex|claude)/{issue}-[\w.-]+", branch) is not None
+
+
+def branches_for(issue: int, *, repo_root: Path = REPO_ROOT) -> tuple[str, ...]:
+    """All local branches carrying ``issue``, using the one ownership definition."""
+
+    listing = _run(
+        ["git", "branch", "--list", "--format=%(refname:short)"],
+        cwd=repo_root,
+    )
+    return tuple(
+        line.strip() for line in listing.splitlines() if issue_branch_matches(issue, line.strip())
+    )
+
+
+def branch_for(issue: int, *, repo_root: Path = REPO_ROOT) -> str:
     """The one branch that carries this issue number, or an error.
 
     Ownership follows the branch, not the card: the card cannot say who wrote the code.
     """
 
-    listing = _run(["git", "branch", "--list", "--format=%(refname:short)"])
-    pattern = re.compile(rf"^(?:codex|claude)/{issue}-[\w.-]+$")
-    matches = [line for line in listing.splitlines() if pattern.match(line.strip())]
+    matches = branches_for(issue, repo_root=repo_root)
     if len(matches) != 1:
         raise OrchestrationError(
             f"expected exactly one branch for issue #{issue}, found {len(matches)}"
