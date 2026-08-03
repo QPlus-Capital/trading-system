@@ -57,8 +57,9 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(orchestrate, "branch_for", lambda issue: f"codex/{issue}-fake")
     monkeypatch.setattr(orchestrate, "_branch_worktree", fake_worktree)
 
-    def review(issue: int, *, dry_run: bool = False) -> None:
+    def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
         log["reviews"] += 1
+        log.setdefault("review_trees", []).append(worktree)
 
     def hand_back(issue: int, verdict: Verdict, *, dry_run: bool = False) -> None:
         log["handbacks"].append(verdict)
@@ -217,6 +218,9 @@ def test_the_gates_measure_the_branch_not_the_launching_checkout(
     assert orchestrate.cycle(101) == 0
     assert harness["worktrees"] == ["codex/101-fake"], (
         "the gates must run inside a worktree at the branch tip"
+    )
+    assert harness["review_trees"] == [Path("fake-worktree")], (
+        "the reviewer must be pointed at the same worktree, not at the launching checkout"
     )
 
 
