@@ -906,12 +906,16 @@ def test_a_backslash_rooted_protected_entry_is_rejected(tmp_path: Path) -> None:
 
 def test_protected_state_lookup_fails_closed_outside_the_worktree(tmp_path: Path) -> None:
     """Even if a rooted entry slipped past validation, the point of use refuses rather than
-    checking a path outside the worktree and concluding the state is absent."""
+    checking a path outside the worktree and concluding the state is absent.
+
+    `/data` escapes on every platform; the backslash variant escapes only on Windows, which is
+    exactly why validation rejects backslashes outright rather than trusting platform semantics.
+    """
 
     worktree = tmp_path / "wt"
     worktree.mkdir()
     with pytest.raises(finish.FinishError, match="escapes the worktree"):
-        finish._protected_local_state(worktree, ("\\data",))
+        finish._protected_local_state(worktree, ("/data",))
 
 
 def test_the_repositorys_own_protected_list_binds(tmp_path: Path) -> None:
