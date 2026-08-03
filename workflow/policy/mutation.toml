@@ -9,6 +9,22 @@ execution_platform = "linux"
 python = "3.13"
 
 [[targets]]
+# The command whose entire purpose is destruction: it deletes worktrees, branches and tracking
+# refs. The fourth review round measured 22 surviving mutants before its guards gained tests.
+id = "workflow-finish-teardown"
+path = "workflow/finish.py"
+mutant_patterns = [
+    "workflow.finish.x_load_protected_paths__mutmut_*",
+    "workflow.finish.x__protected_local_state__mutmut_*",
+    "workflow.finish.x__carries_issue_number__mutmut_*",
+    "workflow.finish.x__is_inside__mutmut_*",
+    "workflow.finish.x__is_ancestor__mutmut_*",
+    "workflow.finish.x__preserved__mutmut_*",
+    "workflow.finish.x__plan__mutmut_*",
+    "workflow.finish.x__apply__mutmut_*",
+]
+
+[[targets]]
 # The single writer of the board's Status field. A weakened guard here lets a card lie about
 # where a change stands. workflow/finish.py joins this list when its pull request merges.
 id = "workflow-board-guards"

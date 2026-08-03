@@ -875,3 +875,78 @@ def test_finish_never_writes_the_board_or_merges(
 
     assert commands
     assert all(_allowed_finish_command(command, ticket_repository) for command in commands)
+
+
+def test_issue_numbers_match_on_digit_boundaries_not_substrings() -> None:
+    """Regression (D-2): a substring test read `codex/152-...` as carrying issues 15, 52, 2 and 1,
+    so finishing any of those refused while the 152 branch was live."""
+
+    assert finish._carries_issue_number(152, BRANCH)
+    for foreign_issue in (15, 52, 2, 1):
+        assert not finish._carries_issue_number(foreign_issue, BRANCH), (
+            f"issue {foreign_issue} must not claim {BRANCH!r}"
+        )
+    assert finish._carries_issue_number(95, "codex/issue-95-explicit-swap-direction")
+
+
+def test_a_backslash_rooted_protected_entry_is_rejected(tmp_path: Path) -> None:
+    """Regression (D-1): a backslash-rooted entry is not absolute on POSIX and not absolute on
+    Windows either -- but it is *rooted* on Windows, so joinpath landed outside the worktree and
+    the protection silently checked the wrong place."""
+
+    for value in ("\\data", "C:data", "data\\sub"):
+        contract = tmp_path / "contract.toml"
+        contract.write_text(
+            f"[finish]\nprotected_worktree_paths = [{value!r}]\n".replace("\\", "\\\\"),
+            encoding="utf-8",
+        )
+        with pytest.raises(finish.FinishError, match="not repository-relative"):
+            finish.load_protected_paths(contract)
+
+
+def test_protected_state_lookup_fails_closed_outside_the_worktree(tmp_path: Path) -> None:
+    """Even if a rooted entry slipped past validation, the point of use refuses rather than
+    checking a path outside the worktree and concluding the state is absent."""
+
+    worktree = tmp_path / "wt"
+    worktree.mkdir()
+    with pytest.raises(finish.FinishError, match="escapes the worktree"):
+        finish._protected_local_state(worktree, ("\\data",))
+
+
+def test_the_repositorys_own_protected_list_binds(tmp_path: Path) -> None:
+    """Regression (D-3): the suite bound only synthetic contract files, so dropping `.env` from
+    the repository's real list deleted credentials with every test green."""
+
+    values = set(finish.load_protected_paths())
+    assert {".env", "data/", "catalog/", "results/", "reports/"} <= values, (
+        "the contract's own protected list lost a load-bearing entry"
+    )
+
+
+def test_a_merged_pull_request_of_another_issue_never_resolves_to_a_branch(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    """Regression (D-4): without the ownership filter, a merged pull request whose head branch
+    belongs to a *different* issue was adopted as this issue's branch and deleted."""
+
+    _prepare(monkeypatch, ticket_repository)
+    _finish(ticket_repository)  # tear down 152's own artifacts first
+
+    foreign = "codex/95-other-work"
+    _git(ticket_repository.repository, "branch", foreign, "origin/main")
+    _prepare(
+        monkeypatch,
+        ticket_repository,
+        pull_requests=(
+            finish.MergedPullRequest(foreign, ticket_repository.branch_tip),
+        ),
+    )
+
+    result = _finish(ticket_repository)
+
+    assert result.nothing_to_finish, "a foreign-issue record is not this issue's work"
+    assert _local_ref(ticket_repository.repository, foreign) is not None, (
+        "the foreign issue's live branch must survive"
+    )

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import tomllib
 from collections.abc import Sequence
@@ -175,8 +176,14 @@ def load_protected_paths(path: Path = board.CONTRACT_PATH) -> tuple[str, ...]:
             raise FinishError("every protected worktree path must be a string")
         candidate = PurePosixPath(value)
         windows_candidate = PureWindowsPath(value)
+        # A backslash or a Windows drive/root makes the entry rooted on Windows even though it is
+        # not absolute on POSIX: joinpath would then land OUTSIDE the worktree and the protection
+        # silently checks the wrong place. Contract entries use forward slashes only.
         if (
-            candidate.is_absolute()
+            "\\" in value
+            or windows_candidate.drive
+            or windows_candidate.root
+            or candidate.is_absolute()
             or windows_candidate.is_absolute()
             or not candidate.parts
             or ".." in candidate.parts
@@ -257,13 +264,23 @@ def _branch_names(repo_root: Path) -> set[str]:
 
 
 def _carries_issue_number(issue: int, branch: str) -> bool:
-    return str(issue) in branch
+    """Whether the branch name carries this issue number as a whole number.
+
+    A plain substring test collides on numeric substrings: finishing issue 15 would read
+    ``codex/152-...`` as its own and refuse while that branch is live. Digit boundaries make
+    152 carry exactly 152 -- not 15, 52, 2 or 1.
+    """
+    return re.search(rf"(?<![0-9]){issue}(?![0-9])", branch) is not None
 
 
 def _protected_local_state(worktree: Path, protected_paths: Sequence[str]) -> tuple[str, ...]:
     found: list[str] = []
     for value in protected_paths:
         candidate = worktree.joinpath(*PurePosixPath(value).parts)
+        if not _is_inside(candidate, worktree):
+            # Validation rejects rooted entries, so this cannot happen -- but a check that decides
+            # whether real state may be deleted fails closed rather than trusting its caller.
+            raise FinishError(f"protected worktree path {value!r} escapes the worktree")
         if candidate.exists() or candidate.is_symlink():
             found.append(value)
     return tuple(found)

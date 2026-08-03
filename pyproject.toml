@@ -64,6 +64,7 @@ pythonpath = ["."]
 # Mutmut needs import-complete package copies; execution remains bounded by mutation.toml patterns.
 paths_to_mutate = [
     "workflow/board.py",
+    "workflow/finish.py",
     "workflow/hooks/decisions.py",
     "live/accounts.py",
     "live/notify.py",
@@ -108,6 +109,7 @@ mutate_only_covered_lines = false
 pytest_add_cli_args = ["--disable-warnings"]
 pytest_add_cli_args_test_selection = [
     "tests/test_workflow_board.py",
+    "tests/test_workflow_finish.py",
     "tests/test_workflow_hooks.py",
     "tests/test_live_accounts.py",
     "tests/test_live_notify.py",
