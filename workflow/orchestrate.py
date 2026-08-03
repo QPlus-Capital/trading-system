@@ -238,14 +238,17 @@ def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
         "its summary with <!-- workflow-verdict blocking:N advisory:M --> where N counts Blocker "
         "and Defect findings and M counts Suspected defect and Note findings."
     )
+    # The prompt sits directly after -p: --allowedTools is variadic and would otherwise swallow
+    # it as one more tool name, leaving the reviewer with an empty task — observed on the first
+    # round-two attempt, where the CLI exited with "Input must be provided".
     command = [
         _executable("claude"),
         "-p",
+        prompt,
         "--add-dir",
         str(worktree),
         "--allowedTools",
         *_REVIEWER_TOOLS,
-        prompt,
     ]
     if dry_run:
         print(f"[dry-run] {' '.join(command[:6])} ... {prompt[:60]!r}")
