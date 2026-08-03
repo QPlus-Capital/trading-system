@@ -28,7 +28,7 @@ import pandas as pd
 from core.data.mt5_csv import parse_mt5_timestamps, seeded_instruments
 from core.paths import REPO_ROOT
 
-from research.engine.config import extract_closed_positions, load_config_module
+from research.engine.config import extract_closed_positions, load_config_module, parse_money
 from research.engine.continuous import (
     continuous_walk_forward,
     scoring_params,
@@ -204,7 +204,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"\nPer-window results: {out_path}")
 
     # Monte-Carlo on the *out-of-sample* trades (the honest track record).
-    base = float(str(module.VENUE.starting_balances[0]).split()[0].replace("_", ""))
+    base = parse_money(module.VENUE.starting_balances[0])
     oos_returns = [r for result in results for r in result.oos_returns]
     if oos_returns:
         dollar_pnls = [r * base for r in oos_returns]

@@ -33,6 +33,7 @@ import pandas as pd
 from core.broker import BrokerProfile, swap_r_per_trade
 from core.strategies.param_schedule import ParamSegment, segment_at
 
+from research.engine.config import parse_money
 from research.engine.montecarlo import equity_curve, max_drawdown
 from research.engine.recipe import SweepRecipe
 from research.engine.schedule_builder import build_schedule, pinned_params
@@ -75,7 +76,7 @@ def start_balance_of(recipe: Any) -> float:
             f"{type(recipe).__name__} exposes neither start_balance nor a venue starting "
             "balance; a continuous run cannot measure a return without one"
         )
-    return float(str(balances[0]).split()[0].replace("_", ""))
+    return parse_money(balances[0])
 
 
 def scoring_params(recipe: Any, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
