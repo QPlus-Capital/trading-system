@@ -17,7 +17,7 @@ from typing import Any
 import pandas as pd
 from core.broker import BrokerProfile, standard_broker
 
-from research.engine.config import extract_closed_positions
+from research.engine.config import extract_closed_positions, parse_money
 from research.engine.continuous import (
     base_config_of,
     run_continuous_oos,
@@ -135,7 +135,7 @@ def timed_trades_from_report(
             continue
         if closed_from is not None and pd.to_datetime(row["ts_closed"], utc=True) < closed_from:
             continue  # resolved inside the pre-roll -> belongs to the previous window
-        pnl = float(str(row["realized_pnl"]).split()[0].replace("_", ""))
+        pnl = parse_money(row["realized_pnl"])
         opened_ns = int(pd.Timestamp(row["ts_opened"]).value)
         stop = sl_pct(opened_ns) if callable(sl_pct) else float(sl_pct)
         out.append(

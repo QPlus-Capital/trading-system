@@ -54,9 +54,9 @@ def load_config_module(path: Path) -> ModuleType:
     return module
 
 
-def _parse_money(value: object) -> float:
-    """Parse a NautilusTrader money string like ``'1784.69 USD'`` into a float."""
-    return float(str(value).split()[0].replace("_", ""))
+def parse_money(value: object) -> float:
+    """Parse a report or venue-config money string into a float."""
+    return float(str(value).split()[0])
 
 
 def extract_trade_pnls(
@@ -70,7 +70,7 @@ def extract_trade_pnls(
     """
     closed, start_equity = extract_closed_positions(run_config, closed_from=closed_from)
     pnls = (
-        [_parse_money(value) for value in closed["realized_pnl"]]
+        [parse_money(value) for value in closed["realized_pnl"]]
         if "realized_pnl" in closed.columns
         else []
     )
@@ -108,5 +108,5 @@ def extract_closed_positions(
         closed = closed.copy()
     finally:
         node.dispose()  # type: ignore[no-untyped-call]
-    start_equity = _parse_money(run_config.venues[0].starting_balances[0])
+    start_equity = parse_money(run_config.venues[0].starting_balances[0])
     return closed, start_equity

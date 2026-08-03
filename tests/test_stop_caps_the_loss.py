@@ -36,6 +36,7 @@ from nautilus_trader.config import (
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
+from research.engine.config import parse_money
 
 from tests.helpers.synthetic import write_synthetic_catalog
 
@@ -157,7 +158,7 @@ def test_exits_fill_at_their_own_level_not_the_next_bar_open(tmp_path: Path) -> 
     closed = pos[pos["ts_closed"].notna()].copy()
     assert len(closed) > 5, "need a few closed trades to judge"
 
-    pnl = closed["realized_pnl"].map(lambda v: float(str(v).split()[0].replace("_", "")))
+    pnl = closed["realized_pnl"].map(parse_money)
     qty = closed["peak_qty"].astype(float)  # 'quantity' is 0 on a closed (flat) position
     risk = qty * closed["avg_px_open"].astype(float) * (_SL_PCT / 100.0)
     r = pnl / risk

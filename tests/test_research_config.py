@@ -48,6 +48,24 @@ def _run_config() -> Any:
     return _Cfg()
 
 
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("1784.69 USD", 1784.69),
+        ("-1784.69 USD", -1784.69),
+        ("200_000 USD", 200_000.0),
+    ],
+)
+def test_parse_money_accepts_report_and_venue_formats(value: str, expected: float) -> None:
+    assert config.parse_money(value) == expected
+
+
+@pytest.mark.parametrize("value", ["1__000 USD", "_100 USD", "100_ USD"])
+def test_parse_money_rejects_malformed_underscore_grouping(value: str) -> None:
+    with pytest.raises(ValueError):
+        config.parse_money(value)
+
+
 def test_zero_trade_window_yields_empty_pnls_not_a_crash(monkeypatch: pytest.MonkeyPatch) -> None:
     # NautilusTrader returns an EMPTY report (no 'realized_pnl' column) when no position closed --
     # a variation with few signals, long-only skipping shorts, or a quiet market. That is a flat
