@@ -187,6 +187,28 @@ def test_issue_branch_ownership_is_exactly_the_contract_pattern(
     assert orchestrate.issue_branch_matches(152, branch) is owned
 
 
+def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: --allowedTools is variadic, and a prompt placed after it was parsed as one more
+    tool name — the reviewer started with no task and the CLI exited with 'Input must be
+    provided'. The prompt must sit directly after -p."""
+
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        "workflow.orchestrate.subprocess.run", lambda argv, **kwargs: captured.append(list(argv))
+    )
+    monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
+
+    orchestrate.review(172, Path("some-worktree"))
+
+    (argv,) = captured
+    assert argv[1] == "-p"
+    assert argv[2].startswith("/review-change 172"), "the prompt must follow -p immediately"
+    assert argv.index("--allowedTools") > argv.index(argv[2])
+    assert argv[-1] != argv[2], "the prompt must not be the trailing variadic argument"
+
+
 def test_the_orchestrator_never_merges() -> None:
     """It sequences and reports. Merging is the operator's, and nothing else's."""
     source = Path(orchestrate.__file__).read_text(encoding="utf-8")
