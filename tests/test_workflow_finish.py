@@ -559,6 +559,38 @@ def test_protected_local_state_in_the_worktree_is_refused(
     assert not any(command[:3] == ("git", "worktree", "remove") for command in commands)
 
 
+def test_an_empty_protected_directory_does_not_block_the_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    """Running the suite inside the worktree leaves an empty ``catalog/`` behind — both real
+    finishes so far (#152, #172) were refused over it. An empty directory holds no local state,
+    so refusing over one would block every routine teardown."""
+    _prepare(monkeypatch, ticket_repository)
+    (ticket_repository.worktree / "catalog").mkdir()
+
+    _finish(ticket_repository)
+
+    assert not ticket_repository.worktree.exists()
+
+
+def test_a_protected_directory_with_content_still_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    _prepare(monkeypatch, ticket_repository)
+    catalog = ticket_repository.worktree / "catalog"
+    catalog.mkdir()
+    (catalog / "frame.parquet").write_bytes(b"data")
+    before = _artifact_snapshot(ticket_repository)
+
+    with pytest.raises(finish.FinishError, match="catalog"):
+        _finish(ticket_repository)
+
+    assert (catalog / "frame.parquet").exists()
+    assert _artifact_snapshot(ticket_repository) == before
+
+
 def test_regenerable_ignored_state_is_removed_with_the_worktree(
     monkeypatch: pytest.MonkeyPatch,
     ticket_repository: TicketRepository,

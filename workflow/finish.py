@@ -281,7 +281,15 @@ def _protected_local_state(worktree: Path, protected_paths: Sequence[str]) -> tu
             # Validation rejects rooted entries, so this cannot happen -- but a check that decides
             # whether real state may be deleted fails closed rather than trusting its caller.
             raise FinishError(f"protected worktree path {value!r} escapes the worktree")
-        if candidate.exists() or candidate.is_symlink():
+        if candidate.is_symlink():
+            found.append(value)
+            continue
+        if candidate.is_dir() and next(candidate.iterdir(), None) is None:
+            # Running the suite inside the worktree leaves an empty `catalog/` behind (both real
+            # finishes so far hit this). A bare empty directory holds no state to lose; anything
+            # with content still refuses.
+            continue
+        if candidate.exists():
             found.append(value)
     return tuple(found)
 
