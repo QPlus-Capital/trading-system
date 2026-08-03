@@ -177,6 +177,29 @@ def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
         )
 
 
+#: What the headless reviewer may do without anyone there to approve: read the ticket and the pull
+#: request, post the one review, and inspect the branch. The first real run showed why this list
+#: must exist — the reviewer did its work, then could not post it, and the loop ended with "no
+#: verdict" because `gh` sat waiting for an approval nobody was present to give.
+_REVIEWER_TOOLS = (
+    "Read",
+    "Grep",
+    "Glob",
+    "Bash(gh issue view:*)",
+    "Bash(gh pr view:*)",
+    "Bash(gh pr diff:*)",
+    "Bash(gh pr list:*)",
+    "Bash(gh pr review:*)",
+    "Bash(git show:*)",
+    "Bash(git log:*)",
+    "Bash(git diff:*)",
+    "Bash(git grep:*)",
+    "Bash(git branch:*)",
+    "Bash(uv run pytest:*)",
+    "Bash(uv run python:*)",
+)
+
+
 def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
     """Start the reviewer as a separate process, with nothing but the issue number.
 
@@ -185,36 +208,55 @@ def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
 
     The process starts in the **main checkout**, so the reviewer's own contracts — the skill and
     the agent definitions under ``.claude/`` — load from there and stay outside the branch's reach.
-    The branch under review is supplied as a read-only worktree path: source, tests and behaviour
-    are inspected *there*, never in the launching checkout, whose files are the pre-change versions.
+    The branch under review is supplied as a worktree path opened via ``--add-dir``: source, tests
+    and behaviour are inspected *there*, never in the launching checkout, whose files are the
+    pre-change versions. The tool allowlist is what lets the review finish headless; everything
+    outside it still requires an approval that headless mode cannot grant, which fails closed.
     """
 
     prompt = (
         f"/review-change {issue}\n"
         f"Review the open pull request for this issue. The branch under review is checked out "
         f"read-only at {worktree} — read source and tests and run commands there, never in this "
-        "checkout, and edit nothing. End your summary comment with "
-        "<!-- workflow-verdict blocking:N advisory:M --> where N counts Blocker and Defect "
-        "findings and M counts Suspected defect and Note findings."
+        "checkout, and edit nothing. Post the review on the pull request with `gh pr review`. End "
+        "its summary with <!-- workflow-verdict blocking:N advisory:M --> where N counts Blocker "
+        "and Defect findings and M counts Suspected defect and Note findings."
     )
+    command = [
+        "claude",
+        "-p",
+        "--add-dir",
+        str(worktree),
+        "--allowedTools",
+        *_REVIEWER_TOOLS,
+        prompt,
+    ]
     if dry_run:
-        print(f"[dry-run] claude -p {prompt!r}")
+        print(f"[dry-run] {' '.join(command[:6])} ... {prompt[:60]!r}")
         return
-    subprocess.run(["claude", "-p", prompt], cwd=REPO_ROOT, check=False)
+    subprocess.run(command, cwd=REPO_ROOT, check=False)
 
 
 def hand_back(issue: int, verdict: Verdict, *, dry_run: bool = False) -> None:
-    """Return blocking findings to the builder. Claude never edits the branch it reviewed."""
+    """Return blocking findings to the builder. Claude never edits the branch it reviewed.
+
+    ``codex exec`` defaults to a sandbox that can neither push nor reach the network, so a fix
+    round would silently end at the commit. The builder needs the same rights it had in its own
+    session: the operator sanctioned exactly this local automation, and the safety hook still
+    blocks live trading, secrets, and direct pushes to ``main`` underneath it.
+    """
 
     prompt = (
         f"The review of #{issue} reported {verdict.blocking} blocking finding(s) on its pull "
-        "request. Fix every one of them with a regression test that fails before the fix, push "
+        "request. Read that review with `gh pr view --json reviews`, fix every blocking finding "
+        "— with a regression test that fails before the fix where the finding is in code — push "
         "once, and move the card back to Reviewing."
     )
+    command = ["codex", "exec", "--sandbox", "danger-full-access", "--skip-git-repo-check", prompt]
     if dry_run:
-        print(f"[dry-run] codex exec {prompt!r}")
+        print(f"[dry-run] codex exec --sandbox danger-full-access {prompt[:60]!r}")
         return
-    subprocess.run(["codex", "exec", prompt], cwd=REPO_ROOT, check=False)
+    subprocess.run(command, cwd=REPO_ROOT, check=False)
 
 
 @contextlib.contextmanager
