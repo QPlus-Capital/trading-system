@@ -46,6 +46,10 @@ query($owner:String!, $repo:String!, $number:Int!) {
 class FinishError(RuntimeError):
     """A teardown step that cannot prove it is safe."""
 
+    def __init__(self, message: str, *, removed: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.removed = removed
+
 
 @dataclass(frozen=True)
 class MergedPullRequest:
@@ -61,6 +65,7 @@ class Worktree:
 
     path: Path
     branch: str | None
+    prunable: bool
 
 
 @dataclass(frozen=True)
@@ -83,13 +88,16 @@ class FinishResult:
 
 
 def _execute(args: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        list(args),
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    try:
+        return subprocess.run(
+            list(args),
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        raise FinishError(f"`{' '.join(args[:2])}` could not start: {error}") from error
 
 
 def _run(args: Sequence[str], *, cwd: Path) -> str:
@@ -180,7 +188,7 @@ def _worktrees(repo_root: Path) -> tuple[Worktree, ...]:
             continue
         branch_ref = fields.get("branch")
         branch = branch_ref.removeprefix("refs/heads/") if branch_ref else None
-        result.append(Worktree(Path(path).resolve(), branch))
+        result.append(Worktree(Path(path).resolve(), branch, "prunable" in fields))
     if not result:
         raise FinishError("Git returned no repository checkout")
     return tuple(result)
@@ -271,24 +279,26 @@ def _plan(issue: int, repo_root: Path, invocation_dir: Path) -> FinishPlan | Non
     branch_worktrees = tuple(worktree for worktree in worktrees if worktree.branch == branch)
     if len(branch_worktrees) > 1:
         raise FinishError(f"branch {branch!r} is attached to more than one worktree")
-    worktree = branch_worktrees[0].path if branch_worktrees else None
+    target_worktree = branch_worktrees[0] if branch_worktrees else None
+    worktree = target_worktree.path if target_worktree else None
 
     if local_oid is None and remote_oid is None and tracking_oid is None and worktree is None:
         return None
     if branch == "main":
         raise FinishError("main is never removable")
-    if worktree is not None:
+    if target_worktree is not None:
         main_checkout = worktrees[0].path
-        if worktree == main_checkout:
+        if target_worktree.path == main_checkout:
             raise FinishError("the repository's own checkout is never removed")
-        if _is_inside(invocation_dir, worktree):
+        if _is_inside(invocation_dir, target_worktree.path):
             raise FinishError("refusing while running inside the target worktree")
-        status = _run(
-            ["git", "status", "--porcelain", "--untracked-files=all"],
-            cwd=worktree,
-        )
-        if status:
-            raise FinishError("the target worktree contains modified or untracked files")
+        if not target_worktree.prunable:
+            status = _run(
+                ["git", "status", "--porcelain", "--untracked-files=all"],
+                cwd=target_worktree.path,
+            )
+            if status:
+                raise FinishError("the target worktree contains modified or untracked files")
 
     oids = (oid for oid in {local_oid, remote_oid, tracking_oid} if oid is not None)
     for oid in oids:
@@ -300,33 +310,38 @@ def _plan(issue: int, repo_root: Path, invocation_dir: Path) -> FinishPlan | Non
 
 def _apply(plan: FinishPlan, repo_root: Path) -> FinishResult:
     removed: list[str] = []
-    if plan.worktree is not None:
-        _run(["git", "worktree", "remove", str(plan.worktree)], cwd=repo_root)
-        removed.append("worktree")
-    if plan.local_oid is not None:
-        _run(["git", "branch", "-D", "--", plan.branch], cwd=repo_root)
-        removed.append("local branch")
-    if plan.remote_oid is not None:
-        _run(
-            [
-                "git",
-                "push",
-                f"--force-with-lease=refs/heads/{plan.branch}:{plan.remote_oid}",
-                "origin",
-                f":refs/heads/{plan.branch}",
-            ],
-            cwd=repo_root,
-        )
-        removed.append("remote branch")
-    if plan.tracking_oid is not None:
-        tracking_ref = f"refs/remotes/origin/{plan.branch}"
-        current_oid = _ref_oid(repo_root, tracking_ref)
-        if current_oid is not None:
+    try:
+        if plan.worktree is not None:
+            _run(["git", "worktree", "remove", str(plan.worktree)], cwd=repo_root)
+            removed.append("worktree")
+        if plan.local_oid is not None:
+            _run(["git", "branch", "-D", "--", plan.branch], cwd=repo_root)
+            removed.append("local branch")
+        if plan.remote_oid is not None:
             _run(
-                ["git", "update-ref", "-d", tracking_ref, plan.tracking_oid],
+                [
+                    "git",
+                    "push",
+                    f"--force-with-lease=refs/heads/{plan.branch}:{plan.remote_oid}",
+                    "origin",
+                    f":refs/heads/{plan.branch}",
+                ],
                 cwd=repo_root,
             )
-        removed.append("remote-tracking ref")
+            removed.append("remote branch")
+        if plan.tracking_oid is not None:
+            tracking_ref = f"refs/remotes/origin/{plan.branch}"
+            current_oid = _ref_oid(repo_root, tracking_ref)
+            if current_oid is not None:
+                _run(
+                    ["git", "update-ref", "-d", tracking_ref, plan.tracking_oid],
+                    cwd=repo_root,
+                )
+            removed.append("remote-tracking ref")
+    except FinishError as error:
+        if not removed:
+            raise
+        raise FinishError(str(error), removed=tuple(removed)) from error
     return FinishResult(tuple(removed))
 
 
@@ -351,7 +366,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = finish_ticket(args.issue)
-    except (FinishError, board.BoardError, orchestrate.OrchestrationError) as error:
+    except FinishError as error:
+        if error.removed:
+            print(f"PARTIAL: removed {', '.join(error.removed)}; {error}; re-run to finish")
+        else:
+            print(f"REFUSED: {error}")
+        return 1
+    except (board.BoardError, orchestrate.OrchestrationError) as error:
         print(f"REFUSED: {error}")
         return 1
     if result.nothing_to_finish:

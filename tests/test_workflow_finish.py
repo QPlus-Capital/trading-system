@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import ast
+import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -142,6 +143,18 @@ def _finish(ticket: TicketRepository) -> finish.FinishResult:
         repo_root=ticket.repository,
         invocation_dir=ticket.repository,
     )
+
+
+def _record_commands(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, ...]]:
+    commands: list[tuple[str, ...]] = []
+    real_execute = finish._execute
+
+    def record(args: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[str]:
+        commands.append(tuple(str(part) for part in args))
+        return real_execute(args, cwd=cwd)
+
+    monkeypatch.setattr(finish, "_execute", record)
+    return commands
 
 
 def test_finishing_a_merged_ticket_removes_worktree_branch_and_both_remote_traces(
@@ -320,6 +333,50 @@ def test_an_interrupted_run_finishes_the_remaining_remote_artifacts(
     assert _artifact_snapshot(ticket_repository) == (False, None, None, None)
 
 
+def test_a_worktree_directory_already_deleted_by_hand_still_finishes(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    _prepare(monkeypatch, ticket_repository)
+    shutil.rmtree(ticket_repository.worktree)
+
+    result = _finish(ticket_repository)
+
+    assert result.removed == ("worktree", "local branch", "remote branch", "remote-tracking ref")
+    assert _artifact_snapshot(ticket_repository) == (False, None, None, None)
+
+
+def test_a_failure_after_the_first_removal_is_reported_as_partial(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _prepare(monkeypatch, ticket_repository)
+    real_run = finish._run
+    real_finish = finish.finish_ticket
+
+    def deny_push(args: Sequence[str], *, cwd: Path) -> str:
+        if list(args[:2]) == ["git", "push"]:
+            raise finish.FinishError("`git push` failed: remote rejected")
+        return real_run(args, cwd=cwd)
+
+    monkeypatch.setattr(finish, "_run", deny_push)
+    monkeypatch.setattr(
+        finish,
+        "finish_ticket",
+        lambda issue: real_finish(
+            issue,
+            repo_root=ticket_repository.repository,
+            invocation_dir=ticket_repository.repository,
+        ),
+    )
+
+    assert finish.main([str(ISSUE)]) == 1
+    output = capsys.readouterr().out
+    assert output.startswith("PARTIAL: removed worktree, local branch;")
+    assert "re-run to finish" in output
+
+
 @pytest.mark.parametrize("preserved_by", ["main", "pull-request"])
 def test_the_branch_is_deleted_only_when_its_tip_is_preserved(
     monkeypatch: pytest.MonkeyPatch,
@@ -371,34 +428,67 @@ def test_a_refusal_removes_nothing(
     assert _artifact_snapshot(ticket_repository) == before
 
 
-def test_finish_never_touches_live_trading() -> None:
-    source = Path(finish.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    imports = {
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
-    }
-    imports.update(node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom))
+@pytest.mark.parametrize("refused", [False, True], ids=["success", "refusal"])
+def test_finish_never_touches_live_trading(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+    refused: bool,
+) -> None:
+    _prepare(
+        monkeypatch,
+        ticket_repository,
+        card=_card(open_state=refused),
+    )
+    commands = _record_commands(monkeypatch)
 
-    assert not any(name == "live" or name.startswith("live.") for name in imports)
-    assert "live.run" not in source
+    if refused:
+        with pytest.raises(finish.FinishError):
+            _finish(ticket_repository)
+    else:
+        _finish(ticket_repository)
+
+    forbidden = {"live", "live.run", "live-stop", "live-start", "runner"}
+    assert not any(
+        part.lower() in forbidden
+        or part.lower().startswith("live-")
+        or part.lower().startswith("runner-")
+        for command in commands
+        for part in command
+    )
 
 
-def test_finish_never_writes_the_board_or_merges() -> None:
-    source = Path(finish.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    calls = {
-        f"{node.func.value.id}.{node.func.attr}"
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and isinstance(node.func.value, ast.Name)
-    }
+@pytest.mark.parametrize("refused", [False, True], ids=["success", "refusal"])
+def test_finish_never_writes_the_board_or_merges(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+    refused: bool,
+) -> None:
+    _prepare(
+        monkeypatch,
+        ticket_repository,
+        card=_card(open_state=refused),
+    )
+    commands = _record_commands(monkeypatch)
 
-    assert "board.read_card" in calls
-    assert "board.move" not in calls
-    assert '"merge"' not in source
-    assert '"review"' not in source
-    assert '"ready"' not in source.lower()
+    def unexpected_board_write(*args: object, **kwargs: object) -> None:
+        raise AssertionError("finish must never write the board")
+
+    monkeypatch.setattr(board, "move", unexpected_board_write)
+    if refused:
+        with pytest.raises(finish.FinishError):
+            _finish(ticket_repository)
+    else:
+        _finish(ticket_repository)
+
+    lowered = [tuple(part.lower() for part in command) for command in commands]
+    assert not any(command[:2] == ("gh", "issue") for command in lowered)
+    assert not any(
+        command[:3]
+        in {
+            ("gh", "pr", "merge"),
+            ("gh", "pr", "review"),
+            ("gh", "pr", "ready"),
+        }
+        for command in lowered
+    )
+    assert not any("workflow.board move" in " ".join(command) for command in lowered)
