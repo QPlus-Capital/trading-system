@@ -142,6 +142,46 @@ def classify_paths(paths: Iterable[str], model: Model) -> Classification:
     return Classification(top, per)
 
 
+@dataclass(frozen=True)
+class ReviewScope:
+    """The lane boundary: what always gets the full program, whatever the issue declared."""
+
+    full_min_changed_lines: int
+    full_paths: tuple[str, ...]
+
+
+def load_review_scope(path: Path = MODEL_PATH) -> ReviewScope:
+    scope = tomllib.loads(path.read_text(encoding="utf-8"))["review"]["scope"]
+    bound = int(scope["full_min_changed_lines"])
+    if bound <= 0:
+        raise ValueError("full_min_changed_lines must be positive")
+    globs = tuple(str(g) for g in scope["full_paths"])
+    if not globs:
+        raise ValueError("the carve-out must name at least one path")
+    return ReviewScope(bound, globs)
+
+
+def needs_full_review(
+    paths: Iterable[str],
+    changed_lines: int,
+    scope: ReviewScope | None = None,
+) -> bool:
+    """Whether this change is reviewed at full strength regardless of what the issue declared.
+
+    True when any changed path matches the carve-out — the paths where one wrong line costs real
+    money — or when the diff exceeds the size bound. The lane changes ceremony and search depth,
+    never the gates.
+    """
+    scope = scope or load_review_scope()
+    if changed_lines >= scope.full_min_changed_lines:
+        return True
+    return any(
+        fnmatch.fnmatchcase(normalize(path), glob)
+        for path in paths
+        for glob in scope.full_paths
+    )
+
+
 def changed_paths(base: str, root: Path = REPO_ROOT) -> list[str]:
     """Repo-relative paths changed on this branch vs ``base`` (committed), forward slashes.
 

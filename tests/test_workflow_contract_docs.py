@@ -84,6 +84,13 @@ _REQUIRED: tuple[tuple[str, tuple[Path, ...]], ...] = (
     ("feature branch", (_WORKFLOW,)),
     ("never red proves nothing", (_WORKFLOW,)),
     ("depends on another ticket", (_WORKFLOW,)),
+    ("lean is the default", (_WORKFLOW,)),
+    ("a specification fits on one page", (_WORKFLOW,)),
+    ("ready for review, never as a draft", (_WORKFLOW,)),
+    ("the operator starts the cycle", (_WORKFLOW,)),
+    ("proportionate to the diff", (_WORKFLOW,)),
+    ("a review reports; it does not file", (_WORKFLOW,)),
+    ("summary in german", (_WORKFLOW,)),
 )
 
 
@@ -125,6 +132,40 @@ def test_ready_to_implement_never_holds_work_that_cannot_start() -> None:
     assert exits == {"Specifying"}, (
         "leaving Blocked must return through Specifying so the release is given again"
     )
+
+
+def test_the_carve_out_cannot_take_the_lean_lane() -> None:
+    """The lean lane cuts ceremony, never safety. One wrong line on these paths costs real money,
+    so they get the full program at any diff size — this is the load-bearing half of the lane
+    design, and the ticket that introduced it is not done unless this cannot regress."""
+    from workflow.classify import load_review_scope, needs_full_review
+
+    scope = load_review_scope()
+    assert scope.full_min_changed_lines > 0
+
+    always_full = (
+        "live/risk_control.py",  # the risk limits
+        "live/runner.py",  # sizing and order placement
+        "live/mt5_bridge.py",  # the broker bridge
+        "live/accounts.py",  # account identity
+        "core/broker.py",  # money conversion
+        "core/strategies/rsi_wpr_bb_signals.py",  # the shared signal engine
+        "research/portfolio/sizing.py",  # research sizing
+        "research/stages/select.py",  # selection and holdout
+        "workflow/classify.py",  # the classifier itself
+        "workflow/workflow.toml",  # the contract that defines this very boundary
+    )
+    for path in always_full:
+        assert needs_full_review([path], 1, scope), (
+            f"{path} took the lean lane — a money path must always get the full program"
+        )
+
+    # The lane exists for exactly this case: a small change somewhere ordinary.
+    assert not needs_full_review(["docs/roadmap.md"], 5, scope)
+    assert not needs_full_review(["monitoring/dashboard.py"], 50, scope)
+
+    # And size alone escalates, whatever the path.
+    assert needs_full_review(["docs/roadmap.md"], scope.full_min_changed_lines, scope)
 
 
 def test_governance_documents_name_no_person() -> None:

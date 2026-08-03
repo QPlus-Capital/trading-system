@@ -271,6 +271,32 @@ min_class = "R3"
 path_prefixes = ["research/", "docs/strategies/"]
 paths = ["docs/methodology.md"]
 
+# The lane. Lean is the default; the FULL program (spec ceremony, agent panel, deep search) runs
+# only when a changed path matches the carve-out below, when the diff exceeds the size bound, or
+# when the operator asks. The lane never changes the gates: the risk class's gates run in full in
+# both lanes.
+[review.scope]
+# Total changed lines (additions + deletions) above which a change is reviewed at full strength
+# whatever the issue declared.
+full_min_changed_lines = 300
+# Never in the lean lane, at any size: one wrong line here costs real money. This is a subset of
+# R3, deliberately narrower than the classifier's R3 rules — the class answers "how bad if wrong",
+# this list answers "always search hard".
+full_paths = [
+  "live/risk_control.py",
+  "live/runner.py",
+  "live/mt5_bridge.py",
+  "live/accounts.py",
+  "live/preflight.py",
+  "core/broker.py",
+  "core/strategies/**",
+  "research/portfolio/sizing.py",
+  "research/portfolio/risk.py",
+  "research/stages/**",
+  "workflow/classify.py",
+  "workflow/workflow.toml",
+]
+
 [review.loop]
 # Only these severities block readiness and trigger an automatic fix round.
 blocking_severities = ["blocker", "defect"]

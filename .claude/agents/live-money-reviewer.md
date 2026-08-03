@@ -23,7 +23,9 @@ Trace the final diff and affected callers for:
 - `Decimal` or domain money types rather than `float` for prices, quantities, and money;
 - tests that are hermetic and have no live side effects.
 
-Construct at least one money-loss or false-confidence counterexample for every changed R3 behaviour.
+Construct money-loss and false-confidence counterexamples proportionate to the diff,
+prioritised by how much a failure would cost; stop when further ones stop changing the
+verdict.
 Return Blocker / Defect / Suspected defect / Note findings with tight file:line citations, concrete
 inputs and wrong outcomes, executable tests, and an explicit statement that no live interaction
 occurred. Only the first two block readiness and trigger a fix round. Do not invent findings.
