@@ -3,8 +3,10 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
+change_explanation = "Adds the workflow-board-guards and workflow-hook-decisions targets unmeasured: mutmut needs fork, which the Windows authoring platform lacks, so the first Linux run via workflow_dispatch is the measurement. Until it lands, a dispatched mutation-critical run fails closed on any survivor in the two new targets, and the recorded totals below still describe the previous target set. Prior explanation: PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
 targets = [
+    "workflow-board-guards",
+    "workflow-hook-decisions",
     "live-account-identity",
     "live-preflight-redaction",
     "live-notification-transport",
@@ -33,7 +35,7 @@ targets = [
     "forward-cohort-identity",
     "forward-decision",
 ]
-policy_fingerprint = "8de06896bfc2c92e7cab3509478f847a03c112f8a5a989f2dc6c811162bd308a" # pragma: allowlist secret
+policy_fingerprint = "c07401417a58eb6e501f1b131229e3b0054f83cd277e2a1eef6cb0042dc9b29b" # pragma: allowlist secret
 
 [summary]
 total = 5171

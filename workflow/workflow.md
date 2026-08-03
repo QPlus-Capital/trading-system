@@ -228,7 +228,13 @@ clean and a running runner never sees half-finished code.
 7  Self-check   the defect classes below
 8  Push         ONCE, open the pull request, body carries "Closes #101"
 9  Card         → Reviewing
+10 Cycle        uv run python -m workflow.orchestrate run <issue>
 ```
+
+Step 10 is what makes the review start without the operator: the builder is already a local process
+when it pushes, so ending the session by starting the cycle needs no watcher, no daemon, and no
+agent credentials in CI. A build session that dies before step 10 leaves the card in `Reviewing`
+and the operator starts the cycle by hand — the fallback in phase 4.
 
 In the lean lane, steps 1 and 2 collapse into the work itself: the fix and the test that proves it,
 nothing written up separately. Steps 3, 5, 6 and 7 are never skipped in either lane.
@@ -253,13 +259,13 @@ If the specification is wrong, incomplete, or unbuildable, Codex does not guess:
 
 ### Phase 4 — Review
 
-The pull request is open. **The operator starts the cycle** — one command
-(`uv run python -m workflow.orchestrate run <issue>`) or one sentence in a fresh session. Starting
-it automatically from the push is a tracked follow-up; until that lands, this manual step is the
-rule, stated here so the contract promises no automation the repository does not have.
+The pull request is open. **The builder starts the cycle as the last step of phase 3**; the
+operator can always start it by hand — one command
+(`uv run python -m workflow.orchestrate run <issue>`) or one sentence in a fresh session — when a
+build session ended before step 10, or to repeat a cycle deliberately.
 
 ```
-pull request open → operator starts the cycle
+pull request open → builder starts the cycle (operator as fallback)
   ↓  gates run against the branch under review
   ↓  Claude reviews in a fresh process (the issue number is the only input)
   ↓  review submitted as a real pull-request review
@@ -274,7 +280,11 @@ in the full program:
 |---|---|
 | lean lane, any class | none — Claude reviews directly |
 | full program, R2 | code, tests |
-| full program, R3 | code, tests **plus one** specialist: live-money for `live/**`, methodology for `research/**`, `docs/methodology.md`, `docs/strategies/**` |
+| full program, R3 | code, tests — **plus one specialist where the paths select one**: live-money for `live/**`, methodology for `research/**`, `docs/methodology.md`, `docs/strategies/**` |
+
+An R3 change outside those paths — the workflow tooling itself, the CI — is reviewed by code and
+tests alone. That is deliberate: the mechanical answer for such modules is mutation coverage, which
+finds weak tests wholesale where one more reviewer would find them piecemeal.
 
 The agents are read-only and receive the issue contract, the diff, the gate results, and the
 executing paths — never the builder's private context. Their counterexamples are reconciled against

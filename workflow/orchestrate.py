@@ -156,16 +156,23 @@ def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
         )
 
 
-def review(issue: int, *, dry_run: bool = False) -> None:
+def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
     """Start the reviewer as a separate process, with nothing but the issue number.
 
     A fresh process is what makes the review independent: it cannot inherit what the builder meant,
     only what the branch contains.
+
+    The process starts in the **main checkout**, so the reviewer's own contracts — the skill and
+    the agent definitions under ``.claude/`` — load from there and stay outside the branch's reach.
+    The branch under review is supplied as a read-only worktree path: source, tests and behaviour
+    are inspected *there*, never in the launching checkout, whose files are the pre-change versions.
     """
 
     prompt = (
         f"/review-change {issue}\n"
-        "Review the open pull request for this issue. End your summary comment with "
+        f"Review the open pull request for this issue. The branch under review is checked out "
+        f"read-only at {worktree} — read source and tests and run commands there, never in this "
+        "checkout, and edit nothing. End your summary comment with "
         "<!-- workflow-verdict blocking:N advisory:M --> where N counts Blocker and Defect "
         "findings and M counts Suspected defect and Note findings."
     )
@@ -239,15 +246,15 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
             risk, results = gates.run(
                 changed_paths("origin/main", root=tree), card.risk_class, root=tree
             )
-        print(gates.render(risk, results))
-        failed = [result for result in results if result.exit_status not in (0, None)]
-        if failed:
-            hand_back(issue, Verdict(len(failed), 0), dry_run=dry_run)
-            continue
+            print(gates.render(risk, results))
+            failed = [result for result in results if result.exit_status not in (0, None)]
+            if failed:
+                hand_back(issue, Verdict(len(failed), 0), dry_run=dry_run)
+                continue
 
-        if not dry_run:
-            board.move(issue, "Reviewing")
-        review(issue, dry_run=dry_run)
+            if not dry_run:
+                board.move(issue, "Reviewing")
+            review(issue, tree, dry_run=dry_run)
 
         verdict = None if dry_run else latest_verdict(pull_request_for(issue))
         if verdict is None:

@@ -16,7 +16,9 @@ No `src/` directory. Python 3.13, `uv`, NautilusTrader, and `just`. Use `uv`, ne
 The operator starts you with an issue number and nothing else: `implement #101`. Everything you
 need is in the issue body, the labels, and the workflow document. Check the guard, work in one
 worktree on `codex/<issue>-<slug>`, prove the test red before you build it green, run the gates of
-the risk class, run the self-check, push **once**, and open the pull request.
+the risk class, run the self-check, push **once**, and open the pull request — ready for review,
+never as a draft. Then end the session by starting the review cycle:
+`uv run python -m workflow.orchestrate run <issue>`.
 
 **You never review your own work** and you never merge or enable auto-merge. The independent review
 is triggered automatically once the pull request is open.
