@@ -17,13 +17,15 @@ from workflow import board, finish
 ISSUE = 152
 BRANCH = "codex/152-finish-command"
 _REAL_SUBPROCESS_RUN = subprocess.run
-PROTECTED_LOCAL_STATE = (
-    ".env",
-    "data/",
-    "catalog/",
-    "results/",
-    "reports/",
-    "workflow/mutation-results/",
+REGENERABLE_IGNORED_STATE = (
+    ".venv/",
+    "__pycache__/",
+    ".mypy_cache/",
+    ".pytest_cache/",
+    ".ruff_cache/",
+    ".vscode/",
+    "mutants/",
+    "workflow/impact/test-map.json",
 )
 
 
@@ -74,7 +76,20 @@ def ticket_repository(tmp_path: Path) -> TicketRepository:
     _git(repository, "config", "user.name", "Workflow tests")
     (repository / "README.md").write_text("main\n", encoding="utf-8")
     (repository / ".gitignore").write_text(
-        ".env\ndata/\ncatalog/\nresults/\nreports/\nworkflow/mutation-results/\n.venv/\n",
+        ".env\n"
+        "data/\n"
+        "catalog/\n"
+        "results/\n"
+        "reports/\n"
+        "workflow/mutation-results/\n"
+        ".venv/\n"
+        "__pycache__/\n"
+        ".mypy_cache/\n"
+        ".pytest_cache/\n"
+        ".ruff_cache/\n"
+        ".vscode/\n"
+        "mutants/\n"
+        "workflow/impact/test-map.json\n",
         encoding="utf-8",
     )
     _git(repository, "add", "README.md", ".gitignore")
@@ -512,23 +527,31 @@ def test_a_second_run_reports_nothing_left_to_finish(
     assert result.removed == ()
 
 
-@pytest.mark.parametrize("state_path", PROTECTED_LOCAL_STATE)
 def test_protected_local_state_in_the_worktree_is_refused(
     monkeypatch: pytest.MonkeyPatch,
     ticket_repository: TicketRepository,
-    state_path: str,
+    tmp_path: Path,
 ) -> None:
     _prepare(monkeypatch, ticket_repository)
-    assert finish.load_protected_paths() == PROTECTED_LOCAL_STATE
-    protected = ticket_repository.worktree / state_path
-    if state_path == ".env":
-        protected.write_text("secret\n", encoding="utf-8")
-    else:
-        protected.mkdir(parents=True)
+    contract = tmp_path / "controlled-workflow.toml"
+    protected_path = ".venv/controlled-state.json"
+    contract.write_text(
+        f'[finish]\nprotected_worktree_paths = ["{protected_path}"]\n',
+        encoding="utf-8",
+    )
+    read_protected_paths = finish.load_protected_paths
+    monkeypatch.setattr(
+        finish,
+        "load_protected_paths",
+        lambda: read_protected_paths(contract),
+    )
+    protected = ticket_repository.worktree / protected_path
+    protected.parent.mkdir(parents=True)
+    protected.write_text("irreplaceable\n", encoding="utf-8")
     before = _artifact_snapshot(ticket_repository)
     commands = _record_commands(monkeypatch, ticket_repository)
 
-    with pytest.raises(finish.FinishError, match=re.escape(state_path)):
+    with pytest.raises(finish.FinishError, match=re.escape(protected_path)):
         _finish(ticket_repository)
 
     assert protected.exists()
@@ -541,13 +564,52 @@ def test_regenerable_ignored_state_is_removed_with_the_worktree(
     ticket_repository: TicketRepository,
 ) -> None:
     _prepare(monkeypatch, ticket_repository)
-    cache = ticket_repository.worktree / ".venv" / "cache"
-    cache.mkdir(parents=True)
-    (cache / "regenerable.bin").write_bytes(b"cache")
+    for state_path in REGENERABLE_IGNORED_STATE:
+        path = ticket_repository.worktree / state_path
+        if state_path.endswith("/"):
+            path.mkdir(parents=True)
+            (path / "regenerable.bin").write_bytes(b"cache")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("generated\n", encoding="utf-8")
 
     _finish(ticket_repository)
 
     assert not ticket_repository.worktree.exists()
+
+
+@pytest.mark.parametrize(
+    "contract_body",
+    [
+        "[finish]\n",
+        "[finish]\nprotected_worktree_paths = []\n",
+        '[finish]\nprotected_worktree_paths = "data/"\n',
+        "[finish]\nprotected_worktree_paths = [1]\n",
+        '[finish]\nprotected_worktree_paths = ["/data/"]\n',
+        '[finish]\nprotected_worktree_paths = ["C:/data/"]\n',
+        '[finish]\nprotected_worktree_paths = ["../data/"]\n',
+        "[finish]\nprotected_worktree_paths = ['..\\\\data\\\\']\n",
+    ],
+    ids=(
+        "missing",
+        "empty",
+        "not-a-list",
+        "non-string",
+        "posix-absolute",
+        "windows-absolute",
+        "posix-parent",
+        "windows-parent",
+    ),
+)
+def test_an_unusable_protected_list_is_refused(
+    tmp_path: Path,
+    contract_body: str,
+) -> None:
+    contract = tmp_path / "unusable-workflow.toml"
+    contract.write_text(contract_body, encoding="utf-8")
+
+    with pytest.raises(finish.FinishError, match="protected worktree path"):
+        finish.load_protected_paths(contract)
 
 
 def test_an_interrupted_run_finishes_the_remaining_remote_artifacts(
@@ -583,15 +645,24 @@ def test_a_failure_after_the_first_removal_is_not_a_refusal(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     _prepare(monkeypatch, ticket_repository)
-    real_run = finish._run
+    real_apply = finish._apply
     real_finish = finish.finish_ticket
+    advanced_oid = _git(ticket_repository.repository, "rev-parse", "origin/main")
 
-    def deny_push(args: Sequence[str], *, cwd: Path) -> str:
-        if list(args[:2]) == ["git", "push"]:
-            raise finish.FinishError("`git push` failed: remote rejected")
-        return real_run(args, cwd=cwd)
+    def advance_remote_then_apply(
+        plan: finish.FinishPlan,
+        repo_root: Path,
+    ) -> finish.FinishResult:
+        _git(
+            ticket_repository.repository,
+            f"--git-dir={ticket_repository.remote}",
+            "update-ref",
+            f"refs/heads/{BRANCH}",
+            advanced_oid,
+        )
+        return real_apply(plan, repo_root)
 
-    monkeypatch.setattr(finish, "_run", deny_push)
+    monkeypatch.setattr(finish, "_apply", advance_remote_then_apply)
     monkeypatch.setattr(
         finish,
         "finish_ticket",
@@ -605,7 +676,9 @@ def test_a_failure_after_the_first_removal_is_not_a_refusal(
     assert finish.main([str(ISSUE)]) == 2
     output = capsys.readouterr().out
     assert output.startswith("PARTIAL: removed worktree, local branch;")
+    assert "stale info" in output
     assert "re-run to finish" in output
+    assert _remote_ref(ticket_repository) == advanced_oid
 
     def refuse(issue: int) -> finish.FinishResult:
         raise finish.FinishError("precondition failed")
@@ -615,40 +688,57 @@ def test_a_failure_after_the_first_removal_is_not_a_refusal(
     assert capsys.readouterr().out == "REFUSED: precondition failed\n"
 
 
+@pytest.mark.parametrize("legacy", ["codex/issue-152-finish-command", "codex/152finish-command"])
 @pytest.mark.parametrize("arrival", ["local", "pull-request"])
 def test_a_legacy_branch_name_is_never_removed(
     monkeypatch: pytest.MonkeyPatch,
     ticket_repository: TicketRepository,
+    legacy: str,
     arrival: str,
 ) -> None:
-    legacy = "codex/issue-152-finish-command"
     if arrival == "local":
         _git(ticket_repository.worktree, "branch", "-m", legacy)
+        pull_requests = (finish.MergedPullRequest(BRANCH, ticket_repository.branch_tip),)
+    else:
         _git(
             ticket_repository.repository,
             f"--git-dir={ticket_repository.remote}",
             "update-ref",
-            "-d",
-            f"refs/heads/{BRANCH}",
+            f"refs/heads/{legacy}",
+            ticket_repository.branch_tip,
         )
-        _git(
-            ticket_repository.repository,
-            "update-ref",
-            "-d",
-            f"refs/remotes/origin/{BRANCH}",
-        )
-        pull_requests = (finish.MergedPullRequest(BRANCH, ticket_repository.branch_tip),)
-    else:
         pull_requests = (finish.MergedPullRequest(legacy, ticket_repository.branch_tip),)
     _prepare(monkeypatch, ticket_repository, pull_requests=pull_requests)
     before = _artifact_snapshot(ticket_repository)
     legacy_oid = _local_ref(ticket_repository.repository, legacy)
+    legacy_remote_oid = _remote_ref(ticket_repository, legacy)
 
     with pytest.raises(finish.FinishError, match="outside the contract pattern"):
         _finish(ticket_repository)
 
     assert _artifact_snapshot(ticket_repository) == before
     assert _local_ref(ticket_repository.repository, legacy) == legacy_oid
+    assert _remote_ref(ticket_repository, legacy) == legacy_remote_oid
+
+
+def test_a_legacy_name_only_in_the_pull_request_record_does_not_refuse(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    legacy = "codex/111-152-review-path"
+    _git(ticket_repository.repository, "worktree", "remove", str(ticket_repository.worktree))
+    _git(ticket_repository.repository, "branch", "-D", BRANCH)
+    _git(ticket_repository.repository, "push", "origin", "--delete", BRANCH)
+    _prepare(
+        monkeypatch,
+        ticket_repository,
+        pull_requests=(finish.MergedPullRequest(legacy, ticket_repository.branch_tip),),
+    )
+
+    result = _finish(ticket_repository)
+
+    assert result.nothing_to_finish
+    assert result.removed == ()
 
 
 @pytest.mark.parametrize("preserved_by", ["main", "pull-request"])

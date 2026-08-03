@@ -13,12 +13,11 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import tomllib
 from collections.abc import Sequence
 from dataclasses import dataclass
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from workflow import board, orchestrate
@@ -175,7 +174,14 @@ def load_protected_paths(path: Path = board.CONTRACT_PATH) -> tuple[str, ...]:
         if not isinstance(value, str):
             raise FinishError("every protected worktree path must be a string")
         candidate = PurePosixPath(value)
-        if candidate.is_absolute() or not candidate.parts or ".." in candidate.parts:
+        windows_candidate = PureWindowsPath(value)
+        if (
+            candidate.is_absolute()
+            or windows_candidate.is_absolute()
+            or not candidate.parts
+            or ".." in candidate.parts
+            or ".." in windows_candidate.parts
+        ):
             raise FinishError(f"protected worktree path {value!r} is not repository-relative")
         normalized = candidate.as_posix()
         if normalized in {"", "."} or normalized in normalized_paths:
@@ -251,7 +257,7 @@ def _branch_names(repo_root: Path) -> set[str]:
 
 
 def _carries_issue_number(issue: int, branch: str) -> bool:
-    return str(issue) in re.split(r"[/_.-]+", branch)
+    return str(issue) in branch
 
 
 def _protected_local_state(worktree: Path, protected_paths: Sequence[str]) -> tuple[str, ...]:
@@ -294,7 +300,7 @@ def _plan(issue: int, repo_root: Path, invocation_dir: Path) -> FinishPlan | Non
     branch_names = _branch_names(repo_root)
     invalid_names = {
         branch
-        for branch in branch_names | {request.head_branch for request in pull_requests}
+        for branch in branch_names
         if _carries_issue_number(issue, branch)
         and not orchestrate.issue_branch_matches(issue, branch)
     }
@@ -312,14 +318,19 @@ def _plan(issue: int, repo_root: Path, invocation_dir: Path) -> FinishPlan | Non
             f"expected exactly one branch carrying issue #{issue}, found {len(local_branches)}"
         )
 
+    valid_pull_requests = tuple(
+        request
+        for request in pull_requests
+        if orchestrate.issue_branch_matches(issue, request.head_branch)
+    )
     if local_branches:
         branch = next(iter(local_branches))
-    elif len(pull_requests) == 1:
-        branch = pull_requests[0].head_branch
-        if not orchestrate.issue_branch_matches(issue, branch):
-            raise FinishError(
-                f"branch {branch!r} cannot own issue #{issue}; main is never removable"
-            )
+    elif len(valid_pull_requests) == 1:
+        branch = valid_pull_requests[0].head_branch
+    elif pull_requests and not valid_pull_requests:
+        if any(request.head_branch == "main" for request in pull_requests):
+            raise FinishError("main is never removable")
+        return None
     else:
         raise FinishError(f"expected exactly one branch carrying issue #{issue}, found 0")
 
