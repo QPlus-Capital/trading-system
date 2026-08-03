@@ -185,7 +185,17 @@ def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
     session = session_for(issue)
     if session:
         subprocess.run(
-            [_executable("claude"), "-p", "--resume", session, f"Status zu #{issue}: {message}"],
+            [
+                _executable("claude"),
+                "-p",
+                "--resume",
+                session,
+                (
+                    f"[Orchestrator] Status zu #{issue}: {message} — nur zur Kenntnis für den "
+                    "Operator, keine Aktion nötig. Führe keine Kommandos aus und antworte "
+                    "höchstens mit einem kurzen Satz."
+                ),
+            ],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,

@@ -196,7 +196,7 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
 
     captured: list[list[str]] = []
     monkeypatch.setattr(
-        orchestrate.subprocess, "run", lambda argv, **kwargs: captured.append(list(argv))
+        "workflow.orchestrate.subprocess.run", lambda argv, **kwargs: captured.append(list(argv))
     )
     monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
 
