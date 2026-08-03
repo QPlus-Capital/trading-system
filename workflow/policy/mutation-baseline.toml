@@ -3,7 +3,7 @@
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "Adds the workflow-finish-teardown, workflow-board-guards and workflow-hook-decisions targets unmeasured: mutmut needs fork, which the Windows authoring platform lacks, so the first Linux run via workflow_dispatch is the measurement. Until it lands, a dispatched mutation-critical run fails closed on any survivor in the new targets, and the recorded totals below still describe the previous target set. Prior explanation: PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
+change_explanation = "Linux dispatch run 30815348927 measured the workflow-board-guards and workflow-hook-decisions targets: 5,497 mutants, 4,996 killed, 501 survived; the 91 workflow survivors are classified below as measured test-strength gaps per the operator's issue #166 decision, and no previously classified survivor changed state. workflow-finish-teardown remains unmeasured until this branch's first Linux run, which fails closed on any survivor there. Prior explanation: PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
 targets = [
     "workflow-finish-teardown",
     "workflow-board-guards",
@@ -39,9 +39,9 @@ targets = [
 policy_fingerprint = "fb5cdad3a56f2a87b989846a0ecfe4b1244f2e751977578e9f790633365c009f" # pragma: allowlist secret
 
 [summary]
-total = 5171
-killed = 4761
-survived = 410
+total = 5497
+killed = 4996
+survived = 501
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -777,4 +777,143 @@ classification = "equivalent"
 reason = "The private function receives FloatArray opening and close equity inputs, and np.minimum therefore already produces float64 minimum values; later assignments are also floats, so np.asarray without the redundant dtype preserves the same type, bytes, and values."
 names = [
     "research.portfolio.sizing.x__synchronized_h4_minima__mutmut_318",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Contract-loading mutations on error-message wording and tuple construction details; the guard tests pin the loaded values, not the exact failure prose. Retained as measured gaps."
+names = [
+    "workflow.board.x_load_contract__mutmut_3",
+    "workflow.board.x_load_contract__mutmut_30",
+    "workflow.board.x_load_contract__mutmut_32",
+    "workflow.board.x_load_contract__mutmut_5",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Move mutations that reorder verification reads or alter refusal message text without changing which transitions are permitted. The permitted-set itself is pinned; the survivors are message- and sequencing-level. Retained as measured gaps."
+names = [
+    "workflow.board.x_move__mutmut_19",
+    "workflow.board.x_move__mutmut_21",
+    "workflow.board.x_move__mutmut_22",
+    "workflow.board.x_move__mutmut_23",
+    "workflow.board.x_move__mutmut_26",
+    "workflow.board.x_move__mutmut_27",
+    "workflow.board.x_move__mutmut_28",
+    "workflow.board.x_move__mutmut_31",
+    "workflow.board.x_move__mutmut_8",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Existing board tests drive the happy path and the refusals; these read_card mutations alter parsing details (title fallback, open-state text, option ordering) the twelve behavioural tests do not distinguish. Retained as measured test-strength gaps per the operator's decision on issue #166."
+names = [
+    "workflow.board.x_read_card__mutmut_105",
+    "workflow.board.x_read_card__mutmut_107",
+    "workflow.board.x_read_card__mutmut_114",
+    "workflow.board.x_read_card__mutmut_117",
+    "workflow.board.x_read_card__mutmut_122",
+    "workflow.board.x_read_card__mutmut_3",
+    "workflow.board.x_read_card__mutmut_4",
+    "workflow.board.x_read_card__mutmut_42",
+    "workflow.board.x_read_card__mutmut_56",
+    "workflow.board.x_read_card__mutmut_58",
+    "workflow.board.x_read_card__mutmut_62",
+    "workflow.board.x_read_card__mutmut_63",
+    "workflow.board.x_read_card__mutmut_64",
+    "workflow.board.x_read_card__mutmut_65",
+    "workflow.board.x_read_card__mutmut_68",
+    "workflow.board.x_read_card__mutmut_69",
+    "workflow.board.x_read_card__mutmut_7",
+    "workflow.board.x_read_card__mutmut_70",
+    "workflow.board.x_read_card__mutmut_8",
+    "workflow.board.x_read_card__mutmut_84",
+    "workflow.board.x_read_card__mutmut_85",
+    "workflow.board.x_read_card__mutmut_86",
+    "workflow.board.x_read_card__mutmut_87",
+    "workflow.board.x_read_card__mutmut_88",
+    "workflow.board.x_read_card__mutmut_89",
+    "workflow.board.x_read_card__mutmut_90",
+    "workflow.board.x_read_card__mutmut_91",
+    "workflow.board.x_read_card__mutmut_92",
+    "workflow.board.x_read_card__mutmut_93",
+    "workflow.board.x_read_card__mutmut_94",
+    "workflow.board.x_read_card__mutmut_95",
+    "workflow.board.x_read_card__mutmut_96",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Suppression-scanning detail mutations (comment tokenisation bookkeeping); the verify-bypass, broad-ignore and skip outcomes are pinned. Retained as measured gaps."
+names = [
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_16",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_17",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_18",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_19",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_21",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_22",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_23",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_24",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_4",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_5",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_6",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_7",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Message-text and ordering mutations; the block/allow outcomes for live commands, runner control, order actions and forced main pushes are pinned. Retained as measured gaps."
+names = [
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_15",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_16",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_17",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_18",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_19",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_20",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_21",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_22",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Surface-narrowing mutations on flag bookkeeping the regression tests do not separate; the two load-bearing directions (text is not an invocation, a real invocation still refuses) are pinned by tests and their mutants are killed. Retained as measured gaps."
+names = [
+    "workflow.hooks.decisions.x_executable_surface__mutmut_10",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_15",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_18",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_19",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_24",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_26",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_27",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_28",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_37",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_6",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Refusal-message and casefold-detail mutations; the R0-passes / R1-blocks boundary is pinned. Retained as measured gaps."
+names = [
+    "workflow.hooks.decisions.x_main_branch_decision__mutmut_16",
+    "workflow.hooks.decisions.x_main_branch_decision__mutmut_17",
+    "workflow.hooks.decisions.x_main_branch_decision__mutmut_19",
+    "workflow.hooks.decisions.x_main_branch_decision__mutmut_21",
+    "workflow.hooks.decisions.x_main_branch_decision__mutmut_22",
+    "workflow.hooks.decisions.x_main_branch_decision__mutmut_7",
+]
+
+[[survivor_groups]]
+classification = "meaningful"
+reason = "Pattern-bookkeeping mutations the synthetic-credential tests do not separate; the block outcome for each credential family is pinned. Retained as measured gaps."
+names = [
+    "workflow.hooks.decisions.x_secret_decision__mutmut_10",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_11",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_2",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_20",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_21",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_22",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_23",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_3",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_8",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_9",
 ]
