@@ -9,6 +9,31 @@ execution_platform = "linux"
 python = "3.13"
 
 [[targets]]
+# The single writer of the board's Status field. A weakened guard here lets a card lie about
+# where a change stands. workflow/finish.py joins this list when its pull request merges.
+id = "workflow-board-guards"
+path = "workflow/board.py"
+mutant_patterns = [
+    "workflow.board.x_read_card__mutmut_*",
+    "workflow.board.x_move__mutmut_*",
+    "workflow.board.x_load_contract__mutmut_*",
+    "workflow.board.x*Contract*permits__mutmut_*",
+]
+
+[[targets]]
+# The live-trading, secret, direct-to-main and gate-bypass blocks. An inverted or narrowed match
+# here silently permits what section 1 of the contract prohibits.
+id = "workflow-hook-decisions"
+path = "workflow/hooks/decisions.py"
+mutant_patterns = [
+    "workflow.hooks.decisions.x_executable_surface__mutmut_*",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_*",
+    "workflow.hooks.decisions.x_secret_decision__mutmut_*",
+    "workflow.hooks.decisions.x_main_branch_decision__mutmut_*",
+    "workflow.hooks.decisions.x_bypass_decision__mutmut_*",
+]
+
+[[targets]]
 id = "live-account-identity"
 path = "live/accounts.py"
 mutant_patterns = [

@@ -12,6 +12,10 @@ name: CI
 on:
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
+  # The deliberate re-run: after a force-push the green results belong to commits that no longer
+  # exist, and an infrastructure failure is not a code failure. Without this, the only way to get a
+  # fresh run was closing and reopening the pull request.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -36,7 +40,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.13"
@@ -48,7 +52,8 @@ jobs:
       - name: Decide which conditional jobs this change needs
         id: scope
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
+          EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
           uv run python - <<'PY'
@@ -58,23 +63,29 @@ jobs:
           from workflow.impact import changed_tests_exercise_targets
           from workflow.mutation import load_policy, select_fast_targets
 
-          paths = changed_paths(f"origin/{os.environ['BASE_REF']}")
-          policy = load_policy()
+          if os.environ["EVENT_NAME"] == "workflow_dispatch":
+              # A dispatch is a deliberate act: run everything. This is also the only way a NEW
+              # mutation target can be measured for the first time — the path filter below cannot
+              # select a target whose module the change did not touch.
+              needs_mutation = needs_mt5 = True
+          else:
+              paths = changed_paths(f"origin/{os.environ['BASE_REF']}")
+              policy = load_policy()
 
-          # The same production policy the local gate uses, so CI and `just gates` cannot disagree.
-          needs_mutation = bool(
-              select_fast_targets(paths, policy, load_model())
-              or changed_tests_exercise_targets(
-                  paths, tuple(target.path for target in policy.targets)
+              # The production policy the local gate uses, so CI and `just gates` cannot disagree.
+              needs_mutation = bool(
+                  select_fast_targets(paths, policy, load_model())
+                  or changed_tests_exercise_targets(
+                      paths, tuple(target.path for target in policy.targets)
+                  )
               )
-          )
-          needs_mt5 = any(
-              path.startswith("live/mt5_bridge") or path.startswith("live/preflight")
-              or path == "tests/conftest.py"
-              or path.startswith("tests/test_live_mt5_bridge")
-              or path.startswith("tests/test_workflow_test_boundaries")
-              for path in paths
-          )
+              needs_mt5 = any(
+                  path.startswith("live/mt5_bridge") or path.startswith("live/preflight")
+                  or path == "tests/conftest.py"
+                  or path.startswith("tests/test_live_mt5_bridge")
+                  or path.startswith("tests/test_workflow_test_boundaries")
+                  for path in paths
+              )
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"needs_mutation={str(needs_mutation).lower()}\n")
               output.write(f"needs_mt5={str(needs_mt5).lower()}\n")
@@ -105,7 +116,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.13"
@@ -125,7 +136,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           python-version: "3.13"

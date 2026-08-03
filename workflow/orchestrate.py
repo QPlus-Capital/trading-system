@@ -23,10 +23,12 @@ CLI::
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import re
 import subprocess
-from collections.abc import Sequence
+import tempfile
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -124,12 +126,20 @@ def pull_request_for(issue: int) -> int:
 
 
 def latest_verdict(pull_request: int) -> Verdict | None:
-    """The most recent structured verdict on the pull request, or None if no review has landed."""
+    """The most recent structured verdict on the pull request, or None if no review has landed.
 
-    raw = _run(["gh", "pr", "view", str(pull_request), "--json", "comments"])
-    comments = json.loads(raw or "{}").get("comments", [])
-    for comment in reversed(comments):
-        match = VERDICT.search(str(comment.get("body", "")))
+    A pull-request review lands in ``reviews``, not ``comments`` — the first version of this
+    function read only ``comments`` and could therefore never see a verdict, so the loop's one
+    exit condition was unreadable. Both lists are scanned newest-first, reviews before comments,
+    because the reviewer submits a real review and a comment is only ever a fallback.
+    """
+
+    raw = _run(["gh", "pr", "view", str(pull_request), "--json", "reviews,comments"])
+    payload = json.loads(raw or "{}")
+    reviews = [str(entry.get("body", "")) for entry in payload.get("reviews", [])]
+    comments = [str(entry.get("body", "")) for entry in payload.get("comments", [])]
+    for body in [*reversed(reviews), *reversed(comments)]:
+        match = VERDICT.search(body)
         if match:
             return Verdict(int(match["blocking"]), int(match["advisory"]))
     return None
@@ -159,7 +169,7 @@ def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
     session = session_for(issue)
     if session:
         subprocess.run(
-            ["claude", "-p", "--resume", session, f"Status for #{issue}: {message}"],
+            ["claude", "-p", "--resume", session, f"Status zu #{issue}: {message}"],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -167,16 +177,23 @@ def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
         )
 
 
-def review(issue: int, *, dry_run: bool = False) -> None:
+def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
     """Start the reviewer as a separate process, with nothing but the issue number.
 
     A fresh process is what makes the review independent: it cannot inherit what the builder meant,
     only what the branch contains.
+
+    The process starts in the **main checkout**, so the reviewer's own contracts — the skill and
+    the agent definitions under ``.claude/`` — load from there and stay outside the branch's reach.
+    The branch under review is supplied as a read-only worktree path: source, tests and behaviour
+    are inspected *there*, never in the launching checkout, whose files are the pre-change versions.
     """
 
     prompt = (
         f"/review-change {issue}\n"
-        "Review the open pull request for this issue. End your summary comment with "
+        f"Review the open pull request for this issue. The branch under review is checked out "
+        f"read-only at {worktree} — read source and tests and run commands there, never in this "
+        "checkout, and edit nothing. End your summary comment with "
         "<!-- workflow-verdict blocking:N advisory:M --> where N counts Blocker and Defect "
         "findings and M counts Suspected defect and Note findings."
     )
@@ -200,6 +217,41 @@ def hand_back(issue: int, verdict: Verdict, *, dry_run: bool = False) -> None:
     subprocess.run(["codex", "exec", prompt], cwd=REPO_ROOT, check=False)
 
 
+@contextlib.contextmanager
+def _branch_worktree(branch: str) -> Iterator[Path]:
+    """A throwaway worktree at the branch tip, so the gates measure the change under review.
+
+    The first version of this module ran the gates in whatever checkout the orchestrator was
+    started from — on `main`, `changed_paths` returned nothing and seven green gates were recorded
+    as the change's evidence while measuring the wrong tree. The gate *definitions* (the contract,
+    the risk model) are still read from the main checkout, so a branch cannot weaken its own gates;
+    only the measurement happens on the branch.
+    """
+
+    target = Path(tempfile.mkdtemp(prefix=f"qplus-gates-{branch.replace('/', '-')}-"))
+    added = subprocess.run(
+        ["git", "worktree", "add", "--detach", str(target), branch],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if added.returncode != 0:
+        raise OrchestrationError(
+            f"could not create a worktree for {branch!r}; refusing to gate the wrong tree"
+        )
+    try:
+        yield target
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(target)],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+
 def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -> int:
     """One issue, from a pushed branch to a verdict the operator can act on."""
 
@@ -208,28 +260,36 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         raise OrchestrationError(
             f"issue #{issue} is in {card.status!r}; the cycle starts once the branch is pushed"
         )
+    branch = branch_for(issue)
 
     for round_number in range(1, max_rounds + 1):
-        risk, results = gates.run(changed_paths("origin/main"), card.risk_class)
-        print(gates.render(risk, results))
-        failed = [result for result in results if result.exit_status not in (0, None)]
-        if failed:
-            hand_back(issue, Verdict(len(failed), 0), dry_run=dry_run)
-            continue
+        with _branch_worktree(branch) as tree:
+            risk, results = gates.run(
+                changed_paths("origin/main", root=tree), card.risk_class, root=tree
+            )
+            print(gates.render(risk, results))
+            failed = [result for result in results if result.exit_status not in (0, None)]
+            if failed:
+                hand_back(issue, Verdict(len(failed), 0), dry_run=dry_run)
+                continue
 
-        if not dry_run:
-            board.move(issue, "Reviewing")
-        review(issue, dry_run=dry_run)
+            if not dry_run:
+                board.move(issue, "Reviewing")
+            review(issue, tree, dry_run=dry_run)
 
         verdict = None if dry_run else latest_verdict(pull_request_for(issue))
         if verdict is None:
-            notify(issue, "the review left no verdict; it needs a look", dry_run=dry_run)
+            notify(
+                issue,
+                "das Review hat kein Urteil hinterlassen; bitte anschauen",
+                dry_run=dry_run,
+            )
             return 1
         if verdict.clean:
             note = ""
             if verdict.advisory:
-                note = f" ({verdict.advisory} non-blocking point(s) to read)"
-            notify(issue, f"clean and ready to merge{note}", dry_run=dry_run)
+                note = f" ({verdict.advisory} nicht-blockierende Punkte zum Lesen)"
+            notify(issue, f"sauber und bereit zum Mergen{note}", dry_run=dry_run)
             return 0
 
         if round_number == max_rounds:
@@ -242,7 +302,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         board.move(issue, "Blocked")
     notify(
         issue,
-        f"still not clean after {max_rounds} fix rounds; it needs a decision",
+        f"nach {max_rounds} Fix-Runden nicht sauber; braucht deine Entscheidung",
         dry_run=dry_run,
     )
     return 1

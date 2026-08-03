@@ -207,6 +207,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `research/engine/walkforward.py` | Walk-forward window scheme (train/test splits, purge/embargo) |
 | `research/engine/walkforward_runner.py` | Walk-forward runner (drives backtests over the windows) |
 | `research/engine/characterize.py` | The robustness study plus synchronized diagnostic-only DSR/PBO evidence |
+| `research/config/robustness.py` | The study definition the sweep runs: variations, grid, instruments, account |
 
 ### Research — portfolio math (pure, on DataFrames)
 
@@ -268,7 +269,10 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 
 | File | Purpose |
 |---|---|
-| `workflow/classify.py` | Applies the authoritative risk model to changed paths |
+| `workflow/classify.py` | Applies the authoritative risk model and the lean/full lane boundary to changed paths |
+| `workflow/board.py` | The single writer of the project board's Status field; refuses transitions the contract omits |
+| `workflow/gates.py` | Runs exactly the gates a risk class requires and prints the pull-request evidence table |
+| `workflow/orchestrate.py` | Drives the review cycle: gates in a branch worktree, fresh reviewer, fix rounds, cap |
 | `workflow/finish.py` | Verifies and removes one completed ticket's worktree and branch traces |
 | `workflow/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `workflow/mutation.py` | Runs focused mutation scopes and enforces the TOML survivor ratchet |

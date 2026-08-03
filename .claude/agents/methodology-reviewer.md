@@ -24,7 +24,7 @@ Also verify **selection/execution agreement**: parameters, sizing basis, costs, 
 choose a configuration are the same ones used to run and report it.
 
 Trace the executing research path, lineage artifacts, time boundaries, configuration consumers,
-aggregation streams, and tests. Construct a concrete false-confidence counterexample for each
+aggregation streams, and tests. Construct false-confidence counterexamples proportionate to the diff for the
 changed methodology behavior. Return Blocker / Defect / Suspected defect / Note findings with
 tight `file:line` citations, executable regressions, and the counterexamples attempted. The first
 two severities block readiness. Do not invent findings.

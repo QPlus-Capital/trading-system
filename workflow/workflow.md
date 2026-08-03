@@ -109,22 +109,44 @@ without prefixes; the grown `[P-NN]` package issues keep theirs.
 Claude and Codex open issues only for **evidenced** work found outside their current scope — never
 speculation, never as an escape from the task at hand, and they return to it immediately.
 
+### The two lanes
+
+The risk class answers *how bad if this is wrong*. It does not answer *how much process checking it
+needs* — a one-line fix on the live path is high-risk and cheap to check; a five-hundred-line
+tooling change is the reverse. The process therefore has two lanes, and **lean is the default**.
+
+The full program runs only when at least one holds:
+
+- a changed path matches the **carve-out** in `[review.scope]` of the contract — the paths where a
+  single line can cost real money: risk limits, sizing, order placement, the broker bridge, account
+  identity, holdout and selection, and the classifier itself;
+- the diff exceeds the size bound in `[review.scope]` (changed lines, additions plus deletions);
+- the operator asks for it.
+
+The lane changes the ceremony, never the safety: **the gates of the risk class run in full in both
+lanes**, every change reaches `main` through a pull request, and the operator merges. The lane is
+stated in the issue; at review time the *actual* diff decides — a change that grew past the bound or
+into the carve-out is reviewed at full strength whatever the issue declared.
+
 ### Phase 1 — Specifying
 
 In the same chat, when the operator asks for the idea to be worked out. Claude moves the card to
-`Specifying`, then:
+`Specifying`, then — in both lanes:
 
 1. **Reality check first.** Does the problem still exist? Is it a duplicate? Would the fix violate
    section 1 or 2? If so: stop, cite the evidence, propose closing. This is the cheapest outcome.
-2. **Read the code** at the depth the risk class sets — R0/R1 the named file; R2 the affected
-   modules and their direct callers; R3 additionally data flow, lifecycle, and parity paths. Search
-   for existing functions to reuse before proposing new ones.
-3. **Classify** with `workflow.classify`. The result is a minimum; raising it is mandatory
+2. **Classify** with `workflow.classify`. The result is a minimum; raising it is mandatory
    when the semantic impact is broader than the paths suggest, and the reason is stated.
-4. **Ask only questions whose answer changes the outcome.**
-5. **Write the issue body**, replacing the original sentences. It is the specification from here on.
+3. **Ask only questions whose answer changes the outcome.**
 
-The body is English and describes **what**, never **how**:
+**Lean lane:** the issue body is the problem and the goal in a few sentences — essentially the
+operator's own words, sharpened. Up to five numbered, testable criteria where they earn their keep;
+no invariants section, no impact analysis, no verification plan. Claude reads the named code, not
+the transitive closure.
+
+**Full program:** Claude reads the code at the depth the risk class sets — R2 the affected modules
+and their direct callers; R3 additionally data flow, lifecycle, and parity paths — searches for
+existing functions to reuse, and writes the body as:
 
 ```
 ## Problem
@@ -139,6 +161,10 @@ The body is English and describes **what**, never **how**:
 
 Every `AC-nn` maps to **exactly one named test**. A criterion no test can check is a wish. The
 reason for the risk class matters more than the class.
+
+**In both lanes, a specification fits on one page.** If it cannot, the ticket is too big — split it
+rather than specify harder. A 280-line specification produced a 1,400-line change and three reviews
+longer than the code; the cap exists because ceremony compounds through everything downstream.
 
 If a genuine business, trading, methodology, live-money, architecture, or risk decision stays open,
 it is recorded under *Open decisions*, the card moves to `Blocked`, and the phase ends.
@@ -158,8 +184,10 @@ title, risk class and its reason, and the count of criteria and invariants. For 
 presents the risk itself: which limits the change touches, what happens in the worst case, and
 whether a running runner is affected. The operator releases the risk, not merely the text.
 
-From R2 upward the body is checked mechanically first: required sections present, at least one
-numbered acceptance criterion, risk class justified, no open decision left open.
+In the full program, the body is checked mechanically first from R2 upward: required sections
+present, at least one numbered acceptance criterion, risk class justified, no open decision left
+open. In the lean lane the presentation is the summary block and the release can be one word in the
+same breath — the authority is identical, only the ceremony differs.
 
 | The operator says | Then |
 |---|---|
@@ -191,8 +219,8 @@ ownership is decided by the branch and its origin, because the card cannot know 
 clean and a running runner never sees half-finished code.
 
 ```
-1  Impact       what depends on this, which tests are affected
-2  Test plan    every AC-nn and INV-nn → exactly one named test
+1  Impact       what depends on this, which tests are affected   (full program only)
+2  Test plan    every AC-nn and INV-nn → exactly one named test  (full program only)
 3  Prove RED    write the test, run it, record the failure
 4  Build        the smallest coherent change; the non-goals bound the diff
 5  Prove GREEN
@@ -200,10 +228,21 @@ clean and a running runner never sees half-finished code.
 7  Self-check   the defect classes below
 8  Push         ONCE, open the pull request, body carries "Closes #101"
 9  Card         → Reviewing
+10 Cycle        uv run python -m workflow.orchestrate run <issue>
 ```
 
+Step 10 is what makes the review start without the operator: the builder is already a local process
+when it pushes, so ending the session by starting the cycle needs no watcher, no daemon, and no
+agent credentials in CI. A build session that dies before step 10 leaves the card in `Reviewing`
+and the operator starts the cycle by hand — the fallback in phase 4.
+
+In the lean lane, steps 1 and 2 collapse into the work itself: the fix and the test that proves it,
+nothing written up separately. Steps 3, 5, 6 and 7 are never skipped in either lane.
+
 Step 3 carries the whole system: a test that was never red proves nothing. Step 8 is one push per
-round — commit locally as often as useful, push once.
+round — commit locally as often as useful, push once. **The pull request is opened ready for
+review, never as a draft** — the review starts from the open pull request, and a draft would only
+say "not ready" while the checks say otherwise.
 
 **Step 7, the self-check.** Before handover, Codex probes the same defect classes the reviewer
 hunts, so the review confirms rather than discovers:
@@ -220,33 +259,51 @@ If the specification is wrong, incomplete, or unbuildable, Codex does not guess:
 
 ### Phase 4 — Review
 
-The pull request is open. The orchestrator takes over without the operator doing anything.
+The pull request is open. **The builder starts the cycle as the last step of phase 3**; the
+operator can always start it by hand — one command
+(`uv run python -m workflow.orchestrate run <issue>`) or one sentence in a fresh session — when a
+build session ended before step 10, or to repeat a cycle deliberately.
 
 ```
-push → pull request open
-  ↓  orchestrator runs the gates
-  ↓  orchestrator starts Claude in a fresh process (the issue number is the only input)
+pull request open → builder starts the cycle (operator as fallback)
+  ↓  gates run against the branch under review
+  ↓  Claude reviews in a fresh process (the issue number is the only input)
   ↓  review submitted as a real pull-request review
 Blocker or Defect? ──yes──→ back to Codex, fix, push ──→ review again  (at most 2 rounds)
-  └──no──→ notification in the ticket chat: "#101 is clean, ready to merge"
+  └──no──→ notification in the ticket chat: "#101 ist sauber und bereit zum Mergen"
 ```
 
-Review agents by risk class and touched paths:
+**Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
+in the full program:
 
-| Risk | Agents |
+| Change | Agents |
 |---|---|
-| R0, R1 | none — Claude reviews directly |
-| R2 | code, tests |
-| R3 | code, tests **plus one** specialist: live-money for `live/**`, methodology for `research/**`, `docs/methodology.md`, `docs/strategies/**` |
+| lean lane, any class | none — Claude reviews directly |
+| full program, R2 | code, tests |
+| full program, R3 | code, tests — **plus one specialist where the paths select one**: live-money for `live/**`, methodology for `research/**`, `docs/methodology.md`, `docs/strategies/**` |
+
+An R3 change outside those paths — the workflow tooling itself, the CI — is reviewed by code and
+tests alone. That is deliberate: the mechanical answer for such modules is mutation coverage, which
+finds weak tests wholesale where one more reviewer would find them piecemeal.
 
 The agents are read-only and receive the issue contract, the diff, the gate results, and the
 executing paths — never the builder's private context. Their counterexamples are reconciled against
 every `AC-nn` and `INV-nn`.
 
+**Search effort is proportionate to the diff.** The risk class decides what must be proven; the
+size of the change decides how far to search for a disproof. Counterexamples target the behaviours
+whose failure costs the most and stop when further ones stop changing the verdict — never a fixed
+quota per changed behaviour, which is how a cleanup command once collected seventy-one.
+
 The review is delivered as one pull-request review: an inline comment at each finding's `file:line`
 with severity, the concrete failure scenario, and the regression that would prove it; plus a summary
-carrying the findings table, the criteria check, an assessment of the chosen approach, and a
-separated block of decisions that belong to the operator.
+carrying the findings table, the criteria check, and a separated block of decisions that belong to
+the operator. **A repeat round reports only its findings table and verdict** — no fresh contract
+check, no counterexample appendix, no restatement of what round one already established.
+
+**A review reports; it does not file.** Findings that do not block the change are listed for the
+operator, and whether any becomes an issue is the operator's decision — a review that spawns tickets
+multiplies process instead of finishing the change in front of it.
 
 | Severity | Meaning | Blocks | Triggers a fix round |
 |---|---|---|---|
@@ -262,9 +319,11 @@ none survives, the number of counterexamples attempted is recorded.
 otherwise the board would report building while a review runs. Claude never edits the branch; if it
 did, it would afterwards be reviewing its own code.
 
-**Repeat scope after a fix.** The deterministic gate suite always runs in full. The review re-runs
-on the fix diff and the modules it touches. A complete fresh review runs only when the fix touches
-files outside the original diff, or at R3 on the live path.
+**Repeat scope after a fix.** The deterministic gate suite always runs in full. **The review
+re-runs on the fix diff and the modules it touches, nothing more.** A complete fresh review runs
+only when the fix touches files outside the original diff, or at R3 on the live path. This binds
+the reviewer, not just the orchestrator: a repeat round that re-walks the whole change is the
+single largest time sink the previous process had.
 
 **Cap.** After two fix rounds without a clean result, the card moves to `Blocked` and the operator
 is notified with what remains. A finding that needs an operator decision moves the card to `Blocked`
@@ -394,8 +453,13 @@ it. A gate that cannot bind is worse than no gate, because the report then says 
 
 - Everything committed — code, identifiers, comments, docstrings, docs, commit messages — is
   **English**. Conversation with the operator may be in another language; the repository is not.
-  Operator-facing *runtime* output (research stage banners, the dashboard) is German by decision;
-  this is the only exception and is scoped to strings a human reads at a terminal.
+  Operator-facing *runtime* output (research stage banners, the dashboard, the orchestrator's
+  notifications) is German by decision; this is the only exception and is scoped to strings a human
+  reads at a terminal.
+- **Every specifying and review session ends its chat output with a summary in German**, answering
+  in order: was gemacht wird · was du entscheiden musst · wo es klemmt · was als Nächstes passiert.
+  "Nichts" is an answer and is stated when true. The summary is appended to the full output, never
+  substituted for it, and nothing committed changes language because of it.
 - **Docstrings describe the current state, never history.** No "formerly / previously / ported
   from", no dead code kept just in case.
 - Documentation is part of the change. The module map in `docs/architecture.md` must match reality.
