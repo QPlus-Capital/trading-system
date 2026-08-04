@@ -6,6 +6,9 @@ of 49k on a 50k profile then lowered the trailing floor from 47,500 to 46,550, l
 limit the flag exists to protect.
 """
 
+import logging
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -41,8 +44,33 @@ class _StubBridge:
         pass
 
 
+@pytest.fixture
+def isolated_root_logging() -> AbstractContextManager[None]:
+    """Let live logging configure real handlers, then restore pytest's root handlers."""
+
+    @contextmanager
+    def isolate() -> Iterator[None]:
+        root_logger = logging.getLogger()
+        original_handlers = root_logger.handlers.copy()
+        original_level = root_logger.level
+        root_logger.handlers.clear()
+        try:
+            yield
+        finally:
+            installed_handlers = root_logger.handlers.copy()
+            root_logger.handlers.clear()
+            for handler in installed_handlers:
+                handler.close()
+            root_logger.handlers.extend(original_handlers)
+            root_logger.setLevel(original_level)
+
+    return isolate()
+
+
 def test_start_balance_feeds_the_day_start_not_the_trailing_reference(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    isolated_root_logging: AbstractContextManager[None],
 ) -> None:
     monkeypatch.setenv("MT5_TTP_LOGIN", str(int("1234" + "1681")))
     monkeypatch.setenv("MT5_TTP_TERMINAL_PATH", r"C:\MT5\test\terminal64.exe")
@@ -50,10 +78,11 @@ def test_start_balance_feeds_the_day_start_not_the_trailing_reference(
     monkeypatch.setattr(runmod, "LiveRunner", _SpyRunner)
     monkeypatch.setattr(runmod, "guard_account", lambda *a, **k: None)
     monkeypatch.setattr(runmod, "_LIVE_ROOT", tmp_path)
-    monkeypatch.setattr(runmod, "_setup_logging", lambda *_: None)
 
-    runmod.main(["--account", "ttp", "--once", "--start-balance", "49000"])
+    with isolated_root_logging:
+        runmod.main(["--account", "ttp", "--once", "--start-balance", "49000"])
 
+    assert (tmp_path / "ttp" / "live.log").is_file()
     cap = _SpyRunner.captured
     # The trailing/account reference comes from the PROFILE, whatever the operator typed:
     assert cap["risk"].start_balance == ACCOUNTS["ttp"].start_balance
