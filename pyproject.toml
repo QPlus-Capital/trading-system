@@ -56,6 +56,12 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+filterwarnings = [
+    "error",
+    # Upstream call sites; nautilus-trader 1.230.0 installed; 1.231.0 verified:
+    # backtest/engine.pyx:1601 and :1418; backtest/node.py:668.
+    "ignore:Timestamp.utcnow is deprecated",
+]
 # Repo root on sys.path so the dev tooling under workflow/ is importable in tests without shipping
 # it in the wheel (it is not a runtime dependency of the trading system).
 pythonpath = ["."]

@@ -197,14 +197,11 @@ def test_daily_window_and_market_window_aggregates_are_exact(tmp_path: Path) -> 
         tmp_path / "candidate_window_returns.csv",
         "window",
     )
-    market = list(
-        csv.DictReader(
-            (tmp_path / "candidate_market_window_returns.csv").open(
-                newline="",
-                encoding="utf-8",
-            )
-        )
-    )
+    with (tmp_path / "candidate_market_window_returns.csv").open(
+        newline="",
+        encoding="utf-8",
+    ) as handle:
+        market = list(csv.DictReader(handle))
 
     assert daily_columns == window_columns
     for candidate in daily_columns:

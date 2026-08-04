@@ -50,6 +50,7 @@ def test_start_balance_feeds_the_day_start_not_the_trailing_reference(
     monkeypatch.setattr(runmod, "LiveRunner", _SpyRunner)
     monkeypatch.setattr(runmod, "guard_account", lambda *a, **k: None)
     monkeypatch.setattr(runmod, "_LIVE_ROOT", tmp_path)
+    monkeypatch.setattr(runmod, "_setup_logging", lambda *_: None)
 
     runmod.main(["--account", "ttp", "--once", "--start-balance", "49000"])
 
