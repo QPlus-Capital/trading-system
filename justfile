@@ -1,6 +1,11 @@
 # QPlus Trading System — type `just` to see all commands.
 # (Install once: `winget install --id Casey.Just`)
 
+# Recipes default to `sh`, which Windows only has inside Git Bash — from PowerShell every recipe
+# fails before it starts. cmd passes comma-joined arguments through literally; PowerShell splits
+# them, which would break the `--ignore S101,...` line below.
+set windows-shell := ["cmd.exe", "/c"]
+
 # List all commands
 default:
     @just --list
