@@ -125,12 +125,38 @@ def test_ci_never_reimplements_a_gate_inline() -> None:
 
 
 def test_the_conditional_scope_uses_the_production_policy() -> None:
-    """The filter must import the modules the local tooling uses, not restate their paths."""
+    """The filter imports the modules the local tooling uses, and never restates policy.
+
+    Mutation left the push filter entirely: a push measures no mutants, and which targets the
+    one per-ticket run measures is decided by ``workflow.mutation`` itself inside the mutation
+    job (`just mutation-affected`) — the same production code path the local gate uses.
+    """
     scope = next(step for step in _jobs()["quality"]["steps"] if step.get("id") == "scope")
     run = str(scope["run"])
     assert "from workflow.classify import" in run
-    assert "from workflow.mutation import" in run
-    assert "select_fast_targets" in run
+    assert "select_fast_targets" not in run, "target selection must not live in the filter"
+
+    mutation_runs = " ".join(
+        str(step.get("run", "")) for step in _jobs()["mutation"]["steps"]
+    )
+    assert "just mutation-affected" in mutation_runs
+    assert "just mutation-critical" in mutation_runs
+
+
+def test_a_push_never_triggers_the_mutation_job() -> None:
+    """Mutation evidence is produced once per ticket by the cycle, on the head the review
+    certified — not on every intermediate push (three full runs on #177, one of them used)."""
+    scope = next(step for step in _jobs()["quality"]["steps"] if step.get("id") == "scope")
+    run = str(scope["run"])
+    assert 'needs_mutation, mutation_scope = False, ""' in run
+    # PyYAML reads a bare `on:` key as boolean True; normalize so the assertion reads plainly.
+    normalized = {str(key): value for key, value in _workflow().items()}
+    triggers = normalized.get("on") or normalized["True"]
+    assert "schedule" in triggers, "the weekly critical run keeps the global baseline honest"
+    assert triggers["workflow_dispatch"]["inputs"]["scope"]["options"] == [
+        "everything",
+        "mutation-affected",
+    ]
 
 
 def test_every_action_is_pinned_to_a_commit_sha() -> None:

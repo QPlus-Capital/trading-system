@@ -262,7 +262,7 @@ def test_the_verdict_marker_is_parsed_not_interpreted() -> None:
     )
     match = VERDICT.search(body)
     assert match and match["blocking"] == "2" and match["advisory"] == "1"
-    assert match["sha"] == "a3c889f00123"
+    assert match["sha"] == "a3c889f00123"  # pragma: allowlist secret
 
     for prose in (
         "looks good to me",
@@ -316,7 +316,8 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
     )
     monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
 
-    orchestrate.review(172, Path("some-worktree"), "feedc0ffee0123456789")
+    head = "feedc0ffee0123456789"  # pragma: allowlist secret
+    orchestrate.review(172, Path("some-worktree"), head)
 
     (argv,) = captured
     assert argv[1] == "-p"
@@ -390,13 +391,14 @@ def test_an_event_carries_its_facts_and_forbids_action(
     monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
     monkeypatch.setattr(orchestrate, "session_for", lambda issue: "session-abc")
 
+    head = "a3c889f00123"  # pragma: allowlist secret
     orchestrate.report(
-        177, "urteil", {"runde": 2, "blockierend": 0, "beratend": 3, "head": "a3c889f00123"}
+        177, "urteil", {"runde": 2, "blockierend": 0, "beratend": 3, "head": head}
     )
 
     (argv,) = captured
     prompt = argv[-1]
-    assert '"runde": 2' in prompt and '"head": "a3c889f00123"' in prompt
+    assert '"runde": 2' in prompt and '"head": "a3c889f00123"' in prompt  # pragma: allowlist secret
     assert "Führe keine Kommandos aus" in prompt
     assert "entscheidung" in prompt, "the rendering rule for decision events travels with it"
 
@@ -455,7 +457,8 @@ def test_a_verdict_for_another_commit_is_no_verdict_at_all(
     )
     monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
 
-    assert orchestrate.latest_verdict(158, "a46ae66f1b4cbf2df9e235a97acf439") is None
+    unrelated_head = "a46ae66f1b4cbf2df9e235a97acf439"  # pragma: allowlist secret
+    assert orchestrate.latest_verdict(158, unrelated_head) is None
 
 
 def test_the_gates_measure_the_branch_not_the_launching_checkout(
