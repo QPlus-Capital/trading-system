@@ -144,6 +144,21 @@ def test_committed_critical_baseline_is_complete_and_explained() -> None:
     assert all(item.reason.strip() for item in baseline.survivors)
 
 
+def test_warning_policy_tightens_the_measured_mutation_baseline() -> None:
+    baseline = load_baseline()
+    survivor_names = {item.name for item in baseline.survivors}
+
+    assert baseline.summary.total == 5_868
+    assert baseline.summary.killed == 5_333
+    assert baseline.summary.survived == 535
+    assert "also_copy" in baseline.change_explanation
+    assert "warnings-as-errors" in baseline.change_explanation
+    assert {
+        "research.portfolio.sizing.x__daily_diagnostics__mutmut_38",
+        "research.portfolio.sizing.x_simulate__mutmut_96",
+    }.isdisjoint(survivor_names)
+
+
 def test_baseline_rejects_an_unclassified_survivor(tmp_path: Path) -> None:
     baseline = tmp_path / "baseline.toml"
     baseline.write_text(
