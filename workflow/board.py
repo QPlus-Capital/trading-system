@@ -97,16 +97,25 @@ class Card:
         return None
 
 
+#: The only identities that may move a card. The contract assigns each transition to one of them
+#: (or to "any"); a caller must say which one it is, because the incident this guards against was
+#: real: a specify session pulled a card backwards out of a build that owned it.
+ACTORS = frozenset({"claude", "codex", "orchestrator"})
+
+
 @dataclass(frozen=True)
 class Contract:
     """The board half of the workflow contract."""
 
     statuses: tuple[str, ...]
     automated: frozenset[str]
-    transitions: frozenset[tuple[str, str]]
+    transitions: dict[tuple[str, str], str]
 
     def permits(self, source: str, target: str) -> bool:
         return (source, target) in self.transitions
+
+    def owner(self, source: str, target: str) -> str:
+        return self.transitions[(source, target)]
 
 
 def load_contract(path: Path = CONTRACT_PATH) -> Contract:
@@ -114,9 +123,10 @@ def load_contract(path: Path = CONTRACT_PATH) -> Contract:
     return Contract(
         statuses=tuple(str(s) for s in board["statuses"]),
         automated=frozenset(str(s) for s in board["automated_statuses"]),
-        transitions=frozenset(
-            (str(t["from"]), str(t["to"])) for t in board.get("transitions", [])
-        ),
+        transitions={
+            (str(t["from"]), str(t["to"])): str(t["actor"])
+            for t in board.get("transitions", [])
+        },
     )
 
 
@@ -175,10 +185,25 @@ def read_card(issue: int) -> Card:
     )
 
 
-def move(issue: int, target: str, *, contract: Contract | None = None) -> Card:
-    """Apply one permitted transition and verify it took effect."""
+def move(
+    issue: int,
+    target: str,
+    *,
+    actor: str,
+    reason: str | None = None,
+    contract: Contract | None = None,
+) -> Card:
+    """Apply one permitted transition as one named actor, and verify it took effect.
+
+    The contract assigns every transition to an actor; a move by anyone else is refused, whatever
+    the transition. The hand-back to `Specifying` additionally requires a reason, which lands on
+    the issue as a comment — without it the card walks backwards and the record says nothing,
+    which is exactly what happened on the first real hand-back.
+    """
 
     contract = contract or load_contract()
+    if actor not in ACTORS:
+        raise BoardError(f"{actor!r} is not an actor the contract knows: {sorted(ACTORS)}")
     if target not in contract.statuses:
         raise BoardError(f"{target!r} is not a status this project defines")
     if target in contract.automated:
@@ -191,6 +216,17 @@ def move(issue: int, target: str, *, contract: Contract | None = None) -> Card:
         raise BoardError(
             f"the contract does not permit {card.status!r} -> {target!r} "
             f"(issue #{issue} is in {card.status!r})"
+        )
+    owner = contract.owner(card.status, target)
+    if owner != "any" and actor != owner:
+        raise BoardError(
+            f"the contract assigns {card.status!r} -> {target!r} to {owner!r}; "
+            f"{actor!r} does not move this card"
+        )
+    if target == "Specifying" and not (reason or "").strip():
+        raise BoardError(
+            f"the hand-back of #{issue} to 'Specifying' requires a reason; it is posted on the "
+            f"issue so the record shows why the card walked backwards"
         )
     option = card.options.get(target)
     if option is None:
@@ -209,7 +245,26 @@ def move(issue: int, target: str, *, contract: Contract | None = None) -> Card:
             f"the status update did not take effect: issue #{issue} still reads "
             f"{confirmed.status!r}"
         )
+    if reason and reason.strip():
+        _comment(issue, f"{card.status} -> {target} by {actor}: {reason.strip()}")
     return confirmed
+
+
+def _comment(issue: int, body: str) -> None:
+    """Post the transition's reason on the issue; a lost reason is an error, not a shrug."""
+
+    completed = subprocess.run(
+        ["gh", "issue", "comment", str(issue), "--body", body],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=REPO_ROOT,
+    )
+    if completed.returncode != 0:
+        raise BoardError(
+            f"the move took effect but its reason did not reach issue #{issue}; "
+            "post it by hand so the record stays complete"
+        )
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -220,6 +275,8 @@ def _parser() -> argparse.ArgumentParser:
     write = sub.add_parser("move", help="apply one permitted status transition")
     write.add_argument("issue", type=int)
     write.add_argument("target")
+    write.add_argument("--actor", required=True, choices=sorted(ACTORS))
+    write.add_argument("--reason", default=None, help="posted on the issue with the move")
     return parser
 
 
@@ -229,7 +286,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         card = (
             read_card(args.issue)
             if args.command == "status"
-            else move(args.issue, args.target)
+            else move(args.issue, args.target, actor=args.actor, reason=args.reason)
         )
     except BoardError as error:
         print(f"REFUSED: {error}")

@@ -23,7 +23,10 @@ from workflow.classify import REPO_ROOT, changed_paths, classify_paths, load_mod
 
 CRITICAL_MAP_PATH = REPO_ROOT / "workflow" / "policy" / "critical-dependencies.toml"
 DEFAULT_OUTPUT = REPO_ROOT / "workflow" / "impact" / "test-map.json"
-_SOURCE_ROOTS = ("core", "research", "live", "monitoring", "scripts", "tests")
+# `workflow` is a source root like any other: its modules are mutation targets, so a changed test
+# must be traceable to them — the pre-consolidation list silently excluded them from every reach
+# answer. `scripts` no longer exists; keeping a stale root costs one directory probe, nothing more.
+_SOURCE_ROOTS = ("core", "research", "live", "monitoring", "tests", "workflow")
 
 
 @dataclass(frozen=True)
@@ -95,7 +98,10 @@ def _facts(path: Path, root: Path, known: frozenset[str]) -> ModuleFacts | None:
     rel = path.relative_to(root).as_posix()
     module = _module_name(rel)
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
+        # utf-8-sig: a BOM is invisible to Python's own tokenizer but breaks ast.parse on the
+        # decoded string — one BOM'd test file silently failed the whole reach analysis closed
+        # and selected every mutation target.
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=rel)
     except (OSError, SyntaxError, UnicodeDecodeError):
         return None
     imports: set[str] = set()
@@ -183,12 +189,28 @@ def changed_tests_exercise_targets(
     target_paths: Sequence[str],
     *,
     root: Path = REPO_ROOT,
-    critical_map: Path | None = CRITICAL_MAP_PATH,
 ) -> bool:
     """Return whether changed tests directly or transitively exercise any target.
 
     An unreadable test, an unknown dynamic test import, or an unknown dynamic production edge
     fails closed because static analysis cannot prove that the target is untouched.
+    """
+    return bool(targets_exercised_by_changed_tests(paths, target_paths, root=root))
+
+
+def targets_exercised_by_changed_tests(
+    paths: Sequence[str],
+    target_paths: Sequence[str],
+    *,
+    root: Path = REPO_ROOT,
+) -> tuple[str, ...]:
+    """Return exactly the targets the changed tests can reach, directly or transitively.
+
+    This is the target-level form of ``changed_tests_exercise_targets``, and it fails closed the
+    same way — but to the **complete** target list, because when static analysis cannot attribute
+    the reach, narrowing the answer would silently drop evidence: an unreadable changed test, an
+    unknown dynamic import in a test, or an unknown dynamic edge anywhere in production code all
+    return every target.
     """
     normalized_paths = {normalize(path) for path in paths}
     changed_tests = tuple(
@@ -198,22 +220,51 @@ def changed_tests_exercise_targets(
     )
     targets = tuple(sorted({normalize(path) for path in target_paths}))
     if not changed_tests or not targets:
-        return False
+        return ()
 
     python_files = _python_files(root)
     known = frozenset(_module_name(path.relative_to(root).as_posix()) for path in python_files)
-    target_modules = {_module_name(path) for path in targets}
+    test_facts: dict[str, ModuleFacts] = {}
     for path in changed_tests:
         facts = _facts(root / path, root, known)
         if facts is None or facts.has_unknown_dynamic_import:
-            return True
-        if _imports_any(facts.imports | facts.dynamic_targets, target_modules):
-            return True
+            return targets
+        test_facts[path] = facts
 
-    report = analyze_impact(targets, root=root, critical_map=critical_map)
-    if report.unknown_dynamic_edges:
-        return True
-    return bool(set(changed_tests) & set(report.transitive_tests))
+    production_facts = tuple(
+        facts
+        for candidate in python_files
+        if not candidate.relative_to(root).as_posix().startswith("tests/")
+        and (facts := _facts(candidate, root, known)) is not None
+    )
+    target_modules = {_module_name(target) for target in targets}
+    if any(facts.has_unknown_dynamic_import for facts in production_facts):
+        return targets
+    if any(facts.dynamic_targets & target_modules for facts in production_facts):
+        # A dynamic import of a target, even with a constant name, can fire from call paths the
+        # import graph does not show; attribution would be a guess, so every target is selected.
+        return targets
+
+    exercised: list[str] = []
+    for target in targets:
+        # The upward closure: the target's module plus every production module that imports it,
+        # directly or through intermediaries. A test reaches the target iff it imports any of them.
+        reaches = {_module_name(target)}
+        grew = True
+        while grew:
+            grew = False
+            for facts in production_facts:
+                if facts.module not in reaches and _imports_any(
+                    facts.imports | facts.dynamic_targets, reaches
+                ):
+                    reaches.add(facts.module)
+                    grew = True
+        if any(
+            _imports_any(facts.imports | facts.dynamic_targets, reaches)
+            for facts in test_facts.values()
+        ):
+            exercised.append(target)
+    return tuple(exercised)
 
 
 def analyze_impact(

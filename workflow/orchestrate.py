@@ -29,21 +29,32 @@ import re
 import shutil
 import subprocess
 import tempfile
-from collections.abc import Iterator, Sequence
+import time
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from workflow import board, gates
-from workflow.classify import REPO_ROOT, changed_paths
+from workflow.classify import REPO_ROOT, changed_paths, load_model
+from workflow.mutation import MutationTarget, load_policy, select_affected_targets
 
 #: The reviewer writes this into its summary comment. Counting a structured marker keeps the loop's
-#: exit condition out of the reviewer's prose.
+#: exit condition out of the reviewer's prose, and the sha names the commit the verdict certifies —
+#: without it, a round in which no new review landed silently reused the previous round's verdict.
 VERDICT = re.compile(
-    r"<!--\s*workflow-verdict\s+blocking:\s*(?P<blocking>\d+)\s+advisory:\s*(?P<advisory>\d+)\s*-->"
+    r"<!--\s*workflow-verdict\s+sha:\s*(?P<sha>[0-9a-fA-F]{7,40})\s+"
+    r"blocking:\s*(?P<blocking>\d+)\s+advisory:\s*(?P<advisory>\d+)\s*-->"
 )
 SESSION_MARKER = re.compile(r"<!--\s*claude-session:\s*(?P<session>[A-Za-z0-9_-]+)\s*-->")
 
 _MAX_ROUNDS = 2
+
+#: How long the cycle waits before failing closed, in seconds. Checks: the push-triggered CI
+#: (quality is ~3 minutes plus queueing). Mutation: one dispatched scoped run, well under the
+#: job's own 45-minute cap on the full set.
+_CHECKS_TIMEOUT = 25 * 60
+_MUTATION_TIMEOUT = 60 * 60
+_POLL_SECONDS = 30
 
 
 class OrchestrationError(RuntimeError):
@@ -141,13 +152,19 @@ def pull_request_for(issue: int) -> int:
     return int(entries[0]["number"])
 
 
-def latest_verdict(pull_request: int) -> Verdict | None:
-    """The most recent structured verdict on the pull request, or None if no review has landed.
+def latest_verdict(pull_request: int, head: str) -> Verdict | None:
+    """The newest structured verdict **for this head**, or None if none certifies it.
 
     A pull-request review lands in ``reviews``, not ``comments`` — the first version of this
     function read only ``comments`` and could therefore never see a verdict, so the loop's one
     exit condition was unreadable. Both lists are scanned newest-first, reviews before comments,
     because the reviewer submits a real review and a comment is only ever a fallback.
+
+    The sha requirement closes the second gap #177 exposed: a round in which the builder pushed
+    nothing produced no new review, and the loop reused the previous round's verdict as if it
+    were fresh. It happened to be a blocking verdict; in the other direction it would have been
+    a merge recommendation for an unreviewed commit. A verdict for another commit is not stale
+    context — it is no verdict at all.
     """
 
     raw = _run(["gh", "pr", "view", str(pull_request), "--json", "reviews,comments"])
@@ -156,7 +173,7 @@ def latest_verdict(pull_request: int) -> Verdict | None:
     comments = [str(entry.get("body", "")) for entry in payload.get("comments", [])]
     for body in [*reversed(reviews), *reversed(comments)]:
         match = VERDICT.search(body)
-        if match:
+        if match and head.lower().startswith(match["sha"].lower()):
             return Verdict(int(match["blocking"]), int(match["advisory"]))
     return None
 
@@ -173,34 +190,48 @@ def session_for(issue: int) -> str | None:
     return match["session"] if match else None
 
 
-def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
-    """Reach the operator in the ticket's own chat, and on the desktop as the reliable signal.
+def report(
+    issue: int,
+    kind: str,
+    facts: Mapping[str, object],
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Send one structured progress event to the ticket's chat, which narrates it in German.
 
-    The operator never has to decide anything inside GitHub; the chat carries the detail.
+    The orchestrator computes facts; the ticket's own session turns them into a few plain
+    sentences the operator can follow. A bare status line proved worse than nothing on #177:
+    three of them, hours apart, contradicted one another because none said which commit or round
+    it described. Every event therefore carries its context, and the session is told to narrate
+    — never to act. The operator never has to decide anything inside GitHub; the chat carries
+    the detail, and a decision event is the last event a run sends, so it is never buried under
+    routine progress lines.
     """
 
-    print(f"\n>>> #{issue}: {message}")
+    payload = json.dumps({"issue": issue, "ereignis": kind, **dict(facts)}, ensure_ascii=False)
+    print(f"\n>>> #{issue} [{kind}] {payload}")
     if dry_run:
         return
     session = session_for(issue)
-    if session:
-        subprocess.run(
-            [
-                _executable("claude"),
-                "-p",
-                "--resume",
-                session,
-                (
-                    f"[Orchestrator] Status zu #{issue}: {message} — nur zur Kenntnis für den "
-                    "Operator, keine Aktion nötig. Führe keine Kommandos aus und antworte "
-                    "höchstens mit einem kurzen Satz."
-                ),
-            ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    if session is None:
+        return
+    prompt = (
+        f"[Orchestrator-Ereignis] {payload}\n"
+        "Du bist die Ticket-Session dieses Issues. Formuliere aus dem Ereignis zwei bis fünf "
+        "deutsche Sätze für den Operator: was gerade passiert ist, was es bedeutet, und was als "
+        "Nächstes geschieht. Führe keine Kommandos aus und beginne keine Arbeit. Enthält das "
+        "Ereignis das Feld 'entscheidung', stelle die Entscheidung deutlich abgesetzt dar — die "
+        "Frage, die Optionen, deine Empfehlung, und was passiert, wenn der Operator nichts tut. "
+        "Enthält es das Feld 'kommando', nenne das Kommando in einer eigenen Zeile. Keine "
+        "leeren Abschnitte, keine Überschriften um des Formats willen."
+    )
+    subprocess.run(
+        [_executable("claude"), "-p", "--resume", session, prompt],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 #: What the headless reviewer may do without anyone there to approve: read the ticket and the pull
@@ -221,12 +252,14 @@ _REVIEWER_TOOLS = (
     "Bash(git diff:*)",
     "Bash(git grep:*)",
     "Bash(git branch:*)",
+    "Bash(gh run view:*)",
+    "Bash(gh run list:*)",
     "Bash(uv run pytest:*)",
     "Bash(uv run python:*)",
 )
 
 
-def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
+def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> None:
     """Start the reviewer as a separate process, with nothing but the issue number.
 
     A fresh process is what makes the review independent: it cannot inherit what the builder meant,
@@ -245,8 +278,9 @@ def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
         f"Review the open pull request for this issue. The branch under review is checked out "
         f"read-only at {worktree} — read source and tests and run commands there, never in this "
         "checkout, and edit nothing. Post the review on the pull request with `gh pr review`. End "
-        "its summary with <!-- workflow-verdict blocking:N advisory:M --> where N counts Blocker "
-        "and Defect findings and M counts Suspected defect and Note findings."
+        f"its summary with <!-- workflow-verdict sha:{head[:12]} blocking:N advisory:M --> where "
+        "the sha names the commit you reviewed, N counts Blocker and Defect findings, and M "
+        "counts Suspected defect and Note findings."
     )
     # The prompt sits directly after -p: --allowedTools is variadic and would otherwise swallow
     # it as one more tool name, leaving the reviewer with an empty task — observed on the first
@@ -266,20 +300,20 @@ def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
     subprocess.run(command, cwd=REPO_ROOT, check=False)
 
 
-def hand_back(issue: int, verdict: Verdict, *, dry_run: bool = False) -> None:
-    """Return blocking findings to the builder. Claude never edits the branch it reviewed.
+def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> None:
+    """Return blocking evidence to the builder. Claude never edits the branch it reviewed.
 
-    ``codex exec`` defaults to a sandbox that can neither push nor reach the network, so a fix
-    round would silently end at the commit. The builder needs the same rights it had in its own
-    session: the operator sanctioned exactly this local automation, and the safety hook still
-    blocks live trading, secrets, and direct pushes to ``main`` underneath it.
+    The reason names what is red — review findings, a red gate, red CI, or a red mutation run —
+    and the instruction tail is the same contract every time. ``codex exec`` defaults to a sandbox
+    that can neither push nor reach the network, so a fix round would silently end at the commit.
+    The builder needs the same rights it had in its own session: the operator sanctioned exactly
+    this local automation, and the safety hook still blocks live trading, secrets, and direct
+    pushes to ``main`` underneath it.
     """
 
     prompt = (
-        f"The review of #{issue} reported {verdict.blocking} blocking finding(s) on its pull "
-        "request. Read that review with `gh pr view --json reviews`, fix every blocking finding "
-        "— with a regression test that fails before the fix where the finding is in code — push "
-        "once, and move the card back to Reviewing."
+        f"{reason} Fix every blocking point on #{issue} — with a regression test that fails "
+        "before the fix where it is in code — push once, and move the card back to Reviewing."
     )
     command = [
         _executable("codex"),
@@ -330,8 +364,146 @@ def _branch_worktree(branch: str) -> Iterator[Path]:
         )
 
 
+def _ensure_pull_request_title(issue: int, pull_request: int) -> None:
+    """Correct a pull-request title missing its ``#<issue> - `` prefix.
+
+    The contract's ``[naming]`` rule was violated twice in a row while it lived in prose alone;
+    the cycle reads the title anyway, so it now enforces the rule instead of hoping.
+    """
+
+    raw = _run(["gh", "pr", "view", str(pull_request), "--json", "title"])
+    title = str(json.loads(raw or "{}").get("title") or "").strip()
+    prefix = f"#{issue} - "
+    if title.startswith(prefix):
+        return
+    stripped = re.sub(rf"^#?{issue}\s*[-–—:]*\s*", "", title).strip() or title
+    corrected = f"{prefix}{stripped}"
+    _run(["gh", "pr", "edit", str(pull_request), "--title", corrected])
+    print(f"corrected the pull-request title to {corrected!r}")
+
+
+def _pushed_head(branch: str) -> str:
+    """The branch tip, proven identical locally and on the remote.
+
+    Everything downstream — CI, the review, the mutation evidence — certifies one commit. If the
+    local branch and the remote disagree, part of that evidence would describe a commit nobody
+    merges, so the cycle stops instead of certifying an ambiguity.
+    """
+
+    local = _run(["git", "rev-parse", branch])
+    listed = _run(["git", "ls-remote", "origin", f"refs/heads/{branch}"])
+    remote = listed.split()[0] if listed else ""
+    if remote != local:
+        raise OrchestrationError(
+            f"branch {branch!r} is not pushed as it stands: local {local[:12]}, "
+            f"remote {remote[:12] or 'absent'}"
+        )
+    return local
+
+
+def _check_state(entry: Mapping[str, object]) -> tuple[bool, bool, str]:
+    """(still pending, failed, name) for one rollup entry, check runs and contexts alike."""
+
+    name = str(entry.get("name") or entry.get("context") or "check")
+    conclusion = str(entry.get("conclusion") or "").upper()
+    if conclusion:
+        return False, conclusion not in {"SUCCESS", "SKIPPED", "NEUTRAL"}, name
+    state = str(entry.get("status") or entry.get("state") or "").upper()
+    if state in {"SUCCESS", "SKIPPED", "NEUTRAL"}:
+        return False, False, name
+    if state in {"FAILURE", "ERROR"}:
+        return False, True, name
+    return True, False, name
+
+
+def _await_settled_checks(pull_request: int, head: str) -> list[str]:
+    """Wait until no check is still running on the head, then return the red ones.
+
+    No verdict while anything runs: a review posted beside a pending check can be contradicted
+    minutes later — the operator watched exactly that contradiction arrive as three conflicting
+    status messages on one ticket. An empty rollup keeps waiting and times out rather than
+    passing: no checks is not the same as green checks.
+    """
+
+    deadline = time.monotonic() + _CHECKS_TIMEOUT
+    while time.monotonic() < deadline:
+        raw = _run(
+            ["gh", "pr", "view", str(pull_request), "--json", "headRefOid,statusCheckRollup"]
+        )
+        payload = json.loads(raw or "{}")
+        remote = str(payload.get("headRefOid") or "")
+        if remote and remote != head:
+            raise OrchestrationError(
+                f"the branch moved while the cycle ran: certifying {head[:12]}, "
+                f"found {remote[:12]}"
+            )
+        rollup = payload.get("statusCheckRollup") or []
+        states = [_check_state(entry) for entry in rollup]
+        if rollup and not any(pending for pending, _, _ in states):
+            return sorted({name for pending, is_failed, name in states if is_failed})
+        time.sleep(_POLL_SECONDS)
+    raise OrchestrationError("CI did not settle in time; no verdict is issued while checks run")
+
+
+def _reachable_mutation_targets(tree: Path) -> tuple[list[MutationTarget], str]:
+    """The mutation targets the branch diff can reach, measured on the branch worktree."""
+
+    return select_affected_targets(
+        changed_paths("origin/main", root=tree), load_policy(), load_model(), root=tree
+    )
+
+
+def _mutation_evidence(branch: str, head: str, *, dry_run: bool = False) -> tuple[str, str]:
+    """Dispatch the one scoped mutation measurement for this head and wait for its conclusion.
+
+    Exactly one measurement per certified head: pushes no longer trigger mutation in CI, so the
+    evidence is produced here, after the review is clean, on the commit the review certified.
+    Nothing is reported ready while it runs.
+    """
+
+    if dry_run:
+        print(f"[dry-run] gh workflow run ci.yml --ref {branch} -f scope=mutation-affected")
+        return "success", "dry-run"
+    _run(["gh", "workflow", "run", "ci.yml", "--ref", branch, "-f", "scope=mutation-affected"])
+    deadline = time.monotonic() + _MUTATION_TIMEOUT
+    while time.monotonic() < deadline:
+        raw = _run(
+            [
+                "gh",
+                "run",
+                "list",
+                "--workflow",
+                "ci.yml",
+                "--branch",
+                branch,
+                "--event",
+                "workflow_dispatch",
+                "--limit",
+                "5",
+                "--json",
+                "databaseId,headSha,status,conclusion",
+            ]
+        )
+        for entry in json.loads(raw or "[]"):
+            if str(entry.get("headSha")) != head:
+                continue
+            if str(entry.get("status")) == "completed":
+                return (
+                    str(entry.get("conclusion") or "failure"),
+                    f"run {entry.get('databaseId')}",
+                )
+            break
+        time.sleep(_POLL_SECONDS)
+    raise OrchestrationError(f"the mutation run for {head[:12]} did not complete in time")
+
+
 def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -> int:
-    """One issue, from a pushed branch to a verdict the operator can act on."""
+    """One issue, from a pushed branch to a verdict the operator can act on.
+
+    The round is strictly ordered — gates, settled CI, review, then one mutation measurement on
+    the certified head — and nothing later starts while anything earlier still runs. "Ready to
+    merge" therefore means: every piece of evidence exists, is green, and describes this commit.
+    """
 
     card = board.read_card(issue)
     if card.status not in {"Implementing", "Reviewing"}:
@@ -339,48 +511,209 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
             f"issue #{issue} is in {card.status!r}; the cycle starts once the branch is pushed"
         )
     branch = branch_for(issue)
+    pull_request = 0 if dry_run else pull_request_for(issue)
+    if not dry_run:
+        _ensure_pull_request_title(issue, pull_request)
+    stale_head: str | None = None
 
     for round_number in range(1, max_rounds + 1):
+        head = "dry-run" if dry_run else _pushed_head(branch)
+        if stale_head is not None and head == stale_head:
+            if not dry_run:
+                board.move(issue, "Blocked", actor="orchestrator")
+            report(
+                issue,
+                "blockiert",
+                {
+                    "grund": "der Builder hat nach der Rückgabe nichts gepusht",
+                    "head": head[:12],
+                    "entscheidung": (
+                        "Der Zyklus stoppt, statt denselben Stand erneut zu messen. Optionen: "
+                        "im Codex-Chat nachsehen, warum kein Push kam, und den Zyklus danach "
+                        "neu starten — oder das Ticket zurück in die Spezifikation geben. Ohne "
+                        "Aktion bleibt die Karte auf Blocked."
+                    ),
+                },
+                dry_run=dry_run,
+            )
+            return 1
+        report(
+            issue,
+            "runde",
+            {"runde": round_number, "max_runden": max_rounds, "head": head[:12]},
+            dry_run=dry_run,
+        )
+        mutation_targets: list[MutationTarget] = []
+        red_checks: list[str] = []
         with _branch_worktree(branch) as tree:
             risk, results = gates.run(
                 changed_paths("origin/main", root=tree), card.risk_class, root=tree
             )
             print(gates.render(risk, results))
             failed = [result for result in results if result.exit_status not in (0, None)]
-            if failed:
-                hand_back(issue, Verdict(len(failed), 0), dry_run=dry_run)
-                continue
+            if not failed:
+                mutation_targets, _ = _reachable_mutation_targets(tree)
+                red_checks = [] if dry_run else _await_settled_checks(pull_request, head)
+                if not red_checks:
+                    if not dry_run:
+                        board.move(issue, "Reviewing", actor="orchestrator")
+                    report(
+                        issue,
+                        "review",
+                        {"runde": round_number, "gates": "grün", "ci": "grün", "head": head[:12]},
+                        dry_run=dry_run,
+                    )
+                    review(issue, tree, head, dry_run=dry_run)
 
-            if not dry_run:
-                board.move(issue, "Reviewing")
-            review(issue, tree, dry_run=dry_run)
-
-        verdict = None if dry_run else latest_verdict(pull_request_for(issue))
-        if verdict is None:
-            notify(
+        if failed:
+            if round_number == max_rounds:
+                break
+            reason = (
+                f"The gates failed on {len(failed)} command(s) for #{issue}; reproduce with "
+                "`just gates` in the ticket worktree."
+            )
+            report(
                 issue,
-                "das Review hat kein Urteil hinterlassen; bitte anschauen",
+                "rückgabe",
+                {"runde": round_number, "grund": f"Gates rot: {len(failed)} Kommandos"},
+                dry_run=dry_run,
+            )
+            hand_back(issue, reason, dry_run=dry_run)
+            stale_head = head
+            continue
+        if red_checks:
+            if round_number == max_rounds:
+                break
+            report(
+                issue,
+                "rückgabe",
+                {"runde": round_number, "grund": f"CI rot: {', '.join(red_checks)}"},
+                dry_run=dry_run,
+            )
+            hand_back(
+                issue,
+                f"CI is red on {', '.join(red_checks)} for the pushed head of #{issue}.",
+                dry_run=dry_run,
+            )
+            stale_head = head
+            continue
+
+        verdict = None if dry_run else latest_verdict(pull_request, head)
+        if verdict is None:
+            report(
+                issue,
+                "kein-urteil",
+                {
+                    "runde": round_number,
+                    "head": head[:12],
+                    "entscheidung": (
+                        "Das Review hat für diesen Stand kein Urteil hinterlassen; ohne Urteil "
+                        "wird nichts als mergefähig gemeldet. Optionen: den Zyklus erneut "
+                        "starten oder das Review auf dem Pull Request selbst ansehen. Ohne "
+                        "Aktion bleibt die Karte auf Reviewing."
+                    ),
+                    "kommando": f"uv run python -m workflow.orchestrate run {issue}",
+                },
                 dry_run=dry_run,
             )
             return 1
+        report(
+            issue,
+            "urteil",
+            {
+                "runde": round_number,
+                "blockierend": verdict.blocking,
+                "beratend": verdict.advisory,
+                "head": head[:12],
+            },
+            dry_run=dry_run,
+        )
         if verdict.clean:
-            note = ""
-            if verdict.advisory:
-                note = f" ({verdict.advisory} nicht-blockierende Punkte zum Lesen)"
-            notify(issue, f"sauber und bereit zum Mergen{note}", dry_run=dry_run)
+            if mutation_targets:
+                report(
+                    issue,
+                    "mutation",
+                    {
+                        "phase": "eine Messung auf dem zertifizierten Stand läuft",
+                        "ziele": len(mutation_targets),
+                        "dauer": "etwa 5 bis 25 Minuten",
+                    },
+                    dry_run=dry_run,
+                )
+                conclusion, reference = _mutation_evidence(branch, head, dry_run=dry_run)
+                if conclusion != "success":
+                    if round_number == max_rounds:
+                        break
+                    if not dry_run:
+                        board.move(issue, "Implementing", actor="orchestrator")
+                    report(
+                        issue,
+                        "rückgabe",
+                        {"runde": round_number, "grund": f"Mutationsmessung rot ({reference})"},
+                        dry_run=dry_run,
+                    )
+                    hand_back(
+                        issue,
+                        f"The dispatched mutation measurement ({reference}) is red on the "
+                        f"reviewed head of #{issue}; read its mutation-result artifact and "
+                        "tighten or fix from measured results only.",
+                        dry_run=dry_run,
+                    )
+                    stale_head = head
+                    continue
+                mutation_status = f"gemessen und grün ({reference})"
+            else:
+                mutation_status = "nicht nötig, kein Ziel erreichbar"
+            report(
+                issue,
+                "fertig",
+                {
+                    "status": "sauber und bereit zum Mergen",
+                    "runde": round_number,
+                    "beratend": verdict.advisory,
+                    "mutation": mutation_status,
+                    "head": head[:12],
+                    "kommando": f"Squash-Merge auf GitHub, danach: just finish {issue}",
+                },
+                dry_run=dry_run,
+            )
             return 0
 
         if round_number == max_rounds:
             break
         if not dry_run:
-            board.move(issue, "Implementing")
-        hand_back(issue, verdict, dry_run=dry_run)
+            board.move(issue, "Implementing", actor="orchestrator")
+        report(
+            issue,
+            "rückgabe",
+            {
+                "runde": round_number,
+                "grund": f"{verdict.blocking} blockierende Befunde aus dem Review",
+            },
+            dry_run=dry_run,
+        )
+        hand_back(
+            issue,
+            f"The review of #{issue} reported {verdict.blocking} blocking finding(s) on its "
+            "pull request. Read that review with `gh pr view --json reviews`.",
+            dry_run=dry_run,
+        )
+        stale_head = head
 
     if not dry_run:
-        board.move(issue, "Blocked")
-    notify(
+        board.move(issue, "Blocked", actor="orchestrator")
+    report(
         issue,
-        f"nach {max_rounds} Fix-Runden nicht sauber; braucht deine Entscheidung",
+        "blockiert",
+        {
+            "grund": f"nach {max_rounds} Fix-Runden nicht sauber",
+            "entscheidung": (
+                "Die Schleife hat ihren Deckel erreicht; was offen ist, steht im letzten Review "
+                "auf dem Pull Request. Optionen: die Spezifikation ergänzen und neu freigeben, "
+                "den offenen Punkt selbst entscheiden, oder das Ticket zurückstellen. Ohne "
+                "Aktion bleibt die Karte auf Blocked."
+            ),
+        },
         dry_run=dry_run,
     )
     return 1

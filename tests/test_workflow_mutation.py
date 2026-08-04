@@ -30,10 +30,70 @@ from workflow.mutation import (
     mutation_executable,
     parse_mutmut_results,
     policy_fingerprint,
+    select_affected_targets,
     select_fast_targets,
     summary_lines,
     write_report,
 )
+
+
+def test_a_pytest_config_change_selects_the_whole_target_set() -> None:
+    """Mutmut copies the pytest configuration into every mutant tree, so a change to it changes
+    the conditions of every run — issue #177 measured exactly that. Narrowing here would miss
+    kills in modules the diff never touched."""
+    policy = load_policy()
+    for path in ("pyproject.toml", "tests/conftest.py"):
+        targets, reason = select_affected_targets([path], policy, load_model())
+        assert [target.id for target in targets] == [target.id for target in policy.targets]
+        assert "every mutant tree" in reason
+
+
+def test_a_changed_test_selects_the_targets_it_reaches_and_nothing_else() -> None:
+    """The #177 shape: a test on the live CLI reaches the live targets transitively, while the
+    research targets stay unmeasured — the weekly critical run covers those."""
+    policy = load_policy()
+    targets, _ = select_affected_targets(
+        ["tests/test_workflow_finish.py"], policy, load_model()
+    )
+    selected = {target.path for target in targets}
+    assert "workflow/finish.py" in selected
+    assert "research/portfolio/sizing.py" not in selected
+
+
+def test_a_documentation_change_selects_no_target() -> None:
+    policy = load_policy()
+    targets, reason = select_affected_targets(["README.md"], policy, load_model())
+    assert targets == []
+    assert "no changed module" in reason
+
+
+def test_the_scoped_check_fails_in_both_directions_within_what_it_measured() -> None:
+    """A scoped run must not absorb a killed baseline survivor silently (#177), and must not
+    accept a new survivor — but only within the mutants it actually measured."""
+    baseline = load_baseline()
+    known = [item.name for item in baseline.survivors[:2]]
+    report = MutationReport(
+        "affected",
+        ("some-target",),
+        baseline.policy_fingerprint,
+        {
+            known[0]: "killed",  # baseline survivor now killed -> tighten
+            known[1]: "survived",  # still explained -> fine
+            "pkg.module.x_new__mutmut_1": "survived",  # unexplained -> fail
+            "pkg.module.x_new__mutmut_2": "killed",
+        },
+    )
+    issues = mutation_module._check_scoped(report, baseline)
+    assert any("ratchet must be tightened" in issue and known[0] in issue for issue in issues)
+    assert any("unexplained" in issue and "x_new__mutmut_1" in issue for issue in issues)
+
+    clean = MutationReport(
+        "affected",
+        ("some-target",),
+        baseline.policy_fingerprint,
+        {known[1]: "survived", "pkg.module.x_new__mutmut_2": "killed"},
+    )
+    assert mutation_module._check_scoped(clean, baseline) == []
 
 
 def test_policy_names_every_required_critical_scope() -> None:
@@ -145,12 +205,14 @@ def test_committed_critical_baseline_is_complete_and_explained() -> None:
 
 
 def test_warning_policy_tightens_the_measured_mutation_baseline() -> None:
+    """The two survivors the warnings-as-errors policy killed must never re-enter the baseline,
+    and the mechanism stays on record. Totals are deliberately not frozen: every measured
+    regeneration moves them, and the exact survivor set is the binding comparison."""
     baseline = load_baseline()
     survivor_names = {item.name for item in baseline.survivors}
 
-    assert baseline.summary.total == 5_868
-    assert baseline.summary.killed == 5_333
-    assert baseline.summary.survived == 535
+    assert "research.portfolio.sizing.x__daily_diagnostics__mutmut_38" not in survivor_names
+    assert "research.portfolio.sizing.x_simulate__mutmut_96" not in survivor_names
     assert "also_copy" in baseline.change_explanation
     assert "warnings-as-errors" in baseline.change_explanation
     assert {

@@ -260,8 +260,11 @@ hunts, so the review confirms rather than discovers:
 - fail-open: which error path proceeds where it should refuse?
 - money path: any `float` where section 1 requires `Decimal`?
 
-If the specification is wrong, incomplete, or unbuildable, Codex does not guess: the card returns to
-`Specifying`, the gap is stated in an issue comment, and phase 2 runs again.
+If the specification is wrong, incomplete, or unbuildable, Codex does not guess: the card returns
+to `Specifying` with `just board move <issue> Specifying --actor codex --reason "<the gap>"` —
+the board refuses the move without the reason and posts it on the issue — and phase 2 runs again.
+Every board move names its actor; the contract assigns each transition to one, and a card in a
+build cannot be pulled backwards by anyone else.
 
 ### Phase 4 — Review
 
@@ -274,11 +277,25 @@ build session ended before step 10, or to repeat a cycle deliberately.
 ```
 pull request open → builder starts the cycle (operator as fallback)
   ↓  gates run against the branch under review
+  ↓  the push CI settles — no verdict while any check still runs
   ↓  Claude reviews in a fresh process (the issue number is the only input)
   ↓  review submitted as a real pull-request review
 Blocker or Defect? ──yes──→ back to Codex, fix, push ──→ review again  (at most 2 rounds)
-  └──no──→ notification in the ticket chat: "#101 ist sauber und bereit zum Mergen"
+  └──no──→ one scoped mutation measurement on the certified head, awaited
+              └──green──→ notification in the ticket chat: "#101 ist sauber und bereit zum Mergen"
 ```
+
+**Evidence never overlaps.** The round is strictly ordered — gates, settled CI, review, then the
+mutation measurement — and nothing later starts while anything earlier still runs. "Ready to
+merge" therefore means every piece of evidence exists, is green, and describes the one pushed
+commit the cycle certified. A red mutation measurement is a blocking finding like any other: it
+consumes a fix round, and at the round cap it blocks.
+
+**The cycle narrates as it goes.** Every phase change — round started, review running, verdict,
+hand-back, mutation measurement, ready or blocked — reaches the ticket's Claude chat as a
+structured event carrying its round, head commit, and counts; the session narrates it in German
+for the operator and never acts on it. A decision event is the last event a run sends, so a
+decision is never buried under routine progress lines.
 
 **Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
 in the full program:
@@ -446,10 +463,16 @@ between segments, embargo and gap, and the final boundary.
 | `just check-invariants` | the critical test files | R3 |
 | `just mutation` | mutation on **changed** critical modules | R3 |
 
-**In CI, once per pull request:** one Linux job running `check` and the property replay — the
-independent confirmation that green is not merely local. A Windows job runs **only** when the MT5
-boundary is touched. Mutation runs in CI until the development platform moves to macOS (issue #150),
-then locally only.
+**In CI, on every push:** one Linux job running `check` and the property replay — the independent
+confirmation that green is not merely local. A Windows job runs **only** when the MT5 boundary is
+touched. **Mutation is measured once per ticket, not once per push:** the review cycle dispatches
+one run (`workflow_dispatch`, `scope=mutation-affected`) on the head the review certified,
+restricted to the targets the diff can reach — directly, through a changed test's imports, or
+totally, because a changed pytest configuration is copied into every mutant tree and therefore
+reaches every target. A weekly scheduled run measures the complete critical set on `main` and
+keeps the global baseline honest; within a scoped run the ratchet still fails closed in both
+directions, but only over what it measured. Mutation remains a CI job until the development
+platform moves to macOS (issue #150).
 
 **No gate may be weakened to make a branch pass.** Prohibited: bypass or skip flags; broad
 `# type: ignore`, `# noqa`, or `pytest.mark.skip` introduced to hide a failure; widening a per-file
@@ -463,10 +486,16 @@ it. A gate that cannot bind is worse than no gate, because the report then says 
   Operator-facing *runtime* output (research stage banners, the dashboard, the orchestrator's
   notifications) is German by decision; this is the only exception and is scoped to strings a human
   reads at a terminal.
-- **Every specifying and review session ends its chat output with a summary in German**, answering
-  in order: was gemacht wird · was du entscheiden musst · wo es klemmt · was als Nächstes passiert.
-  "Nichts" is an answer and is stated when true. The summary is appended to the full output, never
-  substituted for it, and nothing committed changes language because of it.
+- **Every session that reports to the operator closes in German, guided by three rules, not a
+  template.** First: two to five plain sentences — what happened, what it means, what comes next —
+  weighted for the phase (specifying: what the ticket demands and what was decided alone; review:
+  what was found and what it means for the merge; after a merge: what landed and what follows).
+  Second: **a decision the operator must take is set off visibly** — the question, the options, a
+  recommendation, and what happens if nothing is decided — never buried in prose; when the
+  operator must run something, the exact command stands on its own line. Third: no heading over
+  an empty section — a part with nothing to say is dropped, not answered with "Nichts". The
+  closing note is appended to the full output, never substituted for it, and nothing committed
+  changes language because of it.
 - **Docstrings describe the current state, never history.** No "formerly / previously / ported
   from", no dead code kept just in case.
 - Documentation is part of the change. The module map in `docs/architecture.md` must match reality.
@@ -494,7 +523,7 @@ classifier, the gates and transitions from the contract, and the findings from t
 |---|---|
 | `just classify` | the risk class of this branch, and why |
 | `just gates` | runs exactly the gates that class requires, and prints the evidence table for the pull request |
-| `just board status <issue>` / `just board move <issue> "<Status>"` | reads or moves one card; refuses any transition the contract does not list |
+| `just board status <issue>` / `just board move <issue> "<Status>" --actor <who>` | reads or moves one card; refuses any transition the contract does not list, and any actor the contract does not assign to it. The hand-back to `Specifying` additionally requires `--reason`, which lands on the issue as a comment |
 | `just finish <issue>` | verifies a merged ticket and removes only that ticket's worktree and branch traces |
 | `uv run python -m workflow.orchestrate run <issue>` | the review cycle: gates → review → fix → review, capped, then one notification |
 
