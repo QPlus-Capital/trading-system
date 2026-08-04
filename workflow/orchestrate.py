@@ -190,34 +190,48 @@ def session_for(issue: int) -> str | None:
     return match["session"] if match else None
 
 
-def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
-    """Reach the operator in the ticket's own chat, and on the desktop as the reliable signal.
+def report(
+    issue: int,
+    kind: str,
+    facts: Mapping[str, object],
+    *,
+    dry_run: bool = False,
+) -> None:
+    """Send one structured progress event to the ticket's chat, which narrates it in German.
 
-    The operator never has to decide anything inside GitHub; the chat carries the detail.
+    The orchestrator computes facts; the ticket's own session turns them into a few plain
+    sentences the operator can follow. A bare status line proved worse than nothing on #177:
+    three of them, hours apart, contradicted one another because none said which commit or round
+    it described. Every event therefore carries its context, and the session is told to narrate
+    — never to act. The operator never has to decide anything inside GitHub; the chat carries
+    the detail, and a decision event is the last event a run sends, so it is never buried under
+    routine progress lines.
     """
 
-    print(f"\n>>> #{issue}: {message}")
+    payload = json.dumps({"issue": issue, "ereignis": kind, **dict(facts)}, ensure_ascii=False)
+    print(f"\n>>> #{issue} [{kind}] {payload}")
     if dry_run:
         return
     session = session_for(issue)
-    if session:
-        subprocess.run(
-            [
-                _executable("claude"),
-                "-p",
-                "--resume",
-                session,
-                (
-                    f"[Orchestrator] Status zu #{issue}: {message} — nur zur Kenntnis für den "
-                    "Operator, keine Aktion nötig. Führe keine Kommandos aus und antworte "
-                    "höchstens mit einem kurzen Satz."
-                ),
-            ],
-            cwd=REPO_ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    if session is None:
+        return
+    prompt = (
+        f"[Orchestrator-Ereignis] {payload}\n"
+        "Du bist die Ticket-Session dieses Issues. Formuliere aus dem Ereignis zwei bis fünf "
+        "deutsche Sätze für den Operator: was gerade passiert ist, was es bedeutet, und was als "
+        "Nächstes geschieht. Führe keine Kommandos aus und beginne keine Arbeit. Enthält das "
+        "Ereignis das Feld 'entscheidung', stelle die Entscheidung deutlich abgesetzt dar — die "
+        "Frage, die Optionen, deine Empfehlung, und was passiert, wenn der Operator nichts tut. "
+        "Enthält es das Feld 'kommando', nenne das Kommando in einer eigenen Zeile. Keine "
+        "leeren Abschnitte, keine Überschriften um des Formats willen."
+    )
+    subprocess.run(
+        [_executable("claude"), "-p", "--resume", session, prompt],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
 #: What the headless reviewer may do without anyone there to approve: read the ticket and the pull
@@ -507,13 +521,28 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         if stale_head is not None and head == stale_head:
             if not dry_run:
                 board.move(issue, "Blocked", actor="orchestrator")
-            notify(
+            report(
                 issue,
-                "der Builder hat nach der Rückgabe nichts gepusht; der Zyklus stoppt, statt "
-                "denselben Stand erneut zu messen — braucht deine Entscheidung",
+                "blockiert",
+                {
+                    "grund": "der Builder hat nach der Rückgabe nichts gepusht",
+                    "head": head[:12],
+                    "entscheidung": (
+                        "Der Zyklus stoppt, statt denselben Stand erneut zu messen. Optionen: "
+                        "im Codex-Chat nachsehen, warum kein Push kam, und den Zyklus danach "
+                        "neu starten — oder das Ticket zurück in die Spezifikation geben. Ohne "
+                        "Aktion bleibt die Karte auf Blocked."
+                    ),
+                },
                 dry_run=dry_run,
             )
             return 1
+        report(
+            issue,
+            "runde",
+            {"runde": round_number, "max_runden": max_rounds, "head": head[:12]},
+            dry_run=dry_run,
+        )
         mutation_targets: list[MutationTarget] = []
         red_checks: list[str] = []
         with _branch_worktree(branch) as tree:
@@ -528,22 +557,39 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 if not red_checks:
                     if not dry_run:
                         board.move(issue, "Reviewing", actor="orchestrator")
+                    report(
+                        issue,
+                        "review",
+                        {"runde": round_number, "gates": "grün", "ci": "grün", "head": head[:12]},
+                        dry_run=dry_run,
+                    )
                     review(issue, tree, head, dry_run=dry_run)
 
         if failed:
             if round_number == max_rounds:
                 break
-            hand_back(
-                issue,
+            reason = (
                 f"The gates failed on {len(failed)} command(s) for #{issue}; reproduce with "
-                "`just gates` in the ticket worktree.",
+                "`just gates` in the ticket worktree."
+            )
+            report(
+                issue,
+                "rückgabe",
+                {"runde": round_number, "grund": f"Gates rot: {len(failed)} Kommandos"},
                 dry_run=dry_run,
             )
+            hand_back(issue, reason, dry_run=dry_run)
             stale_head = head
             continue
         if red_checks:
             if round_number == max_rounds:
                 break
+            report(
+                issue,
+                "rückgabe",
+                {"runde": round_number, "grund": f"CI rot: {', '.join(red_checks)}"},
+                dry_run=dry_run,
+            )
             hand_back(
                 issue,
                 f"CI is red on {', '.join(red_checks)} for the pushed head of #{issue}.",
@@ -554,20 +600,58 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
 
         verdict = None if dry_run else latest_verdict(pull_request, head)
         if verdict is None:
-            notify(
+            report(
                 issue,
-                "das Review hat kein Urteil hinterlassen; bitte anschauen",
+                "kein-urteil",
+                {
+                    "runde": round_number,
+                    "head": head[:12],
+                    "entscheidung": (
+                        "Das Review hat für diesen Stand kein Urteil hinterlassen; ohne Urteil "
+                        "wird nichts als mergefähig gemeldet. Optionen: den Zyklus erneut "
+                        "starten oder das Review auf dem Pull Request selbst ansehen. Ohne "
+                        "Aktion bleibt die Karte auf Reviewing."
+                    ),
+                    "kommando": f"uv run python -m workflow.orchestrate run {issue}",
+                },
                 dry_run=dry_run,
             )
             return 1
+        report(
+            issue,
+            "urteil",
+            {
+                "runde": round_number,
+                "blockierend": verdict.blocking,
+                "beratend": verdict.advisory,
+                "head": head[:12],
+            },
+            dry_run=dry_run,
+        )
         if verdict.clean:
             if mutation_targets:
+                report(
+                    issue,
+                    "mutation",
+                    {
+                        "phase": "eine Messung auf dem zertifizierten Stand läuft",
+                        "ziele": len(mutation_targets),
+                        "dauer": "etwa 5 bis 25 Minuten",
+                    },
+                    dry_run=dry_run,
+                )
                 conclusion, reference = _mutation_evidence(branch, head, dry_run=dry_run)
                 if conclusion != "success":
                     if round_number == max_rounds:
                         break
                     if not dry_run:
                         board.move(issue, "Implementing", actor="orchestrator")
+                    report(
+                        issue,
+                        "rückgabe",
+                        {"runde": round_number, "grund": f"Mutationsmessung rot ({reference})"},
+                        dry_run=dry_run,
+                    )
                     hand_back(
                         issue,
                         f"The dispatched mutation measurement ({reference}) is red on the "
@@ -577,19 +661,37 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                     )
                     stale_head = head
                     continue
-                mutation_note = " — Mutation gemessen und grün"
+                mutation_status = f"gemessen und grün ({reference})"
             else:
-                mutation_note = " — keine Mutation nötig, kein Ziel erreichbar"
-            note = ""
-            if verdict.advisory:
-                note = f" ({verdict.advisory} nicht-blockierende Punkte zum Lesen)"
-            notify(issue, f"sauber und bereit zum Mergen{note}{mutation_note}", dry_run=dry_run)
+                mutation_status = "nicht nötig, kein Ziel erreichbar"
+            report(
+                issue,
+                "fertig",
+                {
+                    "status": "sauber und bereit zum Mergen",
+                    "runde": round_number,
+                    "beratend": verdict.advisory,
+                    "mutation": mutation_status,
+                    "head": head[:12],
+                    "kommando": f"Squash-Merge auf GitHub, danach: just finish {issue}",
+                },
+                dry_run=dry_run,
+            )
             return 0
 
         if round_number == max_rounds:
             break
         if not dry_run:
             board.move(issue, "Implementing", actor="orchestrator")
+        report(
+            issue,
+            "rückgabe",
+            {
+                "runde": round_number,
+                "grund": f"{verdict.blocking} blockierende Befunde aus dem Review",
+            },
+            dry_run=dry_run,
+        )
         hand_back(
             issue,
             f"The review of #{issue} reported {verdict.blocking} blocking finding(s) on its "
@@ -600,9 +702,18 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
 
     if not dry_run:
         board.move(issue, "Blocked", actor="orchestrator")
-    notify(
+    report(
         issue,
-        f"nach {max_rounds} Fix-Runden nicht sauber; braucht deine Entscheidung",
+        "blockiert",
+        {
+            "grund": f"nach {max_rounds} Fix-Runden nicht sauber",
+            "entscheidung": (
+                "Die Schleife hat ihren Deckel erreicht; was offen ist, steht im letzten Review "
+                "auf dem Pull Request. Optionen: die Spezifikation ergänzen und neu freigeben, "
+                "den offenen Punkt selbst entscheiden, oder das Ticket zurückstellen. Ohne "
+                "Aktion bleibt die Karte auf Blocked."
+            ),
+        },
         dry_run=dry_run,
     )
     return 1

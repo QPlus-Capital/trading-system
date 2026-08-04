@@ -291,6 +291,12 @@ merge" therefore means every piece of evidence exists, is green, and describes t
 commit the cycle certified. A red mutation measurement is a blocking finding like any other: it
 consumes a fix round, and at the round cap it blocks.
 
+**The cycle narrates as it goes.** Every phase change — round started, review running, verdict,
+hand-back, mutation measurement, ready or blocked — reaches the ticket's Claude chat as a
+structured event carrying its round, head commit, and counts; the session narrates it in German
+for the operator and never acts on it. A decision event is the last event a run sends, so a
+decision is never buried under routine progress lines.
+
 **Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
 in the full program:
 
@@ -480,10 +486,16 @@ it. A gate that cannot bind is worse than no gate, because the report then says 
   Operator-facing *runtime* output (research stage banners, the dashboard, the orchestrator's
   notifications) is German by decision; this is the only exception and is scoped to strings a human
   reads at a terminal.
-- **Every specifying and review session ends its chat output with a summary in German**, answering
-  in order: was gemacht wird · was du entscheiden musst · wo es klemmt · was als Nächstes passiert.
-  "Nichts" is an answer and is stated when true. The summary is appended to the full output, never
-  substituted for it, and nothing committed changes language because of it.
+- **Every session that reports to the operator closes in German, guided by three rules, not a
+  template.** First: two to five plain sentences — what happened, what it means, what comes next —
+  weighted for the phase (specifying: what the ticket demands and what was decided alone; review:
+  what was found and what it means for the merge; after a merge: what landed and what follows).
+  Second: **a decision the operator must take is set off visibly** — the question, the options, a
+  recommendation, and what happens if nothing is decided — never buried in prose; when the
+  operator must run something, the exact command stands on its own line. Third: no heading over
+  an empty section — a part with nothing to say is dropped, not answered with "Nichts". The
+  closing note is appended to the full output, never substituted for it, and nothing committed
+  changes language because of it.
 - **Docstrings describe the current state, never history.** No "formerly / previously / ported
   from", no dead code kept just in case.
 - Documentation is part of the change. The module map in `docs/architecture.md` must match reality.

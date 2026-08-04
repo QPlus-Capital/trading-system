@@ -6,7 +6,7 @@ suite proves the decisions without performing any of them.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -99,8 +99,14 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> None:
         log["handbacks"].append(reason)
 
-    def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
-        log["notices"].append(message)
+    def report(
+        issue: int,
+        kind: str,
+        facts: Mapping[str, object],
+        *,
+        dry_run: bool = False,
+    ) -> None:
+        log["notices"].append((kind, dict(facts)))
 
     def verdict(pull_request: int, head: str) -> Verdict | None:
         pending: list[Verdict] = state["verdicts"]
@@ -108,21 +114,26 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
 
     monkeypatch.setattr(orchestrate, "review", review)
     monkeypatch.setattr(orchestrate, "hand_back", hand_back)
-    monkeypatch.setattr(orchestrate, "notify", notify)
+    monkeypatch.setattr(orchestrate, "report", report)
     monkeypatch.setattr(orchestrate, "latest_verdict", verdict)
 
     log["state"] = state
     return log
 
 
-def test_a_clean_review_notifies_once_and_stops(harness: dict[str, Any]) -> None:
+def test_a_clean_review_ends_in_exactly_one_final_event(harness: dict[str, Any]) -> None:
     harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
 
     assert orchestrate.cycle(101) == 0
     assert harness["reviews"] == 1
     assert harness["handbacks"] == []
-    assert len(harness["notices"]) == 1
-    assert "bereit zum Mergen" in harness["notices"][0]
+    kinds = [kind for kind, _ in harness["notices"]]
+    assert kinds.count("fertig") == 1 and kinds[-1] == "fertig", (
+        "the final event closes the stream; nothing follows it"
+    )
+    _, facts = harness["notices"][-1]
+    assert facts["status"] == "sauber und bereit zum Mergen"
+    assert "kommando" in facts, "the operator is told exactly what to run"
 
 
 def test_advisory_findings_do_not_trigger_a_fix_round(harness: dict[str, Any]) -> None:
@@ -131,7 +142,8 @@ def test_advisory_findings_do_not_trigger_a_fix_round(harness: dict[str, Any]) -
 
     assert orchestrate.cycle(101) == 0
     assert harness["handbacks"] == []
-    assert "4 nicht-blockierende" in harness["notices"][0]
+    _, facts = harness["notices"][-1]
+    assert facts["beratend"] == 4
 
 
 def test_a_blocking_finding_returns_the_change_to_the_builder(harness: dict[str, Any]) -> None:
@@ -155,7 +167,9 @@ def test_the_round_cap_blocks_rather_than_looping(harness: dict[str, Any]) -> No
     assert orchestrate.cycle(101, max_rounds=2) == 1
     assert harness["reviews"] == 2
     assert harness["moves"][-1] == "Blocked"
-    assert "braucht deine Entscheidung" in harness["notices"][-1]
+    kind, facts = harness["notices"][-1]
+    assert kind == "blockiert"
+    assert "entscheidung" in facts, "a decision event names options, never a bare status"
 
 
 def test_a_failing_gate_never_reaches_the_reviewer(harness: dict[str, Any]) -> None:
@@ -187,7 +201,8 @@ def test_a_clean_verdict_without_reachable_targets_skips_the_mutation_run(
 
     assert orchestrate.cycle(101) == 0
     assert harness["mutation_runs"] == 0
-    assert "keine Mutation nötig" in harness["notices"][0]
+    _, facts = harness["notices"][-1]
+    assert str(facts["mutation"]).startswith("nicht nötig")
 
 
 def test_a_clean_verdict_with_reachable_targets_waits_for_the_measurement(
@@ -200,7 +215,8 @@ def test_a_clean_verdict_with_reachable_targets_waits_for_the_measurement(
 
     assert orchestrate.cycle(101) == 0
     assert harness["mutation_runs"] == 1
-    assert "Mutation gemessen und grün" in harness["notices"][0]
+    _, facts = harness["notices"][-1]
+    assert str(facts["mutation"]).startswith("gemessen und grün")
     assert harness["sequence"] == ["checks", "review", "mutation"], (
         "evidence is strictly ordered; nothing later starts while anything earlier runs"
     )
@@ -227,7 +243,9 @@ def test_a_review_without_a_verdict_stops_instead_of_guessing(harness: dict[str,
     harness["state"]["verdicts"] = []
 
     assert orchestrate.cycle(101) == 1
-    assert "kein Urteil" in harness["notices"][-1]
+    kind, facts = harness["notices"][-1]
+    assert kind == "kein-urteil"
+    assert "entscheidung" in facts
 
 
 def test_the_cycle_refuses_a_card_that_has_not_started(harness: dict[str, Any]) -> None:
@@ -320,7 +338,9 @@ def test_a_builder_that_pushed_nothing_stops_the_loop(harness: dict[str, Any]) -
 
     assert harness["reviews"] == 1, "the unchanged head is never re-reviewed"
     assert harness["moves"][-1] == "Blocked"
-    assert "nichts gepusht" in harness["notices"][-1]
+    kind, facts = harness["notices"][-1]
+    assert kind == "blockiert"
+    assert "nichts gepusht" in str(facts["grund"])
 
 
 def test_a_missing_title_prefix_is_corrected_from_the_contract(
@@ -354,6 +374,31 @@ def test_a_correct_title_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> None:
     orchestrate._ensure_pull_request_title(177, 178)
 
     assert not any("edit" in call for call in calls), "no write when the contract already holds"
+
+
+def test_an_event_carries_its_facts_and_forbids_action(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ticket session narrates events; it must never be prompted into working. The payload
+    carries round, head and counts, because three context-free status lines on #177 read as
+    contradictions."""
+
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        "workflow.orchestrate.subprocess.run", lambda argv, **kwargs: captured.append(list(argv))
+    )
+    monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
+    monkeypatch.setattr(orchestrate, "session_for", lambda issue: "session-abc")
+
+    orchestrate.report(
+        177, "urteil", {"runde": 2, "blockierend": 0, "beratend": 3, "head": "a3c889f00123"}
+    )
+
+    (argv,) = captured
+    prompt = argv[-1]
+    assert '"runde": 2' in prompt and '"head": "a3c889f00123"' in prompt
+    assert "Führe keine Kommandos aus" in prompt
+    assert "entscheidung" in prompt, "the rendering rule for decision events travels with it"
 
 
 def test_the_orchestrator_never_merges() -> None:

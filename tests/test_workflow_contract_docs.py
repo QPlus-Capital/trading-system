@@ -91,7 +91,10 @@ _REQUIRED: tuple[tuple[str, tuple[Path, ...]], ...] = (
     ("the operator can always start it by hand", (_WORKFLOW,)),
     ("proportionate to the diff", (_WORKFLOW,)),
     ("a review reports; it does not file", (_WORKFLOW,)),
-    ("summary in german", (_WORKFLOW,)),
+    ("reports to the operator closes in german", (_WORKFLOW,)),
+    ("a decision the operator must take is set off visibly", (_WORKFLOW,)),
+    ("evidence never overlaps", (_WORKFLOW,)),
+    ("mutation is measured once per ticket", (_WORKFLOW,)),
 )
 
 
