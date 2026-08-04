@@ -98,7 +98,10 @@ def _facts(path: Path, root: Path, known: frozenset[str]) -> ModuleFacts | None:
     rel = path.relative_to(root).as_posix()
     module = _module_name(rel)
     try:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=rel)
+        # utf-8-sig: a BOM is invisible to Python's own tokenizer but breaks ast.parse on the
+        # decoded string — one BOM'd test file silently failed the whole reach analysis closed
+        # and selected every mutation target.
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=rel)
     except (OSError, SyntaxError, UnicodeDecodeError):
         return None
     imports: set[str] = set()

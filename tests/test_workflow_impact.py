@@ -1,4 +1,4 @@
-﻿"""Impact analysis must find real repository dependencies without claiming completeness."""
+"""Impact analysis must find real repository dependencies without claiming completeness."""
 
 from __future__ import annotations
 
@@ -28,6 +28,24 @@ def test_target_attribution_returns_exactly_the_reached_targets(tmp_path: Path) 
 
     exercised = targets_exercised_by_changed_tests(
         ["tests/test_middle.py"],
+        ["pkg/reached.py", "pkg/unrelated.py"],
+        root=tmp_path,
+    )
+    assert exercised == ("pkg/reached.py",)
+
+
+def test_a_bom_marked_test_is_read_not_failed_closed(tmp_path: Path) -> None:
+    """A UTF-8 BOM is invisible to Python's tokenizer but broke `ast.parse` on the decoded
+    string; one such file made the reach analysis select every mutation target — a 23-minute
+    run to measure a one-target change."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pkg" / "reached.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "pkg" / "unrelated.py").write_text("VALUE = 2\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_bom.py").write_bytes(b"\xef\xbb\xbfimport pkg.reached\n")
+
+    exercised = targets_exercised_by_changed_tests(
+        ["tests/test_bom.py"],
         ["pkg/reached.py", "pkg/unrelated.py"],
         root=tmp_path,
     )

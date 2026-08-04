@@ -205,12 +205,14 @@ def test_committed_critical_baseline_is_complete_and_explained() -> None:
 
 
 def test_warning_policy_tightens_the_measured_mutation_baseline() -> None:
+    """The two survivors the warnings-as-errors policy killed must never re-enter the baseline,
+    and the mechanism stays on record. Totals are deliberately not frozen: every measured
+    regeneration moves them, and the exact survivor set is the binding comparison."""
     baseline = load_baseline()
     survivor_names = {item.name for item in baseline.survivors}
 
-    assert baseline.summary.total == 5_868
-    assert baseline.summary.killed == 5_333
-    assert baseline.summary.survived == 535
+    assert "research.portfolio.sizing.x__daily_diagnostics__mutmut_38" not in survivor_names
+    assert "research.portfolio.sizing.x_simulate__mutmut_96" not in survivor_names
     assert "also_copy" in baseline.change_explanation
     assert "warnings-as-errors" in baseline.change_explanation
     assert {
