@@ -14,8 +14,19 @@ on:
     types: [opened, reopened, synchronize, ready_for_review]
   # The deliberate re-run: after a force-push the green results belong to commits that no longer
   # exist, and an infrastructure failure is not a code failure. Without this, the only way to get a
-  # fresh run was closing and reopening the pull request.
+  # fresh run was closing and reopening the pull request. `scope=mutation-affected` is how the
+  # review cycle produces the one mutation measurement per ticket, on the head it certifies.
   workflow_dispatch:
+    inputs:
+      scope:
+        description: everything, or only the mutation ratchet on the targets this diff reaches
+        type: choice
+        options: [everything, mutation-affected]
+        default: everything
+  # The weekly full mutation run on main catches what the per-ticket affected scope cannot see:
+  # drift in targets no recent change reached.
+  schedule:
+    - cron: "0 5 * * 1"
 
 permissions:
   contents: read
@@ -36,6 +47,7 @@ jobs:
     outputs:
       needs_mt5: ${{ steps.scope.outputs.needs_mt5 }}
       needs_mutation: ${{ steps.scope.outputs.needs_mutation }}
+      mutation_scope: ${{ steps.scope.outputs.mutation_scope }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
@@ -54,31 +66,33 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref || 'main' }}
           EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_SCOPE: ${{ inputs.scope || 'everything' }}
         shell: bash
         run: |
           uv run python - <<'PY'
           import os
 
-          from workflow.classify import changed_paths, load_model
-          from workflow.impact import changed_tests_exercise_targets
-          from workflow.mutation import load_policy, select_fast_targets
+          from workflow.classify import changed_paths
 
-          if os.environ["EVENT_NAME"] == "workflow_dispatch":
+          event = os.environ["EVENT_NAME"]
+          if event == "schedule":
+              # The weekly full measurement on main: the complete critical ratchet plus the
+              # Windows boundary job, so drift in unreached targets and the MT5 seam both surface.
+              needs_mutation, mutation_scope, needs_mt5 = True, "critical", True
+          elif event == "workflow_dispatch" and os.environ["DISPATCH_SCOPE"] == "mutation-affected":
+              # The review cycle's one measurement per ticket: only the targets the branch diff
+              # can reach, selected by the same policy code the local gate uses.
+              needs_mutation, mutation_scope, needs_mt5 = True, "affected", False
+          elif event == "workflow_dispatch":
               # A dispatch is a deliberate act: run everything. This is also the only way a NEW
-              # mutation target can be measured for the first time — the path filter below cannot
+              # mutation target can be measured for the first time — the affected scope cannot
               # select a target whose module the change did not touch.
-              needs_mutation = needs_mt5 = True
+              needs_mutation, mutation_scope, needs_mt5 = True, "critical", True
           else:
+              # A push measures no mutants. Mutation evidence is produced once per ticket by the
+              # review cycle, on the head it certifies — not on every intermediate push.
               paths = changed_paths(f"origin/{os.environ['BASE_REF']}")
-              policy = load_policy()
-
-              # The production policy the local gate uses, so CI and `just gates` cannot disagree.
-              needs_mutation = bool(
-                  select_fast_targets(paths, policy, load_model())
-                  or changed_tests_exercise_targets(
-                      paths, tuple(target.path for target in policy.targets)
-                  )
-              )
+              needs_mutation, mutation_scope = False, ""
               needs_mt5 = any(
                   path.startswith("live/mt5_bridge") or path.startswith("live/preflight")
                   or path == "tests/conftest.py"
@@ -88,6 +102,7 @@ jobs:
               )
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"needs_mutation={str(needs_mutation).lower()}\n")
+              output.write(f"mutation_scope={mutation_scope}\n")
               output.write(f"needs_mt5={str(needs_mt5).lower()}\n")
           PY
 
@@ -145,15 +160,20 @@ jobs:
       - name: Install locked dependencies except the Windows-only MT5 bridge
         run: uv sync --locked --no-install-package metatrader5
       - name: Prove a real weakened test creates a caught survivor
+        if: needs.quality.outputs.mutation_scope == 'critical'
         run: uvx --from rust-just just mutation-self-test
       - name: Run the focused critical mutation ratchet
+        if: needs.quality.outputs.mutation_scope == 'critical'
         run: uvx --from rust-just just mutation-critical
+      - name: Run the mutation ratchet on the targets this diff reaches
+        if: needs.quality.outputs.mutation_scope == 'affected'
+        run: uvx --from rust-just just mutation-affected
       - name: Retain the machine-readable mutation result
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: mutation-critical-result
-          path: workflow/mutation-results/critical.toml
+          name: mutation-result
+          path: workflow/mutation-results/
           if-no-files-found: error
           include-hidden-files: true
 

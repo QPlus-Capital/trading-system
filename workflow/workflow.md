@@ -274,11 +274,19 @@ build session ended before step 10, or to repeat a cycle deliberately.
 ```
 pull request open → builder starts the cycle (operator as fallback)
   ↓  gates run against the branch under review
+  ↓  the push CI settles — no verdict while any check still runs
   ↓  Claude reviews in a fresh process (the issue number is the only input)
   ↓  review submitted as a real pull-request review
 Blocker or Defect? ──yes──→ back to Codex, fix, push ──→ review again  (at most 2 rounds)
-  └──no──→ notification in the ticket chat: "#101 ist sauber und bereit zum Mergen"
+  └──no──→ one scoped mutation measurement on the certified head, awaited
+              └──green──→ notification in the ticket chat: "#101 ist sauber und bereit zum Mergen"
 ```
+
+**Evidence never overlaps.** The round is strictly ordered — gates, settled CI, review, then the
+mutation measurement — and nothing later starts while anything earlier still runs. "Ready to
+merge" therefore means every piece of evidence exists, is green, and describes the one pushed
+commit the cycle certified. A red mutation measurement is a blocking finding like any other: it
+consumes a fix round, and at the round cap it blocks.
 
 **Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
 in the full program:
@@ -446,10 +454,16 @@ between segments, embargo and gap, and the final boundary.
 | `just check-invariants` | the critical test files | R3 |
 | `just mutation` | mutation on **changed** critical modules | R3 |
 
-**In CI, once per pull request:** one Linux job running `check` and the property replay — the
-independent confirmation that green is not merely local. A Windows job runs **only** when the MT5
-boundary is touched. Mutation runs in CI until the development platform moves to macOS (issue #150),
-then locally only.
+**In CI, on every push:** one Linux job running `check` and the property replay — the independent
+confirmation that green is not merely local. A Windows job runs **only** when the MT5 boundary is
+touched. **Mutation is measured once per ticket, not once per push:** the review cycle dispatches
+one run (`workflow_dispatch`, `scope=mutation-affected`) on the head the review certified,
+restricted to the targets the diff can reach — directly, through a changed test's imports, or
+totally, because a changed pytest configuration is copied into every mutant tree and therefore
+reaches every target. A weekly scheduled run measures the complete critical set on `main` and
+keeps the global baseline honest; within a scoped run the ratchet still fails closed in both
+directions, but only over what it measured. Mutation remains a CI job until the development
+platform moves to macOS (issue #150).
 
 **No gate may be weakened to make a branch pass.** Prohibited: bypass or skip flags; broad
 `# type: ignore`, `# noqa`, or `pytest.mark.skip` introduced to hide a failure; widening a per-file

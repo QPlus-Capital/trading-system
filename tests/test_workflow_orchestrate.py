@@ -31,13 +31,23 @@ def _red() -> tuple[str, list[GateResult]]:
 def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     """A fake cycle: recorded calls, a scripted verdict sequence, and no real process anywhere."""
 
-    log: dict[str, Any] = {"reviews": 0, "handbacks": [], "moves": [], "notices": []}
+    log: dict[str, Any] = {
+        "reviews": 0,
+        "handbacks": [],
+        "moves": [],
+        "notices": [],
+        "sequence": [],
+        "mutation_runs": 0,
+    }
     verdicts: list[Verdict] = []
     state: dict[str, Any] = {
         "status": "Implementing",
         "risk": "R2",
         "verdicts": verdicts,
         "gates": _green,
+        "red_checks": [],
+        "mutation_targets": [],
+        "mutation_conclusion": "success",
     }
 
     class FakeCard:
@@ -56,13 +66,31 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(orchestrate, "pull_request_for", lambda issue: 999)
     monkeypatch.setattr(orchestrate, "branch_for", lambda issue: f"codex/{issue}-fake")
     monkeypatch.setattr(orchestrate, "_branch_worktree", fake_worktree)
+    monkeypatch.setattr(orchestrate, "_pushed_head", lambda branch: "feedc0ffee01")
+
+    def settled_checks(pull_request: int, head: str) -> list[str]:
+        log["sequence"].append("checks")
+        return list(state["red_checks"])
+
+    def reachable_targets(tree: Path) -> tuple[list[Any], str]:
+        return list(state["mutation_targets"]), "fake selection"
+
+    def mutation_evidence(branch: str, head: str, *, dry_run: bool = False) -> tuple[str, str]:
+        log["mutation_runs"] += 1
+        log["sequence"].append("mutation")
+        return str(state["mutation_conclusion"]), "run 4242"
+
+    monkeypatch.setattr(orchestrate, "_await_settled_checks", settled_checks)
+    monkeypatch.setattr(orchestrate, "_reachable_mutation_targets", reachable_targets)
+    monkeypatch.setattr(orchestrate, "_mutation_evidence", mutation_evidence)
 
     def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
         log["reviews"] += 1
+        log["sequence"].append("review")
         log.setdefault("review_trees", []).append(worktree)
 
-    def hand_back(issue: int, verdict: Verdict, *, dry_run: bool = False) -> None:
-        log["handbacks"].append(verdict)
+    def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> None:
+        log["handbacks"].append(reason)
 
     def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
         log["notices"].append(message)
@@ -106,7 +134,8 @@ def test_a_blocking_finding_returns_the_change_to_the_builder(harness: dict[str,
     ]
 
     assert orchestrate.cycle(101) == 0
-    assert [v.blocking for v in harness["handbacks"]] == [2]
+    assert len(harness["handbacks"]) == 1
+    assert "2 blocking finding" in harness["handbacks"][0]
     assert harness["reviews"] == 2, "the fix is reviewed again"
     assert "Implementing" in harness["moves"], "the card follows the work"
 
@@ -126,9 +155,63 @@ def test_a_failing_gate_never_reaches_the_reviewer(harness: dict[str, Any]) -> N
     """Reviewing a change whose own tests fail wastes the reviewer and the operator's attention."""
     harness["state"]["gates"] = _red
 
-    assert orchestrate.cycle(101, max_rounds=1) == 1
+    assert orchestrate.cycle(101, max_rounds=2) == 1
     assert harness["reviews"] == 0
     assert harness["handbacks"], "the builder is told instead"
+    assert harness["moves"][-1] == "Blocked", (
+        "at the cap the operator is told, not the builder again"
+    )
+
+
+def test_red_ci_hands_back_before_any_review_starts(harness: dict[str, Any]) -> None:
+    """A verdict issued beside red or running checks is exactly the ambiguity #177 produced:
+    three contradicting status messages on one ticket."""
+    harness["state"]["red_checks"] = ["quality"]
+
+    assert orchestrate.cycle(101, max_rounds=2) == 1
+    assert harness["reviews"] == 0
+    assert any("CI is red on quality" in reason for reason in harness["handbacks"])
+
+
+def test_a_clean_verdict_without_reachable_targets_skips_the_mutation_run(
+    harness: dict[str, Any],
+) -> None:
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
+
+    assert orchestrate.cycle(101) == 0
+    assert harness["mutation_runs"] == 0
+    assert "keine Mutation nötig" in harness["notices"][0]
+
+
+def test_a_clean_verdict_with_reachable_targets_waits_for_the_measurement(
+    harness: dict[str, Any],
+) -> None:
+    """Ready-to-merge must mean the mutation evidence exists and is green on this head — not
+    that a run is still pending somewhere, and not that a push may trigger one later."""
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
+    harness["state"]["mutation_targets"] = ["workflow-finish-teardown"]
+
+    assert orchestrate.cycle(101) == 0
+    assert harness["mutation_runs"] == 1
+    assert "Mutation gemessen und grün" in harness["notices"][0]
+    assert harness["sequence"] == ["checks", "review", "mutation"], (
+        "evidence is strictly ordered; nothing later starts while anything earlier runs"
+    )
+
+
+def test_a_red_mutation_measurement_is_a_blocking_finding(harness: dict[str, Any]) -> None:
+    harness["state"]["verdicts"] = [
+        Verdict(blocking=0, advisory=0),
+        Verdict(blocking=0, advisory=0),
+    ]
+    harness["state"]["mutation_targets"] = ["workflow-finish-teardown"]
+    harness["state"]["mutation_conclusion"] = "failure"
+
+    assert orchestrate.cycle(101, max_rounds=2) == 1
+    assert any("mutation measurement" in reason for reason in harness["handbacks"])
+    assert harness["moves"][-1] == "Blocked", (
+        "a second red measurement exhausts the rounds and needs the operator"
+    )
 
 
 def test_a_review_without_a_verdict_stops_instead_of_guessing(harness: dict[str, Any]) -> None:

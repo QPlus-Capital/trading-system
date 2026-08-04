@@ -31,6 +31,7 @@ from workflow.classify import (
     load_model,
     normalize,
 )
+from workflow.impact import targets_exercised_by_changed_tests
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 POLICY_PATH = REPO_ROOT / "workflow" / "policy" / "mutation.toml"
@@ -268,6 +269,53 @@ def select_fast_targets(
     ]
 
 
+#: Files mutmut copies into every mutant tree (its unconditional ``also_copy``), so changing one
+#: changes the conditions of every mutation run. Issue #177 measured the mechanism: a pytest
+#: `filterwarnings = ["error", ...]` policy killed two baseline survivors in a module the change
+#: never touched.
+_PYTEST_CONFIG_PATHS = frozenset({"pyproject.toml", "pytest.ini", "setup.cfg"})
+
+
+def select_affected_targets(
+    paths: Sequence[str],
+    policy: MutationPolicy,
+    risk_model: Model,
+    *,
+    root: Path = REPO_ROOT,
+) -> tuple[list[MutationTarget], str]:
+    """Select every target this change can reach, and say why.
+
+    Three ways in, from cheap to total: a target's own module changed; a changed test exercises
+    the target, directly or transitively (fail-closed to all targets when static analysis cannot
+    attribute the reach); or the pytest configuration changed, which mutmut copies into every
+    mutant tree — then the whole target set is measured, because the change governs every run.
+    """
+    changed = {normalize(path) for path in paths}
+    if any(
+        path in _PYTEST_CONFIG_PATHS or Path(path).name == "conftest.py" for path in changed
+    ):
+        return list(policy.targets), (
+            "pytest configuration changed; it is copied into every mutant tree, so the whole "
+            "target set is measured"
+        )
+    selected = {target.id for target in select_fast_targets(paths, policy, risk_model)}
+    exercised = {
+        normalize(path)
+        for path in targets_exercised_by_changed_tests(
+            sorted(changed), tuple(target.path for target in policy.targets), root=root
+        )
+    }
+    selected.update(
+        target.id for target in policy.targets if normalize(target.path) in exercised
+    )
+    ordered = [target for target in policy.targets if target.id in selected]
+    if not ordered:
+        reason = "no changed module is a target and no changed test reaches one"
+    else:
+        reason = f"{len(ordered)} of {len(policy.targets)} targets are reachable from this change"
+    return ordered, reason
+
+
 def parse_mutmut_results(text: str) -> dict[str, str]:
     """Parse Mutmut's stable ``name: status`` result listing."""
     results: dict[str, str] = {}
@@ -357,7 +405,15 @@ def summary_lines(
     return lines
 
 
-def _check_fast(report: MutationReport, baseline: MutationBaseline) -> list[str]:
+def _check_scoped(report: MutationReport, baseline: MutationBaseline) -> list[str]:
+    """The ratchet restricted to what this run measured, fail-closed in both directions.
+
+    Within the measured mutant set the comparison is exact, like the critical check: a survivor
+    the baseline does not explain fails, and a baseline survivor this run killed fails too — the
+    improvement must be recorded, or the baseline silently overstates the gap (the #177 lesson).
+    Score and totals are not compared; inside the measured subset the exact survivor comparison
+    is strictly stronger, and the weekly critical run guards the global figures.
+    """
     issues = _health_issues(report)
     allowed = {item.name for item in baseline.survivors}
     unexpected = sorted(
@@ -365,8 +421,17 @@ def _check_fast(report: MutationReport, baseline: MutationBaseline) -> list[str]
         for name, status in report.mutants.items()
         if status == "survived" and name not in allowed
     )
+    missing = sorted(
+        name
+        for name, status in report.mutants.items()
+        if status == "killed" and name in allowed
+    )
     if unexpected:
         issues.append(f"unexplained surviving mutants: {unexpected}")
+    if missing:
+        issues.append(
+            f"baseline survivor(s) are now killed and the ratchet must be tightened: {missing}"
+        )
     return issues
 
 
@@ -443,12 +508,26 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
     _validate_mutmut_config(policy)
     if scope == "fast":
         targets = select_fast_targets(changed_paths(base), policy, load_model(MODEL_PATH))
+    elif scope == "affected":
+        targets, selection_reason = select_affected_targets(
+            changed_paths(base), policy, load_model(MODEL_PATH)
+        )
+        print(f"Affected-scope selection: {selection_reason}.")
     elif scope == "critical":
         targets = list(policy.targets)
     else:
         raise ValueError(f"unknown mutation scope {scope!r}")
     if not targets:
-        print("No configured critical module changed; mutation-fast has no target.")
+        print(
+            "No mutation target is reachable from this change; "
+            "the weekly critical run covers drift."
+        )
+        # The empty report is still written: the artifact must record that nothing was selected,
+        # not silently be absent as if the run never happened.
+        write_report(
+            MutationReport(scope, (), policy_fingerprint(policy), {}),
+            output or RESULT_ROOT / f"{scope}.toml",
+        )
         return 0
 
     work = (REPO_ROOT / "mutants").resolve()
@@ -487,7 +566,7 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
     write_report(report, result_path)
     baseline = load_baseline()
     issues = (
-        check_baseline(report, baseline) if scope == "critical" else _check_fast(report, baseline)
+        check_baseline(report, baseline) if scope == "critical" else _check_scoped(report, baseline)
     )
     for line in summary_lines(scope, report, baseline, result_path):
         print(line)
@@ -504,7 +583,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run focused, baseline-ratcheted mutation tests.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run_parser = subparsers.add_parser("run")
-    run_parser.add_argument("--scope", choices=("fast", "critical"), required=True)
+    run_parser.add_argument("--scope", choices=("fast", "affected", "critical"), required=True)
     run_parser.add_argument("--base", default="origin/main")
     run_parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)

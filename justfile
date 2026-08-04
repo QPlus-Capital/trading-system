@@ -102,6 +102,10 @@ check-parity:
 mutation range="origin/main":
     uv run --no-sync --with mutmut==3.5.0 python -m workflow.mutation run --scope fast --base {{range}}
 
+# Mutation on every target this branch's diff can reach, incl. via changed tests (macOS/Linux)
+mutation-affected range="origin/main":
+    uv run --no-sync --with mutmut==3.5.0 python -m workflow.mutation run --scope affected --base {{range}}
+
 # Full focused critical mutation scope with the committed TOML ratchet (macOS/Linux)
 mutation-critical:
     uv run --no-sync --with mutmut==3.5.0 python -m workflow.mutation run --scope critical

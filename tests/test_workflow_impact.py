@@ -1,4 +1,4 @@
-"""Impact analysis must find real repository dependencies without claiming completeness."""
+﻿"""Impact analysis must find real repository dependencies without claiming completeness."""
 
 from __future__ import annotations
 
@@ -11,8 +11,42 @@ from workflow.impact import (
     analyze_impact,
     changed_tests_exercise_targets,
     format_check_command,
+    targets_exercised_by_changed_tests,
     write_test_map,
 )
+
+
+def test_target_attribution_returns_exactly_the_reached_targets(tmp_path: Path) -> None:
+    """The scoped mutation run needs to know *which* targets a changed test reaches, not merely
+    whether any is reached; measuring the others would spend minutes proving nothing."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pkg" / "reached.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "pkg" / "middle.py").write_text("import pkg.reached\n", encoding="utf-8")
+    (tmp_path / "pkg" / "unrelated.py").write_text("VALUE = 2\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_middle.py").write_text("import pkg.middle\n", encoding="utf-8")
+
+    exercised = targets_exercised_by_changed_tests(
+        ["tests/test_middle.py"],
+        ["pkg/reached.py", "pkg/unrelated.py"],
+        root=tmp_path,
+    )
+    assert exercised == ("pkg/reached.py",)
+
+
+def test_target_attribution_fails_closed_to_every_target(tmp_path: Path) -> None:
+    """When the reach cannot be attributed, narrowing would silently drop evidence."""
+    (tmp_path / "pkg").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "pkg" / "a.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "pkg" / "b.py").write_text("VALUE = 2\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_broken.py").write_text("def broken(:\n", encoding="utf-8")
+
+    assert targets_exercised_by_changed_tests(
+        ["tests/test_broken.py"],
+        ["pkg/a.py", "pkg/b.py"],
+        root=tmp_path,
+    ) == ("pkg/a.py", "pkg/b.py")
 
 
 def test_continuous_change_surfaces_known_dependent_tests() -> None:
@@ -60,13 +94,11 @@ def test_changed_tests_fail_closed_when_their_imports_cannot_be_resolved(tmp_pat
         ["tests/test_broken.py"],
         ["pkg/target.py"],
         root=tmp_path,
-        critical_map=None,
     )
     assert changed_tests_exercise_targets(
         ["tests/test_dynamic.py"],
         ["pkg/target.py"],
         root=tmp_path,
-        critical_map=None,
     )
 
 
@@ -84,7 +116,6 @@ def test_changed_tests_fail_closed_on_an_unknown_dynamic_production_edge(tmp_pat
         ["tests/test_other.py"],
         ["pkg/target.py"],
         root=tmp_path,
-        critical_map=None,
     )
 
 
@@ -103,13 +134,11 @@ def test_changed_noncritical_tests_and_docs_do_not_select_mutation(tmp_path: Pat
         ["tests/test_other.py", "README.md"],
         ["pkg/target.py"],
         root=tmp_path,
-        critical_map=None,
     )
     assert not changed_tests_exercise_targets(
         ["README.md"],
         ["pkg/target.py"],
         root=tmp_path,
-        critical_map=None,
     )
 
 
