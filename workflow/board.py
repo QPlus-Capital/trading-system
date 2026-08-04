@@ -225,8 +225,8 @@ def move(
         )
     if target == "Specifying" and not (reason or "").strip():
         raise BoardError(
-            "the hand-back to 'Specifying' requires a reason; it is posted on the issue so the "
-            "record shows why the card walked backwards"
+            f"the hand-back of #{issue} to 'Specifying' requires a reason; it is posted on the "
+            f"issue so the record shows why the card walked backwards"
         )
     option = card.options.get(target)
     if option is None:
