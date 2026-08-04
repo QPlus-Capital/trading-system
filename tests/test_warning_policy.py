@@ -19,7 +19,7 @@ def test_pytest_warning_exception_documents_upstream_call_sites() -> None:
 
     documented_exception = (
         "    # Upstream call sites; nautilus-trader 1.230.0 installed; 1.231.0 verified:\n"
-        "    # backtest/engine.pyx:1601 and :1418; backtest/node.py:668.\n"
+        "    # backtest/engine.pyx:1601 and :1418; backtest/node.py:347.\n"
         '    "ignore:Timestamp.utcnow is deprecated",\n'
     )
     assert documented_exception in pyproject

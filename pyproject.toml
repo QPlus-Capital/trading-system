@@ -59,7 +59,7 @@ addopts = "-ra"
 filterwarnings = [
     "error",
     # Upstream call sites; nautilus-trader 1.230.0 installed; 1.231.0 verified:
-    # backtest/engine.pyx:1601 and :1418; backtest/node.py:668.
+    # backtest/engine.pyx:1601 and :1418; backtest/node.py:347.
     "ignore:Timestamp.utcnow is deprecated",
 ]
 # Repo root on sys.path so the dev tooling under workflow/ is importable in tests without shipping
