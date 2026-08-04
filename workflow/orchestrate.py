@@ -39,9 +39,11 @@ from workflow.classify import REPO_ROOT, changed_paths, load_model
 from workflow.mutation import MutationTarget, load_policy, select_affected_targets
 
 #: The reviewer writes this into its summary comment. Counting a structured marker keeps the loop's
-#: exit condition out of the reviewer's prose.
+#: exit condition out of the reviewer's prose, and the sha names the commit the verdict certifies —
+#: without it, a round in which no new review landed silently reused the previous round's verdict.
 VERDICT = re.compile(
-    r"<!--\s*workflow-verdict\s+blocking:\s*(?P<blocking>\d+)\s+advisory:\s*(?P<advisory>\d+)\s*-->"
+    r"<!--\s*workflow-verdict\s+sha:\s*(?P<sha>[0-9a-fA-F]{7,40})\s+"
+    r"blocking:\s*(?P<blocking>\d+)\s+advisory:\s*(?P<advisory>\d+)\s*-->"
 )
 SESSION_MARKER = re.compile(r"<!--\s*claude-session:\s*(?P<session>[A-Za-z0-9_-]+)\s*-->")
 
@@ -150,13 +152,19 @@ def pull_request_for(issue: int) -> int:
     return int(entries[0]["number"])
 
 
-def latest_verdict(pull_request: int) -> Verdict | None:
-    """The most recent structured verdict on the pull request, or None if no review has landed.
+def latest_verdict(pull_request: int, head: str) -> Verdict | None:
+    """The newest structured verdict **for this head**, or None if none certifies it.
 
     A pull-request review lands in ``reviews``, not ``comments`` — the first version of this
     function read only ``comments`` and could therefore never see a verdict, so the loop's one
     exit condition was unreadable. Both lists are scanned newest-first, reviews before comments,
     because the reviewer submits a real review and a comment is only ever a fallback.
+
+    The sha requirement closes the second gap #177 exposed: a round in which the builder pushed
+    nothing produced no new review, and the loop reused the previous round's verdict as if it
+    were fresh. It happened to be a blocking verdict; in the other direction it would have been
+    a merge recommendation for an unreviewed commit. A verdict for another commit is not stale
+    context — it is no verdict at all.
     """
 
     raw = _run(["gh", "pr", "view", str(pull_request), "--json", "reviews,comments"])
@@ -165,7 +173,7 @@ def latest_verdict(pull_request: int) -> Verdict | None:
     comments = [str(entry.get("body", "")) for entry in payload.get("comments", [])]
     for body in [*reversed(reviews), *reversed(comments)]:
         match = VERDICT.search(body)
-        if match:
+        if match and head.lower().startswith(match["sha"].lower()):
             return Verdict(int(match["blocking"]), int(match["advisory"]))
     return None
 
@@ -230,12 +238,14 @@ _REVIEWER_TOOLS = (
     "Bash(git diff:*)",
     "Bash(git grep:*)",
     "Bash(git branch:*)",
+    "Bash(gh run view:*)",
+    "Bash(gh run list:*)",
     "Bash(uv run pytest:*)",
     "Bash(uv run python:*)",
 )
 
 
-def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
+def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> None:
     """Start the reviewer as a separate process, with nothing but the issue number.
 
     A fresh process is what makes the review independent: it cannot inherit what the builder meant,
@@ -254,8 +264,9 @@ def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
         f"Review the open pull request for this issue. The branch under review is checked out "
         f"read-only at {worktree} — read source and tests and run commands there, never in this "
         "checkout, and edit nothing. Post the review on the pull request with `gh pr review`. End "
-        "its summary with <!-- workflow-verdict blocking:N advisory:M --> where N counts Blocker "
-        "and Defect findings and M counts Suspected defect and Note findings."
+        f"its summary with <!-- workflow-verdict sha:{head[:12]} blocking:N advisory:M --> where "
+        "the sha names the commit you reviewed, N counts Blocker and Defect findings, and M "
+        "counts Suspected defect and Note findings."
     )
     # The prompt sits directly after -p: --allowedTools is variadic and would otherwise swallow
     # it as one more tool name, leaving the reviewer with an empty task — observed on the first
@@ -337,6 +348,24 @@ def _branch_worktree(branch: str) -> Iterator[Path]:
             text=True,
             check=False,
         )
+
+
+def _ensure_pull_request_title(issue: int, pull_request: int) -> None:
+    """Correct a pull-request title missing its ``#<issue> - `` prefix.
+
+    The contract's ``[naming]`` rule was violated twice in a row while it lived in prose alone;
+    the cycle reads the title anyway, so it now enforces the rule instead of hoping.
+    """
+
+    raw = _run(["gh", "pr", "view", str(pull_request), "--json", "title"])
+    title = str(json.loads(raw or "{}").get("title") or "").strip()
+    prefix = f"#{issue} - "
+    if title.startswith(prefix):
+        return
+    stripped = re.sub(rf"^#?{issue}\s*[-–—:]*\s*", "", title).strip() or title
+    corrected = f"{prefix}{stripped}"
+    _run(["gh", "pr", "edit", str(pull_request), "--title", corrected])
+    print(f"corrected the pull-request title to {corrected!r}")
 
 
 def _pushed_head(branch: str) -> str:
@@ -469,9 +498,22 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         )
     branch = branch_for(issue)
     pull_request = 0 if dry_run else pull_request_for(issue)
+    if not dry_run:
+        _ensure_pull_request_title(issue, pull_request)
+    stale_head: str | None = None
 
     for round_number in range(1, max_rounds + 1):
         head = "dry-run" if dry_run else _pushed_head(branch)
+        if stale_head is not None and head == stale_head:
+            if not dry_run:
+                board.move(issue, "Blocked", actor="orchestrator")
+            notify(
+                issue,
+                "der Builder hat nach der Rückgabe nichts gepusht; der Zyklus stoppt, statt "
+                "denselben Stand erneut zu messen — braucht deine Entscheidung",
+                dry_run=dry_run,
+            )
+            return 1
         mutation_targets: list[MutationTarget] = []
         red_checks: list[str] = []
         with _branch_worktree(branch) as tree:
@@ -485,8 +527,8 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 red_checks = [] if dry_run else _await_settled_checks(pull_request, head)
                 if not red_checks:
                     if not dry_run:
-                        board.move(issue, "Reviewing")
-                    review(issue, tree, dry_run=dry_run)
+                        board.move(issue, "Reviewing", actor="orchestrator")
+                    review(issue, tree, head, dry_run=dry_run)
 
         if failed:
             if round_number == max_rounds:
@@ -497,6 +539,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 "`just gates` in the ticket worktree.",
                 dry_run=dry_run,
             )
+            stale_head = head
             continue
         if red_checks:
             if round_number == max_rounds:
@@ -506,9 +549,10 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 f"CI is red on {', '.join(red_checks)} for the pushed head of #{issue}.",
                 dry_run=dry_run,
             )
+            stale_head = head
             continue
 
-        verdict = None if dry_run else latest_verdict(pull_request)
+        verdict = None if dry_run else latest_verdict(pull_request, head)
         if verdict is None:
             notify(
                 issue,
@@ -523,7 +567,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                     if round_number == max_rounds:
                         break
                     if not dry_run:
-                        board.move(issue, "Implementing")
+                        board.move(issue, "Implementing", actor="orchestrator")
                     hand_back(
                         issue,
                         f"The dispatched mutation measurement ({reference}) is red on the "
@@ -531,6 +575,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                         "tighten or fix from measured results only.",
                         dry_run=dry_run,
                     )
+                    stale_head = head
                     continue
                 mutation_note = " — Mutation gemessen und grün"
             else:
@@ -544,16 +589,17 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         if round_number == max_rounds:
             break
         if not dry_run:
-            board.move(issue, "Implementing")
+            board.move(issue, "Implementing", actor="orchestrator")
         hand_back(
             issue,
             f"The review of #{issue} reported {verdict.blocking} blocking finding(s) on its "
             "pull request. Read that review with `gh pr view --json reviews`.",
             dry_run=dry_run,
         )
+        stale_head = head
 
     if not dry_run:
-        board.move(issue, "Blocked")
+        board.move(issue, "Blocked", actor="orchestrator")
     notify(
         issue,
         f"nach {max_rounds} Fix-Runden nicht sauber; braucht deine Entscheidung",

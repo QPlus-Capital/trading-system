@@ -45,7 +45,8 @@ A defect is a loss. These override everything else:
 
 ## When you are unsure
 
-If the specification is wrong, incomplete, or unbuildable, do not guess: move the card back to
-`Specifying`, state the concrete gap in an issue comment, and stop. Valid work outside the current
-scope becomes a separate issue — evidenced only, never speculative — and you return to the task at
-hand immediately.
+If the specification is wrong, incomplete, or unbuildable, do not guess: hand the card back with
+`just board move <issue> Specifying --actor codex --reason "<the concrete gap>"` — the board
+refuses the move without the reason and posts it on the issue — and stop. Every board move you
+make carries `--actor codex`. Valid work outside the current scope becomes a separate issue —
+evidenced only, never speculative — and you return to the task at hand immediately.

@@ -260,8 +260,11 @@ hunts, so the review confirms rather than discovers:
 - fail-open: which error path proceeds where it should refuse?
 - money path: any `float` where section 1 requires `Decimal`?
 
-If the specification is wrong, incomplete, or unbuildable, Codex does not guess: the card returns to
-`Specifying`, the gap is stated in an issue comment, and phase 2 runs again.
+If the specification is wrong, incomplete, or unbuildable, Codex does not guess: the card returns
+to `Specifying` with `just board move <issue> Specifying --actor codex --reason "<the gap>"` —
+the board refuses the move without the reason and posts it on the issue — and phase 2 runs again.
+Every board move names its actor; the contract assigns each transition to one, and a card in a
+build cannot be pulled backwards by anyone else.
 
 ### Phase 4 — Review
 
@@ -508,7 +511,7 @@ classifier, the gates and transitions from the contract, and the findings from t
 |---|---|
 | `just classify` | the risk class of this branch, and why |
 | `just gates` | runs exactly the gates that class requires, and prints the evidence table for the pull request |
-| `just board status <issue>` / `just board move <issue> "<Status>"` | reads or moves one card; refuses any transition the contract does not list |
+| `just board status <issue>` / `just board move <issue> "<Status>" --actor <who>` | reads or moves one card; refuses any transition the contract does not list, and any actor the contract does not assign to it. The hand-back to `Specifying` additionally requires `--reason`, which lands on the issue as a comment |
 | `just finish <issue>` | verifies a merged ticket and removes only that ticket's worktree and branch traces |
 | `uv run python -m workflow.orchestrate run <issue>` | the review cycle: gates → review → fix → review, capped, then one notification |
 

@@ -85,7 +85,7 @@ def test_reading_a_card_costs_exactly_one_request(fake_graphql: list[dict[str, A
 def test_a_permitted_transition_is_written_and_read_back(
     fake_graphql: list[dict[str, Any]],
 ) -> None:
-    confirmed = board.move(101, "Ready to Implement")
+    confirmed = board.move(101, "Ready to Implement", actor="claude")
 
     assert confirmed.status == "Ready to Implement"
     kinds = ["mutation" in call["query"] for call in fake_graphql]
@@ -94,7 +94,7 @@ def test_a_permitted_transition_is_written_and_read_back(
 
 def test_a_transition_the_contract_omits_is_refused(fake_graphql: list[dict[str, Any]]) -> None:
     with pytest.raises(BoardError, match="does not permit"):
-        board.move(101, "Reviewing")
+        board.move(101, "Reviewing", actor="codex")
     assert all("mutation" not in call["query"] for call in fake_graphql), "nothing was written"
 
 
@@ -104,18 +104,18 @@ def test_an_automation_owned_status_is_refused(fake_graphql: list[dict[str, Any]
 
     for status in ("Backlog", "Done"):
         with pytest.raises(BoardError, match="project automation"):
-            board.move(101, status)
+            board.move(101, status, actor="claude")
     assert fake_graphql == []
 
 
 def test_an_unknown_status_is_refused(fake_graphql: list[dict[str, Any]]) -> None:
     with pytest.raises(BoardError, match="not a status"):
-        board.move(101, "Erledigt")
+        board.move(101, "Erledigt", actor="claude")
     assert fake_graphql == []
 
 
 def test_moving_to_the_current_status_writes_nothing(fake_graphql: list[dict[str, Any]]) -> None:
-    card = board.move(101, "Specifying")
+    card = board.move(101, "Specifying", actor="claude")
 
     assert card.status == "Specifying"
     assert all("mutation" not in call["query"] for call in fake_graphql)
@@ -132,7 +132,106 @@ def test_a_write_that_did_not_take_effect_is_an_error(monkeypatch: pytest.Monkey
     monkeypatch.setattr(board, "_graphql", run)
 
     with pytest.raises(BoardError, match="did not take effect"):
-        board.move(101, "Ready to Implement")
+        board.move(101, "Ready to Implement", actor="claude")
+
+
+def test_the_wrong_actor_is_refused_by_name(fake_graphql: list[dict[str, Any]]) -> None:
+    """Regression: a specify session pulled a card backwards out of a build that owned it. The
+    contract assigns every transition to an actor; the board now enforces the assignment."""
+
+    with pytest.raises(BoardError, match="'codex' does not move this card"):
+        board.move(101, "Ready to Implement", actor="codex")
+    assert all("mutation" not in call["query"] for call in fake_graphql), "nothing was written"
+
+
+def test_an_unknown_actor_is_refused_before_anything_is_read(
+    fake_graphql: list[dict[str, Any]],
+) -> None:
+    with pytest.raises(BoardError, match="not an actor"):
+        board.move(101, "Ready to Implement", actor="operator")
+    assert fake_graphql == []
+
+
+def test_an_any_transition_accepts_every_contract_actor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`Implementing -> Blocked` carries `actor = "any"`: whoever hits the wall may say so."""
+
+    for actor in sorted(board.ACTORS):
+        state = {"status": "Implementing"}
+
+        def run(
+            query: str, _state: dict[str, str] = state, **variables: object
+        ) -> dict[str, Any]:
+            if "mutation" in query:
+                _state["status"] = "Blocked"
+            return _card_payload(_state["status"])
+
+        monkeypatch.setattr(board, "_graphql", run)
+        assert board.move(101, "Blocked", actor=actor).status == "Blocked"
+
+
+def test_the_hand_back_to_specifying_requires_a_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the first real hand-back walked the card backwards and left no trace anywhere
+    but a closed chat window."""
+
+    monkeypatch.setattr(board, "_graphql", lambda *a, **k: _card_payload("Implementing"))
+
+    with pytest.raises(BoardError, match="requires a reason"):
+        board.move(101, "Specifying", actor="codex")
+    with pytest.raises(BoardError, match="requires a reason"):
+        board.move(101, "Specifying", actor="codex", reason="   ")
+
+
+def test_the_hand_back_reason_lands_on_the_issue(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = {"status": "Implementing"}
+    comments: list[list[str]] = []
+
+    def run(query: str, **variables: object) -> dict[str, Any]:
+        if "mutation" in query:
+            state["status"] = "Specifying"
+        return _card_payload(state["status"])
+
+    class _Done:
+        returncode = 0
+
+    def record_comment(args: list[str], **kwargs: object) -> _Done:
+        comments.append(list(args))
+        return _Done()
+
+    monkeypatch.setattr(board, "_graphql", run)
+    monkeypatch.setattr("workflow.board.subprocess.run", record_comment)
+
+    card = board.move(101, "Specifying", actor="codex", reason="AC-03 is unbuildable as written")
+
+    assert card.status == "Specifying"
+    (comment,) = comments
+    assert comment[:3] == ["gh", "issue", "comment"]
+    assert any("AC-03 is unbuildable as written" in part for part in comment)
+    assert any("Implementing -> Specifying by codex" in part for part in comment)
+
+
+def test_a_reason_that_cannot_be_posted_is_an_error_not_a_shrug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = {"status": "Implementing"}
+
+    def run(query: str, **variables: object) -> dict[str, Any]:
+        if "mutation" in query:
+            state["status"] = "Specifying"
+        return _card_payload(state["status"])
+
+    class _Failed:
+        returncode = 1
+        stderr = "boom"
+
+    monkeypatch.setattr(board, "_graphql", run)
+    monkeypatch.setattr("workflow.board.subprocess.run", lambda args, **kwargs: _Failed())
+
+    with pytest.raises(BoardError, match="did not reach issue"):
+        board.move(101, "Specifying", actor="codex", reason="a real gap")
 
 
 def test_a_card_on_two_boards_is_refused(monkeypatch: pytest.MonkeyPatch) -> None:

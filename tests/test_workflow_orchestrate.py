@@ -6,7 +6,7 @@ suite proves the decisions without performing any of them.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
@@ -60,13 +60,20 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         yield Path("fake-worktree")
 
     monkeypatch.setattr(board_module, "read_card", lambda issue: FakeCard())
-    monkeypatch.setattr(board_module, "move", lambda issue, target: log["moves"].append(target))
+    monkeypatch.setattr(
+        board_module, "move", lambda issue, target, **kwargs: log["moves"].append(target)
+    )
     monkeypatch.setattr(gates_module, "run", lambda paths, risk, root=None: state["gates"]())
     monkeypatch.setattr(orchestrate, "changed_paths", lambda base, root=None: ["core/paths.py"])
     monkeypatch.setattr(orchestrate, "pull_request_for", lambda issue: 999)
     monkeypatch.setattr(orchestrate, "branch_for", lambda issue: f"codex/{issue}-fake")
     monkeypatch.setattr(orchestrate, "_branch_worktree", fake_worktree)
-    monkeypatch.setattr(orchestrate, "_pushed_head", lambda branch: "feedc0ffee01")
+    monkeypatch.setattr(orchestrate, "_ensure_pull_request_title", lambda issue, pr: None)
+    # The fake head advances after every hand-back, as a builder that actually pushed would
+    # advance it; the no-push test overrides this with a constant.
+    monkeypatch.setattr(
+        orchestrate, "_pushed_head", lambda branch: f"head-{len(log['handbacks'])}"
+    )
 
     def settled_checks(pull_request: int, head: str) -> list[str]:
         log["sequence"].append("checks")
@@ -84,7 +91,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(orchestrate, "_reachable_mutation_targets", reachable_targets)
     monkeypatch.setattr(orchestrate, "_mutation_evidence", mutation_evidence)
 
-    def review(issue: int, worktree: Path, *, dry_run: bool = False) -> None:
+    def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> None:
         log["reviews"] += 1
         log["sequence"].append("review")
         log.setdefault("review_trees", []).append(worktree)
@@ -95,7 +102,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def notify(issue: int, message: str, *, dry_run: bool = False) -> None:
         log["notices"].append(message)
 
-    def verdict(pull_request: int) -> Verdict | None:
+    def verdict(pull_request: int, head: str) -> Verdict | None:
         pending: list[Verdict] = state["verdicts"]
         return pending.pop(0) if pending else None
 
@@ -233,12 +240,20 @@ def test_the_cycle_refuses_a_card_that_has_not_started(harness: dict[str, Any]) 
 def test_the_verdict_marker_is_parsed_not_interpreted() -> None:
     body = (
         "## Review\n\nTwo defects and a note.\n\n"
-        "<!-- workflow-verdict blocking: 2 advisory: 1 -->\n"
+        "<!-- workflow-verdict sha:a3c889f00123 blocking: 2 advisory: 1 -->\n"
     )
     match = VERDICT.search(body)
     assert match and match["blocking"] == "2" and match["advisory"] == "1"
+    assert match["sha"] == "a3c889f00123"
 
-    for prose in ("looks good to me", "LGTM", "no blocking findings"):
+    for prose in (
+        "looks good to me",
+        "LGTM",
+        "no blocking findings",
+        # The pre-#177 marker without a sha: it cannot say which commit it certifies, so it no
+        # longer counts as a verdict at all.
+        "<!-- workflow-verdict blocking: 0 advisory: 0 -->",
+    ):
         assert VERDICT.search(prose) is None, "prose must never stand in for the marker"
 
 
@@ -283,13 +298,62 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
     )
     monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
 
-    orchestrate.review(172, Path("some-worktree"))
+    orchestrate.review(172, Path("some-worktree"), "feedc0ffee0123456789")
 
     (argv,) = captured
     assert argv[1] == "-p"
     assert argv[2].startswith("/review-change 172"), "the prompt must follow -p immediately"
+    assert "sha:feedc0ffee01" in argv[2], "the reviewer is told which commit its verdict names"
     assert argv.index("--allowedTools") > argv.index(argv[2])
     assert argv[-1] != argv[2], "the prompt must not be the trailing variadic argument"
+
+
+def test_a_builder_that_pushed_nothing_stops_the_loop(harness: dict[str, Any]) -> None:
+    """Regression from #177: a hand-back after which the head never moved burned a complete
+    gate-and-review round on the identical commit. The cycle now stops and asks the operator."""
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(orchestrate, "_pushed_head", lambda branch: "same-head-forever")
+        harness["state"]["verdicts"] = [Verdict(blocking=2, advisory=0)]
+
+        assert orchestrate.cycle(101) == 1
+
+    assert harness["reviews"] == 1, "the unchanged head is never re-reviewed"
+    assert harness["moves"][-1] == "Blocked"
+    assert "nichts gepusht" in harness["notices"][-1]
+
+
+def test_a_missing_title_prefix_is_corrected_from_the_contract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The `[naming]` rule was violated twice in a row while it lived in prose alone."""
+
+    calls: list[list[str]] = []
+
+    def fake_run(args: Sequence[str], **kwargs: object) -> str:
+        calls.append(list(args))
+        if "view" in args:
+            return '{"title": "The pinned dependency trips a deprecation"}'
+        return ""
+
+    monkeypatch.setattr(orchestrate, "_run", fake_run)
+    orchestrate._ensure_pull_request_title(177, 178)
+
+    edit = next(call for call in calls if "edit" in call)
+    assert "#177 - The pinned dependency trips a deprecation" in edit
+
+
+def test_a_correct_title_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: Sequence[str], **kwargs: object) -> str:
+        calls.append(list(args))
+        return '{"title": "#177 - Already correct"}'
+
+    monkeypatch.setattr(orchestrate, "_run", fake_run)
+    orchestrate._ensure_pull_request_title(177, 178)
+
+    assert not any("edit" in call for call in calls), "no write when the contract already holds"
 
 
 def test_the_orchestrator_never_merges() -> None:
@@ -309,11 +373,11 @@ def test_the_verdict_is_read_from_reviews_not_only_comments(
 
     payload = (
         '{"reviews": [{"body": "## Review\\n\\nNot ready.\\n\\n'
-        '<!-- workflow-verdict blocking: 3 advisory: 13 -->"}], "comments": []}'
+        '<!-- workflow-verdict sha:a46ae66f1b4c blocking: 3 advisory: 13 -->"}], "comments": []}'
     )
     monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
 
-    verdict = orchestrate.latest_verdict(158)
+    verdict = orchestrate.latest_verdict(158, "a46ae66f1b4cbf2df9e235a97acf43916c42b7ca")
 
     assert verdict is not None
     assert verdict.blocking == 3 and verdict.advisory == 13
@@ -322,15 +386,31 @@ def test_the_verdict_is_read_from_reviews_not_only_comments(
 def test_the_newest_review_wins_over_older_ones(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = (
         '{"reviews": ['
-        '{"body": "<!-- workflow-verdict blocking: 3 advisory: 1 -->"},'
-        '{"body": "<!-- workflow-verdict blocking: 0 advisory: 2 -->"}'
+        '{"body": "<!-- workflow-verdict sha:feedc0ffee01 blocking: 3 advisory: 1 -->"},'
+        '{"body": "<!-- workflow-verdict sha:feedc0ffee01 blocking: 0 advisory: 2 -->"}'
         '], "comments": [{"body": "unrelated chatter"}]}'
     )
     monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
 
-    verdict = orchestrate.latest_verdict(158)
+    verdict = orchestrate.latest_verdict(158, "feedc0ffee0123456789")
 
     assert verdict is not None and verdict.clean and verdict.advisory == 2
+
+
+def test_a_verdict_for_another_commit_is_no_verdict_at_all(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression from #177: a round in which the builder pushed nothing produced no new review,
+    and the loop reused the previous round's verdict as if it were fresh. It happened to be
+    blocking; clean, it would have recommended merging an unreviewed commit."""
+
+    payload = (
+        '{"reviews": [{"body": "<!-- workflow-verdict sha:0ddba11c0de5 blocking: 0 '
+        'advisory: 0 -->"}], "comments": []}'
+    )
+    monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
+
+    assert orchestrate.latest_verdict(158, "a46ae66f1b4cbf2df9e235a97acf439") is None
 
 
 def test_the_gates_measure_the_branch_not_the_launching_checkout(
