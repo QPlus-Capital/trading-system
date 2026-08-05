@@ -273,6 +273,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `workflow/board.py` | The single writer of the project board's Status field; refuses transitions the contract omits |
 | `workflow/gates.py` | Runs exactly the gates a risk class requires and prints the pull-request evidence table |
 | `workflow/orchestrate.py` | Drives the review cycle: gates in a branch worktree, fresh reviewer, fix rounds, cap |
+| `workflow/watch.py` | Follows one ticket read-only and prints a snapshot when its state moves; the ticket chat's narration source |
 | `workflow/finish.py` | Verifies and removes one completed ticket's worktree and branch traces |
 | `workflow/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `workflow/mutation.py` | Runs focused mutation scopes and enforces the TOML survivor ratchet |

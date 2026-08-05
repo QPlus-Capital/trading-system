@@ -53,7 +53,6 @@ VERDICT = re.compile(
     r"blocking:\s*(?P<blocking>\d+)\s+advisory:\s*(?P<advisory>\d+)\s+"
     r"evidence:\s*(?P<evidence>executed|static)\s*-->"
 )
-SESSION_MARKER = re.compile(r"<!--\s*claude-session:\s*(?P<session>[A-Za-z0-9_-]+)\s*-->")
 #: The reviewer wraps every decision that belongs to the operator in this pair, so the cycle can
 #: forward the decision itself — on #102 two well-formed decisions sat only in the pull-request
 #: review, and the operator, reading the ticket chat, never saw either.
@@ -319,16 +318,14 @@ def review_decisions(pull_request: int, head: str) -> tuple[str, ...]:
     return tuple(match["text"].strip() for match in DECISION.finditer(body))
 
 
-def session_for(issue: int) -> str | None:
-    """The Claude session that specified this issue, recorded on it in phase 0."""
+def events_path(issue: int) -> Path:
+    """One event log per issue, in the git directory every worktree of this repository shares."""
 
-    raw = _run(["gh", "issue", "view", str(issue), "--json", "body,comments"])
-    payload = json.loads(raw or "{}")
-    haystack = str(payload.get("body", "")) + "\n".join(
-        str(comment.get("body", "")) for comment in payload.get("comments", [])
-    )
-    match = SESSION_MARKER.search(haystack)
-    return match["session"] if match else None
+    common = _run(["git", "rev-parse", "--git-common-dir"])
+    base = Path(common)
+    if not base.is_absolute():
+        base = (REPO_ROOT / common).resolve()
+    return base / f"qplus-events-{issue}.jsonl"
 
 
 def report(
@@ -338,41 +335,32 @@ def report(
     *,
     dry_run: bool = False,
 ) -> None:
-    """Send one structured progress event to the ticket's chat, which narrates it in German.
+    """Append one structured progress event to the ticket's event log.
 
-    The orchestrator computes facts; the ticket's own session turns them into a few plain
-    sentences the operator can follow. A bare status line proved worse than nothing on #177:
-    three of them, hours apart, contradicted one another because none said which commit or round
-    it described. Every event therefore carries its context, and the session is told to narrate
-    — never to act. The operator never has to decide anything inside GitHub; the chat carries
-    the detail, and a decision event is the last event a run sends, so it is never buried under
-    routine progress lines.
+    The cycle *records*; the ticket's chat *narrates*. The first design pushed each event into
+    the chat's session by spawning a headless process on it — and the operator saw nothing,
+    because an already-open window does not reload what another process appends, and the spawned
+    narrator knew only the event's five fields, never the artifacts behind them. Now the events
+    accumulate here, the chat watches the ticket (``workflow.watch``) and reads this log *plus*
+    the real artifacts — review text, run logs, the card — so the narration is written by the
+    session the operator is actually looking at. A bare status line proved worse than nothing
+    on #177: three of them, hours apart, contradicted one another because none said which commit
+    or round it described; every event therefore still carries its round, head, and counts.
     """
 
-    payload = json.dumps({"issue": issue, "ereignis": kind, **dict(facts)}, ensure_ascii=False)
+    payload = json.dumps(
+        {"zeit": _now_iso(), "issue": issue, "ereignis": kind, **dict(facts)},
+        ensure_ascii=False,
+    )
     _say(f"\n>>> #{issue} [{kind}] {payload}")
     if dry_run:
         return
-    session = session_for(issue)
-    if session is None:
-        return
-    prompt = (
-        f"[Orchestrator-Ereignis] {payload}\n"
-        "Du bist die Ticket-Session dieses Issues. Formuliere aus dem Ereignis zwei bis fünf "
-        "deutsche Sätze für den Operator: was gerade passiert ist, was es bedeutet, und was als "
-        "Nächstes geschieht. Führe keine Kommandos aus und beginne keine Arbeit. Enthält das "
-        "Ereignis das Feld 'entscheidung', stelle die Entscheidung deutlich abgesetzt dar — die "
-        "Frage, die Optionen, deine Empfehlung, und was passiert, wenn der Operator nichts tut. "
-        "Enthält es das Feld 'kommando', nenne das Kommando in einer eigenen Zeile. Keine "
-        "leeren Abschnitte, keine Überschriften um des Formats willen."
-    )
-    subprocess.run(
-        [_executable("claude"), "-p", "--resume", session, prompt],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    with events_path(issue).open("a", encoding="utf-8") as handle:
+        handle.write(payload + "\n")
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
 #: What the headless reviewer may do without anyone there to approve: read the ticket and the pull

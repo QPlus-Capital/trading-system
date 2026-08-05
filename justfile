@@ -69,6 +69,10 @@ gates range="origin/main":
 board *args:
     uv run python -m workflow.board {{args}}
 
+# Follow one ticket read-only: print a snapshot whenever its state changes
+watch *args:
+    uv run python -m workflow.watch {{args}}
+
 # Remove the worktree and branch traces left by one completed ticket
 finish issue:
     uv run python -m workflow.finish {{issue}}

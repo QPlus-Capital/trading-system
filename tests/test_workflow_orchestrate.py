@@ -6,6 +6,7 @@ suite proves the decisions without performing any of them.
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -20,7 +21,7 @@ from workflow import board as board_module
 from workflow import gates as gates_module
 from workflow import orchestrate
 from workflow.gates import GateResult
-from workflow.orchestrate import SESSION_MARKER, VERDICT, OrchestrationError, Verdict
+from workflow.orchestrate import VERDICT, OrchestrationError, Verdict
 
 
 def _green() -> tuple[str, list[GateResult]]:
@@ -294,12 +295,6 @@ def test_the_verdict_marker_is_parsed_not_interpreted() -> None:
         "<!-- workflow-verdict sha:a3c889f00123 blocking: 0 advisory: 0 evidence:guessed -->",
     ):
         assert VERDICT.search(prose) is None, "prose must never stand in for the marker"
-
-
-def test_the_session_marker_binds_a_ticket_to_its_chat() -> None:
-    found = SESSION_MARKER.search("<!-- claude-session: abc-123 -->")
-    assert found is not None and found["session"] == "abc-123"
-    assert SESSION_MARKER.search("no marker here") is None
 
 
 @pytest.mark.parametrize(
@@ -593,30 +588,33 @@ def test_a_correct_title_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not any("edit" in call for call in calls), "no write when the contract already holds"
 
 
-def test_an_event_carries_its_facts_and_forbids_action(
-    monkeypatch: pytest.MonkeyPatch,
+def test_an_event_is_recorded_never_pushed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The ticket session narrates events; it must never be prompted into working. The payload
-    carries round, head and counts, because three context-free status lines on #177 read as
+    """The cycle records; the ticket's chat pulls. Spawning a narrator on the chat's session was
+    tried and failed twice — the open window never showed the message. The payload still carries
+    round, head and counts, because three context-free status lines on #177 read as
     contradictions."""
 
-    captured: list[list[str]] = []
+    log = tmp_path / "qplus-events-177.jsonl"
+    monkeypatch.setattr(orchestrate, "events_path", lambda issue: log)
     monkeypatch.setattr(
-        "workflow.orchestrate.subprocess.run", lambda argv, **kwargs: captured.append(list(argv))
+        "workflow.orchestrate.subprocess.run",
+        lambda *a, **k: pytest.fail("an event must spawn nothing"),
     )
-    monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
-    monkeypatch.setattr(orchestrate, "session_for", lambda issue: "session-abc")
 
     head = "a3c889f00123"  # pragma: allowlist secret
     orchestrate.report(
         177, "urteil", {"runde": 2, "blockierend": 0, "beratend": 3, "head": head}
     )
+    orchestrate.report(177, "fertig", {"runde": 2}, dry_run=True)
 
-    (argv,) = captured
-    prompt = argv[-1]
-    assert '"runde": 2' in prompt and '"head": "a3c889f00123"' in prompt  # pragma: allowlist secret
-    assert "Führe keine Kommandos aus" in prompt
-    assert "entscheidung" in prompt, "the rendering rule for decision events travels with it"
+    lines = [line for line in log.read_text(encoding="utf-8").splitlines() if line]
+    assert len(lines) == 1, "a dry run records nothing"
+    event = json.loads(lines[0])
+    assert event["ereignis"] == "urteil" and event["runde"] == 2
+    assert event["head"] == head and event["issue"] == 177
+    assert event["zeit"], "an undated event cannot be ordered against the artifacts"
 
 
 def test_the_orchestrator_never_merges() -> None:
