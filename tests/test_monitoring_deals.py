@@ -187,6 +187,20 @@ def test_open_position_returns_empty_trade_schema() -> None:
     ]
 
 
+def test_deals_to_trades_orders_completed_positions_by_close_time() -> None:
+    deals = [
+        _deal(1, "XAUUSD", 0, 0, 10),
+        _deal(1, "XAUUSD", 1, 1, 40),
+        _deal(2, "EURUSD", 0, 0, 20),
+        _deal(2, "EURUSD", 1, 1, 30),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades["position_id"].tolist() == [2, 1]
+    assert trades.index.tolist() == [0, 1]
+
+
 def test_equity_curve_accumulates_from_start() -> None:
     deals = [
         _deal(1, "X", 0, 0, 10),
