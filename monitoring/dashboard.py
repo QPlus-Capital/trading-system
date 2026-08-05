@@ -27,6 +27,7 @@ from live.mt5_bridge import SYMBOL_MAP, AccountState, Mt5Bridge
 from live.runner import position_risk, risk_per_trade_from_live_config
 
 from monitoring.deals import (
+    DealDirectionError,
     deal_ledger,
     deals_to_trades,
     equity_curve,
@@ -198,7 +199,13 @@ def _live_view() -> None:
         return
     ref = load_reference(max(runs, key=lambda d: d.stat().st_mtime) / "full_history_trades.csv")
 
-    all_trades = deals_to_trades(live["deals"])
+    reconstruction_error: DealDirectionError | None = None
+    try:
+        all_trades = deals_to_trades(live["deals"])
+    except DealDirectionError as exc:
+        reconstruction_error = exc
+        st.error(f"Die Trade-Historie konnte nicht rekonstruiert werden: {exc}")
+        all_trades = deals_to_trades([])
     all_trades["market"] = (
         all_trades["symbol"].map(live["term_to_research"]).fillna(all_trades["symbol"])
     )
@@ -279,12 +286,12 @@ def _live_view() -> None:
             "verfügbaren Risikospielraum."
         )
 
-    if trades.empty:
+    if trades.empty and reconstruction_error is None:
         st.info(
             "Noch keine geschlossenen Trades — der erste wird abgewartet. Der Vergleich füllt "
             "sich, sobald Trades geschlossen werden."
         )
-    else:
+    elif not trades.empty:
         net = trades["net_pnl"].to_numpy(dtype=object)
         r_values = np.array(
             [pnl / risk_amount for pnl, risk_amount in zip(net, trade_risk, strict=True)],

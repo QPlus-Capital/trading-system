@@ -2,8 +2,10 @@
 
 from decimal import Decimal
 
+import monitoring.deals as deals_module
 import numpy as np
 import pandas as pd
+import pytest
 from monitoring.deals import deal_ledger, deals_to_trades, equity_curve, live_stats
 
 
@@ -91,6 +93,112 @@ def test_deals_to_trades_sorts_deals_before_selecting_the_round_trip() -> None:
     assert row["close_time"] == pd.Timestamp(30, unit="s", tz="UTC")
     assert row["volume"] == 0.2
     assert row["net_pnl"] == Decimal("15.0")
+
+
+def test_trade_deal_types_map_to_named_directions() -> None:
+    deals = [
+        _deal(1, "XAUUSD", 0, 0, 10, ticket=101),
+        _deal(1, "XAUUSD", 1, 1, 20, ticket=102),
+        _deal(2, "EURUSD", 1, 0, 30, ticket=201),
+        _deal(2, "EURUSD", 0, 1, 40, ticket=202),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert deals_module.DEAL_TYPE_BUY == 0
+    assert deals_module.DEAL_TYPE_SELL == 1
+    assert list(trades.columns) == [
+        "position_id",
+        "symbol",
+        "direction",
+        "open_time",
+        "open_ticket",
+        "close_time",
+        "volume",
+        "net_pnl",
+    ]
+    assert trades["direction"].tolist() == ["BUY", "SELL"]
+
+
+def test_non_trade_opening_type_raises_diagnostic() -> None:
+    deals = [_deal(42, "AAPL", 15, 0, 10, ticket=7001)]
+
+    with pytest.raises(deals_module.DealDirectionError) as exc_info:
+        deals_to_trades(deals)
+
+    assert str(exc_info.value) == (
+        "unsupported MT5 opening deal type 15: ticket=7001, entry=0, position_id=42"
+    )
+
+
+@pytest.mark.parametrize("deal_type", [13, 14], ids=["buy_canceled", "sell_canceled"])
+def test_canceled_opening_types_raise_diagnostic(deal_type: int) -> None:
+    deals = [
+        _deal(77, "MSFT", deal_type, 0, 10, ticket=8001),
+        _deal(77, "MSFT", 1, 1, 20, ticket=8002),
+    ]
+
+    with pytest.raises(deals_module.DealDirectionError, match=rf"deal type {deal_type}\b"):
+        deals_to_trades(deals)
+
+
+def test_cash_deal_types_remain_only_in_ledger() -> None:
+    deals = [
+        _deal(0, "", 2, 0, 10, profit=100.0, ticket=9001),
+        _deal(0, "", 7, 0, 20, commission=-2.0, ticket=9002),
+    ]
+
+    trades = deals_to_trades(deals)
+    ledger = deal_ledger(deals)
+
+    assert trades.empty
+    assert list(ledger["ticket"]) == [9001, 9002]
+    assert list(ledger["amount"]) == [Decimal("100.0"), Decimal("-2.0")]
+
+
+def test_incomplete_groups_do_not_hide_later_completed_trades() -> None:
+    deals = [
+        _deal(1, "XAUUSD", 1, 1, 10),
+        _deal(2, "EURUSD", 0, 0, 20),
+        _deal(2, "EURUSD", 1, 1, 30),
+        _deal(3, "GBPUSD", 0, 0, 40),
+        _deal(4, "USDJPY", 1, 0, 50),
+        _deal(4, "USDJPY", 0, 1, 60),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades["position_id"].tolist() == [2, 4]
+
+
+def test_open_position_returns_empty_trade_schema() -> None:
+    trades = deals_to_trades([_deal(1, "XAUUSD", 0, 0, 10)])
+
+    assert trades.empty
+    assert list(trades.columns) == [
+        "position_id",
+        "symbol",
+        "direction",
+        "open_time",
+        "open_ticket",
+        "close_time",
+        "volume",
+        "net_pnl",
+    ]
+
+
+def test_deals_to_trades_orders_completed_positions_by_close_time() -> None:
+    deals = [
+        _deal(1, "XAUUSD", 0, 0, 10),
+        _deal(1, "XAUUSD", 1, 1, 40),
+        _deal(2, "EURUSD", 0, 0, 20),
+        _deal(2, "EURUSD", 1, 1, 30),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades["position_id"].tolist() == [2, 1]
+    assert trades.index.tolist() == [0, 1]
 
 
 def test_equity_curve_accumulates_from_start() -> None:
