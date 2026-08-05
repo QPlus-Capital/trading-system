@@ -171,18 +171,41 @@ def test_an_any_transition_accepts_every_contract_actor(
         assert board.move(101, "Blocked", actor=actor).status == "Blocked"
 
 
-def test_the_hand_back_to_specifying_requires_a_reason(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("source", "actor"),
+    [
+        ("Ready to Implement", "claude"),
+        ("Implementing", "codex"),
+        ("Blocked", "claude"),
+    ],
+)
+def test_every_backward_move_to_specifying_requires_a_reason(
+    monkeypatch: pytest.MonkeyPatch, source: str, actor: str
 ) -> None:
     """Regression: the first real hand-back walked the card backwards and left no trace anywhere
     but a closed chat window."""
 
-    monkeypatch.setattr(board, "_graphql", lambda *a, **k: _card_payload("Implementing"))
+    monkeypatch.setattr(board, "_graphql", lambda *a, **k: _card_payload(source))
 
     with pytest.raises(BoardError, match="requires a reason"):
-        board.move(101, "Specifying", actor="codex")
+        board.move(101, "Specifying", actor=actor)
     with pytest.raises(BoardError, match="requires a reason"):
-        board.move(101, "Specifying", actor="codex", reason="   ")
+        board.move(101, "Specifying", actor=actor, reason="   ")
+
+
+def test_starting_specification_from_backlog_needs_no_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = {"status": "Backlog"}
+
+    def run(query: str, **variables: object) -> dict[str, Any]:
+        if "mutation" in query:
+            state["status"] = "Specifying"
+        return _card_payload(state["status"])
+
+    monkeypatch.setattr(board, "_graphql", run)
+
+    assert board.move(101, "Specifying", actor="claude").status == "Specifying"
 
 
 def test_the_hand_back_reason_lands_on_the_issue(monkeypatch: pytest.MonkeyPatch) -> None:
