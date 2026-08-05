@@ -12,6 +12,7 @@ from workflow.classify import REPO_ROOT, classify_path, load_model
 
 _SKILLS = {
     "create-issue",
+    "follow-ticket",
     "resolve-findings",
     "review-change",
     "specify-change",
@@ -74,12 +75,16 @@ def test_expected_agents_are_read_only_and_name_their_role() -> None:
         assert "do not edit" in re.sub(r"\s+", " ", body.casefold())
 
 
-def test_exactly_four_workflow_skills_remain() -> None:
+def test_exactly_the_registered_workflow_skills_remain() -> None:
+    """The skill set is a pinned registry, never a drop folder: #111 cut it from eight, and
+    every later addition (`follow-ticket`, 2026-08-05, the pull-based ticket narration) enters
+    here deliberately or fails the suite."""
+
     discovered = {
         path.parent.name for path in (REPO_ROOT / ".claude" / "skills").glob("*/SKILL.md")
     }
     assert discovered == _SKILLS
-    assert len(discovered) == 4
+    assert len(discovered) == 5
 
 
 def test_no_skill_lets_claude_build() -> None:

@@ -106,7 +106,7 @@ Two built-in project automations cost no Actions minutes: *issue opened → `Bac
 A fresh Claude chat — after the issue exists, the operator names it `Issue #<number>`, and it stays
 the ticket's one Claude chat until the merge. The operator states the idea in a sentence or two.
 Claude opens an issue with a clear title and two or three sentences of body, and records the session
-identifier on it so the orchestrator can reach this chat later.
+identifier on it so the record names the ticket's chat.
 
 No template, no labels, no questions. **An idea must cost nothing.** Titles are plain sentences
 without prefixes; the grown `[P-NN]` package issues keep theirs.
@@ -146,8 +146,8 @@ In the same chat, when the operator asks for the idea to be worked out. Claude m
 
 A ticket that was **not** born in a chat — anything picked up out of the backlog — carries no
 session marker yet, so this chat records its own identifier on the issue here, exactly as phase 0
-does for a ticket it created. Without it the review cycle has no chat to narrate into and falls
-silent precisely when the operator wants to follow along.
+does for a ticket it created: the record names the ticket's chat, and this chat is it from now on
+— it follows the run and narrates it (`follow-ticket`) once the ticket is released.
 
 **Lean lane:** the issue body is the problem and the goal in a few sentences — essentially the
 operator's own words, sharpened. Up to five numbered, testable criteria where they earn their keep;
@@ -312,15 +312,23 @@ the cycle presents it to the operator as a decision — re-run for an executed r
 the static one and merge on the pull request. Blocking findings hold on any footing; only "ready
 to merge" demands executed evidence.
 
-**The cycle narrates as it goes.** Every phase change — round started, review running, verdict,
-hand-back, mutation measurement, ready or blocked — reaches the ticket's Claude chat as a
-structured event carrying its round, head commit, and counts; the session narrates it in German
-for the operator and never acts on it. A decision event is the last event a run sends, so a
-decision is never buried under routine progress lines. Decisions the *reviewer* leaves to the
-operator are wrapped in `<!-- workflow-decision -->` … `<!-- /workflow-decision -->` in its
-summary; the cycle forwards them as the closing decision event **and** as a comment on the
-issue, because an already-open chat window does not refresh with what a headless session
-appends — the issue comment is the channel no window can swallow.
+**The cycle records; the ticket's chat narrates.** Every phase change — round started, review
+running, verdict, hand-back, mutation measurement, ready or blocked — is appended as a structured
+event, carrying its round, head commit, and counts, to the ticket's event log in the shared git
+directory. The ticket's chat follows the run (`follow-ticket`): it watches with
+`just watch <issue> --until-change` in the background, wakes on each change, reads the log *and*
+the artifacts behind it — the review text, the run logs, the card — and writes the update in
+German, in the window the operator is actually looking at. It never acts on the run. Pushing
+events into the chat's session was tried and failed: an open window does not reload what a
+headless process appends, and a narrator that knows only the event line cannot answer the first
+follow-up question. A decision event is the last event a run records, so a decision is never
+buried under routine progress lines; decisions the *reviewer* leaves to the operator are wrapped
+in `<!-- workflow-decision -->` … `<!-- /workflow-decision -->` in its summary, and the cycle
+forwards them as the closing decision event **and** as a comment on the issue — the durable
+record no window can swallow. **After the merge the chat delivers the closing summary:** every
+advisory finding, every open decision with its recommendation and default, and a ready-to-paste
+prompt for each finding worth a ticket. Nothing an operator must weigh disappears into a closed
+pull request.
 
 **Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
 in the full program:
@@ -555,7 +563,8 @@ classifier, the gates and transitions from the contract, and the findings from t
 | `just gates` | runs exactly the gates that class requires, and prints the evidence table for the pull request |
 | `just board status <issue>` / `just board move <issue> "<Status>" --actor <who>` | reads or moves one card; refuses any transition the contract does not list, and any actor the contract does not assign to it. The hand-back to `Specifying` additionally requires `--reason`, which lands on the issue as a comment |
 | `just finish <issue>` | verifies a merged ticket and removes only that ticket's worktree and branch traces |
-| `uv run python -m workflow.orchestrate run <issue>` | the review cycle: gates → review → fix → review, capped, then one notification |
+| `just watch <issue> --until-change` | follows one ticket read-only and prints a snapshot when its state moves — what the ticket's chat runs in the background to narrate |
+| `uv run python -m workflow.orchestrate run <issue>` | the review cycle: gates → review → fix → review, capped, its events recorded to the ticket's log |
 
 The board tool answers by **issue number in one request**. Listing a whole project to find one card
 is what exhausted the GraphQL budget and left the board unreadable for forty minutes.

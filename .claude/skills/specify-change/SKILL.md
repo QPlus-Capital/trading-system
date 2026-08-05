@@ -38,6 +38,8 @@ on the operator's ask (`[review.scope]` in `workflow/workflow.toml`).
 9. Present the complete issue body and, at R3, the risk itself. **Stop before** moving the card.
 10. Only after the operator's explicit release: add `risk:Rn` and move the card to
     `Ready to Implement`. Report only that the issue is released — no prompt, no call to action.
+11. Then invoke `follow-ticket`: this chat is the ticket's chat, and from here on it watches the
+    run in the background and narrates every change until the merge and the closing summary.
 
 ## Outputs
 
