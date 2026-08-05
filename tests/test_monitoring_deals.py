@@ -107,6 +107,16 @@ def test_trade_deal_types_map_to_named_directions() -> None:
 
     assert deals_module.DEAL_TYPE_BUY == 0
     assert deals_module.DEAL_TYPE_SELL == 1
+    assert list(trades.columns) == [
+        "position_id",
+        "symbol",
+        "direction",
+        "open_time",
+        "open_ticket",
+        "close_time",
+        "volume",
+        "net_pnl",
+    ]
     assert trades["direction"].tolist() == ["BUY", "SELL"]
 
 
@@ -144,6 +154,37 @@ def test_cash_deal_types_remain_only_in_ledger() -> None:
     assert trades.empty
     assert list(ledger["ticket"]) == [9001, 9002]
     assert list(ledger["amount"]) == [Decimal("100.0"), Decimal("-2.0")]
+
+
+def test_incomplete_groups_do_not_hide_later_completed_trades() -> None:
+    deals = [
+        _deal(1, "XAUUSD", 1, 1, 10),
+        _deal(2, "EURUSD", 0, 0, 20),
+        _deal(2, "EURUSD", 1, 1, 30),
+        _deal(3, "GBPUSD", 0, 0, 40),
+        _deal(4, "USDJPY", 1, 0, 50),
+        _deal(4, "USDJPY", 0, 1, 60),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades["position_id"].tolist() == [2, 4]
+
+
+def test_open_position_returns_empty_trade_schema() -> None:
+    trades = deals_to_trades([_deal(1, "XAUUSD", 0, 0, 10)])
+
+    assert trades.empty
+    assert list(trades.columns) == [
+        "position_id",
+        "symbol",
+        "direction",
+        "open_time",
+        "open_ticket",
+        "close_time",
+        "volume",
+        "net_pnl",
+    ]
 
 
 def test_equity_curve_accumulates_from_start() -> None:

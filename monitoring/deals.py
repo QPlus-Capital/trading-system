@@ -105,10 +105,10 @@ def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
         if outs.empty:
             continue  # not a completed round trip
         last_out = outs.iloc[-1]
-        net = sum(
-            (_deal_amount(deal) for deal in g.to_dict(orient="records")),
-            start=_ZERO,
-        )
+        net = _ZERO
+        for leg in _MONEY_LEGS:
+            for value in g[leg]:
+                net += _money(value)
         rows.append(
             {
                 "position_id": int(pid),

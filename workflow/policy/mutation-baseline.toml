@@ -1,5 +1,7 @@
 # Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor has an exact-name
 # classification; the ratchet rejects any additional survivor.
+# Issue #102 tightens the baseline by four monitoring.deals survivors that its direction and
+# schema regressions now kill; the total stays fixed while those outcomes move to killed.
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
@@ -40,8 +42,8 @@ policy_fingerprint = "fb5cdad3a56f2a87b989846a0ecfe4b1244f2e751977578e9f79063336
 
 [summary]
 total = 5898
-killed = 5362
-survived = 536
+killed = 5366
+survived = 532
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -442,7 +444,6 @@ names = [
     "monitoring.deals.x_deal_ledger__mutmut_6",
     "monitoring.deals.x_deal_ledger__mutmut_60",
     "monitoring.deals.x_deal_ledger__mutmut_61",
-    "monitoring.deals.x_deals_to_trades__mutmut_134",
     "monitoring.deals.x_deals_to_trades__mutmut_136",
     "monitoring.deals.x_deals_to_trades__mutmut_137",
     "monitoring.deals.x_deals_to_trades__mutmut_141",
@@ -454,11 +455,8 @@ names = [
     "monitoring.deals.x_deals_to_trades__mutmut_46",
     "monitoring.deals.x_deals_to_trades__mutmut_47",
     "monitoring.deals.x_deals_to_trades__mutmut_5",
-    "monitoring.deals.x_deals_to_trades__mutmut_58",
     "monitoring.deals.x_deals_to_trades__mutmut_6",
-    "monitoring.deals.x_deals_to_trades__mutmut_67",
     "monitoring.deals.x_deals_to_trades__mutmut_7",
-    "monitoring.deals.x_deals_to_trades__mutmut_71",
     "monitoring.deals.x_equity_curve__mutmut_17",
     "monitoring.deals.x_equity_curve__mutmut_18",
     "monitoring.deals.x_equity_curve__mutmut_19",
