@@ -18,7 +18,9 @@ need is in the issue body, the labels, and the workflow document. Check the guar
 worktree on `codex/<issue>-<slug>`, prove the test red before you build it green, run the gates of
 the risk class, run the self-check, push **once**, and open the pull request — ready for review,
 never as a draft. Then end the session by starting the review cycle:
-`uv run python -m workflow.orchestrate run <issue>`.
+`uv run python -m workflow.orchestrate run <issue>`. **Exception:** when your task is a hand-back
+from the running cycle (its prompt says so), push, move the card back to `Reviewing`, and stop —
+that cycle is still running and resumes on your push; a second one would race it.
 
 **You never review your own work** and you never merge or enable auto-merge. The independent review
 is triggered automatically once the pull request is open.
