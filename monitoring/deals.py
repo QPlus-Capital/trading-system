@@ -16,6 +16,12 @@ import pandas as pd
 
 _ZERO = Decimal("0")
 _MONEY_LEGS = ("profit", "swap", "commission", "fee")
+DEAL_TYPE_BUY = 0
+DEAL_TYPE_SELL = 1
+_DEAL_DIRECTIONS = {
+    DEAL_TYPE_BUY: "BUY",
+    DEAL_TYPE_SELL: "SELL",
+}
 _TRADE_COLUMNS = [
     "position_id",
     "symbol",
@@ -28,6 +34,20 @@ _TRADE_COLUMNS = [
 ]
 
 
+class DealDirectionError(ValueError):
+    """A symbol-bearing opening deal has no authoritative trade direction."""
+
+    def __init__(self, deal_type: int, ticket: int, entry: int, position_id: int) -> None:
+        self.deal_type = deal_type
+        self.ticket = ticket
+        self.entry = entry
+        self.position_id = position_id
+        super().__init__(
+            f"unsupported MT5 opening deal type {deal_type}: "
+            f"ticket={ticket}, entry={entry}, position_id={position_id}"
+        )
+
+
 def _money(value: object) -> Decimal:
     """Convert a broker or fixture money value without binary-float arithmetic."""
     return value if isinstance(value, Decimal) else Decimal(str(value))
@@ -35,6 +55,19 @@ def _money(value: object) -> Decimal:
 
 def _deal_amount(deal: dict[str, Any]) -> Decimal:
     return sum((_money(deal.get(leg, 0)) for leg in _MONEY_LEGS), start=_ZERO)
+
+
+def _deal_direction(deal: pd.Series) -> str:
+    deal_type = int(deal["type"])
+    direction = _DEAL_DIRECTIONS.get(deal_type)
+    if direction is None:
+        raise DealDirectionError(
+            deal_type=deal_type,
+            ticket=int(deal["_event_order"]),
+            entry=int(deal["entry"]),
+            position_id=int(deal["position_id"]),
+        )
+    return direction
 
 
 def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
@@ -65,9 +98,13 @@ def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
     for pid, g in df.groupby("position_id"):
         g = g.sort_values(["time", "_event_order", "_sequence"], kind="stable")
         ins, outs = g[g["entry"] == 0], g[g["entry"] == 1]
-        if ins.empty or outs.empty:
+        if ins.empty:
+            continue
+        first_in = ins.iloc[0]
+        direction = _deal_direction(first_in)
+        if outs.empty:
             continue  # not a completed round trip
-        first_in, last_out = ins.iloc[0], outs.iloc[-1]
+        last_out = outs.iloc[-1]
         net = sum(
             (_deal_amount(deal) for deal in g.to_dict(orient="records")),
             start=_ZERO,
@@ -76,7 +113,7 @@ def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
             {
                 "position_id": int(pid),
                 "symbol": str(first_in["symbol"]),
-                "direction": "BUY" if int(first_in["type"]) == 0 else "SELL",
+                "direction": direction,
                 "open_time": pd.to_datetime(int(first_in["time"]), unit="s", utc=True),
                 "open_ticket": int(first_in["_event_order"]),
                 "close_time": pd.to_datetime(int(last_out["time"]), unit="s", utc=True),

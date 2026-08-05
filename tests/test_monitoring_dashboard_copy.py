@@ -56,6 +56,7 @@ class _RenderedStreamlit:
         self.infos: list[str] = []
         self.warnings: list[str] = []
         self.metrics: list[dict[str, object]] = []
+        self.dataframes: list[object] = []
 
     def title(self, _text: str) -> None:
         return None
@@ -87,8 +88,8 @@ class _RenderedStreamlit:
     def subheader(self, _text: str) -> None:
         return None
 
-    def dataframe(self, _frame: object, **_kwargs: object) -> None:
-        return None
+    def dataframe(self, frame: object, **_kwargs: object) -> None:
+        self.dataframes.append(frame)
 
 
 class _ImportBridge:
@@ -180,6 +181,7 @@ def test_every_post_p14_operator_literal_is_the_reviewed_german_copy(monkeypatch
         "\n\nIst es geöffnet und angemeldet?",
         "Noch keine Backtest-Referenz vorhanden — zuerst die Backtest-Pipeline ausführen "
         "(`just backtest`).",
+        "Die Trade-Historie konnte nicht rekonstruiert werden: ",
         "Die Handelshistorie scheint unvollständig: Ihre Wiedergabe ergibt ",
         " vor dem ersten Eintrag; das ist weder null noch der gespeicherte Startsaldo von ",
         ". Historische R-Werte sind nur Näherungen.",
@@ -342,3 +344,92 @@ def test_live_dashboard_renders_key_operator_guidance_in_german(
     assert risk_metric["help"] == (
         "Gesamtes offenes Stop-Risiko im Verhältnis zur Obergrenze von 2,0 %"
     )
+
+
+def test_live_dashboard_preserves_safety_view_when_reconstruction_refuses(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
+    dashboard = _import_dashboard(monkeypatch)
+    rendered = _RenderedStreamlit()
+    run = tmp_path / "reports" / "research" / "run_test"
+    run.mkdir(parents=True)
+    (run / "full_history_trades.csv").write_text("market,r\n", encoding="utf-8")
+    live: dict[str, Any] = {
+        "deals": [
+            {
+                "position_id": 42,
+                "symbol": "AAPL",
+                "type": 15,
+                "entry": 0,
+                "time": 10,
+                "ticket": 7001,
+                "volume": 1.0,
+            },
+            {
+                "position_id": 42,
+                "symbol": "AAPL",
+                "type": 1,
+                "entry": 1,
+                "time": 20,
+                "ticket": 7002,
+                "volume": 1.0,
+            },
+        ],
+        "balance": 200.0,
+        "equity": 190.0,
+        "currency": "EUR",
+        "open_risk": OpenRisk(total=10.0),
+        "positions": [{"symbol": "AAPL", "side": "BUY", "risk": 10.0}],
+        "term_to_research": {},
+    }
+    empty_trades = pd.DataFrame(
+        {
+            "symbol": pd.Series(dtype=str),
+            "close_time": pd.Series(dtype="datetime64[ns, UTC]"),
+            "net_pnl": pd.Series(dtype=object),
+        }
+    )
+
+    monkeypatch.setattr(dashboard, "st", rendered)
+    monkeypatch.setattr(dashboard, "_REPO", tmp_path)
+    monkeypatch.setattr(dashboard, "_load_live", lambda _account: live)
+    monkeypatch.setattr(dashboard, "load_reference", lambda _path: {})
+    monkeypatch.setattr(
+        dashboard,
+        "_risk_state",
+        lambda _account: {
+            "start_balance": 200.0,
+            "hwm_balance": 200.0,
+            "day_start_balance": 200.0,
+        },
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "per_trade_risk",
+        lambda *_args, **_kwargs: np.array([], dtype=object),
+    )
+    monkeypatch.setattr(
+        dashboard,
+        "window_history",
+        lambda *_args, **_kwargs: HistoryWindow(
+            trades=empty_trades,
+            risk=np.array([], dtype=object),
+            start_balance=Decimal("200"),
+            hidden=0,
+        ),
+    )
+
+    dashboard._live_view()
+
+    assert rendered.errors == [
+        "Die Trade-Historie konnte nicht rekonstruiert werden: unsupported MT5 opening deal "
+        "type 15: ticket=7001, entry=0, position_id=42"
+    ]
+    assert any(
+        isinstance(frame, pd.DataFrame) and frame.to_dict(orient="records") == live["positions"]
+        for frame in rendered.dataframes
+    )
+    assert {metric["label"] for metric in rendered.metrics} >= {
+        "Nachlaufende Untergrenze (5 %)",
+        "Tagesuntergrenze (2,5 %)",
+    }
