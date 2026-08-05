@@ -73,6 +73,7 @@ def test_deals_to_trades_pairs_in_and_out() -> None:
 def test_deals_to_trades_empty() -> None:
     trades = deals_to_trades([])
     assert trades.empty
+    assert deals_module.excluded_positions(trades) == ()
     assert list(trades.columns) == [
         "position_id",
         "symbol",
@@ -238,13 +239,37 @@ def test_excluded_positions_are_reported_with_their_reason() -> None:
 
     exclusions = deals_module.excluded_positions(deals_to_trades(deals))
 
-    assert [(item.position_id, item.symbol) for item in exclusions] == [
-        (20, "EURUSD"),
-        (30, "GBPUSD"),
+    assert [
+        (item.position_id, item.symbol, item.reason) for item in exclusions
+    ] == [
+        (20, "EURUSD", "entry INOUT (2) cannot be reconstructed"),
+        (
+            30,
+            "GBPUSD",
+            "entry OUT_BY (3) cannot be reconstructed; later IN deal type 14 is unsupported",
+        ),
     ]
-    assert "INOUT (2)" in exclusions[0].reason
-    assert "OUT_BY (3)" in exclusions[1].reason
-    assert "later IN deal type 14" in exclusions[1].reason
+
+
+def test_entry_only_unreconstructable_position_reports_complete_exclusion() -> None:
+    deals = [
+        _deal(42, "EURUSD", 1, 2, 10),
+        _deal(42, "GBPUSD", 0, 3, 20),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades.empty
+    assert deals_module.excluded_positions(trades) == (
+        deals_module.PositionExclusion(
+            position_id=42,
+            symbol="EURUSD",
+            reason=(
+                "entry INOUT (2) cannot be reconstructed; "
+                "entry OUT_BY (3) cannot be reconstructed"
+            ),
+        ),
+    )
 
 
 def test_excluded_positions_keep_their_money_in_the_ledger() -> None:
