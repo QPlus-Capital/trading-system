@@ -221,8 +221,10 @@ required, and the same chat carries every later fix round.
 |---|---|---|
 | **Start** | card in `Ready to Implement`, `risk:Rn` present | move the card to `Implementing` |
 | **Resume** | card in `Implementing` or `Reviewing` **and** a branch `codex/<issue>-…` for this issue exists in this repository | continue on it |
+| **Unblock** | card in `Blocked`, such a branch exists, **and the operator has said the build continues** | move the card to `Implementing`, continue on it |
 
-A card in `Backlog`, `Specifying`, or `Blocked` is never built. A branch whose name does not carry
+A card in `Backlog` or `Specifying` is never built, and a `Blocked` card is built only on the
+operator's word — never because the guard found one. A branch whose name does not carry
 this issue number, or that comes from a fork or from outside this repository, is never resumed —
 ownership is decided by the branch and its origin, because the card cannot know who wrote the code.
 
@@ -357,6 +359,11 @@ single largest time sink the previous process had.
 **Cap.** After two fix rounds without a clean result, the card moves to `Blocked` and the operator
 is notified with what remains. A finding that needs an operator decision moves the card to `Blocked`
 immediately, regardless of the round count.
+
+`Blocked` has exactly two ways on, and both start with the operator's decision: the build continues
+on the unchanged specification — Codex moves the card back to `Implementing` and resumes — or the
+specification must change, and the card returns to `Specifying` for phase 1. A card must never need
+a re-specification it does not want just to get out of a mechanical stop.
 
 **A confirmed defect becomes permanent protection:** reproduced by a test that fails before the fix
 and passes after, then root-caused. That test is part of the fix, not a follow-up.

@@ -274,20 +274,48 @@ def _parser() -> argparse.ArgumentParser:
     read.add_argument("issue", type=int)
     write = sub.add_parser("move", help="apply one permitted status transition")
     write.add_argument("issue", type=int)
-    write.add_argument("target")
+    write.add_argument(
+        "target",
+        nargs="+",
+        help="the destination status; a multi-word status may arrive as separate words",
+    )
     write.add_argument("--actor", required=True, choices=sorted(ACTORS))
-    write.add_argument("--reason", default=None, help="posted on the issue with the move")
+    write.add_argument(
+        "--reason",
+        nargs="+",
+        default=None,
+        help="posted on the issue with the move; a multi-word reason may arrive as separate words",
+    )
     return parser
+
+
+def _canonical_status(raw: str, statuses: Sequence[str]) -> str:
+    """Map a shell-mangled spelling back to the contract's status, or pass it through.
+
+    `just` joins its variadic arguments into the recipe line unquoted, so
+    `"Ready to Implement"` reaches the CLI as three words and a hyphenated or lower-case
+    spelling is one typo away. The CLI rejoins the words (`nargs`) and this resolves case and
+    hyphens; anything that still matches no status is returned untouched so that ``move``
+    refuses it by name — the guard stays in one place.
+    """
+
+    wanted = raw.replace("-", " ").casefold()
+    for status in statuses:
+        if status.casefold() == wanted:
+            return status
+    return raw
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     try:
-        card = (
-            read_card(args.issue)
-            if args.command == "status"
-            else move(args.issue, args.target, actor=args.actor, reason=args.reason)
-        )
+        if args.command == "status":
+            card = read_card(args.issue)
+        else:
+            contract = load_contract()
+            target = _canonical_status(" ".join(args.target), contract.statuses)
+            reason = " ".join(args.reason) if args.reason else None
+            card = move(args.issue, target, actor=args.actor, reason=reason, contract=contract)
     except BoardError as error:
         print(f"REFUSED: {error}")
         return 1
