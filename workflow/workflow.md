@@ -144,6 +144,11 @@ In the same chat, when the operator asks for the idea to be worked out. Claude m
    when the semantic impact is broader than the paths suggest, and the reason is stated.
 3. **Ask only questions whose answer changes the outcome.**
 
+A ticket that was **not** born in a chat — anything picked up out of the backlog — carries no
+session marker yet, so this chat records its own identifier on the issue here, exactly as phase 0
+does for a ticket it created. Without it the review cycle has no chat to narrate into and falls
+silent precisely when the operator wants to follow along.
+
 **Lean lane:** the issue body is the problem and the goal in a few sentences — essentially the
 operator's own words, sharpened. Up to five numbered, testable criteria where they earn their keep;
 no invariants section, no impact analysis, no verification plan. Claude reads the named code, not

@@ -32,7 +32,9 @@ ask — and the *actual* diff decides, whatever the issue declared.
    only the findings table and the verdict; no fresh contract check, no counterexample appendix.
 6. Submit one pull-request review: an inline `file:line` comment per finding, and a summary with
    the findings table, the contract check (first round only), and the decisions that belong to the
-   operator. End it with `<!-- workflow-verdict blocking:N advisory:M -->`.
+   operator. End it with `<!-- workflow-verdict sha:<the reviewed head> blocking:N advisory:M -->`.
+   The sha names the commit this review read; a marker that names any other commit is no verdict
+   at all, which is what keeps a later push from inheriting an earlier round's result.
 7. Use `Blocker`, `Defect`, `Suspected defect`, or `Note`. Only the first two block and trigger a
    fix round; the other two are collected for the operator.
 8. If no finding survives, record the number of counterexamples attempted.
@@ -41,9 +43,10 @@ ask — and the *actual* diff decides, whatever the issue declared.
 
 - A read-only, fresh-context pull-request review that names its severities and carries the verdict
   marker.
-- **The chat output ends with a summary in German**, in this order: *Was gemacht wird* ·
-  *Was du entscheiden musst* · *Wo es klemmt* · *Was als Nächstes passiert*. "Nichts" is an answer
-  and is stated when true.
+- **The chat output ends with a summary in German**, written to the three rules in section 7 of
+  `workflow/workflow.md`: two to five plain sentences weighted for this phase — what was found and
+  what it means for the merge; a decision set off visibly with its question, options,
+  recommendation and default, and its command on its own line; no heading over an empty section.
 
 ## Stop conditions
 

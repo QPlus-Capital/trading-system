@@ -15,33 +15,40 @@ on the operator's ask (`[review.scope]` in `workflow/workflow.toml`).
 
 ## Procedure
 
-1. Move the project card to `Specifying`.
-2. Reality check: does the problem still exist, is it a duplicate, would the fix violate a safety
+1. Move the project card with `just board move <issue> Specifying --actor claude`; every board
+   move names its actor and the board refuses one that is not this actor's to make.
+2. If the issue carries no `<!-- claude-session: … -->` marker, post one as a comment now — a
+   ticket that came from the backlog was filed before this chat existed, and without the marker
+   the review cycle has no chat to narrate its progress into. The identifier is the UUID in this
+   session's scratchpad or transcript path.
+3. Reality check: does the problem still exist, is it a duplicate, would the fix violate a safety
    or methodology rule? If so, cite the evidence and propose closing.
-3. Classify the expected paths with `workflow.classify`; treat the result as a minimum and
+4. Classify the expected paths with `workflow.classify`; treat the result as a minimum and
    raise it out loud when the semantic impact is broader.
-4. Decide the lane from `[review.scope]`: carve-out path or expected diff over the bound means the
+5. Decide the lane from `[review.scope]`: carve-out path or expected diff over the bound means the
    full program; everything else is lean. State the lane in the issue.
-5. **Lean:** the body is the problem and the goal in a few sentences — the operator's words,
+6. **Lean:** the body is the problem and the goal in a few sentences — the operator's words,
    sharpened — plus at most five numbered, testable criteria where they earn their keep. Read the
    named code only. **Full:** read to the depth the class sets, and write the complete body:
    problem, goal, non-goals, numbered acceptance criteria and invariants, affected modules,
    justified risk class, open decisions. Every `AC-nn` maps to exactly one named test.
-6. **Either lane: the specification fits on one page.** If it cannot, the ticket is too big —
+7. **Either lane: the specification fits on one page.** If it cannot, the ticket is too big —
    propose the split instead of specifying harder.
-7. If a decision only the operator can make remains open, move the card to `Blocked` and stop.
-8. Present the complete issue body and, at R3, the risk itself. **Stop before** moving the card.
-9. Only after the operator's explicit release: add `risk:Rn` and move the card to
-   `Ready to Implement`. Report only that the issue is released — no prompt, no call to action.
+8. If a decision only the operator can make remains open, move the card to `Blocked` and stop.
+9. Present the complete issue body and, at R3, the risk itself. **Stop before** moving the card.
+10. Only after the operator's explicit release: add `risk:Rn` and move the card to
+    `Ready to Implement`. Report only that the issue is released — no prompt, no call to action.
 
 ## Outputs
 
 - A complete issue body, a declared risk class and lane, and explicit unresolved decisions.
 - A card left in `Specifying` or `Blocked` while the release is absent, or moved to
   `Ready to Implement` after it.
-- **The chat output ends with a summary in German**, in this order: *Was gemacht wird* ·
-  *Was du entscheiden musst* · *Wo es klemmt* · *Was als Nächstes passiert*. "Nichts" is an answer
-  and is stated when true. The summary is appended to the full output, never substituted for it.
+- **The chat output ends with a summary in German**, written to the three rules in section 7 of
+  `workflow/workflow.md`: two to five plain sentences weighted for this phase — what the ticket
+  demands and what was decided without the operator; a decision set off visibly with its question,
+  options, recommendation and default, and its command on its own line; no heading over an empty
+  section. The summary is appended to the full output, never substituted for it.
 
 ## Stop conditions
 
