@@ -402,7 +402,13 @@ trigger = "a decision only the operator can make is open, or the fix-round cap i
 from = "Blocked"
 to = "Specifying"
 actor = "claude"
-trigger = "the operator decided"
+trigger = "the operator decided and the specification must change"
+
+[[board.transitions]]
+from = "Blocked"
+to = "Implementing"
+actor = "codex"
+trigger = "the operator decided the build continues on the unchanged specification"
 
 # ---------------------------------------------------------------------------
 # Completed-ticket teardown

@@ -34,6 +34,38 @@ def test_target_attribution_returns_exactly_the_reached_targets(tmp_path: Path) 
     assert exercised == ("pkg/reached.py",)
 
 
+def test_a_worktree_is_walked_like_the_main_checkout(tmp_path: Path) -> None:
+    """A branch worktree is a checkout at another path. The old identity check against REPO_ROOT
+    sent it down the walk-everything path, the walk read `.venv`, and site-packages' dynamic
+    imports failed the reach closed to all 30 targets — the operator was told thirty while CI
+    measured twelve. A checkout is recognised by its contract file and walked through the source
+    roots only."""
+    (tmp_path / "workflow").mkdir()
+    (tmp_path / "workflow" / "workflow.toml").write_text("version = 2\n", encoding="utf-8")
+    (tmp_path / "monitoring").mkdir()
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "monitoring" / "reached.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / "monitoring" / "unrelated.py").write_text("VALUE = 2\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_reached.py").write_text(
+        "import monitoring.reached\n", encoding="utf-8"
+    )
+    site_packages = tmp_path / ".venv" / "Lib" / "site-packages"
+    site_packages.mkdir(parents=True)
+    (site_packages / "poison.py").write_text(
+        "import importlib\n\n\ndef load(name):\n    return importlib.import_module(name)\n",
+        encoding="utf-8",
+    )
+
+    exercised = targets_exercised_by_changed_tests(
+        ["tests/test_reached.py"],
+        ["monitoring/reached.py", "monitoring/unrelated.py"],
+        root=tmp_path,
+    )
+    assert exercised == ("monitoring/reached.py",), (
+        "an installed environment inside the checkout must never widen the reach"
+    )
+
+
 def test_a_bom_marked_test_is_read_not_failed_closed(tmp_path: Path) -> None:
     """A UTF-8 BOM is invisible to Python's tokenizer but broke `ast.parse` on the decoded
     string; one such file made the reach analysis select every mutation target — a 23-minute

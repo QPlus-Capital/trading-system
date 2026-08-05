@@ -131,10 +131,17 @@ def test_ready_to_implement_never_holds_work_that_cannot_start() -> None:
     assert any("another ticket" in t["trigger"] for t in to_blocked), (
         "at least one route into Blocked must cover a dependency, not only an operator decision"
     )
-    # Coming back re-runs the release, because what the ticket waited for has since changed.
-    exits = {t["to"] for t in contract["transitions"] if t["from"] == "Blocked"}
-    assert exits == {"Specifying"}, (
-        "leaving Blocked must return through Specifying so the release is given again"
+    # Coming back after a specification decision re-runs the release, because what the ticket
+    # waited for has since changed. A mechanical stop in the build — the round cap, a hand-back
+    # that never started — continues on the operator's word without a re-release: round three
+    # proved that forcing a re-specification nobody wanted was the only legal exit.
+    exits = {t["to"]: t for t in contract["transitions"] if t["from"] == "Blocked"}
+    assert set(exits) == {"Specifying", "Implementing"}, (
+        "Blocked has exactly two ways on: back through the release, or on with the build"
+    )
+    assert exits["Implementing"]["actor"] == "codex"
+    assert "operator decided" in exits["Implementing"]["trigger"], (
+        "the build continues only on the operator's decision, never on the guard's own"
     )
 
 

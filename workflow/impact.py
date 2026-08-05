@@ -151,14 +151,29 @@ def _facts(path: Path, root: Path, known: frozenset[str]) -> ModuleFacts | None:
 
 
 def _python_files(root: Path) -> list[Path]:
-    if root.resolve() != REPO_ROOT.resolve():
-        return sorted(root.rglob("*.py"))
-    files: list[Path] = []
-    for name in _SOURCE_ROOTS:
-        base = root / name
-        if base.is_dir():
-            files.extend(base.rglob("*.py"))
-    return sorted(set(files))
+    """The Python files the reach analysis may read under ``root``.
+
+    Any checkout of this repository — recognised by its contract file — is walked only through
+    the source roots: everything else under a checkout is environment (`.venv`), history, or
+    generated mutants, and reading it poisons the analysis. The first scoped measurement proved
+    it: the old identity check against ``REPO_ROOT`` sent the branch *worktree* down the
+    walk-everything path, site-packages' dynamic imports failed the reach closed, and the
+    operator was told all 30 targets were reachable while CI — walking the same commit at its
+    own repository root — measured 12. A root without the contract file is a synthetic test
+    tree and keeps the full walk, minus hidden directories.
+    """
+    if (root / "workflow" / "workflow.toml").is_file():
+        files: list[Path] = []
+        for name in _SOURCE_ROOTS:
+            base = root / name
+            if base.is_dir():
+                files.extend(base.rglob("*.py"))
+        return sorted(set(files))
+    return sorted(
+        path
+        for path in root.rglob("*.py")
+        if not any(part.startswith(".") for part in path.relative_to(root).parts)
+    )
 
 
 def _load_critical(path: Path | None) -> tuple[CriticalEdge, ...]:

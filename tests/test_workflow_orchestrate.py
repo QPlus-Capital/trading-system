@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -48,6 +49,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "red_checks": [],
         "mutation_targets": [],
         "mutation_conclusion": "success",
+        "hand_back_starts": True,
     }
 
     class FakeCard:
@@ -96,8 +98,9 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         log["sequence"].append("review")
         log.setdefault("review_trees", []).append(worktree)
 
-    def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> None:
+    def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> bool:
         log["handbacks"].append(reason)
+        return bool(state["hand_back_starts"])
 
     def report(
         issue: int,
@@ -311,9 +314,14 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
     provided'. The prompt must sit directly after -p."""
 
     captured: list[list[str]] = []
-    monkeypatch.setattr(
-        "workflow.orchestrate.subprocess.run", lambda argv, **kwargs: captured.append(list(argv))
-    )
+    spawn_kwargs: dict[str, Any] = {}
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> SimpleNamespace:
+        captured.append(list(argv))
+        spawn_kwargs.update(kwargs)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("workflow.orchestrate.subprocess.run", fake_run)
     monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
 
     head = "feedc0ffee0123456789"  # pragma: allowlist secret
@@ -325,6 +333,56 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
     assert "sha:feedc0ffee01" in argv[2], "the reviewer is told which commit its verdict names"
     assert argv.index("--allowedTools") > argv.index(argv[2])
     assert argv[-1] != argv[2], "the prompt must not be the trailing variadic argument"
+    assert spawn_kwargs["capture_output"] is True, (
+        "the reviewer owns its pipes; inherited stdio dies with the launcher's tool timeout"
+    )
+
+
+def test_a_hand_back_that_never_started_stops_with_the_true_reason(
+    harness: dict[str, Any],
+) -> None:
+    """Round three of the E2E validation: the codex spawn died on the launcher's closed stdout,
+    and the next round blamed the builder for pushing nothing — about a builder that was never
+    started. A hand-back that did not run is the cycle's own failure and stops under its name."""
+
+    harness["state"]["verdicts"] = [Verdict(blocking=1, advisory=0)]
+    harness["state"]["hand_back_starts"] = False
+
+    assert orchestrate.cycle(101) == 1
+    assert harness["reviews"] == 1, "no further round runs on a hand-back that never started"
+    assert harness["moves"][-1] == "Blocked"
+    kind, facts = harness["notices"][-1]
+    assert kind == "blockiert"
+    assert "nicht gestartet" in str(facts["grund"])
+    assert "entscheidung" in facts and "kommando" in facts
+    assert not any("gepusht" in str(f.get("grund", "")) for _, f in harness["notices"]), (
+        "the builder is never blamed for a fix round it was not given"
+    )
+
+
+def test_a_dead_hand_back_spawn_is_reported_not_believed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    recorded: dict[str, Any] = {}
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> SimpleNamespace:
+        recorded["argv"] = list(argv)
+        recorded.update(kwargs)
+        return SimpleNamespace(returncode=1, stdout="", stderr="stdout is closed")
+
+    monkeypatch.setattr("workflow.orchestrate.subprocess.run", fake_run)
+    monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
+
+    assert orchestrate.hand_back(102, "CI is red.") is False
+    assert recorded["capture_output"] is True, (
+        "the fix session owns its pipes; inherited stdio dies with the launcher"
+    )
+
+    monkeypatch.setattr(
+        "workflow.orchestrate.subprocess.run",
+        lambda argv, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    assert orchestrate.hand_back(102, "CI is red.") is True
 
 
 def test_a_builder_that_pushed_nothing_stops_the_loop(harness: dict[str, Any]) -> None:

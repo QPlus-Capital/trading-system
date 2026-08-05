@@ -263,6 +263,20 @@ def test_the_contract_is_the_only_source_of_permitted_transitions() -> None:
     assert contract.automated == frozenset({"Backlog", "Done"})
 
 
+def test_blocked_is_never_a_one_way_door() -> None:
+    """Round three stalled here: a mechanically blocked card had only `Blocked -> Specifying`,
+    so continuing an unchanged, correctly specified build required a re-specification nobody
+    wanted. The operator's 'continue' decision must have its own transition, owned by the
+    builder — and the specification path must survive beside it."""
+
+    contract = load_contract()
+
+    assert contract.permits("Blocked", "Implementing")
+    assert contract.owner("Blocked", "Implementing") == "codex"
+    assert contract.permits("Blocked", "Specifying")
+    assert contract.owner("Blocked", "Specifying") == "claude"
+
+
 def test_the_risk_label_is_read_from_the_card() -> None:
     card = Card(
         issue=1,
@@ -288,3 +302,35 @@ def test_every_contract_status_has_at_least_one_way_in_or_is_automated() -> None
     reachable = {target for _, target in contract.transitions} | contract.automated
     unreachable = set(contract.statuses) - reachable
     assert not unreachable, f"no transition reaches {sorted(unreachable)}"
+
+
+def test_the_cli_rejoins_a_status_the_shell_split(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`just` joins its variadic arguments into the recipe line unquoted, so under cmd.exe
+    `"Ready to Implement"` arrived as three words and `--reason "the gap"` lost its quoting —
+    the documented hand-back command was unusable on the platform the loop runs on."""
+
+    recorded: dict[str, Any] = {}
+
+    def fake_move(issue: int, target: str, **kwargs: Any) -> Card:
+        recorded["target"] = target
+        recorded.update(kwargs)
+        return Card(issue, "t", True, target, ("risk:R2",), "i", "p", "f", _OPTIONS)
+
+    monkeypatch.setattr(board, "move", fake_move)
+
+    assert board.main(["move", "7", "Ready", "to", "Implement", "--actor", "claude"]) == 0
+    assert recorded["target"] == "Ready to Implement"
+
+    assert board.main(["move", "7", "ready-to-implement", "--actor", "claude"]) == 0
+    assert recorded["target"] == "Ready to Implement", "case and hyphens resolve to the contract"
+
+    assert (
+        board.main(
+            ["move", "7", "Specifying", "--actor", "codex", "--reason", "the", "spec", "gap"]
+        )
+        == 0
+    )
+    assert recorded["reason"] == "the spec gap", "an unquoted multi-word reason survives"
+
+    assert board.main(["move", "7", "Bogus", "Status", "--actor", "claude"]) == 0
+    assert recorded["target"] == "Bogus Status", "an unknown status reaches move() untouched"

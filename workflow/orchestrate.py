@@ -88,6 +88,19 @@ def _executable(name: str) -> str:
     return path
 
 
+def _say(text: str) -> None:
+    """Narrate to stdout without dying with the launcher.
+
+    The builder starts the cycle from a shell tool whose own timeout can expire while the
+    mutation measurement is still being awaited; the abandoned pipe then rejects writes. The
+    cycle's narration is a courtesy, never evidence — the events and the board are — so a failed
+    print is dropped rather than allowed to kill the round that was otherwise proceeding.
+    """
+
+    with contextlib.suppress(OSError):
+        print(text, flush=True)
+
+
 def _run(
     args: Sequence[str],
     *,
@@ -209,7 +222,7 @@ def report(
     """
 
     payload = json.dumps({"issue": issue, "ereignis": kind, **dict(facts)}, ensure_ascii=False)
-    print(f"\n>>> #{issue} [{kind}] {payload}")
+    _say(f"\n>>> #{issue} [{kind}] {payload}")
     if dry_run:
         return
     session = session_for(issue)
@@ -297,10 +310,15 @@ def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> N
     if dry_run:
         print(f"[dry-run] {' '.join(command[:6])} ... {prompt[:60]!r}")
         return
-    subprocess.run(command, cwd=REPO_ROOT, check=False)
+    # The reviewer owns its pipes: with inherited stdio, a launcher whose tool timeout closed the
+    # cycle's stdout kills the spawn at its first write — observed on the round-three hand-back.
+    # A failed review needs no handling here; the missing verdict is caught where it is read.
+    completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        _say(f"the reviewer exited with {completed.returncode}: {(completed.stderr or '')[-400:]}")
 
 
-def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> None:
+def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> bool:
     """Return blocking evidence to the builder. Claude never edits the branch it reviewed.
 
     The reason names what is red — review findings, a red gate, red CI, or a red mutation run —
@@ -309,6 +327,12 @@ def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> None:
     The builder needs the same rights it had in its own session: the operator sanctioned exactly
     this local automation, and the safety hook still blocks live trading, secrets, and direct
     pushes to ``main`` underneath it.
+
+    Returns whether the fix session ran at all. The spawn owns its pipes and its exit status is
+    checked, because round three's hand-back died at startup on the launcher's closed stdout and
+    the loop then blamed the builder for "pushing nothing" it had never been asked to push. What
+    the session achieved is not judged here — the next round measures that; only a spawn that
+    did not run is distinguished, so the cycle can stop with the true reason.
     """
 
     prompt = (
@@ -325,8 +349,15 @@ def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> None:
     ]
     if dry_run:
         print(f"[dry-run] codex exec --sandbox danger-full-access {prompt[:60]!r}")
-        return
-    subprocess.run(command, cwd=REPO_ROOT, check=False)
+        return True
+    completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+    if completed.returncode != 0:
+        _say(
+            f"the fix session for #{issue} exited with {completed.returncode}: "
+            f"{(completed.stderr or '')[-400:]}"
+        )
+        return False
+    return True
 
 
 @contextlib.contextmanager
@@ -516,6 +547,36 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         _ensure_pull_request_title(issue, pull_request)
     stale_head: str | None = None
 
+    def _returned(reason: str) -> bool:
+        """Hand the round back, or stop with the true reason when the fix session never ran.
+
+        Without this distinction the next round finds the head unmoved and reports "the builder
+        pushed nothing" — which round three showed the operator about a builder that was never
+        started. A hand-back that did not run is the cycle's failure, not the builder's.
+        """
+
+        if hand_back(issue, reason, dry_run=dry_run):
+            return True
+        if not dry_run:
+            board.move(issue, "Blocked", actor="orchestrator")
+        report(
+            issue,
+            "blockiert",
+            {
+                "grund": "die Rückgabe an den Builder ist nicht gestartet",
+                "entscheidung": (
+                    "Der Fix-Auftrag hat den Builder nie erreicht — der codex-Prozess ist beim "
+                    "Start gescheitert, der Stand ist unverändert. Optionen: `codex exec` von "
+                    "Hand prüfen und den Zyklus danach neu starten, oder die offenen Punkte im "
+                    "Codex-Chat des Tickets selbst beauftragen. Ohne Aktion bleibt die Karte "
+                    "auf Blocked."
+                ),
+                "kommando": f"uv run python -m workflow.orchestrate run {issue}",
+            },
+            dry_run=dry_run,
+        )
+        return False
+
     for round_number in range(1, max_rounds + 1):
         head = "dry-run" if dry_run else _pushed_head(branch)
         if stale_head is not None and head == stale_head:
@@ -549,7 +610,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
             risk, results = gates.run(
                 changed_paths("origin/main", root=tree), card.risk_class, root=tree
             )
-            print(gates.render(risk, results))
+            _say(gates.render(risk, results))
             failed = [result for result in results if result.exit_status not in (0, None)]
             if not failed:
                 mutation_targets, _ = _reachable_mutation_targets(tree)
@@ -578,7 +639,8 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 {"runde": round_number, "grund": f"Gates rot: {len(failed)} Kommandos"},
                 dry_run=dry_run,
             )
-            hand_back(issue, reason, dry_run=dry_run)
+            if not _returned(reason):
+                return 1
             stale_head = head
             continue
         if red_checks:
@@ -590,11 +652,10 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 {"runde": round_number, "grund": f"CI rot: {', '.join(red_checks)}"},
                 dry_run=dry_run,
             )
-            hand_back(
-                issue,
-                f"CI is red on {', '.join(red_checks)} for the pushed head of #{issue}.",
-                dry_run=dry_run,
-            )
+            if not _returned(
+                f"CI is red on {', '.join(red_checks)} for the pushed head of #{issue}."
+            ):
+                return 1
             stale_head = head
             continue
 
@@ -652,13 +713,12 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                         {"runde": round_number, "grund": f"Mutationsmessung rot ({reference})"},
                         dry_run=dry_run,
                     )
-                    hand_back(
-                        issue,
+                    if not _returned(
                         f"The dispatched mutation measurement ({reference}) is red on the "
                         f"reviewed head of #{issue}; read its mutation-result artifact and "
-                        "tighten or fix from measured results only.",
-                        dry_run=dry_run,
-                    )
+                        "tighten or fix from measured results only."
+                    ):
+                        return 1
                     stale_head = head
                     continue
                 mutation_status = f"gemessen und grün ({reference})"
@@ -692,12 +752,11 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
             },
             dry_run=dry_run,
         )
-        hand_back(
-            issue,
+        if not _returned(
             f"The review of #{issue} reported {verdict.blocking} blocking finding(s) on its "
-            "pull request. Read that review with `gh pr view --json reviews`.",
-            dry_run=dry_run,
-        )
+            "pull request. Read that review with `gh pr view --json reviews`."
+        ):
+            return 1
         stale_head = head
 
     if not dry_run:
@@ -731,7 +790,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return cycle(args.issue, max_rounds=args.max_rounds, dry_run=args.dry_run)
     except (OrchestrationError, board.BoardError) as error:
-        print(f"STOPPED: {error}")
+        _say(f"STOPPED: {error}")
         return 1
 
 
