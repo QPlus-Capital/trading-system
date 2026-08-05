@@ -182,6 +182,8 @@ def test_every_post_p14_operator_literal_is_the_reviewed_german_copy(monkeypatch
         "Noch keine Backtest-Referenz vorhanden — zuerst die Backtest-Pipeline ausführen "
         "(`just backtest`).",
         "Die Trade-Historie konnte nicht rekonstruiert werden: ",
+        "Nicht unterstützte MT5-Historie: ",
+        " aus der Trade-Tabelle ausgeschlossen: ",
         "Die Handelshistorie scheint unvollständig: Ihre Wiedergabe ergibt ",
         " vor dem ersten Eintrag; das ist weder null noch der gespeicherte Startsaldo von ",
         ". Historische R-Werte sind nur Näherungen.",
@@ -433,3 +435,81 @@ def test_live_dashboard_preserves_safety_view_when_reconstruction_refuses(
         "Nachlaufende Untergrenze (5 %)",
         "Tagesuntergrenze (2,5 %)",
     }
+
+
+def test_dashboard_names_unsupported_positions(monkeypatch: Any, tmp_path: Path) -> None:
+    dashboard = _import_dashboard(monkeypatch)
+    rendered = _RenderedStreamlit()
+    run = tmp_path / "reports" / "research" / "run_test"
+    run.mkdir(parents=True)
+    (run / "full_history_trades.csv").write_text("market,r\n", encoding="utf-8")
+    live: dict[str, Any] = {
+        "deals": [
+            {
+                "position_id": 42,
+                "symbol": "AAPL",
+                "type": 0,
+                "entry": 0,
+                "time": 10,
+                "ticket": 7001,
+                "volume": 1.0,
+            },
+            {
+                "position_id": 42,
+                "symbol": "AAPL",
+                "type": 1,
+                "entry": 2,
+                "time": 20,
+                "ticket": 7002,
+                "volume": 1.0,
+            },
+            {
+                "position_id": 77,
+                "symbol": "MSFT",
+                "type": 0,
+                "entry": 0,
+                "time": 30,
+                "ticket": 8001,
+                "volume": 1.0,
+            },
+            {
+                "position_id": 77,
+                "symbol": "MSFT",
+                "type": 13,
+                "entry": 0,
+                "time": 40,
+                "ticket": 8002,
+                "volume": 1.0,
+            },
+        ],
+        "balance": 200.0,
+        "equity": 200.0,
+        "currency": "EUR",
+        "open_risk": OpenRisk(total=0.0),
+        "positions": [],
+        "term_to_research": {},
+    }
+
+    monkeypatch.setattr(dashboard, "st", rendered)
+    monkeypatch.setattr(dashboard, "_REPO", tmp_path)
+    monkeypatch.setattr(dashboard, "_load_live", lambda _account: live)
+    monkeypatch.setattr(dashboard, "load_reference", lambda _path: {})
+    monkeypatch.setattr(dashboard, "_risk_state", lambda _account: {})
+    monkeypatch.setattr(
+        dashboard,
+        "window_history",
+        lambda trades, *_args, **_kwargs: HistoryWindow(
+            trades=trades,
+            risk=np.array([], dtype=object),
+            start_balance=Decimal("200"),
+            hidden=0,
+        ),
+    )
+
+    dashboard._live_view()
+
+    assert rendered.warnings == [
+        "Nicht unterstützte MT5-Historie: 2 Positionen wurden aus der Trade-Tabelle "
+        "ausgeschlossen: 42 (AAPL: entry INOUT (2) cannot be reconstructed); "
+        "77 (MSFT: later IN deal type 13 is unsupported)"
+    ]

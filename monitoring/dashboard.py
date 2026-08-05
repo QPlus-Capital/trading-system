@@ -28,9 +28,11 @@ from live.runner import position_risk, risk_per_trade_from_live_config
 
 from monitoring.deals import (
     DealDirectionError,
+    PositionExclusion,
     deal_ledger,
     deals_to_trades,
     equity_curve,
+    excluded_positions,
     live_stats,
     per_trade_risk,
 )
@@ -161,6 +163,18 @@ def _stat_row(label: str, live: float, ref: float, fmt: str, higher_better: bool
     )
 
 
+def _render_excluded_positions(exclusions: tuple[PositionExclusion, ...]) -> None:
+    """Name every position omitted from the reconstructed trade table."""
+    if not exclusions:
+        return
+    details = "; ".join(f"{item.position_id} ({item.symbol}: {item.reason})" for item in exclusions)
+    position_label = "Position wurde" if len(exclusions) == 1 else "Positionen wurden"
+    st.warning(
+        f"Nicht unterstützte MT5-Historie: {len(exclusions)} {position_label} "
+        f"aus der Trade-Tabelle ausgeschlossen: {details}"
+    )
+
+
 def _live_view() -> None:
     st.title("QPlus — Live vs. Backtest Monitor")
 
@@ -202,6 +216,7 @@ def _live_view() -> None:
     reconstruction_error: DealDirectionError | None = None
     try:
         all_trades = deals_to_trades(live["deals"])
+        _render_excluded_positions(excluded_positions(all_trades))
     except DealDirectionError as exc:
         reconstruction_error = exc
         st.error(f"Die Trade-Historie konnte nicht rekonstruiert werden: {exc}")

@@ -8,8 +8,9 @@ testable without a terminal. A "trade" is one closed position: its deals are gro
 from __future__ import annotations
 
 from bisect import bisect_left, bisect_right
+from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pandas as pd
@@ -18,6 +19,10 @@ _ZERO = Decimal("0")
 _MONEY_LEGS = ("profit", "swap", "commission", "fee")
 DEAL_TYPE_BUY = 0
 DEAL_TYPE_SELL = 1
+DEAL_ENTRY_IN = 0
+DEAL_ENTRY_OUT = 1
+DEAL_ENTRY_INOUT = 2
+DEAL_ENTRY_OUT_BY = 3
 _DEAL_DIRECTIONS = {
     DEAL_TYPE_BUY: "BUY",
     DEAL_TYPE_SELL: "SELL",
@@ -32,6 +37,16 @@ _TRADE_COLUMNS = [
     "volume",
     "net_pnl",
 ]
+_EXCLUDED_POSITIONS_ATTR = "excluded_positions"
+
+
+@dataclass(frozen=True)
+class PositionExclusion:
+    """A position omitted because its history cannot form one authoritative round trip."""
+
+    position_id: int
+    symbol: str
+    reason: str
 
 
 class DealDirectionError(ValueError):
@@ -70,13 +85,41 @@ def _deal_direction(deal: pd.Series) -> str:
     return direction
 
 
+def excluded_positions(trades: pd.DataFrame) -> tuple[PositionExclusion, ...]:
+    """Return every position-level refusal attached by :func:`deals_to_trades`."""
+    exclusions = trades.attrs.get(_EXCLUDED_POSITIONS_ATTR, ())
+    return cast(tuple[PositionExclusion, ...], exclusions)
+
+
+def _unreconstructable_reasons(group: pd.DataFrame, ins: pd.DataFrame) -> list[str]:
+    reasons = []
+    entries = {int(entry) for entry in group["entry"]}
+    if DEAL_ENTRY_INOUT in entries:
+        reasons.append("entry INOUT (2) cannot be reconstructed")
+    if DEAL_ENTRY_OUT_BY in entries:
+        reasons.append("entry OUT_BY (3) cannot be reconstructed")
+    unsupported_later_types = {
+        int(deal_type)
+        for deal_type in ins.iloc[1:]["type"]
+        if int(deal_type) not in _DEAL_DIRECTIONS
+    }
+    reasons.extend(
+        f"later IN deal type {deal_type} is unsupported"
+        for deal_type in sorted(unsupported_later_types)
+    )
+    return reasons
+
+
 def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
     """Reconstruct closed round-trip trades from raw deals (grouped by position).
 
     Skips balance operations (no symbol) and still-open positions (no OUT deal). Net PnL folds in
     swap + commission + fee, so the live numbers are the honest, all-in result. The opening ticket
     is retained because MT5 timestamps have only one-second precision: the ticket establishes
-    which same-second money movements existed before the runner sized this trade.
+    which same-second money movements existed before the runner sized this trade. Positions with
+    INOUT, OUT_BY, or an unsupported later IN leg are omitted and attached to the result for
+    :func:`excluded_positions`; an unsupported first IN leg still raises
+    :class:`DealDirectionError`.
     """
     records = []
     for sequence, deal in enumerate(deals):
@@ -91,17 +134,32 @@ def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
         )
     df = pd.DataFrame(records)
     if df.empty or "position_id" not in df:
-        return pd.DataFrame(columns=_TRADE_COLUMNS)
+        empty = pd.DataFrame(columns=_TRADE_COLUMNS)
+        empty.attrs[_EXCLUDED_POSITIONS_ATTR] = ()
+        return empty
     df = df[df["symbol"].astype(bool)]  # drop balance/credit deals (empty symbol)
 
     rows = []
+    exclusions: list[PositionExclusion] = []
     for pid, g in df.groupby("position_id"):
         g = g.sort_values(["time", "_event_order", "_sequence"], kind="stable")
-        ins, outs = g[g["entry"] == 0], g[g["entry"] == 1]
+        ins = g[g["entry"] == DEAL_ENTRY_IN]
+        outs = g[g["entry"] == DEAL_ENTRY_OUT]
         if ins.empty:
+            reasons = _unreconstructable_reasons(g, ins)
+            if reasons:
+                exclusions.append(
+                    PositionExclusion(int(pid), str(g.iloc[0]["symbol"]), "; ".join(reasons))
+                )
             continue
         first_in = ins.iloc[0]
         direction = _deal_direction(first_in)
+        reasons = _unreconstructable_reasons(g, ins)
+        if reasons:
+            exclusions.append(
+                PositionExclusion(int(pid), str(first_in["symbol"]), "; ".join(reasons))
+            )
+            continue
         if outs.empty:
             continue  # not a completed round trip
         last_out = outs.iloc[-1]
@@ -117,12 +175,15 @@ def deals_to_trades(deals: list[dict[str, Any]]) -> pd.DataFrame:
                 "open_time": pd.to_datetime(int(first_in["time"]), unit="s", utc=True),
                 "open_ticket": int(first_in["_event_order"]),
                 "close_time": pd.to_datetime(int(last_out["time"]), unit="s", utc=True),
-                "volume": float(first_in["volume"]),
+                "volume": float(ins["volume"].sum()),
                 "net_pnl": net,
             }
         )
     out = pd.DataFrame(rows, columns=_TRADE_COLUMNS)
-    return out.sort_values("close_time").reset_index(drop=True) if not out.empty else out
+    if not out.empty:
+        out = out.sort_values("close_time").reset_index(drop=True)
+    out.attrs[_EXCLUDED_POSITIONS_ATTR] = tuple(exclusions)
+    return out
 
 
 def to_ns(times: pd.Series) -> np.ndarray:
