@@ -6,6 +6,9 @@ suite proves the decisions without performing any of them.
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -50,6 +53,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "mutation_targets": [],
         "mutation_conclusion": "success",
         "hand_back_starts": True,
+        "decisions": [],
     }
 
     class FakeCard:
@@ -119,6 +123,9 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(orchestrate, "hand_back", hand_back)
     monkeypatch.setattr(orchestrate, "report", report)
     monkeypatch.setattr(orchestrate, "latest_verdict", verdict)
+    monkeypatch.setattr(
+        orchestrate, "review_decisions", lambda pull_request, head: tuple(state["decisions"])
+    )
 
     log["state"] = state
     return log
@@ -261,11 +268,17 @@ def test_the_cycle_refuses_a_card_that_has_not_started(harness: dict[str, Any]) 
 def test_the_verdict_marker_is_parsed_not_interpreted() -> None:
     body = (
         "## Review\n\nTwo defects and a note.\n\n"
-        "<!-- workflow-verdict sha:a3c889f00123 blocking: 2 advisory: 1 -->\n"
+        "<!-- workflow-verdict sha:a3c889f00123 blocking: 2 advisory: 1 evidence:executed -->\n"
     )
     match = VERDICT.search(body)
     assert match and match["blocking"] == "2" and match["advisory"] == "1"
     assert match["sha"] == "a3c889f00123"  # pragma: allowlist secret
+    assert match["evidence"] == "executed"
+
+    static = VERDICT.search(
+        "<!-- workflow-verdict sha:a3c889f00123 blocking: 0 advisory: 3 evidence:static -->"
+    )
+    assert static is not None and static["evidence"] == "static"
 
     for prose in (
         "looks good to me",
@@ -274,6 +287,11 @@ def test_the_verdict_marker_is_parsed_not_interpreted() -> None:
         # The pre-#177 marker without a sha: it cannot say which commit it certifies, so it no
         # longer counts as a verdict at all.
         "<!-- workflow-verdict blocking: 0 advisory: 0 -->",
+        # The pre-#102-recovery marker without evidence: it cannot say what its conclusions
+        # rest on — rounds two to four of #102 were command-refused static reviews that still
+        # counted as clean under this format.
+        "<!-- workflow-verdict sha:a3c889f00123 blocking: 0 advisory: 0 -->",
+        "<!-- workflow-verdict sha:a3c889f00123 blocking: 0 advisory: 0 evidence:guessed -->",
     ):
         assert VERDICT.search(prose) is None, "prose must never stand in for the marker"
 
@@ -336,6 +354,15 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
     assert spawn_kwargs["capture_output"] is True, (
         "the reviewer owns its pipes; inherited stdio dies with the launcher's tool timeout"
     )
+    assert "evidence:executed" in argv[2] and "evidence:static" in argv[2], (
+        "the reviewer must be told to declare what its verdict rests on"
+    )
+    assert "workflow-decision" in argv[2], "operator decisions must be wrapped for forwarding"
+    assert "--directory" in argv[2] and "cd" in argv[2], (
+        "the reviewer is taught the worktree-safe invocations its allowlist matches"
+    )
+    assert "Bash(gh api:*)" in argv, "inline review comments need gh api"
+    assert "Bash(uv run:*)" in argv, "test execution must not depend on one exact spelling"
 
 
 def test_a_hand_back_that_never_started_stops_with_the_true_reason(
@@ -383,6 +410,137 @@ def test_a_dead_hand_back_spawn_is_reported_not_believed(
         lambda argv, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
     )
     assert orchestrate.hand_back(102, "CI is red.") is True
+
+
+def test_the_hand_back_prompt_forbids_a_second_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fix session follows the builder contract, whose last step starts the review cycle — so
+    on #102 every hand-back spawned a cycle beside the one still waiting for it: three cycles,
+    four reviews, one head measured twice, and a round cap that restarted from one each time."""
+
+    captured: list[list[str]] = []
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> SimpleNamespace:
+        captured.append(list(argv))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("workflow.orchestrate.subprocess.run", fake_run)
+    monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
+
+    assert orchestrate.hand_back(102, "CI is red.") is True
+    (argv,) = captured
+    assert "Do not start the review cycle" in argv[-1]
+
+
+def test_a_second_cycle_for_the_same_issue_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    lock = tmp_path / "qplus-cycle-101.lock"
+    monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
+
+    with orchestrate._cycle_lock(101):
+        second = orchestrate._cycle_lock(101)
+        with pytest.raises(OrchestrationError, match="already running"), second:
+            pass  # pragma: no cover - the second acquisition must refuse
+        assert lock.exists(), "the refusal must not tear down the running cycle's lock"
+    assert not lock.exists(), "the lock leaves with its cycle"
+
+
+def test_a_stale_lock_from_a_dead_cycle_is_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crashed cycle must not block the next one forever; a live one must."""
+
+    dead = subprocess.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    lock = tmp_path / "qplus-cycle-101.lock"
+    lock.write_text(str(dead.pid), encoding="utf-8")
+    monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
+
+    with orchestrate._cycle_lock(101):
+        assert lock.read_text(encoding="utf-8").strip() != str(dead.pid), (
+            "the stale lock is replaced by the living cycle's"
+        )
+
+
+def test_the_cli_takes_the_lock_before_the_cycle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    lock = tmp_path / "qplus-cycle-101.lock"
+    lock.write_text(str(os.getpid()), encoding="utf-8")
+    monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
+    monkeypatch.setattr(
+        orchestrate, "cycle", lambda issue, **kwargs: pytest.fail("the cycle must not start")
+    )
+
+    assert orchestrate.main(["run", "101"]) == 1
+    assert "already running" in capsys.readouterr().out
+
+
+def test_a_clean_static_verdict_is_presented_never_certified(harness: dict[str, Any]) -> None:
+    """Rounds two to four on #102 reviewed with every command refused, declared it in prose, and
+    were still counted as clean. A clean verdict that executed nothing is the operator's call."""
+
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=3, evidence="static")]
+    harness["state"]["mutation_targets"] = ["workflow-finish-teardown"]
+
+    assert orchestrate.cycle(101) == 1
+    assert harness["mutation_runs"] == 0, "no measurement is spent on an unproven review"
+    kind, facts = harness["notices"][-1]
+    assert kind == "statisches-urteil"
+    assert "entscheidung" in facts and "kommando" in facts
+
+
+def test_reviewer_decisions_close_the_run_and_land_on_the_issue(
+    harness: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Two well-formed operator decisions on #102 lived only in the pull-request review; the
+    ticket chat reported "0 blocking, 7 advisory" and the operator never saw either."""
+
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=2)]
+    harness["state"]["decisions"] = ["**Decision — boundary.** A or B; default A."]
+    comments: list[list[str]] = []
+
+    def record_run(args: Sequence[str], **kwargs: Any) -> str:
+        comments.append(list(args))
+        return ""
+
+    monkeypatch.setattr(orchestrate, "_run", record_run)
+
+    assert orchestrate.cycle(101) == 0
+    kinds = [kind for kind, _ in harness["notices"]]
+    assert kinds[-1] == "entscheidung", "the decision closes the run, never buried under fertig"
+    assert kinds[-2] == "fertig"
+    _, facts = harness["notices"][-1]
+    assert "boundary" in str(facts["entscheidung"])
+    (comment,) = comments
+    assert comment[:3] == ["gh", "issue", "comment"], (
+        "the decision also lands on the issue, the one channel an open chat cannot swallow"
+    )
+
+
+def test_decision_blocks_are_extracted_from_the_certified_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = (
+        "## Review\\n\\nFine.\\n\\n"
+        "<!-- workflow-decision -->\\n**Decision 1.** Accept or widen.\\n"
+        "<!-- /workflow-decision -->\\n"
+        "prose between\\n"
+        "<!-- workflow-decision -->**Decision 2.** Merge order.<!-- /workflow-decision -->\\n"
+        "<!-- workflow-verdict sha:feedc0ffee01 blocking:0 advisory:2 evidence:executed -->"
+    )
+    payload = '{"reviews": [{"body": "' + body + '"}], "comments": []}'
+    monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
+
+    decisions = orchestrate.review_decisions(158, "feedc0ffee0123456789")
+
+    assert len(decisions) == 2
+    assert decisions[0].startswith("**Decision 1.**")
+    assert decisions[1] == "**Decision 2.** Merge order."
+
+    assert orchestrate.review_decisions(158, "0000000000") == (), (
+        "decisions ride only on the review whose verdict names the head"
+    )
 
 
 def test_a_builder_that_pushed_nothing_stops_the_loop(harness: dict[str, Any]) -> None:
@@ -478,7 +636,8 @@ def test_the_verdict_is_read_from_reviews_not_only_comments(
 
     payload = (
         '{"reviews": [{"body": "## Review\\n\\nNot ready.\\n\\n'
-        '<!-- workflow-verdict sha:a46ae66f1b4c blocking: 3 advisory: 13 -->"}], "comments": []}'
+        '<!-- workflow-verdict sha:a46ae66f1b4c blocking: 3 advisory: 13 evidence:executed -->"}],'
+        ' "comments": []}'
     )
     monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
 
@@ -486,13 +645,16 @@ def test_the_verdict_is_read_from_reviews_not_only_comments(
 
     assert verdict is not None
     assert verdict.blocking == 3 and verdict.advisory == 13
+    assert verdict.proven
 
 
 def test_the_newest_review_wins_over_older_ones(monkeypatch: pytest.MonkeyPatch) -> None:
     payload = (
         '{"reviews": ['
-        '{"body": "<!-- workflow-verdict sha:feedc0ffee01 blocking: 3 advisory: 1 -->"},'
-        '{"body": "<!-- workflow-verdict sha:feedc0ffee01 blocking: 0 advisory: 2 -->"}'
+        '{"body": "<!-- workflow-verdict sha:feedc0ffee01 blocking: 3 advisory: 1 '
+        'evidence:executed -->"},'
+        '{"body": "<!-- workflow-verdict sha:feedc0ffee01 blocking: 0 advisory: 2 '
+        'evidence:executed -->"}'
         '], "comments": [{"body": "unrelated chatter"}]}'
     )
     monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
@@ -511,7 +673,7 @@ def test_a_verdict_for_another_commit_is_no_verdict_at_all(
 
     payload = (
         '{"reviews": [{"body": "<!-- workflow-verdict sha:0ddba11c0de5 blocking: 0 '
-        'advisory: 0 -->"}], "comments": []}'
+        'advisory: 0 evidence:executed -->"}], "comments": []}'
     )
     monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: payload)
 

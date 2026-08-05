@@ -24,10 +24,13 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import ctypes
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Iterator, Mapping, Sequence
@@ -39,13 +42,25 @@ from workflow.classify import REPO_ROOT, changed_paths, load_model
 from workflow.mutation import MutationTarget, load_policy, select_affected_targets
 
 #: The reviewer writes this into its summary comment. Counting a structured marker keeps the loop's
-#: exit condition out of the reviewer's prose, and the sha names the commit the verdict certifies —
-#: without it, a round in which no new review landed silently reused the previous round's verdict.
+#: exit condition out of the reviewer's prose; the sha names the commit the verdict certifies —
+#: without it, a round in which no new review landed silently reused the previous round's verdict —
+#: and the evidence field says what the verdict rests on: `executed` when the reviewer ran the
+#: commands it relied on, `static` when it could not. Rounds two to four on #102 ran with every
+#: command refused, declared it openly in prose, and were still counted as clean; a marker without
+#: the field is therefore no verdict at all.
 VERDICT = re.compile(
     r"<!--\s*workflow-verdict\s+sha:\s*(?P<sha>[0-9a-fA-F]{7,40})\s+"
-    r"blocking:\s*(?P<blocking>\d+)\s+advisory:\s*(?P<advisory>\d+)\s*-->"
+    r"blocking:\s*(?P<blocking>\d+)\s+advisory:\s*(?P<advisory>\d+)\s+"
+    r"evidence:\s*(?P<evidence>executed|static)\s*-->"
 )
 SESSION_MARKER = re.compile(r"<!--\s*claude-session:\s*(?P<session>[A-Za-z0-9_-]+)\s*-->")
+#: The reviewer wraps every decision that belongs to the operator in this pair, so the cycle can
+#: forward the decision itself — on #102 two well-formed decisions sat only in the pull-request
+#: review, and the operator, reading the ticket chat, never saw either.
+DECISION = re.compile(
+    r"<!--\s*workflow-decision\s*-->\s*(?P<text>.*?)\s*<!--\s*/workflow-decision\s*-->",
+    re.DOTALL,
+)
 
 _MAX_ROUNDS = 2
 
@@ -63,14 +78,21 @@ class OrchestrationError(RuntimeError):
 
 @dataclass(frozen=True)
 class Verdict:
-    """What the last review concluded."""
+    """What the last review concluded, and on what footing."""
 
     blocking: int
     advisory: int
+    evidence: str = "executed"
 
     @property
     def clean(self) -> bool:
         return self.blocking == 0
+
+    @property
+    def proven(self) -> bool:
+        """Whether the reviewer executed the commands its conclusions rest on."""
+
+        return self.evidence == "executed"
 
 
 def _executable(name: str) -> str:
@@ -117,6 +139,87 @@ def _run(
     if completed.returncode != 0:
         raise OrchestrationError(f"`{args[0]} {args[1] if len(args) > 1 else ''}` failed")
     return (completed.stdout or "").strip()
+
+
+def _process_alive(pid: int) -> bool:
+    """Whether ``pid`` names a live process, without signalling it.
+
+    ``os.kill(pid, 0)`` is the POSIX idiom; on Windows it would *terminate* the process, so the
+    liveness probe goes through ``OpenProcess`` there instead.
+    """
+
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        query_limited_information = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(query_limited_information, False, pid)
+        if not handle:
+            return False
+        # OpenProcess also succeeds on an exited process whose handles are still held (any
+        # waited-but-unreleased child), so the exit code decides: STILL_ACTIVE means running.
+        still_active = 259
+        exit_code = ctypes.c_ulong()
+        queried = kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code))
+        kernel32.CloseHandle(handle)
+        return bool(queried) and exit_code.value == still_active
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _lock_path(issue: int) -> Path:
+    """One lock per issue, in the git directory every worktree of this repository shares."""
+
+    common = _run(["git", "rev-parse", "--git-common-dir"])
+    base = Path(common)
+    if not base.is_absolute():
+        base = (REPO_ROOT / common).resolve()
+    return base / f"qplus-cycle-{issue}.lock"
+
+
+@contextlib.contextmanager
+def _cycle_lock(issue: int) -> Iterator[None]:
+    """One ticket, one cycle. A second concurrent cycle refuses, naming the first.
+
+    On #102 a fix session started its own cycle while the cycle that spawned it was still
+    waiting for it: three cycles reviewed one branch, the round cap restarted from one each
+    time, and one head was measured twice. The lock lives in the shared git directory so every
+    worktree sees the same one; a lock whose process is dead is stale and replaced, so a
+    crashed cycle never blocks the next by leaving a file behind.
+    """
+
+    path = _lock_path(issue)
+
+    def acquire() -> bool:
+        try:
+            with path.open("x", encoding="utf-8") as handle:
+                handle.write(str(os.getpid()))
+        except FileExistsError:
+            return False
+        return True
+
+    if not acquire():
+        try:
+            recorded = int(path.read_text(encoding="utf-8").strip() or "0")
+        except (OSError, ValueError):
+            recorded = 0
+        if recorded and _process_alive(recorded):
+            raise OrchestrationError(
+                f"a cycle for #{issue} is already running (pid {recorded}); a second one would "
+                f"race it — if that process is truly gone, remove {path}"
+            )
+        with contextlib.suppress(OSError):
+            path.unlink()
+        if not acquire():
+            raise OrchestrationError(f"another cycle for #{issue} started first; this one stops")
+    try:
+        yield
+    finally:
+        with contextlib.suppress(OSError):
+            path.unlink()
 
 
 def issue_branch_matches(issue: int, branch: str) -> bool:
@@ -180,6 +283,17 @@ def latest_verdict(pull_request: int, head: str) -> Verdict | None:
     context — it is no verdict at all.
     """
 
+    body = _certified_review_body(pull_request, head)
+    if body is None:
+        return None
+    match = VERDICT.search(body)
+    assert match is not None  # _certified_review_body only returns a body carrying the marker
+    return Verdict(int(match["blocking"]), int(match["advisory"]), match["evidence"])
+
+
+def _certified_review_body(pull_request: int, head: str) -> str | None:
+    """The newest review or comment whose verdict marker names ``head``, or None."""
+
     raw = _run(["gh", "pr", "view", str(pull_request), "--json", "reviews,comments"])
     payload = json.loads(raw or "{}")
     reviews = [str(entry.get("body", "")) for entry in payload.get("reviews", [])]
@@ -187,8 +301,22 @@ def latest_verdict(pull_request: int, head: str) -> Verdict | None:
     for body in [*reversed(reviews), *reversed(comments)]:
         match = VERDICT.search(body)
         if match and head.lower().startswith(match["sha"].lower()):
-            return Verdict(int(match["blocking"]), int(match["advisory"]))
+            return body
     return None
+
+
+def review_decisions(pull_request: int, head: str) -> tuple[str, ...]:
+    """The operator decisions the certified review wrapped, in review order.
+
+    The reviewer's prose is never parsed for meaning; only explicitly wrapped blocks count, the
+    same principle as the verdict marker. Without this, two well-formed decisions on #102 lived
+    only in the pull-request review and the operator never saw either.
+    """
+
+    body = _certified_review_body(pull_request, head)
+    if body is None:
+        return ()
+    return tuple(match["text"].strip() for match in DECISION.finditer(body))
 
 
 def session_for(issue: int) -> str | None:
@@ -267,8 +395,8 @@ _REVIEWER_TOOLS = (
     "Bash(git branch:*)",
     "Bash(gh run view:*)",
     "Bash(gh run list:*)",
-    "Bash(uv run pytest:*)",
-    "Bash(uv run python:*)",
+    "Bash(gh api:*)",
+    "Bash(uv run:*)",
 )
 
 
@@ -289,11 +417,17 @@ def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> N
     prompt = (
         f"/review-change {issue}\n"
         f"Review the open pull request for this issue. The branch under review is checked out "
-        f"read-only at {worktree} — read source and tests and run commands there, never in this "
-        "checkout, and edit nothing. Post the review on the pull request with `gh pr review`. End "
-        f"its summary with <!-- workflow-verdict sha:{head[:12]} blocking:N advisory:M --> where "
-        "the sha names the commit you reviewed, N counts Blocker and Defect findings, and M "
-        "counts Suspected defect and Note findings."
+        f"read-only at {worktree} — read source and tests there, never in this checkout, and "
+        f"edit nothing. Run commands against it without `cd`: `uv run --directory {worktree} "
+        f"pytest ...` and `git -C {worktree} ...` match your allowlist, a compound command "
+        "starting with `cd` does not. Wrap every decision that belongs to the operator in "
+        "<!-- workflow-decision --> and <!-- /workflow-decision --> so the cycle can forward it. "
+        "Post the review on the pull request with `gh pr review`. End its summary with "
+        f"<!-- workflow-verdict sha:{head[:12]} blocking:N advisory:M evidence:executed --> "
+        "where the sha names the commit you reviewed, N counts Blocker and Defect findings, M "
+        "counts Suspected defect and Note findings, and evidence is `executed` only if you ran "
+        "the tests or commands your conclusions rest on — if every command was refused, write "
+        "evidence:static and say so in the summary."
     )
     # The prompt sits directly after -p: --allowedTools is variadic and would otherwise swallow
     # it as one more tool name, leaving the reviewer with an empty task — observed on the first
@@ -337,7 +471,9 @@ def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> bool:
 
     prompt = (
         f"{reason} Fix every blocking point on #{issue} — with a regression test that fails "
-        "before the fix where it is in code — push once, and move the card back to Reviewing."
+        "before the fix where it is in code — push once, and move the card back to Reviewing. "
+        "Do not start the review cycle afterwards: the cycle that sent this hand-back is still "
+        "running and resumes on your push — a second cycle would race it."
     )
     command = [
         _executable("codex"),
@@ -685,10 +821,34 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 "runde": round_number,
                 "blockierend": verdict.blocking,
                 "beratend": verdict.advisory,
+                "beleg": verdict.evidence,
                 "head": head[:12],
             },
             dry_run=dry_run,
         )
+        if verdict.clean and not verdict.proven:
+            # A clean verdict that executed nothing certifies nothing: rounds two to four on
+            # #102 reviewed with every command refused and were still counted as clean. The
+            # blocking direction stays valid — findings worth fixing are worth fixing on any
+            # footing — but "ready to merge" demands executed evidence or the operator's word.
+            report(
+                issue,
+                "statisches-urteil",
+                {
+                    "runde": round_number,
+                    "head": head[:12],
+                    "entscheidung": (
+                        "Das Review ist sauber, konnte aber nichts ausführen — sein Urteil ist "
+                        "reine Statik-Analyse und wird nicht als mergefähig gemeldet. Optionen: "
+                        "den Zyklus erneut starten, damit ein Review mit ausgeführten Tests "
+                        "entsteht, oder das statische Urteil selbst akzeptieren und auf dem "
+                        "Pull Request mergen. Ohne Aktion bleibt die Karte auf Reviewing."
+                    ),
+                    "kommando": f"uv run python -m workflow.orchestrate run {issue}",
+                },
+                dry_run=dry_run,
+            )
+            return 1
         if verdict.clean:
             if mutation_targets:
                 report(
@@ -737,6 +897,28 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 },
                 dry_run=dry_run,
             )
+            decisions = () if dry_run else review_decisions(pull_request, head)
+            if decisions:
+                # The operator's decisions close the run — after "fertig", never buried under
+                # it — and land on the issue as well: an event can be missed by an open chat
+                # window, a comment on the ticket cannot.
+                report(
+                    issue,
+                    "entscheidung",
+                    {
+                        "quelle": "das Review legt diese Entscheidungen dem Operator vor",
+                        "blockiert_den_merge": "nein",
+                        "entscheidung": "\n\n".join(decisions),
+                    },
+                    dry_run=dry_run,
+                )
+                comment = "\n\n---\n\n".join(
+                    ["The review left these decisions to the operator:", *decisions]
+                )
+                try:
+                    _run(["gh", "issue", "comment", str(issue), "--body", comment])
+                except OrchestrationError:
+                    _say(f"the decision comment did not reach issue #{issue}; the event carries it")
             return 0
 
         if round_number == max_rounds:
@@ -788,7 +970,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
-        return cycle(args.issue, max_rounds=args.max_rounds, dry_run=args.dry_run)
+        if args.dry_run:
+            return cycle(args.issue, max_rounds=args.max_rounds, dry_run=True)
+        with _cycle_lock(args.issue):
+            return cycle(args.issue, max_rounds=args.max_rounds, dry_run=False)
     except (OrchestrationError, board.BoardError) as error:
         _say(f"STOPPED: {error}")
         return 1

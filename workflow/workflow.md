@@ -298,11 +298,29 @@ merge" therefore means every piece of evidence exists, is green, and describes t
 commit the cycle certified. A red mutation measurement is a blocking finding like any other: it
 consumes a fix round, and at the round cap it blocks.
 
+**One ticket, one cycle.** A second `orchestrate run` for an issue whose cycle is still running
+refuses, naming the running one; a lock from a cycle that died is stale and replaced. The fix
+session a hand-back starts is told **not** to start a cycle — the cycle that sent the hand-back
+is still running and resumes on the push. Both rules exist because a fix session once followed
+the builder's step 10 to the letter: three cycles reviewed one branch side by side, the round
+cap restarted with each, and one commit was measured twice.
+
+**The verdict names its evidence.** The marker carries `evidence:executed` when the reviewer ran
+the tests and commands its conclusions rest on, `evidence:static` when it could not — and a
+marker without the field is no verdict at all. A **clean but static** verdict is never certified:
+the cycle presents it to the operator as a decision — re-run for an executed review, or accept
+the static one and merge on the pull request. Blocking findings hold on any footing; only "ready
+to merge" demands executed evidence.
+
 **The cycle narrates as it goes.** Every phase change — round started, review running, verdict,
 hand-back, mutation measurement, ready or blocked — reaches the ticket's Claude chat as a
 structured event carrying its round, head commit, and counts; the session narrates it in German
 for the operator and never acts on it. A decision event is the last event a run sends, so a
-decision is never buried under routine progress lines.
+decision is never buried under routine progress lines. Decisions the *reviewer* leaves to the
+operator are wrapped in `<!-- workflow-decision -->` … `<!-- /workflow-decision -->` in its
+summary; the cycle forwards them as the closing decision event **and** as a comment on the
+issue, because an already-open chat window does not refresh with what a headless session
+appends — the issue comment is the channel no window can swallow.
 
 **Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
 in the full program:
