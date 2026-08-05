@@ -6,7 +6,14 @@ import monitoring.deals as deals_module
 import numpy as np
 import pandas as pd
 import pytest
-from monitoring.deals import deal_ledger, deals_to_trades, equity_curve, live_stats
+from monitoring.deals import (
+    balance_at,
+    deal_ledger,
+    deals_to_trades,
+    equity_curve,
+    live_stats,
+    to_ns,
+)
 
 
 def _deal(
@@ -66,6 +73,7 @@ def test_deals_to_trades_pairs_in_and_out() -> None:
 def test_deals_to_trades_empty() -> None:
     trades = deals_to_trades([])
     assert trades.empty
+    assert deals_module.excluded_positions(trades) == ()
     assert list(trades.columns) == [
         "position_id",
         "symbol",
@@ -199,6 +207,99 @@ def test_deals_to_trades_orders_completed_positions_by_close_time() -> None:
 
     assert trades["position_id"].tolist() == [2, 1]
     assert trades.index.tolist() == [0, 1]
+
+
+def test_unreconstructable_positions_never_reach_the_trade_table() -> None:
+    deals = [
+        _deal(1, "XAUUSD", 0, 0, 10),
+        _deal(1, "XAUUSD", 1, 1, 20),
+        _deal(2, "EURUSD", 0, 0, 30),
+        _deal(2, "EURUSD", 1, 2, 40),
+        _deal(3, "GBPUSD", 1, 0, 50),
+        _deal(3, "GBPUSD", 0, 3, 60),
+        _deal(4, "USDJPY", 0, 0, 70),
+        _deal(4, "USDJPY", 13, 0, 80),
+        _deal(4, "USDJPY", 1, 1, 90),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades["position_id"].tolist() == [1]
+    assert {item.position_id for item in deals_module.excluded_positions(trades)} == {2, 3, 4}
+
+
+def test_excluded_positions_are_reported_with_their_reason() -> None:
+    deals = [
+        _deal(20, "EURUSD", 0, 0, 10),
+        _deal(20, "EURUSD", 1, 2, 20),
+        _deal(30, "GBPUSD", 1, 0, 30),
+        _deal(30, "GBPUSD", 14, 0, 40),
+        _deal(30, "GBPUSD", 0, 3, 50),
+    ]
+
+    exclusions = deals_module.excluded_positions(deals_to_trades(deals))
+
+    assert [
+        (item.position_id, item.symbol, item.reason) for item in exclusions
+    ] == [
+        (20, "EURUSD", "entry INOUT (2) cannot be reconstructed"),
+        (
+            30,
+            "GBPUSD",
+            "entry OUT_BY (3) cannot be reconstructed; later IN deal type 14 is unsupported",
+        ),
+    ]
+
+
+def test_entry_only_unreconstructable_position_reports_complete_exclusion() -> None:
+    deals = [
+        _deal(42, "EURUSD", 1, 2, 10),
+        _deal(42, "GBPUSD", 0, 3, 20),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades.empty
+    assert deals_module.excluded_positions(trades) == (
+        deals_module.PositionExclusion(
+            position_id=42,
+            symbol="EURUSD",
+            reason=(
+                "entry INOUT (2) cannot be reconstructed; "
+                "entry OUT_BY (3) cannot be reconstructed"
+            ),
+        ),
+    )
+
+
+def test_excluded_positions_keep_their_money_in_the_ledger() -> None:
+    deals = [
+        _deal(20, "EURUSD", 0, 0, 10, commission=-2.0, ticket=100),
+        _deal(20, "EURUSD", 1, 2, 20, profit=50.0, swap=-3.0, ticket=101),
+    ]
+
+    trades = deals_to_trades(deals)
+    ledger = deal_ledger(deals)
+    equity = equity_curve(Decimal("1000"), ledger)
+    balances = balance_at(to_ns(ledger["time"]), Decimal("1045"), ledger)
+
+    assert trades.empty
+    assert [item.position_id for item in deals_module.excluded_positions(trades)] == [20]
+    assert list(ledger["amount"]) == [Decimal("-2.0"), Decimal("47.0")]
+    assert list(equity["equity"]) == [Decimal("998.0"), Decimal("1045.0")]
+    assert list(balances) == [Decimal("998.0"), Decimal("1045.0")]
+
+
+def test_scale_in_reports_the_summed_in_volume() -> None:
+    deals = [
+        _deal(1, "XAUUSD", 0, 0, 10, volume=0.1),
+        _deal(1, "XAUUSD", 0, 0, 20, volume=0.2),
+        _deal(1, "XAUUSD", 1, 1, 30, volume=0.3),
+    ]
+
+    trades = deals_to_trades(deals)
+
+    assert trades.iloc[0]["volume"] == pytest.approx(0.3)
 
 
 def test_equity_curve_accumulates_from_start() -> None:
