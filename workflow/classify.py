@@ -196,6 +196,8 @@ def changed_paths(base: str, root: Path = REPO_ROOT) -> list[str]:
         cwd=root,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=True,
     )
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]

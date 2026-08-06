@@ -98,6 +98,8 @@ def _execute(args: Sequence[str], *, cwd: Path) -> subprocess.CompletedProcess[s
             cwd=cwd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
     except OSError as error:

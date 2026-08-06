@@ -711,3 +711,19 @@ def test_a_missing_branch_stops_the_cycle_before_any_gate(harness: dict[str, Any
         with pytest.raises(OrchestrationError, match="exactly one branch"):
             orchestrate.cycle(101)
     assert harness["reviews"] == 0
+
+
+def test_run_decodes_agent_output_as_utf8_on_any_platform() -> None:
+    """gh answers in UTF-8. Decoded with the platform codec, the reader thread died on the
+    first typographic quote inside a review body and subprocess.run returned empty text with
+    returncode 0 -- the cycle then read a posted, well-formed verdict as "no verdict at all"
+    (#186)."""
+
+    script = (
+        "import sys; "
+        "sys.stdout.buffer.write('„Karte“ ist grün — ok'.encode('utf-8'))"
+    )
+    out = orchestrate._run([sys.executable, "-c", script])
+    assert "„" in out and "—" in out, (
+        "UTF-8 agent output must survive the decode on every platform"
+    )

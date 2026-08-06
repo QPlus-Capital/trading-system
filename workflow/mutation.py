@@ -545,6 +545,8 @@ def run(scope: str, base: str, output: Path | None = None) -> int:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     all_results = parse_mutmut_results(listed.stdout)
     selected = {
