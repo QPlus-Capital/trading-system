@@ -90,6 +90,12 @@ def test_a_permitted_transition_is_written_and_read_back(
     assert confirmed.status == "Ready to Implement"
     kinds = ["mutation" in call["query"] for call in fake_graphql]
     assert kinds == [False, True, False], "read, write, then verify"
+    initial, write, verification = fake_graphql
+    assert write["project"] == "project-1"
+    assert write["item"] == "item-1"
+    assert write["field"] == "field-1"
+    assert write["option"] == "opt-ready"
+    assert initial["number"] == verification["number"] == 101
 
 
 def test_a_transition_the_contract_omits_is_refused(fake_graphql: list[dict[str, Any]]) -> None:
@@ -231,7 +237,7 @@ def test_the_hand_back_reason_lands_on_the_issue(monkeypatch: pytest.MonkeyPatch
 
     assert card.status == "Specifying"
     (comment,) = comments
-    assert comment[:3] == ["gh", "issue", "comment"]
+    assert comment[:4] == ["gh", "issue", "comment", "101"]
     assert any("AC-03 is unbuildable as written" in part for part in comment)
     assert any("Implementing -> Specifying by codex" in part for part in comment)
 
