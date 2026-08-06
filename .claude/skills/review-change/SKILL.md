@@ -17,10 +17,13 @@ ask — and the *actual* diff decides, whatever the issue declared.
 
 ## Procedure
 
-1. In a fresh session, decide the lane from `[review.scope]` and the actual diff, then read the
-   agent selection from the `[review]` table of `workflow/workflow.toml` for the effective risk
-   class and touched paths. Do not select agents from prose or memory. In the lean lane no
-   subagents run — review directly, one pass.
+1. **The orchestrator's task states the effective lane — follow it.** Only when no lane is
+   stated (an operator-started review) decide it from `[review.scope]` and the actual diff. In
+   the lean lane **never invoke a subagent**: review directly, one pass, and post before the
+   session ends — two headless reviews died waiting on agents a lean ticket forbade, and their
+   verified findings reached nobody. In the full program, read the agent selection from the
+   `[review]` table of `workflow/workflow.toml` for the effective risk class and touched paths;
+   do not select agents from prose or memory.
 2. In the full program, invoke each selected read-only subagent with the issue contract, the diff,
    the gate results, and the executing paths. Never pass the builder's private context.
 3. **Search effort is proportionate to the diff.** Target the behaviours whose failure costs the

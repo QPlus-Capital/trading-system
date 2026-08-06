@@ -99,11 +99,21 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(orchestrate, "_await_settled_checks", settled_checks)
     monkeypatch.setattr(orchestrate, "_reachable_mutation_targets", reachable_targets)
     monkeypatch.setattr(orchestrate, "_mutation_evidence", mutation_evidence)
+    monkeypatch.setattr(orchestrate, "_review_lane", lambda tree: str(state.get("lane", "lean")))
 
-    def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> None:
+    def review(
+        issue: int,
+        worktree: Path,
+        head: str,
+        *,
+        lane: str = "lean",
+        dry_run: bool = False,
+    ) -> int:
         log["reviews"] += 1
         log["sequence"].append("review")
         log.setdefault("review_trees", []).append(worktree)
+        log.setdefault("lanes", []).append(lane)
+        return int(state.get("reviewer_exit", 0))
 
     def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> bool:
         log["handbacks"].append(reason)
@@ -363,6 +373,9 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
         "the reviewer must be told to declare what its verdict rests on"
     )
     assert "workflow-decision" in argv[2], "operator decisions must be wrapped for forwarding"
+    assert "LEAN" in argv[2] and "do not invoke any subagents" in argv[2], (
+        "the default lane instruction is lean and forbids the agent panel"
+    )
     assert "--directory" in argv[2] and "cd" in argv[2], (
         "the reviewer is taught the worktree-safe invocations its allowlist matches"
     )
@@ -521,6 +534,129 @@ def test_rounds_recorded_reads_the_event_log(
     )
 
 
+def test_settled_checks_are_read_from_the_commit_not_the_rollup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round 6 regression: right after a push the pull request's rollup still lists the
+    *previous* commit's completed checks, and the branch-moved guard cannot catch it because the
+    head already matches — a full round blocked on the predecessor's red checks."""
+
+    head = "c890868caaeff81e53b0adeacde7b9d2cd406000"  # pragma: allowlist secret
+    queried: list[str] = []
+
+    def fake_run(args: Sequence[str], **kwargs: Any) -> str:
+        if args[:3] == ["gh", "pr", "view"]:
+            return json.dumps({"headRefOid": head})
+        assert args[:2] == ["gh", "api"]
+        queried.append(str(args[2]))
+        return json.dumps(
+            {
+                "check_runs": [
+                    {"name": "quality", "status": "completed", "conclusion": "success"},
+                    {"name": "mutation", "status": "completed", "conclusion": "skipped"},
+                ]
+            }
+        )
+
+    monkeypatch.setattr(orchestrate, "_run", fake_run)
+
+    assert orchestrate._await_settled_checks(193, head) == []
+    assert all(f"commits/{head}/check-runs" in path for path in queried), (
+        "the checks must be asked for the commit itself, never for the pull request's rollup"
+    )
+
+
+def test_a_commit_with_no_attached_checks_keeps_waiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No checks is not the same as green checks — the window right after a push has none."""
+
+    head = "c890868caaeff81e53b0adeacde7b9d2cd406000"  # pragma: allowlist secret
+
+    def fake_run(args: Sequence[str], **kwargs: Any) -> str:
+        if args[:3] == ["gh", "pr", "view"]:
+            return json.dumps({"headRefOid": head})
+        return json.dumps({"check_runs": []})
+
+    monkeypatch.setattr(orchestrate, "_run", fake_run)
+    monkeypatch.setattr(orchestrate, "_CHECKS_TIMEOUT", 0.05)
+    monkeypatch.setattr(orchestrate, "_POLL_SECONDS", 0.01)
+
+    with pytest.raises(OrchestrationError, match="did not settle"):
+        orchestrate._await_settled_checks(193, head)
+
+
+def test_the_cycle_states_the_lane_it_computed(harness: dict[str, Any]) -> None:
+    """Two lean rounds in a row engaged the full agent panel anyway and died waiting for it; the
+    lane is the orchestrator's call, stated in the reviewer's task, never the reviewer's own."""
+
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
+    harness["state"]["lane"] = "full"
+
+    assert orchestrate.cycle(101) == 0
+    assert harness["lanes"] == ["full"], "the reviewer receives the lane the cycle computed"
+    review_facts = next(facts for kind, facts in harness["notices"] if kind == "review")
+    assert review_facts["spur"] == "full", "the operator sees the lane in the event"
+
+
+def test_the_review_lane_is_computed_from_the_carve_out_and_the_diff_size(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    big_diff = " 3 files changed, 296 insertions(+), 45 deletions(-)"
+    monkeypatch.setattr(orchestrate, "_run", lambda args, **kwargs: big_diff)
+
+    monkeypatch.setattr(
+        orchestrate, "changed_paths", lambda base, root=None: ["live/risk_control.py"]
+    )
+    assert orchestrate._review_lane(Path("tree")) == "full", "the carve-out always reviews full"
+
+    monkeypatch.setattr(orchestrate, "changed_paths", lambda base, root=None: ["tests/test_x.py"])
+    assert orchestrate._review_lane(Path("tree")) == "full", "296+45 crosses the size bound"
+
+    monkeypatch.setattr(
+        orchestrate, "_run", lambda args, **kwargs: " 1 file changed, 9 insertions(+)"
+    )
+    assert orchestrate._review_lane(Path("tree")) == "lean"
+
+
+def test_a_reviewer_that_died_empty_is_named_not_guessed_at(harness: dict[str, Any]) -> None:
+    """Rounds 3 and 4 on #190 ended cleanly, posted nothing, and the operator got the same
+    generic "kein-urteil" a crash would produce. The exit status tells the two apart."""
+
+    harness["state"]["verdicts"] = []
+    harness["state"]["reviewer_exit"] = 0
+
+    assert orchestrate.cycle(101) == 1
+    kind, facts = harness["notices"][-1]
+    assert kind == "kein-urteil"
+    assert facts["reviewer_exit"] == 0
+    assert "kein Review am Pull" in str(facts["grund"]), (
+        "a clean exit that posted nothing is its own diagnosis, not a generic missing verdict"
+    )
+
+
+def test_a_crashed_reviewer_reports_its_exit_code(harness: dict[str, Any]) -> None:
+    harness["state"]["verdicts"] = []
+    harness["state"]["reviewer_exit"] = 17
+
+    assert orchestrate.cycle(101) == 1
+    _, facts = harness["notices"][-1]
+    assert facts["reviewer_exit"] == 17
+    assert "Exit-Code 17" in str(facts["grund"])
+
+
+def test_a_plain_restart_continues_the_numbering(harness: dict[str, Any]) -> None:
+    """The narration must agree with the log: after two recorded rounds a plain restart runs
+    round 3 with a fresh budget of two, never a renumbered "round 1 of 2"."""
+
+    harness["state"]["rounds_recorded"] = 2
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
+
+    assert orchestrate.cycle(101) == 0
+    runde = next(facts for kind, facts in harness["notices"] if kind == "runde")
+    assert runde["runde"] == 3 and runde["max_runden"] == 4
+
+
 def test_the_hand_back_prompt_forbids_a_second_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
     """A fix session follows the builder contract, whose last step starts the review cycle — so
     on #102 every hand-back spawned a cycle beside the one still waiting for it: three cycles,
@@ -621,8 +757,8 @@ def test_reviewer_decisions_close_the_run_and_land_on_the_issue(
     assert kinds[-2] == "fertig"
     _, facts = harness["notices"][-1]
     assert "boundary" in str(facts["entscheidung"])
-    (comment,) = comments
-    assert comment[:3] == ["gh", "issue", "comment"], (
+    (comment,) = [call for call in comments if call[:3] == ["gh", "issue", "comment"]]
+    assert comment[2] == "comment", (
         "the decision also lands on the issue, the one channel an open chat cannot swallow"
     )
 
