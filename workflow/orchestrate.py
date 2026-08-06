@@ -476,16 +476,24 @@ def review(
     if lane == "lean":
         lane_instruction = (
             "The effective lane is LEAN: review directly, one pass, and do not invoke any "
-            "subagents — post your review yourself before your session ends. "
+            "subagents. "
         )
     else:
         lane_instruction = (
             "The effective lane is the FULL program: engage exactly the agents the contract "
-            "selects for the risk class and touched paths. "
+            "selects for the risk class and touched paths — and only SYNCHRONOUSLY: start an "
+            "agent and wait for its report in the same turn, never in the background. Your "
+            "headless session ends the moment you yield control with agents still running, and "
+            "nothing can ever wake you again — three reviews of one ticket died exactly that "
+            "way, their verified findings stranded in transcripts. If a delegation cannot "
+            "complete, review that area yourself and name the gap. "
         )
     prompt = (
         f"/review-change {issue}\n"
         f"Review the open pull request for this issue. {lane_instruction}"
+        "Posting the review is your LAST action and is never skipped: a session that ends with "
+        "the review unposted has delivered nothing, whatever it verified — post with what you "
+        "have rather than end holding evidence. "
         f"The branch under review is checked out "
         f"read-only at {worktree} — read source and tests there, never in this checkout, and "
         f"edit nothing. Run commands against it without `cd`: `uv run --directory {worktree} "

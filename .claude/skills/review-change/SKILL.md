@@ -25,7 +25,12 @@ ask — and the *actual* diff decides, whatever the issue declared.
    `[review]` table of `workflow/workflow.toml` for the effective risk class and touched paths;
    do not select agents from prose or memory.
 2. In the full program, invoke each selected read-only subagent with the issue contract, the diff,
-   the gate results, and the executing paths. Never pass the builder's private context.
+   the gate results, and the executing paths. Never pass the builder's private context. **Invoke
+   them synchronously only — start an agent and wait for its report in the same turn.** A
+   headless session ends the moment it yields control with agents still running, and nothing can
+   wake it again: three reviews of one ticket ended mid-wait with their verified findings
+   stranded in transcripts. If a delegation cannot complete, review that area yourself and name
+   the gap in the posted review.
 3. **Search effort is proportionate to the diff.** Target the behaviours whose failure costs the
    most; stop when further counterexamples stop changing the verdict. Never a fixed quota per
    changed behaviour.
@@ -66,8 +71,12 @@ ask — and the *actual* diff decides, whatever the issue declared.
 
 ## Stop conditions
 
-- Stop when inputs or gate results are stale, or when a selected agent did not run.
+- Stop when inputs or gate results are stale.
 - Stop and escalate to the operator when a finding needs a decision only the operator can make.
+- A selected agent that did not run is **not** a reason to end without posting: post the review
+  with what you have, name the missing report as a gap, and downgrade the evidence claim
+  accordingly. **Posting the review is always the session's last action** — ending with the
+  review unposted delivers nothing, whatever was verified.
 
 ## Prohibited shortcuts
 
