@@ -370,6 +370,63 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%S")
 
 
+def _rounds_recorded(issue: int) -> int:
+    """How many rounds this ticket has already consumed, read from its event log.
+
+    The counter survives the cycle process on purpose: without it, every restart began again at
+    "round 1 of 2", so granting one more round after the cap actually granted two — the cap was
+    reset instead of extended, which is the opposite of what a cap is for.
+    """
+
+    log = events_path(issue)
+    if not log.is_file():
+        return 0
+    highest = 0
+    for line in log.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("ereignis") == "runde":
+            highest = max(highest, int(event.get("runde", 0)))
+    return highest
+
+
+def _forward_decisions(
+    issue: int, pull_request: int, head: str, *, dry_run: bool = False
+) -> None:
+    """Deliver the certified review's operator decisions as the closing event and a comment.
+
+    Round 5 showed why this must run at *every* exit, not only the ready one: at the round cap
+    the reviewer's fully formed A/B/C block existed only in the pull request — precisely the stop
+    where the operator has to decide. The issue comment is the durable half; the next review
+    round reads it, so an answered decision is never re-opened as new.
+    """
+
+    decisions = () if dry_run else review_decisions(pull_request, head)
+    if not decisions:
+        return
+    report(
+        issue,
+        "entscheidung",
+        {
+            "quelle": "das Review legt diese Entscheidungen dem Operator vor",
+            "blockiert_den_merge": "nein",
+            "entscheidung": "\n\n".join(decisions),
+        },
+        dry_run=dry_run,
+    )
+    comment = "\n\n---\n\n".join(
+        ["The review left these decisions to the operator:", *decisions]
+    )
+    try:
+        _run(["gh", "issue", "comment", str(issue), "--body", comment])
+    except OrchestrationError:
+        _say(f"the decision comment did not reach issue #{issue}; the event carries it")
+
+
 #: What the headless reviewer may do without anyone there to approve: read the ticket and the pull
 #: request, post the one review, and inspect the branch. The first real run showed why this list
 #: must exist — the reviewer did its work, then could not post it, and the loop ended with "no
@@ -679,16 +736,29 @@ def _mutation_evidence(branch: str, head: str, *, dry_run: bool = False) -> tupl
     raise OrchestrationError(f"the mutation run for {head[:12]} did not complete in time")
 
 
-def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -> int:
+def cycle(
+    issue: int,
+    *,
+    max_rounds: int = _MAX_ROUNDS,
+    dry_run: bool = False,
+    resume: bool = False,
+) -> int:
     """One issue, from a pushed branch to a verdict the operator can act on.
 
     The round is strictly ordered — gates, settled CI, review, then one mutation measurement on
     the certified head — and nothing later starts while anything earlier still runs. "Ready to
     merge" therefore means: every piece of evidence exists, is green, and describes this commit.
+
+    ``resume`` is the operator's "one more round" after the cap blocked the ticket: the round
+    counter continues from the event log — two consumed rounds resume as round 3 **of 3**, never
+    as a fresh 1 of 2 — and the run begins by handing the last certified red evidence back to
+    the builder, exactly the hand-back the cap suppressed. One extra round per decision; if it
+    is not clean either, the card blocks again and the operator decides again.
     """
 
     card = board.read_card(issue)
-    if card.status not in {"Implementing", "Reviewing"}:
+    allowed = {"Implementing", "Reviewing"} | ({"Blocked"} if resume else set())
+    if card.status not in allowed:
         raise OrchestrationError(
             f"issue #{issue} is in {card.status!r}; the cycle starts once the branch is pushed"
         )
@@ -697,6 +767,14 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
     if not dry_run:
         _ensure_pull_request_title(issue, pull_request)
     stale_head: str | None = None
+
+    first_round, last_round = 1, max_rounds
+    if resume:
+        consumed = 0 if dry_run else _rounds_recorded(issue)
+        first_round = consumed + 1
+        last_round = consumed + 1
+        if not dry_run and card.status == "Blocked":
+            board.move(issue, "Reviewing", actor="orchestrator")
 
     def _returned(reason: str) -> bool:
         """Hand the round back, or stop with the true reason when the fix session never ran.
@@ -728,7 +806,41 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         )
         return False
 
-    for round_number in range(1, max_rounds + 1):
+    if resume and not dry_run:
+        # The cap suppressed the very hand-back that would have kept the loop moving; granting
+        # one more round starts by delivering it. The last certified verdict decides what was
+        # red: blocking findings, or — a clean verdict at the cap — the mutation measurement.
+        blocked_head = _pushed_head(branch)
+        blocked_verdict = latest_verdict(pull_request, blocked_head)
+        report(
+            issue,
+            "fortsetzung",
+            {
+                "runde": first_round,
+                "max_runden": last_round,
+                "grund": "der Operator hat genau eine weitere Runde gewährt",
+                "head": blocked_head[:12],
+            },
+            dry_run=dry_run,
+        )
+        if blocked_verdict is not None:
+            if blocked_verdict.blocking:
+                reason = (
+                    f"The review of #{issue} reported {blocked_verdict.blocking} blocking "
+                    "finding(s) on its pull request. Read that review with "
+                    "`gh pr view --json reviews`."
+                )
+            else:
+                reason = (
+                    f"The last dispatched mutation measurement on the reviewed head of "
+                    f"#{issue} was red; read its mutation-result artifact and tighten or fix "
+                    "from measured results only."
+                )
+            if not _returned(reason):
+                return 1
+            stale_head = blocked_head
+
+    for round_number in range(first_round, last_round + 1):
         head = "dry-run" if dry_run else _pushed_head(branch)
         if stale_head is not None and head == stale_head:
             if not dry_run:
@@ -748,11 +860,12 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 },
                 dry_run=dry_run,
             )
+            _forward_decisions(issue, pull_request, head, dry_run=dry_run)
             return 1
         report(
             issue,
             "runde",
-            {"runde": round_number, "max_runden": max_rounds, "head": head[:12]},
+            {"runde": round_number, "max_runden": last_round, "head": head[:12]},
             dry_run=dry_run,
         )
         mutation_targets: list[MutationTarget] = []
@@ -764,7 +877,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
             _say(gates.render(risk, results))
             failed = [result for result in results if result.exit_status not in (0, None)]
             if not failed:
-                mutation_targets, _ = _reachable_mutation_targets(tree)
+                mutation_targets, selection_reason = _reachable_mutation_targets(tree)
                 red_checks = [] if dry_run else _await_settled_checks(pull_request, head)
                 if not red_checks:
                     if not dry_run:
@@ -778,7 +891,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                     review(issue, tree, head, dry_run=dry_run)
 
         if failed:
-            if round_number == max_rounds:
+            if round_number == last_round:
                 break
             reason = (
                 f"The gates failed on {len(failed)} command(s) for #{issue}; reproduce with "
@@ -795,7 +908,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
             stale_head = head
             continue
         if red_checks:
-            if round_number == max_rounds:
+            if round_number == last_round:
                 break
             report(
                 issue,
@@ -863,6 +976,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 },
                 dry_run=dry_run,
             )
+            _forward_decisions(issue, pull_request, head, dry_run=dry_run)
             return 1
         if verdict.clean:
             if mutation_targets:
@@ -878,7 +992,7 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 )
                 conclusion, reference = _mutation_evidence(branch, head, dry_run=dry_run)
                 if conclusion != "success":
-                    if round_number == max_rounds:
+                    if round_number == last_round:
                         break
                     if not dry_run:
                         board.move(issue, "Implementing", actor="orchestrator")
@@ -897,6 +1011,20 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                     stale_head = head
                     continue
                 mutation_status = f"gemessen und grün ({reference})"
+                if not dry_run:
+                    # The pull request carries its own mutation evidence: the checks list says
+                    # "mutation — skipped" by design (pushes measure nothing), and round 5
+                    # showed that the one green run proving the change lived in a dispatch
+                    # nothing on the pull request pointed to.
+                    evidence = (
+                        f"Mutation measured green on `{head[:12]}`: {reference}, "
+                        f"{selection_reason} The push CI skips this job by design; this "
+                        "dispatched run is the measurement."
+                    )
+                    try:
+                        _run(["gh", "pr", "comment", str(pull_request), "--body", evidence])
+                    except OrchestrationError:
+                        _say("the mutation evidence comment did not reach the pull request")
             else:
                 mutation_status = "nicht nötig, kein Ziel erreichbar"
             report(
@@ -912,31 +1040,11 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
                 },
                 dry_run=dry_run,
             )
-            decisions = () if dry_run else review_decisions(pull_request, head)
-            if decisions:
-                # The operator's decisions close the run — after "fertig", never buried under
-                # it — and land on the issue as well: an event can be missed by an open chat
-                # window, a comment on the ticket cannot.
-                report(
-                    issue,
-                    "entscheidung",
-                    {
-                        "quelle": "das Review legt diese Entscheidungen dem Operator vor",
-                        "blockiert_den_merge": "nein",
-                        "entscheidung": "\n\n".join(decisions),
-                    },
-                    dry_run=dry_run,
-                )
-                comment = "\n\n---\n\n".join(
-                    ["The review left these decisions to the operator:", *decisions]
-                )
-                try:
-                    _run(["gh", "issue", "comment", str(issue), "--body", comment])
-                except OrchestrationError:
-                    _say(f"the decision comment did not reach issue #{issue}; the event carries it")
+            # The operator's decisions close the run — after "fertig", never buried under it.
+            _forward_decisions(issue, pull_request, head, dry_run=dry_run)
             return 0
 
-        if round_number == max_rounds:
+        if round_number == last_round:
             break
         if not dry_run:
             board.move(issue, "Implementing", actor="orchestrator")
@@ -962,16 +1070,20 @@ def cycle(issue: int, *, max_rounds: int = _MAX_ROUNDS, dry_run: bool = False) -
         issue,
         "blockiert",
         {
-            "grund": f"nach {max_rounds} Fix-Runden nicht sauber",
+            "grund": f"nach {last_round} Fix-Runden nicht sauber",
             "entscheidung": (
                 "Die Schleife hat ihren Deckel erreicht; was offen ist, steht im letzten Review "
-                "auf dem Pull Request. Optionen: die Spezifikation ergänzen und neu freigeben, "
-                "den offenen Punkt selbst entscheiden, oder das Ticket zurückstellen. Ohne "
-                "Aktion bleibt die Karte auf Blocked."
+                "auf dem Pull Request und wird als Entscheidungs-Ereignis mitgeliefert. "
+                "Optionen: genau eine weitere Runde gewähren (Kommando unten — der Zähler "
+                "läuft weiter, nie wieder bei eins los), die Spezifikation ergänzen und neu "
+                "freigeben, oder das Ticket zurückstellen. Ohne Aktion bleibt die Karte auf "
+                "Blocked."
             ),
+            "kommando": f"uv run python -m workflow.orchestrate run {issue} --resume",
         },
         dry_run=dry_run,
     )
+    _forward_decisions(issue, pull_request, head, dry_run=dry_run)
     return 1
 
 
@@ -982,13 +1094,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_cmd.add_argument("issue", type=int)
     run_cmd.add_argument("--max-rounds", type=int, default=_MAX_ROUNDS)
     run_cmd.add_argument("--dry-run", action="store_true", help="print the steps, change nothing")
+    run_cmd.add_argument(
+        "--resume",
+        action="store_true",
+        help="grant exactly one more round after the cap blocked the ticket",
+    )
     args = parser.parse_args(argv)
 
     try:
         if args.dry_run:
-            return cycle(args.issue, max_rounds=args.max_rounds, dry_run=True)
+            return cycle(args.issue, max_rounds=args.max_rounds, dry_run=True, resume=args.resume)
         with _cycle_lock(args.issue):
-            return cycle(args.issue, max_rounds=args.max_rounds, dry_run=False)
+            return cycle(
+                args.issue, max_rounds=args.max_rounds, dry_run=False, resume=args.resume
+            )
     except (OrchestrationError, board.BoardError) as error:
         _say(f"STOPPED: {error}")
         return 1

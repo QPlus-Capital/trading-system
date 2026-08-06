@@ -33,19 +33,24 @@ ask — and the *actual* diff decides, whatever the issue declared.
 6. Run the commands your conclusions rest on. Invoke them worktree-safe — `uv run --directory
    <worktree> pytest …`, `git -C <worktree> …` — a compound command starting with `cd` falls
    outside the headless allowlist and is refused.
-7. Submit one pull-request review: an inline `file:line` comment per finding, and a summary with
-   the findings table, the contract check (first round only), and the decisions that belong to
-   the operator, **each wrapped in `<!-- workflow-decision -->` … `<!-- /workflow-decision -->`**
-   so the cycle can forward it to the operator's ticket chat and onto the issue. End the summary
+7. **Before listing operator decisions, read the issue's comments** (`gh issue view <issue>
+   --comments`): an answer recorded there — "Operator decision: …" — settles its decision. Report
+   it as answered in one line; re-opening an answered decision as new is how round 5 presented
+   the same two questions three times.
+8. Submit one pull-request review: an inline `file:line` comment per finding, and a summary with
+   the findings table, the contract check (first round only), and the **open** decisions that
+   belong to the operator, **each wrapped in `<!-- workflow-decision -->` …
+   `<!-- /workflow-decision -->`** so the cycle can forward it to the operator's ticket chat and
+   onto the issue. End the summary
    with `<!-- workflow-verdict sha:<the reviewed head> blocking:N advisory:M evidence:executed -->`.
    The sha names the commit this review read; a marker that names any other commit is no verdict
    at all, which is what keeps a later push from inheriting an earlier round's result. Evidence
    is `executed` only when you actually ran the decisive commands; if every command was refused,
    write `evidence:static` and say so in the summary — a clean static verdict is presented to
    the operator, never auto-certified.
-8. Use `Blocker`, `Defect`, `Suspected defect`, or `Note`. Only the first two block and trigger a
+9. Use `Blocker`, `Defect`, `Suspected defect`, or `Note`. Only the first two block and trigger a
    fix round; the other two are collected for the operator.
-9. If no finding survives, record the number of counterexamples attempted.
+10. If no finding survives, record the number of counterexamples attempted.
 
 ## Outputs
 

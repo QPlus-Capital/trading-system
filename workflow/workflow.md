@@ -325,10 +325,16 @@ follow-up question. A decision event is the last event a run records, so a decis
 buried under routine progress lines; decisions the *reviewer* leaves to the operator are wrapped
 in `<!-- workflow-decision -->` … `<!-- /workflow-decision -->` in its summary, and the cycle
 forwards them as the closing decision event **and** as a comment on the issue — the durable
-record no window can swallow. **After the merge the chat delivers the closing summary:** every
-advisory finding, every open decision with its recommendation and default, and a ready-to-paste
-prompt for each finding worth a ticket. Nothing an operator must weigh disappears into a closed
-pull request.
+record no window can swallow — at **every** exit: ready, capped, or stopped. Round 5 proved the
+ready-only version wrong at the one stop where the operator had to decide. **An answered decision
+is recorded where the next round reads it:** the ticket's chat posts the operator's answer as a
+comment on the issue, and a review round reads the issue's comments before listing decisions — an
+answered decision is reported as answered, never re-opened. After a green measurement the cycle
+also posts the run's identity and scope as a comment on the pull request, because the checks list
+says "mutation — skipped" by design and the pull request must carry its own evidence. **After the
+merge the chat delivers the closing summary:** every advisory finding, every open decision with
+its recommendation and default, and a ready-to-paste prompt for each finding worth a ticket.
+Nothing an operator must weigh disappears into a closed pull request.
 
 **Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
 in the full program:
@@ -383,13 +389,27 @@ the reviewer, not just the orchestrator: a repeat round that re-walks the whole 
 single largest time sink the previous process had.
 
 **Cap.** After two fix rounds without a clean result, the card moves to `Blocked` and the operator
-is notified with what remains. A finding that needs an operator decision moves the card to `Blocked`
-immediately, regardless of the round count.
+is notified with what remains — including, verbatim, every decision the last review left them. A
+finding that needs an operator decision moves the card to `Blocked` immediately, regardless of the
+round count.
 
-`Blocked` has exactly two ways on, and both start with the operator's decision: the build continues
-on the unchanged specification — Codex moves the card back to `Implementing` and resumes — or the
-specification must change, and the card returns to `Specifying` for phase 1. A card must never need
-a re-specification it does not want just to get out of a mechanical stop.
+**The operator can grant exactly one more round** — a sentence in the ticket's chat, or:
+
+```
+uv run python -m workflow.orchestrate run <issue> --resume
+```
+
+The round counter continues from the ticket's event log: two consumed rounds resume as round 3
+**of 3**, never as a fresh 1 of 2 — restarting must extend the cap by one, not reset it. The
+resumed run begins with the hand-back the cap suppressed, so the builder gets the red evidence
+before anything is re-reviewed; if the extra round is not clean either, the card blocks again and
+the operator decides again.
+
+`Blocked` therefore has exactly three ways on, and each starts with the operator's decision: one
+more round for the capped cycle (the orchestrator returns the card to `Reviewing`), the build
+continues on the unchanged specification — Codex moves the card back to `Implementing` and
+resumes — or the specification must change, and the card returns to `Specifying` for phase 1. A
+card must never need a re-specification it does not want just to get out of a mechanical stop.
 
 **A confirmed defect becomes permanent protection:** reproduced by a test that fails before the fix
 and passes after, then root-caused. That test is part of the fix, not a follow-up.

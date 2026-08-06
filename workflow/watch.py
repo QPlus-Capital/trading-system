@@ -43,7 +43,13 @@ def _gh(args: Sequence[str]) -> str:
     )
     if completed.returncode != 0:
         raise RuntimeError((completed.stderr or "gh failed").strip())
-    return (completed.stdout or "").strip()
+    output = (completed.stdout or "").strip()
+    if not output:
+        # Every _gh caller asks for --json, so empty output is a failure wearing returncode 0 —
+        # exactly how the cp1252 decode bug looked from here, and this watcher reported a real
+        # review count as 0 instead of "?". Unreadable must look unreadable.
+        raise RuntimeError("gh returned empty output where JSON was expected")
+    return output
 
 
 def snapshot(issue: int) -> dict[str, object]:
