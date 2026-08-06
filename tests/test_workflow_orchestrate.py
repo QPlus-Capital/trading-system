@@ -43,6 +43,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "notices": [],
         "sequence": [],
         "mutation_runs": 0,
+        "runs": [],
     }
     verdicts: list[Verdict] = []
     state: dict[str, Any] = {
@@ -55,6 +56,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         "mutation_conclusion": "success",
         "hand_back_starts": True,
         "decisions": [],
+        "rounds_recorded": 0,
     }
 
     class FakeCard:
@@ -120,10 +122,18 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         pending: list[Verdict] = state["verdicts"]
         return pending.pop(0) if pending else None
 
+    def run_recorder(args: Sequence[str], **kwargs: Any) -> str:
+        log["runs"].append(list(args))
+        return ""
+
     monkeypatch.setattr(orchestrate, "review", review)
     monkeypatch.setattr(orchestrate, "hand_back", hand_back)
     monkeypatch.setattr(orchestrate, "report", report)
     monkeypatch.setattr(orchestrate, "latest_verdict", verdict)
+    monkeypatch.setattr(orchestrate, "_run", run_recorder)
+    monkeypatch.setattr(
+        orchestrate, "_rounds_recorded", lambda issue: int(state["rounds_recorded"])
+    )
     monkeypatch.setattr(
         orchestrate, "review_decisions", lambda pull_request, head: tuple(state["decisions"])
     )
@@ -405,6 +415,110 @@ def test_a_dead_hand_back_spawn_is_reported_not_believed(
         lambda argv, **kwargs: SimpleNamespace(returncode=0, stdout="", stderr=""),
     )
     assert orchestrate.hand_back(102, "CI is red.") is True
+
+
+def test_resume_grants_exactly_one_more_round_and_the_counter_continues(
+    harness: dict[str, Any],
+) -> None:
+    """Round 5: after the cap, every restart began again at round 1 of 2 — granting one more
+    round actually granted two, and the cap was reset instead of extended. The counter now
+    survives in the event log, and the resumed run starts with the hand-back the cap withheld."""
+
+    harness["state"]["status"] = "Blocked"
+    harness["state"]["rounds_recorded"] = 2
+    harness["state"]["verdicts"] = [
+        Verdict(blocking=1, advisory=0),  # the capped verdict, read for the pre-hand-back
+        Verdict(blocking=0, advisory=0),  # the extra round's clean verdict
+    ]
+
+    assert orchestrate.cycle(101, resume=True) == 0
+    assert "Reviewing" in harness["moves"], "the orchestrator returns the card itself"
+    assert len(harness["handbacks"]) == 1, "the suppressed hand-back is delivered first"
+    kinds = [kind for kind, _ in harness["notices"]]
+    assert kinds[0] == "fortsetzung"
+    runde = next(facts for kind, facts in harness["notices"] if kind == "runde")
+    assert runde["runde"] == 3 and runde["max_runden"] == 3, (
+        "two consumed rounds resume as round 3 of 3, never as a fresh 1 of 2"
+    )
+    assert kinds[-1] == "fertig"
+
+
+def test_a_red_resume_round_blocks_again_and_names_the_next_resume(
+    harness: dict[str, Any],
+) -> None:
+    harness["state"]["status"] = "Blocked"
+    harness["state"]["rounds_recorded"] = 2
+    harness["state"]["verdicts"] = [
+        Verdict(blocking=1, advisory=0),
+        Verdict(blocking=1, advisory=0),
+    ]
+
+    assert orchestrate.cycle(101, resume=True) == 1
+    assert harness["moves"][-1] == "Blocked", "one extra round, then the operator decides again"
+    kind, facts = harness["notices"][-1]
+    assert kind == "blockiert"
+    assert "nach 3 Fix-Runden" in str(facts["grund"])
+    assert "--resume" in str(facts["kommando"])
+
+
+def test_a_blocked_card_needs_the_resume_flag(harness: dict[str, Any]) -> None:
+    harness["state"]["status"] = "Blocked"
+
+    with pytest.raises(OrchestrationError, match="the cycle starts"):
+        orchestrate.cycle(101)
+
+
+def test_decisions_are_forwarded_at_the_cap_not_only_when_ready(
+    harness: dict[str, Any],
+) -> None:
+    """Round 5's cap stop left the reviewer's fully formed decision block only in the pull
+    request — precisely the stop where the operator had to decide."""
+
+    harness["state"]["verdicts"] = [Verdict(blocking=1, advisory=0)] * 6
+    harness["state"]["decisions"] = ["**Decision — how does this leave Blocked?** A or B."]
+
+    assert orchestrate.cycle(101, max_rounds=2) == 1
+    kinds = [kind for kind, _ in harness["notices"]]
+    assert kinds[-2] == "blockiert" and kinds[-1] == "entscheidung", (
+        "the decision closes the run at the cap exactly as it does on the ready path"
+    )
+    assert any(call[:3] == ["gh", "issue", "comment"] for call in harness["runs"]), (
+        "the durable half lands on the issue"
+    )
+
+
+def test_a_green_measurement_posts_its_evidence_on_the_pull_request(
+    harness: dict[str, Any],
+) -> None:
+    """The checks list says "mutation — skipped" by design; without this comment the one run
+    that actually measured the change is linked from nowhere on the pull request."""
+
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
+    harness["state"]["mutation_targets"] = ["workflow-finish-teardown"]
+
+    assert orchestrate.cycle(101) == 0
+    comment = next(call for call in harness["runs"] if call[:3] == ["gh", "pr", "comment"])
+    assert any("run 4242" in part for part in comment), "the evidence names its run"
+
+
+def test_rounds_recorded_reads_the_event_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = tmp_path / "qplus-events-101.jsonl"
+    monkeypatch.setattr(orchestrate, "events_path", lambda issue: log)
+
+    assert orchestrate._rounds_recorded(101) == 0, "no log means no rounds consumed"
+    log.write_text(
+        json.dumps({"ereignis": "runde", "runde": 1}) + "\n"
+        + json.dumps({"ereignis": "urteil", "runde": 1}) + "\n"
+        + json.dumps({"ereignis": "runde", "runde": 2}) + "\n"
+        + "not json\n"
+        + json.dumps({"ereignis": "runde", "runde": 1}) + "\n",
+        encoding="utf-8",
+    )
+    assert orchestrate._rounds_recorded(101) == 2, (
+        "the highest recorded round wins, and a corrupt line never ends the count"
+    )
 
 
 def test_the_hand_back_prompt_forbids_a_second_cycle(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -410,6 +410,12 @@ to = "Implementing"
 actor = "codex"
 trigger = "the operator decided the build continues on the unchanged specification"
 
+[[board.transitions]]
+from = "Blocked"
+to = "Reviewing"
+actor = "orchestrator"
+trigger = "the operator decided to grant the capped cycle exactly one more round"
+
 # ---------------------------------------------------------------------------
 # Completed-ticket teardown
 # ---------------------------------------------------------------------------

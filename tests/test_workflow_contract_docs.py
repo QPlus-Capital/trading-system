@@ -135,14 +135,19 @@ def test_ready_to_implement_never_holds_work_that_cannot_start() -> None:
     # Coming back after a specification decision re-runs the release, because what the ticket
     # waited for has since changed. A mechanical stop in the build — the round cap, a hand-back
     # that never started — continues on the operator's word without a re-release: round three
-    # proved that forcing a re-specification nobody wanted was the only legal exit.
+    # proved that forcing a re-specification nobody wanted was the only legal exit, and round
+    # five added the third way on: one more round for the capped cycle itself.
     exits = {t["to"]: t for t in contract["transitions"] if t["from"] == "Blocked"}
-    assert set(exits) == {"Specifying", "Implementing"}, (
-        "Blocked has exactly two ways on: back through the release, or on with the build"
+    assert set(exits) == {"Specifying", "Implementing", "Reviewing"}, (
+        "Blocked has exactly three ways on: the release, the build, or one more round"
     )
     assert exits["Implementing"]["actor"] == "codex"
     assert "operator decided" in exits["Implementing"]["trigger"], (
         "the build continues only on the operator's decision, never on the guard's own"
+    )
+    assert exits["Reviewing"]["actor"] == "orchestrator"
+    assert "operator decided" in exits["Reviewing"]["trigger"], (
+        "one more round is granted by the operator, never taken by the cycle itself"
     )
 
 

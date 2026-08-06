@@ -32,7 +32,20 @@ tell them what happens — with the artifacts read, not paraphrased from an even
    recommendation, and the default if nothing is decided. Never invent detail, never pad.
 4. Re-arm the watcher (step 1) after every update. On a timeout wake-up with nothing changed,
    re-arm silently — unless something long is running, then one line of heartbeat with its age.
-5. **When the pull request merges, write the closing summary before anything else ends:** every
+5. **When the operator answers a decision, make the answer durable:** post it as a comment on
+   the issue (`gh issue comment <issue> --body "Operator decision: …"`, naming the decision it
+   answers). Review rounds read the issue's comments, so an unrecorded answer gets re-opened as
+   new — round 5 re-listed two answered decisions three times for exactly this reason.
+6. **When the cycle blocks at the round cap and the operator grants one more round**, start it
+   for them — this is the one action the contract assigns to this chat besides narration:
+
+   ```
+   uv run python -m workflow.orchestrate run <issue> --resume
+   ```
+
+   Run it in the background and keep watching; the round counter continues (round 3 of 3),
+   and the resumed run begins by handing the red evidence back to the builder by itself.
+7. **When the pull request merges, write the closing summary before anything else ends:** every
    advisory finding from every round, every decision still open — each with recommendation and
    default — and, for findings worth a ticket, a ready-to-paste prompt the operator can open a
    fresh chat with. Decisions must not vanish into a closed pull request; repeat the open ones
@@ -53,7 +66,8 @@ tell them what happens — with the artifacts read, not paraphrased from an even
 ## Prohibited shortcuts
 
 - Do not act on the run: no builds, no fixes, no board moves the contract does not assign to
-  this chat, no merges. Watching is read-only.
+  this chat, no merges. Watching is read-only; starting the cycle on the operator's word
+  (step 6) and recording their answers (step 5) are the only exceptions.
 - Do not summarise findings from memory; read the review that states them.
 - Do not let a wake-up pass unnarrated when the state moved — the operator follows the ticket
   here, not on GitHub.

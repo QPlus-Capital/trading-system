@@ -89,6 +89,20 @@ def test_the_cli_reports_a_timeout_with_its_own_exit_code(
     assert "unveraendert" in capsys.readouterr().out
 
 
+def test_empty_gh_output_is_unreadable_not_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cp1252 decode bug returned empty text with returncode 0, and this watcher reported a
+    real review count as 0 instead of '?'. Empty output where JSON was asked for is a failure."""
+
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "workflow.watch.subprocess.run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    with pytest.raises(RuntimeError, match="empty output"):
+        watch._gh(["pr", "view", "187", "--json", "reviews"])
+
+
 def test_the_watch_is_read_only() -> None:
     """It observes a run other actors own; a watcher that writes is an actor in disguise."""
 
