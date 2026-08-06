@@ -38,7 +38,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from workflow import board, gates
-from workflow.classify import REPO_ROOT, changed_paths, load_model
+from workflow.classify import REPO_ROOT, changed_paths, load_model, needs_full_review
 from workflow.mutation import MutationTarget, load_policy, select_affected_targets
 
 #: The reviewer writes this into its summary comment. Counting a structured marker keeps the loop's
@@ -452,8 +452,10 @@ _REVIEWER_TOOLS = (
 )
 
 
-def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> None:
-    """Start the reviewer as a separate process, with nothing but the issue number.
+def review(
+    issue: int, worktree: Path, head: str, *, lane: str = "lean", dry_run: bool = False
+) -> int:
+    """Start the reviewer as a separate process, with nothing but the issue number and the lane.
 
     A fresh process is what makes the review independent: it cannot inherit what the builder meant,
     only what the branch contains.
@@ -464,11 +466,27 @@ def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> N
     and behaviour are inspected *there*, never in the launching checkout, whose files are the
     pre-change versions. The tool allowlist is what lets the review finish headless; everything
     outside it still requires an approval that headless mode cannot grant, which fails closed.
+
+    The **lane is computed by the cycle and stated as an instruction**, not left to the reviewer's
+    judgement: two lean rounds in a row engaged the full agent panel anyway and died waiting for
+    it. Returns the reviewer's exit status, so the caller can tell a session that ended cleanly
+    but posted nothing from one that crashed.
     """
 
+    if lane == "lean":
+        lane_instruction = (
+            "The effective lane is LEAN: review directly, one pass, and do not invoke any "
+            "subagents — post your review yourself before your session ends. "
+        )
+    else:
+        lane_instruction = (
+            "The effective lane is the FULL program: engage exactly the agents the contract "
+            "selects for the risk class and touched paths. "
+        )
     prompt = (
         f"/review-change {issue}\n"
-        f"Review the open pull request for this issue. The branch under review is checked out "
+        f"Review the open pull request for this issue. {lane_instruction}"
+        f"The branch under review is checked out "
         f"read-only at {worktree} — read source and tests there, never in this checkout, and "
         f"edit nothing. Run commands against it without `cd`: `uv run --directory {worktree} "
         f"pytest ...` and `git -C {worktree} ...` match your allowlist, a compound command "
@@ -495,7 +513,7 @@ def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> N
     ]
     if dry_run:
         print(f"[dry-run] {' '.join(command[:6])} ... {prompt[:60]!r}")
-        return
+        return 0
     # The reviewer owns its pipes: with inherited stdio, a launcher whose tool timeout closed the
     # cycle's stdout kills the spawn at its first write — observed on the round-three hand-back.
     # A failed review needs no handling here; the missing verdict is caught where it is read.
@@ -510,6 +528,7 @@ def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> N
     )
     if completed.returncode != 0:
         _say(f"the reviewer exited with {completed.returncode}: {(completed.stderr or '')[-400:]}")
+    return completed.returncode
 
 
 def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> bool:
@@ -641,7 +660,7 @@ def _pushed_head(branch: str) -> str:
 
 
 def _check_state(entry: Mapping[str, object]) -> tuple[bool, bool, str]:
-    """(still pending, failed, name) for one rollup entry, check runs and contexts alike."""
+    """(still pending, failed, name) for one check run."""
 
     name = str(entry.get("name") or entry.get("context") or "check")
     conclusion = str(entry.get("conclusion") or "").upper()
@@ -656,32 +675,60 @@ def _check_state(entry: Mapping[str, object]) -> tuple[bool, bool, str]:
 
 
 def _await_settled_checks(pull_request: int, head: str) -> list[str]:
-    """Wait until no check is still running on the head, then return the red ones.
+    """Wait until no check is still running on **this commit**, then return the red ones.
 
     No verdict while anything runs: a review posted beside a pending check can be contradicted
     minutes later — the operator watched exactly that contradiction arrive as three conflicting
-    status messages on one ticket. An empty rollup keeps waiting and times out rather than
-    passing: no checks is not the same as green checks.
+    status messages on one ticket. The checks are read from the commit's own check runs, never
+    from the pull request's rollup: in the window right after a push the rollup still lists the
+    *previous* head's completed checks while the new run has not attached yet, and the
+    branch-moved guard cannot catch it because the head already matches — round 6 burned a full
+    round blocking on the predecessor's red checks that way. An empty list keeps waiting and
+    times out rather than passing: no checks is not the same as green checks.
     """
 
     deadline = time.monotonic() + _CHECKS_TIMEOUT
     while time.monotonic() < deadline:
-        raw = _run(
-            ["gh", "pr", "view", str(pull_request), "--json", "headRefOid,statusCheckRollup"]
-        )
-        payload = json.loads(raw or "{}")
-        remote = str(payload.get("headRefOid") or "")
+        raw = _run(["gh", "pr", "view", str(pull_request), "--json", "headRefOid"])
+        remote = str(json.loads(raw or "{}").get("headRefOid") or "")
         if remote and remote != head:
             raise OrchestrationError(
                 f"the branch moved while the cycle ran: certifying {head[:12]}, "
                 f"found {remote[:12]}"
             )
-        rollup = payload.get("statusCheckRollup") or []
-        states = [_check_state(entry) for entry in rollup]
-        if rollup and not any(pending for pending, _, _ in states):
+        runs_raw = _run(
+            [
+                "gh",
+                "api",
+                f"repos/{{owner}}/{{repo}}/commits/{head}/check-runs?per_page=100",
+                "--jq",
+                '{check_runs: [.check_runs[] | {name, status, conclusion}]}',
+            ]
+        )
+        check_runs = json.loads(runs_raw or "{}").get("check_runs") or []
+        states = [_check_state(entry) for entry in check_runs]
+        if check_runs and not any(pending for pending, _, _ in states):
             return sorted({name for pending, is_failed, name in states if is_failed})
         time.sleep(_POLL_SECONDS)
     raise OrchestrationError("CI did not settle in time; no verdict is issued while checks run")
+
+
+def _review_lane(tree: Path) -> str:
+    """The effective review lane for the branch in ``tree``: ``"lean"`` or ``"full"``.
+
+    The orchestrator computes the lane and states it in the reviewer's task, because leaving the
+    call to the reviewer killed two rounds in a row: a lean R2 ticket was reviewed with the full
+    agent panel, and the headless session died waiting for agents the lane forbade — twenty
+    minutes of verification each time, posted nowhere.
+    """
+
+    paths = changed_paths("origin/main", root=tree)
+    shortstat = _run(
+        ["git", "diff", "--shortstat", "origin/main...HEAD"],
+        cwd=tree,
+    )
+    changed_lines = sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", shortstat))
+    return "full" if needs_full_review(paths, changed_lines) else "lean"
 
 
 def _reachable_mutation_targets(tree: Path) -> tuple[list[MutationTarget], str]:
@@ -768,13 +815,15 @@ def cycle(
         _ensure_pull_request_title(issue, pull_request)
     stale_head: str | None = None
 
-    first_round, last_round = 1, max_rounds
-    if resume:
-        consumed = 0 if dry_run else _rounds_recorded(issue)
-        first_round = consumed + 1
-        last_round = consumed + 1
-        if not dry_run and card.status == "Blocked":
-            board.move(issue, "Reviewing", actor="orchestrator")
+    # Rounds are ticket-lifetime, numbered continuously from the event log: a restart with a
+    # fresh budget must not renumber history — round 6's narration said "round 1 of 2" while the
+    # log already carried two rounds. A plain run brings a budget of ``max_rounds`` new rounds;
+    # ``--resume`` grants exactly one.
+    consumed = 0 if dry_run else _rounds_recorded(issue)
+    first_round = consumed + 1
+    last_round = consumed + (1 if resume else max_rounds)
+    if resume and not dry_run and card.status == "Blocked":
+        board.move(issue, "Reviewing", actor="orchestrator")
 
     def _returned(reason: str) -> bool:
         """Hand the round back, or stop with the true reason when the fix session never ran.
@@ -870,6 +919,7 @@ def cycle(
         )
         mutation_targets: list[MutationTarget] = []
         red_checks: list[str] = []
+        reviewer_exit = 0
         with _branch_worktree(branch) as tree:
             risk, results = gates.run(
                 changed_paths("origin/main", root=tree), card.risk_class, root=tree
@@ -882,13 +932,20 @@ def cycle(
                 if not red_checks:
                     if not dry_run:
                         board.move(issue, "Reviewing", actor="orchestrator")
+                    lane = "lean" if dry_run else _review_lane(tree)
                     report(
                         issue,
                         "review",
-                        {"runde": round_number, "gates": "grün", "ci": "grün", "head": head[:12]},
+                        {
+                            "runde": round_number,
+                            "gates": "grün",
+                            "ci": "grün",
+                            "spur": lane,
+                            "head": head[:12],
+                        },
                         dry_run=dry_run,
                     )
-                    review(issue, tree, head, dry_run=dry_run)
+                    reviewer_exit = review(issue, tree, head, lane=lane, dry_run=dry_run)
 
         if failed:
             if round_number == last_round:
@@ -925,17 +982,26 @@ def cycle(
 
         verdict = None if dry_run else latest_verdict(pull_request, head)
         if verdict is None:
+            if reviewer_exit == 0:
+                diagnosis = (
+                    "Der Reviewer endete ohne Fehler, hinterließ aber kein Review am Pull "
+                    "Request — typisch: er wartete beim Sitzungsende noch auf etwas, etwa "
+                    "gestartete Subagenten."
+                )
+            else:
+                diagnosis = f"Der Reviewer brach mit Exit-Code {reviewer_exit} ab."
             report(
                 issue,
                 "kein-urteil",
                 {
                     "runde": round_number,
                     "head": head[:12],
+                    "reviewer_exit": reviewer_exit,
+                    "grund": diagnosis,
                     "entscheidung": (
-                        "Das Review hat für diesen Stand kein Urteil hinterlassen; ohne Urteil "
-                        "wird nichts als mergefähig gemeldet. Optionen: den Zyklus erneut "
-                        "starten oder das Review auf dem Pull Request selbst ansehen. Ohne "
-                        "Aktion bleibt die Karte auf Reviewing."
+                        f"{diagnosis} Ohne Urteil wird nichts als mergefähig gemeldet. "
+                        "Optionen: den Zyklus erneut starten oder das Review auf dem Pull "
+                        "Request selbst ansehen. Ohne Aktion bleibt die Karte auf Reviewing."
                     ),
                     "kommando": f"uv run python -m workflow.orchestrate run {issue}",
                 },

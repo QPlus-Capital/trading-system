@@ -336,8 +336,10 @@ merge the chat delivers the closing summary:** every advisory finding, every ope
 its recommendation and default, and a ready-to-paste prompt for each finding worth a ticket.
 Nothing an operator must weigh disappears into a closed pull request.
 
-**Lean lane: Claude reviews directly, one pass, no subagents.** The full agent panel engages only
-in the full program:
+**Lean lane: Claude reviews directly, one pass, no subagents.** The cycle computes the effective
+lane from the actual diff and states it in the reviewer's task as an instruction — two lean
+reviews in a row engaged the full panel anyway and died waiting for agents the lane forbade,
+posting nothing. The full agent panel engages only in the full program:
 
 | Change | Agents |
 |---|---|
@@ -403,7 +405,9 @@ The round counter continues from the ticket's event log: two consumed rounds res
 **of 3**, never as a fresh 1 of 2 — restarting must extend the cap by one, not reset it. The
 resumed run begins with the hand-back the cap suppressed, so the builder gets the red evidence
 before anything is re-reviewed; if the extra round is not clean either, the card blocks again and
-the operator decides again.
+the operator decides again. A plain restart continues the numbering too — it brings a fresh
+budget of two rounds (round 3 of 4 after two recorded), so the narration and the log can never
+disagree about how many rounds a ticket has consumed.
 
 `Blocked` therefore has exactly three ways on, and each starts with the operator's decision: one
 more round for the capped cycle (the orchestrator returns the card to `Reviewing`), the build
