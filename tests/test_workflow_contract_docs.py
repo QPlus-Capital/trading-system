@@ -11,6 +11,7 @@ safety rule, and the classification of a money path.
 
 from __future__ import annotations
 
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -309,3 +310,37 @@ _CLASSIFY_CASES = (
 @pytest.mark.parametrize("path,expected", _CLASSIFY_CASES, ids=lambda v: v)
 def test_classification_of_representative_paths(path: str, expected: str) -> None:
     assert _class_of(path) == expected
+
+
+def test_every_workflow_subprocess_decode_names_utf8() -> None:
+    """`gh` and `git` answer in UTF-8 on every platform; ``text=True`` without an encoding
+    decodes with the platform codec instead. On Windows that is cp1252: the reader thread died
+    on the first typographic quote inside a review body, and ``subprocess.run`` returned *empty
+    text with returncode 0* -- the cycle then read a posted, well-formed verdict as "no verdict
+    at all" (#186). Fail-open at the loop's one exit condition, so the decode is pinned at the
+    source for every present and future call site under ``workflow/``."""
+
+    offenders: list[str] = []
+    for path in sorted((_ROOT / "workflow").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            is_spawn = (
+                isinstance(func, ast.Attribute)
+                and func.attr in {"run", "Popen", "check_output"}
+                and isinstance(func.value, ast.Name)
+                and func.value.id == "subprocess"
+            )
+            if not is_spawn:
+                continue
+            keywords = {keyword.arg for keyword in node.keywords}
+            if ("text" in keywords or "universal_newlines" in keywords) and (
+                "encoding" not in keywords
+            ):
+                offenders.append(f"{path.relative_to(_ROOT)}:{node.lineno}")
+    assert not offenders, (
+        "these subprocess calls decode with the platform codec; on Windows one typographic "
+        f"quote returns empty text with returncode 0: {offenders}"
+    )

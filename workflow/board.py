@@ -137,7 +137,18 @@ def _graphql(query: str, **variables: object) -> dict[str, Any]:
     for name, value in variables.items():
         flag = "-F" if isinstance(value, int) else "-f"
         args += [flag, f"{name}={value}"]
-    completed = subprocess.run(args, capture_output=True, text=True, check=False, cwd=REPO_ROOT)
+    # gh answers in UTF-8; the platform codec is not part of the contract. Decoded with cp1252,
+    # one typographic quote in a card title kills the reader thread and the "response" is empty
+    # text with returncode 0 — see the identical failure on the review verdict (#186).
+    completed = subprocess.run(
+        args,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+        cwd=REPO_ROOT,
+    )
     if completed.returncode != 0:
         raise BoardError("GitHub rejected the board request; inspect the local gh error.")
     try:
@@ -257,6 +268,8 @@ def _comment(issue: int, body: str) -> None:
         ["gh", "issue", "comment", str(issue), "--body", body],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
         cwd=REPO_ROOT,
     )

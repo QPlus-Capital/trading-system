@@ -128,11 +128,18 @@ def _run(
     capture: bool = True,
     cwd: Path = REPO_ROOT,
 ) -> str:
+    # `gh` and `git` emit UTF-8 on every platform; bare text=True decodes with the platform
+    # codec instead. On Windows that is cp1252, the reader thread died on the first typographic
+    # quote inside a review body, and subprocess.run returned *empty text with returncode 0* —
+    # the cycle then read a posted, well-formed verdict as "no verdict at all" (#186). Explicit
+    # UTF-8 with visible replacement characters: mojibake shows, a dead reader never does.
     completed = subprocess.run(
         list(args),
         cwd=cwd,
         capture_output=capture,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if completed.returncode != 0:
@@ -435,7 +442,15 @@ def review(issue: int, worktree: Path, head: str, *, dry_run: bool = False) -> N
     # The reviewer owns its pipes: with inherited stdio, a launcher whose tool timeout closed the
     # cycle's stdout kills the spawn at its first write — observed on the round-three hand-back.
     # A failed review needs no handling here; the missing verdict is caught where it is read.
-    completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if completed.returncode != 0:
         _say(f"the reviewer exited with {completed.returncode}: {(completed.stderr or '')[-400:]}")
 
@@ -474,7 +489,15 @@ def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> bool:
     if dry_run:
         print(f"[dry-run] codex exec --sandbox danger-full-access {prompt[:60]!r}")
         return True
-    completed = subprocess.run(command, cwd=REPO_ROOT, capture_output=True, text=True, check=False)
+    completed = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
     if completed.returncode != 0:
         _say(
             f"the fix session for #{issue} exited with {completed.returncode}: "
@@ -501,6 +524,8 @@ def _branch_worktree(branch: str) -> Iterator[Path]:
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
     if added.returncode != 0:
@@ -515,6 +540,8 @@ def _branch_worktree(branch: str) -> Iterator[Path]:
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
         )
 
