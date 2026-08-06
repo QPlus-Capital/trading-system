@@ -3,6 +3,7 @@
 import importlib
 import importlib.util
 import os
+import re
 import subprocess
 import tempfile
 from collections.abc import Callable, Sequence
@@ -63,7 +64,10 @@ def _command_parts(command: _Command) -> tuple[str, ...]:
 
 def _program_name(program: str) -> str:
     filename = program.replace("\\", "/").rsplit("/", maxsplit=1)[-1]
-    return filename.casefold().removesuffix(".exe")
+    name = filename.casefold().removesuffix(".exe")
+    if re.fullmatch(r"python[0-9]+(?:\.[0-9]+)*", name):
+        return "python"
+    return name
 
 
 def _assert_test_spawn_allowed(

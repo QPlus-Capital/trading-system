@@ -24,7 +24,15 @@ def test_an_unlisted_program_is_refused_before_it_starts(entrypoint: str) -> Non
 
 @pytest.mark.parametrize(
     "command",
-    [["gh"], ["gh.exe"], [r"C:\untrusted\bin\gh.exe"], ["codex"], ["claude"]],
+    [
+        ["gh"],
+        ["gh.exe"],
+        [r"C:\untrusted\bin\gh.exe"],
+        ["codex"],
+        ["claude"],
+        ["python3-helper"],
+        ["python3.13-helper"],
+    ],
 )
 def test_the_program_is_matched_by_name_not_by_the_path_it_arrived_as(
     command: list[str],
@@ -57,3 +65,11 @@ def test_the_spawns_the_suite_actually_makes_are_allowed(
 
     for command in commands:
         assert_test_spawn_allowed(command)
+
+
+@pytest.mark.parametrize("interpreter", ["python3", "python3.13"])
+def test_versioned_python_executables_are_allowed(
+    interpreter: str,
+    assert_test_spawn_allowed: Callable[[list[str]], None],
+) -> None:
+    assert_test_spawn_allowed([f"/opt/qplus/.venv/bin/{interpreter}", "-c", "pass"])
