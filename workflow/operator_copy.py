@@ -8,6 +8,23 @@ _STREAMLIT = frozenset({"caption", "error", "info", "warning"})
 _SCOPES = (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 
 
+class _AmbiguousBinding:
+    pass
+
+
+class _RuntimeBinding:
+    pass
+
+
+class _UnreadableExpression(Exception):
+    def __init__(self, node: ast.AST) -> None:
+        self.node = node
+
+
+_AMBIGUOUS = _AmbiguousBinding()
+_RUNTIME = _RuntimeBinding()
+
+
 def _scope(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> ast.AST:
     current: ast.AST | None = node
     while current is not None and not isinstance(current, _SCOPES):
@@ -18,11 +35,12 @@ def _scope(node: ast.AST, parents: dict[ast.AST, ast.AST]) -> ast.AST:
 
 def _binding(
     name: str, scope: ast.AST, parents: dict[ast.AST, ast.AST]
-) -> tuple[ast.AST, ast.AST] | None:
+) -> tuple[ast.AST, ast.AST] | _AmbiguousBinding | _RuntimeBinding | None:
     current: ast.AST | None = scope
     while current is not None:
         if isinstance(current, _SCOPES):
             stores = 0
+            parameters = 0
             values: list[ast.AST] = []
             for node in ast.walk(current):
                 if _scope(node, parents) is not current:
@@ -31,7 +49,8 @@ def _binding(
                     isinstance(node, ast.Name)
                     and isinstance(node.ctx, ast.Store)
                     and node.id == name
-                ) + int(isinstance(node, ast.arg) and node.arg == name)
+                )
+                parameters += int(isinstance(node, ast.arg) and node.arg == name)
                 if isinstance(node, ast.Assign) and len(node.targets) == 1:
                     target, assigned_value = node.targets[0], node.value
                 elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)) and node.value is not None:
@@ -40,8 +59,10 @@ def _binding(
                     continue
                 if isinstance(target, ast.Name) and target.id == name:
                     values.append(assigned_value)
+            if parameters:
+                return _RUNTIME if stores == 0 else _AMBIGUOUS
             if stores:
-                return (current, values[0]) if stores == len(values) == 1 else None
+                return (current, values[0]) if stores == len(values) == 1 else _AMBIGUOUS
         current = parents.get(current)
     return None
 
@@ -59,10 +80,8 @@ def _resolve(
         for value in node.values:
             resolved = (
                 _resolve(value.value, scope, parents, seen)
-                if isinstance(value, ast.FormattedValue) and isinstance(value.value, ast.Name)
+                if isinstance(value, ast.FormattedValue)
                 else _resolve(value, scope, parents, seen)
-                if not isinstance(value, ast.FormattedValue)
-                else None
             )
             if resolved is not None:
                 parts.extend(resolved)
@@ -79,16 +98,22 @@ def _resolve(
         return None if body is None or other is None else (*body, *other)
     if isinstance(node, ast.Name):
         key = (id(scope), node.id)
-        binding = None if key in seen else _binding(node.id, scope, parents)
-        if binding is not None:
-            binding_scope, bound_value = binding
-            return _resolve(bound_value, binding_scope, parents, seen | {key})
+        if key in seen:
+            raise _UnreadableExpression(node)
+        binding = _binding(node.id, scope, parents)
+        if isinstance(binding, _AmbiguousBinding):
+            raise _UnreadableExpression(node)
+        if isinstance(binding, _RuntimeBinding) or binding is None:
+            return None
+        binding_scope, bound_value = binding
+        return _resolve(bound_value, binding_scope, parents, seen | {key})
     return None
 
 
-def _arguments(call: ast.Call, scope: ast.AST) -> tuple[ast.AST, ...]:
+def _arguments(call: ast.Call, scope: ast.AST) -> tuple[tuple[ast.AST, bool], ...]:
     if isinstance(call.func, ast.Name) and call.func.id == "_stat_row":
-        return tuple(call.args[:1])
+        labels = [*call.args[:1], *(kw.value for kw in call.keywords if kw.arg == "label")]
+        return tuple((label, True) for label in labels)
     if not isinstance(call.func, ast.Attribute):
         return ()
     direct = (
@@ -98,9 +123,16 @@ def _arguments(call: ast.Call, scope: ast.AST) -> tuple[ast.AST, ...]:
     )
     if not direct and call.func.attr != "metric":
         return ()
+    keywords = tuple((kw.value, True) for kw in call.keywords if kw.arg in {"delta", "help"})
+    if direct:
+        return (*((argument, True) for argument in call.args), *keywords)
+    positional = tuple((argument, index == 0) for index, argument in enumerate(call.args))
     if isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)) and scope.name == "_stat_row":
-        return tuple(kw.value for kw in call.keywords if kw.arg in {"delta", "help"})
-    return (*call.args, *(kw.value for kw in call.keywords if kw.arg in {"delta", "help"}))
+        positional = tuple(
+            (argument, False if isinstance(argument, ast.Name) else strict)
+            for argument, strict in positional
+        )
+    return (*positional, *keywords)
 
 
 def operator_literal_parts(source: str, *, filename: str) -> tuple[ast.Constant, ...]:
@@ -110,14 +142,22 @@ def operator_literal_parts(source: str, *, filename: str) -> tuple[ast.Constant,
     found: dict[tuple[int, int, int, int], ast.Constant] = {}
     for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
         call_scope = _scope(call, parents)
-        for argument in _arguments(call, call_scope):
-            resolved = _resolve(argument, call_scope, parents)
-            if resolved is None:
-                expression = ast.get_source_segment(source, argument) or ast.dump(argument)
+        for argument, strict in _arguments(call, call_scope):
+            unreadable = argument
+            try:
+                resolved = _resolve(argument, call_scope, parents)
+            except _UnreadableExpression as error:
+                resolved = None
+                unreadable = error.node
+                strict = True
+            if resolved is None and strict:
+                expression = ast.get_source_segment(source, unreadable) or ast.dump(unreadable)
                 raise ValueError(
-                    f"{filename}:{getattr(argument, 'lineno', '?')}: operator copy expression "
+                    f"{filename}:{getattr(unreadable, 'lineno', '?')}: operator copy expression "
                     f"is not statically resolvable: {expression}"
                 )
+            if resolved is None:
+                continue
             for literal in resolved:
                 if literal.end_lineno is not None and literal.end_col_offset is not None:
                     found[

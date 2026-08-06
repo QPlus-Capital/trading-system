@@ -164,9 +164,34 @@ def test_unresolved_operator_copy_fails_with_source_location_and_expression() ->
         assert expression in str(error.value)
 
 
+def test_fstring_interpolations_collect_static_copy_or_fail_closed() -> None:
+    assert _literal_texts('st.caption(f"{\'+\' if positive else \'-\'}")\n') == {"+", "-"}
+
+    ambiguous = '''def render(flag):
+    label = "erste"
+    if flag:
+        label = "zweite"
+    st.caption(f"{label}")
+'''
+    with pytest.raises(ValueError, match=r"dashboard_fixture\.py:5.*label"):
+        _literal_texts(ambiguous)
+
+
+def test_stat_row_exempts_only_forwarded_metric_data() -> None:
+    source = '''def _stat_row(label, value):
+    st.metric(label, format(value))
+    st.error("Hard-coded copy")
+
+_stat_row(label="Call-site label", value=1)
+'''
+    assert _literal_texts(source) == {"Hard-coded copy", "Call-site label"}
+
+
 def test_every_post_p14_operator_literal_is_the_reviewed_german_copy(monkeypatch: Any) -> None:
     dashboard = _import_dashboard(monkeypatch)
     assert _scoped_operator_literal_parts(dashboard) == {
+        "",
+        "+",
         " gegenüber BT",
         "Live-Daten aus MT5 (60-Sekunden-Cache). Backtest-Referenz: der neueste Lauf unter "
         "reports/research/.",
