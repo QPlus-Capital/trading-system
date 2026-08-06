@@ -41,11 +41,20 @@ def test_the_program_is_matched_by_name_not_by_the_path_it_arrived_as(
         subprocess.run(command, check=False)
 
 
-def test_git_may_not_reach_a_remote_from_the_suite() -> None:
+def test_git_may_not_reach_a_remote_from_the_suite(
+    assert_test_spawn_allowed: Callable[[list[str]], None],
+) -> None:
     for subcommand in ("push", "fetch", "pull", "clone", "ls-remote", "remote"):
         command = ["git", subcommand]
         with pytest.raises(AssertionError, match=re.escape(" ".join(command))):
             subprocess.run(command, check=False)
+
+        command_after_option = ["git", "--git-dir=.git", subcommand]
+        with pytest.raises(
+            AssertionError,
+            match=re.escape(" ".join(command_after_option)),
+        ):
+            assert_test_spawn_allowed(command_after_option)
 
     subprocess.run(["git", "--version"], check=True, capture_output=True)
 
