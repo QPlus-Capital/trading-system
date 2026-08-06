@@ -1,16 +1,16 @@
 """Keep source English while allowing the constitution's German operator output.
 
-The dashboard exception is syntax-aware: only literals passed directly to the scoped Streamlit
-rendering calls are excluded from the marker scan. Identifiers, comments, docstrings, logs, and
-indirect strings remain protected. The legacy file-level list remains a shrinking ratchet.
+The dashboard exception is syntax-aware: only literals resolved by the shared operator-copy scope
+are excluded from the marker scan. Identifiers, comments, docstrings, and logs remain protected.
+The legacy file-level list remains a shrinking ratchet.
 """
 
 from __future__ import annotations
 
-import ast
 from pathlib import Path
 
 import pytest
+from workflow.operator_copy import without_operator_literals
 
 _ROOT = Path(__file__).resolve().parents[1]
 _PACKAGES = ("core", "research", "live", "monitoring")
@@ -29,7 +29,6 @@ _KNOWN_VIOLATIONS = {
 }
 
 _DASHBOARD = "monitoring/dashboard.py"
-_DASHBOARD_OPERATOR_CALLS = {"caption", "error", "info", "warning"}
 
 #: Markers that are unambiguously German and occur in this codebase's operator strings. Short
 #: words that also appear in English or inside identifiers are deliberately absent: a check that
@@ -64,51 +63,9 @@ _MARKERS = (
 )
 
 
-def _char_column(line: str, byte_column: int) -> int:
-    """Translate an AST UTF-8 byte column to a Python string index."""
-    return len(line.encode("utf-8")[:byte_column].decode("utf-8"))
-
-
 def _without_dashboard_operator_literals(source: str) -> str:
-    """Blank only direct Streamlit rendering literals while retaining line structure."""
-    tree = ast.parse(source)
-    lines = source.splitlines(keepends=True)
-    starts: list[int] = []
-    position = 0
-    for line in lines:
-        starts.append(position)
-        position += len(line)
-    mask = [False] * len(source)
-
-    for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
-        if not isinstance(call.func, ast.Attribute):
-            continue
-        direct_streamlit = (
-            isinstance(call.func.value, ast.Name)
-            and call.func.value.id == "st"
-            and call.func.attr in _DASHBOARD_OPERATOR_CALLS
-        )
-        if not direct_streamlit and call.func.attr != "metric":
-            continue
-        values = [*call.args, *(keyword.value for keyword in call.keywords)]
-        for value in values:
-            for literal in ast.walk(value):
-                if not isinstance(literal, (ast.Constant, ast.JoinedStr)):
-                    continue
-                if isinstance(literal, ast.Constant) and not isinstance(literal.value, str):
-                    continue
-                if literal.end_lineno is None or literal.end_col_offset is None:
-                    continue
-                start_line = literal.lineno - 1
-                end_line = literal.end_lineno - 1
-                start = starts[start_line] + _char_column(lines[start_line], literal.col_offset)
-                end = starts[end_line] + _char_column(lines[end_line], literal.end_col_offset)
-                mask[start:end] = [True] * (end - start)
-
-    return "".join(
-        " " if hidden and char not in "\r\n" else char
-        for char, hidden in zip(source, mask, strict=True)
-    )
+    """Blank the same operator literals that the dashboard copy review collects."""
+    return without_operator_literals(source, filename=_DASHBOARD)
 
 
 def _carries_german(path: Path) -> list[str]:
@@ -149,6 +106,29 @@ def test_dashboard_exception_is_limited_to_direct_operator_literals() -> None:
         if marker in _without_dashboard_operator_literals(unscoped).lower()
     }
     assert {"märkte", "nicht bestimmbar"} <= hits
+
+
+@pytest.mark.parametrize(
+    ("unscoped", "marker"),
+    [
+        ("# Märkte remain English in source comments\n", "märkte"),
+        ('log.warning("nicht bestimmbar")\n', "nicht bestimmbar"),
+        ('raise RuntimeError("Märkte nicht bestimmbar")\n', "märkte"),
+        ('st.warning(f"{maerkte_count}")\n', "maerkte"),
+    ],
+)
+def test_dashboard_exception_is_limited_to_resolved_operator_copy(
+    unscoped: str, marker: str
+) -> None:
+    operator_only = """def render():
+    message = "Märkte nicht bestimmbar"
+    st.warning(message)
+"""
+    rendered = _without_dashboard_operator_literals(operator_only).lower()
+    assert not any(marker in rendered for marker in _MARKERS)
+
+    rendered = _without_dashboard_operator_literals(operator_only + unscoped).lower()
+    assert marker in rendered
 
 
 def test_the_known_violations_are_exactly_those_that_remain() -> None:

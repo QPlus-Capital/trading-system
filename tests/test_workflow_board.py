@@ -90,6 +90,12 @@ def test_a_permitted_transition_is_written_and_read_back(
     assert confirmed.status == "Ready to Implement"
     kinds = ["mutation" in call["query"] for call in fake_graphql]
     assert kinds == [False, True, False], "read, write, then verify"
+    initial, write, verification = fake_graphql
+    assert write["project"] == "project-1"
+    assert write["item"] == "item-1"
+    assert write["field"] == "field-1"
+    assert write["option"] == "opt-ready"
+    assert initial["number"] == verification["number"] == 101
 
 
 def test_a_transition_the_contract_omits_is_refused(fake_graphql: list[dict[str, Any]]) -> None:
@@ -171,18 +177,41 @@ def test_an_any_transition_accepts_every_contract_actor(
         assert board.move(101, "Blocked", actor=actor).status == "Blocked"
 
 
-def test_the_hand_back_to_specifying_requires_a_reason(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("source", "actor"),
+    [
+        ("Ready to Implement", "claude"),
+        ("Implementing", "codex"),
+        ("Blocked", "claude"),
+    ],
+)
+def test_every_backward_move_to_specifying_requires_a_reason(
+    monkeypatch: pytest.MonkeyPatch, source: str, actor: str
 ) -> None:
     """Regression: the first real hand-back walked the card backwards and left no trace anywhere
     but a closed chat window."""
 
-    monkeypatch.setattr(board, "_graphql", lambda *a, **k: _card_payload("Implementing"))
+    monkeypatch.setattr(board, "_graphql", lambda *a, **k: _card_payload(source))
 
     with pytest.raises(BoardError, match="requires a reason"):
-        board.move(101, "Specifying", actor="codex")
+        board.move(101, "Specifying", actor=actor)
     with pytest.raises(BoardError, match="requires a reason"):
-        board.move(101, "Specifying", actor="codex", reason="   ")
+        board.move(101, "Specifying", actor=actor, reason="   ")
+
+
+def test_starting_specification_from_backlog_needs_no_reason(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = {"status": "Backlog"}
+
+    def run(query: str, **variables: object) -> dict[str, Any]:
+        if "mutation" in query:
+            state["status"] = "Specifying"
+        return _card_payload(state["status"])
+
+    monkeypatch.setattr(board, "_graphql", run)
+
+    assert board.move(101, "Specifying", actor="claude").status == "Specifying"
 
 
 def test_the_hand_back_reason_lands_on_the_issue(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,7 +237,7 @@ def test_the_hand_back_reason_lands_on_the_issue(monkeypatch: pytest.MonkeyPatch
 
     assert card.status == "Specifying"
     (comment,) = comments
-    assert comment[:3] == ["gh", "issue", "comment"]
+    assert comment[:4] == ["gh", "issue", "comment", "101"]
     assert any("AC-03 is unbuildable as written" in part for part in comment)
     assert any("Implementing -> Specifying by codex" in part for part in comment)
 

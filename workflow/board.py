@@ -234,7 +234,12 @@ def move(
             f"the contract assigns {card.status!r} -> {target!r} to {owner!r}; "
             f"{actor!r} does not move this card"
         )
-    if target == "Specifying" and not (reason or "").strip():
+    backwards_to_specifying = target == "Specifying" and card.status in {
+        "Ready to Implement",
+        "Implementing",
+        "Blocked",
+    }
+    if backwards_to_specifying and not (reason or "").strip():
         raise BoardError(
             f"the hand-back of #{issue} to 'Specifying' requires a reason; it is posted on the "
             f"issue so the record shows why the card walked backwards"

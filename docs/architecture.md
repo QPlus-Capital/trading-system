@@ -278,6 +278,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `workflow/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
 | `workflow/mutation.py` | Runs focused mutation scopes and enforces the TOML survivor ratchet |
 | `workflow/security.py` | Scans tracked files for redacted secret findings under the TOML security policy |
+| `workflow/operator_copy.py` | Resolves the dashboard operator-copy surface shared by copy review and the source-language ratchet |
 | `workflow/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `workflow/hooks/pre_bash.py` | Collects Git metadata and emits Claude Code hook responses |
 

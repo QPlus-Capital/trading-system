@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import importlib
 import sys
 from collections.abc import Sequence
@@ -13,8 +12,10 @@ from typing import Any, Self
 
 import numpy as np
 import pandas as pd
+import pytest
 import streamlit
 from monitoring.risk_view import HistoryWindow, OpenRisk
+from workflow.operator_copy import operator_literal_parts
 
 
 class _Context:
@@ -127,53 +128,70 @@ def _import_dashboard(monkeypatch: Any) -> ModuleType:
     return importlib.import_module("monitoring.dashboard")
 
 
-def _visible_literal_parts(node: ast.AST) -> tuple[str, ...]:
-    """Return displayed string fragments without traversing formatted expressions."""
-    if isinstance(node, ast.Constant) and isinstance(node.value, str):
-        return (node.value,)
-    if isinstance(node, ast.JoinedStr):
-        return tuple(
-            part
-            for value in node.values
-            if not isinstance(value, ast.FormattedValue)
-            for part in _visible_literal_parts(value)
-        )
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        return (*_visible_literal_parts(node.left), *_visible_literal_parts(node.right))
-    return ()
-
-
 def _scoped_operator_literal_parts(dashboard: ModuleType) -> set[str]:
     """Collect every literal rendered by the copy surface governed by P-15."""
     module_path = dashboard.__file__
     assert module_path is not None
     source = Path(module_path).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    parts: set[str] = set()
-    for call in (node for node in ast.walk(tree) if isinstance(node, ast.Call)):
-        if isinstance(call.func, ast.Name) and call.func.id == "_stat_row":
-            parts.update(_visible_literal_parts(call.args[0]))
-            continue
-        if not isinstance(call.func, ast.Attribute):
-            continue
-        direct_streamlit = (
-            isinstance(call.func.value, ast.Name)
-            and call.func.value.id == "st"
-            and call.func.attr in {"caption", "error", "info", "warning"}
-        )
-        if not direct_streamlit and call.func.attr != "metric":
-            continue
-        for argument in call.args:
-            parts.update(_visible_literal_parts(argument))
-        for keyword in call.keywords:
-            if keyword.arg in {"delta", "help"}:
-                parts.update(_visible_literal_parts(keyword.value))
-    return parts
+    return _literal_texts(source, filename=str(module_path))
+
+
+def _literal_texts(source: str, *, filename: str = "dashboard_fixture.py") -> set[str]:
+    return {str(part.value) for part in operator_literal_parts(source, filename=filename)}
+
+
+def test_static_bindings_are_copy_while_interpolated_runtime_values_are_data() -> None:
+    source = """MODULE_LABEL = "Historie"
+
+def render(single):
+    position_label = "Position wurde" if single else "Positionen wurden"
+    st.warning(f"{MODULE_LABEL}: {position_label} {exc} {count} {item.reason} {detail()}")
+"""
+    assert _literal_texts(source) == {
+        "Historie",
+        ": ",
+        " ",
+        "Position wurde",
+        "Positionen wurden",
+    }
+
+
+def test_unresolved_operator_copy_fails_with_source_location_and_expression() -> None:
+    for expression in ("unknown", "build()", "items[0]"):
+        with pytest.raises(ValueError) as error:
+            _literal_texts(f"st.warning({expression})\n")
+        assert "dashboard_fixture.py:1" in str(error.value)
+        assert expression in str(error.value)
+
+
+def test_fstring_interpolations_collect_static_copy_or_fail_closed() -> None:
+    assert _literal_texts('st.caption(f"{\'+\' if positive else \'-\'}")\n') == {"+", "-"}
+
+    ambiguous = '''def render(flag):
+    label = "erste"
+    if flag:
+        label = "zweite"
+    st.caption(f"{label}")
+'''
+    with pytest.raises(ValueError, match=r"dashboard_fixture\.py:5.*label"):
+        _literal_texts(ambiguous)
+
+
+def test_stat_row_exempts_only_forwarded_metric_data() -> None:
+    source = '''def _stat_row(label, value):
+    st.metric(label, format(value))
+    st.error("Hard-coded copy")
+
+_stat_row(label="Call-site label", value=1)
+'''
+    assert _literal_texts(source) == {"Hard-coded copy", "Call-site label"}
 
 
 def test_every_post_p14_operator_literal_is_the_reviewed_german_copy(monkeypatch: Any) -> None:
     dashboard = _import_dashboard(monkeypatch)
     assert _scoped_operator_literal_parts(dashboard) == {
+        "",
+        "+",
         " gegenüber BT",
         "Live-Daten aus MT5 (60-Sekunden-Cache). Backtest-Referenz: der neueste Lauf unter "
         "reports/research/.",
@@ -183,6 +201,8 @@ def test_every_post_p14_operator_literal_is_the_reviewed_german_copy(monkeypatch
         "(`just backtest`).",
         "Die Trade-Historie konnte nicht rekonstruiert werden: ",
         "Nicht unterstützte MT5-Historie: ",
+        "Position wurde",
+        "Positionen wurden",
         " aus der Trade-Tabelle ausgeschlossen: ",
         "Die Handelshistorie scheint unvollständig: Ihre Wiedergabe ergibt ",
         " vor dem ersten Eintrag; das ist weder null noch der gespeicherte Startsaldo von ",
