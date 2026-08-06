@@ -376,6 +376,36 @@ def test_the_review_prompt_is_not_swallowed_by_the_tool_list(
     assert "LEAN" in argv[2] and "do not invoke any subagents" in argv[2], (
         "the default lane instruction is lean and forbids the agent panel"
     )
+    assert "LAST action" in argv[2], (
+        "posting the review must be the session's final act; three reviews ended holding "
+        "their evidence"
+    )
+
+
+def test_the_full_lane_demands_synchronous_delegation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A headless session dies the moment it yields with background agents running; the full
+    program must say so in the task itself, because the skill alone did not save three rounds."""
+
+    captured: list[list[str]] = []
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> SimpleNamespace:
+        captured.append(list(argv))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("workflow.orchestrate.subprocess.run", fake_run)
+    monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
+
+    head = "feedc0ffee0123456789"  # pragma: allowlist secret
+    orchestrate.review(190, Path("some-worktree"), head, lane="full")
+
+    (argv,) = captured
+    assert "SYNCHRONOUSLY" in argv[2] and "wait for its report in the same turn" in argv[2]
+    assert "review that area yourself" in argv[2], (
+        "a delegation that cannot complete falls back to the reviewer, never to silence"
+    )
+    assert "LAST action" in argv[2]
     assert "--directory" in argv[2] and "cd" in argv[2], (
         "the reviewer is taught the worktree-safe invocations its allowlist matches"
     )

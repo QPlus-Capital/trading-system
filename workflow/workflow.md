@@ -355,6 +355,13 @@ The agents are read-only and receive the issue contract, the diff, the gate resu
 executing paths — never the builder's private context. Their counterexamples are reconciled against
 every `AC-nn` and `INV-nn`.
 
+**A headless review delegates only synchronously and posts before it ends.** The reviewer's
+session terminates the moment it yields control, and a background agent can never wake it again —
+three reviews of one ticket ended mid-wait, their verified findings stranded in transcripts no one
+reads. An agent is started and awaited in the same turn; a report that cannot be obtained is named
+in the review as a gap; and posting the review is the session's last action, never skipped — a
+review that ends unposted has delivered nothing, whatever it verified.
+
 **Search effort is proportionate to the diff.** The risk class decides what must be proven; the
 size of the change decides how far to search for a disproof. Counterexamples target the behaviours
 whose failure costs the most and stop when further ones stop changing the verdict — never a fixed
