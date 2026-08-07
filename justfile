@@ -65,6 +65,10 @@ classify *paths:
 gates range="origin/main":
     uv run python -m workflow.gates --base {{range}}
 
+# Install the tracked Git hooks for this repository and all of its worktrees
+install-hooks:
+    uv run python -m workflow.hooks.install
+
 # Read or move one card on the project board
 board *args:
     uv run python -m workflow.board {{args}}

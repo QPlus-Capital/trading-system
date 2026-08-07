@@ -556,6 +556,21 @@ it. A gate that cannot bind is worse than no gate, because the report then says 
 
 ## 7. Language, documentation, and git
 
+### Main branch protection
+
+On GitHub's Free plan, the `main` ruleset enforces all four rules only while this is a public
+repository: deletion and non-fast-forward updates are refused, a pull request with resolved review
+threads is required, and required status checks must pass. The ruleset resumes enforcing all four
+rules when the repository is public again. It does not enforce them while this is a private
+repository.
+
+The tracked pre-push hook is the local replacement for deletion, rewriting, and direct R1-R3
+updates to `main`; `just install-hooks` installs it repository-wide for every worktree, and the
+gates fail closed when it is absent. This protection is local, not equivalent to the server rule:
+`git push --no-verify` can skip it. Squash-only merging and no merge while `required-checks` is red
+have no local equivalent; while the repository is private they rest on the operator's phase 5
+merge discipline and the review cycle's settled-checks wait.
+
 - Everything committed — code, identifiers, comments, docstrings, docs, commit messages — is
   **English**. Conversation with the operator may be in another language; the repository is not.
   Operator-facing *runtime* output (research stage banners, the dashboard, the orchestrator's

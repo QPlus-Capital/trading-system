@@ -366,3 +366,19 @@ def test_every_workflow_subprocess_decode_names_utf8() -> None:
         "these subprocess calls decode with the platform codec; on Windows one typographic "
         f"quote returns empty text with returncode 0: {offenders}"
     )
+
+
+def test_the_document_states_what_protects_main_and_what_does_not() -> None:
+    workflow = " ".join(_text(_WORKFLOW).lower().split())
+
+    for phrase in (
+        "free plan",
+        "public repository",
+        "private repository",
+        "git push --no-verify",
+        "squash-only",
+        "required-checks",
+        "all four rules",
+    ):
+        assert phrase in workflow
+    assert "ruleset" in workflow and "resumes" in workflow

@@ -1,9 +1,9 @@
-"""Run exactly the gates this branch's risk class requires, and report them as evidence.
+"""Verify repository setup, run the branch's risk-class gates, and report them as evidence.
 
 The risk class decides which gates are mandatory; this runs them in contract order and prints the
 table that goes into the pull request. Nothing here decides policy -- the class comes from the
-classifier and the gate list from ``workflow/workflow.toml``, so a gate cannot be added or dropped
-by editing this file.
+classifier and the gate list from ``workflow/workflow.toml``. The tracked push-hook installation is
+a repository setup precondition checked before those policy gates.
 
 A gate the platform cannot run is reported as ``deferred``, never as passed. The mutation gate needs
 ``fork``, which Windows does not have; until the development platform moves to macOS (issue #150) it
@@ -20,6 +20,7 @@ CLI::
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import time
@@ -36,6 +37,7 @@ from workflow.classify import (
     classify_paths,
     load_model,
 )
+from workflow.hooks.install import INSTALL_COMMAND, PUSH_HOOK_PATH, TRACKED_HOOKS_PATH
 
 _PLATFORMS = {"win32": "windows", "darwin": "darwin", "linux": "linux"}
 
@@ -81,6 +83,34 @@ def run_gate(name: str, spec: dict[str, object], *, root: Path = REPO_ROOT) -> G
     return GateResult(name, command, completed.returncode, elapsed, detail)
 
 
+def push_hook_setup_gate(*, root: Path = REPO_ROOT) -> GateResult:
+    """Verify that Git resolves ``core.hooksPath`` to this worktree's tracked hook directory."""
+
+    configured = subprocess.run(
+        ["git", "config", "--get", "core.hooksPath"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    value = configured.stdout.strip()
+    path = Path(value) if value else None
+    if path is not None and not path.is_absolute():
+        path = root / path
+    expected = (root / TRACKED_HOOKS_PATH).resolve()
+    installed = (
+        configured.returncode == 0
+        and path is not None
+        and path.resolve() == expected
+        and (expected / PUSH_HOOK_PATH.name).is_file()
+        and os.access(expected / PUSH_HOOK_PATH.name, os.X_OK)
+    )
+    detail = "green" if installed else f"FAILED: run `{INSTALL_COMMAND}`"
+    return GateResult("push-hook", INSTALL_COMMAND, 0 if installed else 1, 0.0, detail)
+
+
 def required_gates(
     paths: Sequence[str], declared: str | None = None
 ) -> tuple[str, tuple[str, ...]]:
@@ -104,8 +134,11 @@ def run(
     """
 
     risk, gates = required_gates(paths, declared)
+    setup = push_hook_setup_gate(root=root)
+    if not setup.passed:
+        return risk, [setup]
     commands = load_gate_commands()
-    results: list[GateResult] = []
+    results: list[GateResult] = [setup]
     for name in gates:
         spec = commands.get(name)
         if spec is None:

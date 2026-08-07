@@ -38,8 +38,11 @@ _ORDER_ACTION = re.compile(
     r"(?:order_send|place_order|modify_order|cancel_order|close_position)\b)",
     re.IGNORECASE,
 )
-_FORCE = re.compile(r"(?:^|\s)(?:-f|--force|--force-with-lease(?:=[^\s]+)?)(?:\s|$)", re.IGNORECASE)
-_MAIN_REF = re.compile(r"(?:^|[\s:/'\"])(?:refs/heads/)?main(?:$|[\s'\"])", re.IGNORECASE)
+_FORCE = re.compile(
+    r"(?:^|\s)(?:-f|--force|--force-with-lease(?:=[^\s]+)?|\+[^\s]+)(?:\s|$)",
+    re.IGNORECASE,
+)
+_MAIN_REF = re.compile(r"(?:^|[\s:/'\"+])(?:refs/heads/)?main(?:$|[\s'\"])", re.IGNORECASE)
 _PRIVATE_KEY = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
 _TOKEN = re.compile(r"\b(?:sk|gh[opusr]|github_pat)-[A-Za-z0-9_]{20,}\b")
 _AWS_KEY = re.compile(r"\bAKIA[A-Z0-9]{16}\b")
@@ -70,8 +73,9 @@ _DATA_FLAGS = frozenset(
 )
 _TEXT_TAKING_PROGRAMS = frozenset({"git", "gh"})
 #: `cmd <<EOF ... EOF` and `cmd <<-'EOF' ... EOF`: the body is input, not command text.
-_HEREDOC = re.compile(r"<<-?\s*(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1.*?^\s*(?P=tag)\s*$",
-                      re.DOTALL | re.MULTILINE)
+_HEREDOC = re.compile(
+    r"<<-?\s*(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1.*?^\s*(?P=tag)\s*$", re.DOTALL | re.MULTILINE
+)
 _SEGMENT = re.compile(r"(?:\|\||&&|[;|&\n])")
 
 
@@ -208,12 +212,14 @@ def _widens_per_file_ignores(diff: str) -> bool:
     return False
 
 
-def dangerous_command_decision(command: str) -> Decision:
+def dangerous_command_decision(command: str, branch: str = "") -> Decision:
     """Block live execution, runner control, order actions, and forced pushes to main."""
 
     surface = executable_surface(command)
     forced_main = bool(
-        _PUSH.search(surface) and _FORCE.search(surface) and _MAIN_REF.search(surface)
+        _PUSH.search(surface)
+        and _FORCE.search(surface)
+        and (_MAIN_REF.search(surface) or branch.casefold() == "main")
     )
     if (
         _LIVE_COMMAND.search(surface)
