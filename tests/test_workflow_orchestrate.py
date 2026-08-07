@@ -16,7 +16,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from workflow import board as board_module
@@ -32,6 +32,25 @@ def _green() -> tuple[str, list[GateResult]]:
 
 def _red() -> tuple[str, list[GateResult]]:
     return "R2", [GateResult("check", "just check", 1, 1.0, "FAILED (exit 1)")]
+
+
+def _read_liveness_record(path: Path, *, newer_than: float | None = None) -> dict[str, Any]:
+    deadline = time.monotonic() + 1.0
+    last_error: PermissionError | None = None
+    while time.monotonic() < deadline:
+        try:
+            payload = cast(dict[str, Any], json.loads(path.read_text(encoding="utf-8")))
+        except PermissionError as error:
+            last_error = error
+        else:
+            if newer_than is None or payload["updated_at"] > newer_than:
+                return payload
+        time.sleep(0.01)
+
+    message = "the heartbeat record did not become readable and newer within one second"
+    if last_error is not None:
+        raise AssertionError(message) from last_error
+    raise AssertionError(message)
 
 
 @pytest.fixture
@@ -816,13 +835,25 @@ def test_cycle_heartbeat_continues_while_the_main_thread_waits(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = tmp_path / "qplus-cycle-101.json"
+    original_read_text = Path.read_text
+    collided = False
+
+    def collide_with_first_read(path: Path, *args: Any, **kwargs: Any) -> str:
+        nonlocal collided
+        if path == record and not collided:
+            collided = True
+            raise PermissionError("the heartbeat replaced the record while it was being read")
+        return original_read_text(path, *args, **kwargs)
+
     monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+    monkeypatch.setattr(Path, "read_text", collide_with_first_read)
 
     with orchestrate._CycleHeartbeat(101, round_number=7, phase="review", interval=0.01):
-        first = json.loads(record.read_text(encoding="utf-8"))
+        first = _read_liveness_record(record)
         time.sleep(0.04)
-        second = json.loads(record.read_text(encoding="utf-8"))
+        second = _read_liveness_record(record, newer_than=first["updated_at"])
 
+    assert collided, "the regression probe must exercise a concurrent read collision"
     assert second["updated_at"] > first["updated_at"]
     assert second["pid"] == os.getpid()
     assert second["round"] == 7 and second["phase"] == "review"
