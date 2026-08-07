@@ -21,7 +21,10 @@ def install(root: Path = REPO_ROOT) -> None:
     """
 
     if not (root / PUSH_HOOK_PATH).is_file():
-        raise FileNotFoundError(f"tracked push hook is missing: {PUSH_HOOK_PATH.as_posix()}")
+        raise FileNotFoundError(
+            f"tracked push hook is missing: {PUSH_HOOK_PATH.as_posix()}; update this checkout "
+            f"because {INSTALL_COMMAND!r} cannot add content absent from its revision"
+        )
     subprocess.run(
         ["git", "config", "--local", "core.hooksPath", TRACKED_HOOKS_PATH.as_posix()],
         cwd=root,

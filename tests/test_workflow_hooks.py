@@ -272,8 +272,13 @@ def test_the_push_hook_lets_only_an_r0_change_reach_main_directly(
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {r0} refs/heads/main {base}\n"))
     assert pre_push.main(root=root) == 0
 
+    r2 = _commit(root, "tests/test_guard.py", "def test_guard():\n    assert True\n")
+    decision = pre_push.evaluate_update(r2, r0, "refs/heads/main", root=root)
+    assert not decision.allowed
+    assert "R2" in decision.reason
+
     r3 = _commit(root, "workflow/gates.py", "governance code\n")
-    decision = pre_push.evaluate_update(r3, r0, "refs/heads/main", root=root)
+    decision = pre_push.evaluate_update(r3, r2, "refs/heads/main", root=root)
     assert not decision.allowed
     assert "R3" in decision.reason
 
@@ -284,3 +289,13 @@ def test_the_force_push_guard_matches_the_refspec_and_the_implicit_branch() -> N
     assert dangerous_command_decision(
         "git push origin +feature/safe", branch="feature/safe"
     ).allowed
+    assert dangerous_command_decision(
+        "git push origin +feature/safe", branch="main"
+    ).allowed
+
+    for ordinary_command in (
+        "chmod +x workflow/git-hooks/pre-push && git push origin main",
+        "git commit -m test && git push origin main && echo +1",
+        "echo +1 && git push origin main",
+    ):
+        assert dangerous_command_decision(ordinary_command).allowed

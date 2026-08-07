@@ -38,9 +38,12 @@ _ORDER_ACTION = re.compile(
     r"(?:order_send|place_order|modify_order|cancel_order|close_position)\b)",
     re.IGNORECASE,
 )
-_FORCE = re.compile(
-    r"(?:^|\s)(?:-f|--force|--force-with-lease(?:=[^\s]+)?|\+[^\s]+)(?:\s|$)",
+_FORCE_OPTION = re.compile(
+    r"(?:^|\s)(?:-f|--force|--force-with-lease(?:=[^\s]+)?)(?:\s|$)",
     re.IGNORECASE,
+)
+_FORCE_REFSPEC = re.compile(
+    r"(?:^|\s)\+(?:[^\s:]+(?::[^\s:]+)?|:[^\s:]+)(?:\s|$)", re.IGNORECASE
 )
 _MAIN_REF = re.compile(r"(?:^|[\s:/'\"+])(?:refs/heads/)?main(?:$|[\s'\"])", re.IGNORECASE)
 _PRIVATE_KEY = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
@@ -216,11 +219,18 @@ def dangerous_command_decision(command: str, branch: str = "") -> Decision:
     """Block live execution, runner control, order actions, and forced pushes to main."""
 
     surface = executable_surface(command)
-    forced_main = bool(
-        _PUSH.search(surface)
-        and _FORCE.search(surface)
-        and (_MAIN_REF.search(surface) or branch.casefold() == "main")
-    )
+    forced_main = False
+    for segment in surface.splitlines():
+        has_force_option = _FORCE_OPTION.search(segment) is not None
+        has_force_refspec = _FORCE_REFSPEC.search(segment) is not None
+        if _PUSH.search(segment) is None or not (has_force_option or has_force_refspec):
+            continue
+        forced_main = bool(
+            _MAIN_REF.search(segment)
+            or (has_force_option and branch.casefold() == "main")
+        )
+        if forced_main:
+            break
     if (
         _LIVE_COMMAND.search(surface)
         or _RUNNER_CONTROL.search(surface)

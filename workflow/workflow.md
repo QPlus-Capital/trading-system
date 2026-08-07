@@ -565,11 +565,14 @@ rules when the repository is public again. It does not enforce them while this i
 repository.
 
 The tracked pre-push hook is the local replacement for deletion, rewriting, and direct R1-R3
-updates to `main`; `just install-hooks` installs it repository-wide for every worktree, and the
-gates fail closed when it is absent. This protection is local, not equivalent to the server rule:
-`git push --no-verify` can skip it. Squash-only merging and no merge while `required-checks` is red
-have no local equivalent; while the repository is private they rest on the operator's phase 5
-merge discipline and the review cycle's settled-checks wait.
+updates to `main`; `just install-hooks` installs repository-wide configuration used by every
+worktree whose checked-out revision contains the tracked hook, and the gates fail closed when its
+configuration or content is absent. A checkout on a revision that predates the tracked hook is not
+protected until it is updated; the gate reports that case separately because rerunning
+`just install-hooks` cannot add content absent from that revision. This protection is local, not
+equivalent to the server rule: `git push --no-verify` can skip it. Squash-only merging and no merge
+while `required-checks` is red have no local equivalent; while the repository is private they rest
+on the operator's phase 5 merge discipline and the review cycle's settled-checks wait.
 
 - Everything committed — code, identifiers, comments, docstrings, docs, commit messages — is
   **English**. Conversation with the operator may be in another language; the repository is not.

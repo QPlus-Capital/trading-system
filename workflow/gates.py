@@ -86,6 +86,16 @@ def run_gate(name: str, spec: dict[str, object], *, root: Path = REPO_ROOT) -> G
 def push_hook_setup_gate(*, root: Path = REPO_ROOT) -> GateResult:
     """Verify that Git resolves ``core.hooksPath`` to this worktree's tracked hook directory."""
 
+    expected = (root / TRACKED_HOOKS_PATH).resolve()
+    hook = expected / PUSH_HOOK_PATH.name
+    if not hook.is_file():
+        action = f"update this checkout until {PUSH_HOOK_PATH.as_posix()} exists"
+        detail = f"FAILED: tracked push hook is missing; {action}"
+        return GateResult("push-hook", action, 1, 0.0, detail)
+    if not os.access(hook, os.X_OK):
+        action = f"restore executable mode on {PUSH_HOOK_PATH.as_posix()}"
+        return GateResult("push-hook", action, 1, 0.0, f"FAILED: {action}")
+
     configured = subprocess.run(
         ["git", "config", "--get", "core.hooksPath"],
         cwd=root,
@@ -99,13 +109,10 @@ def push_hook_setup_gate(*, root: Path = REPO_ROOT) -> GateResult:
     path = Path(value) if value else None
     if path is not None and not path.is_absolute():
         path = root / path
-    expected = (root / TRACKED_HOOKS_PATH).resolve()
     installed = (
         configured.returncode == 0
         and path is not None
         and path.resolve() == expected
-        and (expected / PUSH_HOOK_PATH.name).is_file()
-        and os.access(expected / PUSH_HOOK_PATH.name, os.X_OK)
     )
     detail = "green" if installed else f"FAILED: run `{INSTALL_COMMAND}`"
     return GateResult("push-hook", INSTALL_COMMAND, 0 if installed else 1, 0.0, detail)
