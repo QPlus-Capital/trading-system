@@ -833,6 +833,7 @@ def test_a_heartbeat_write_failure_does_not_override_the_cycle_result(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = tmp_path / "qplus-cycle-101.json"
+    log = tmp_path / "qplus-events-101.jsonl"
     lock = tmp_path / "qplus-cycle-101.lock"
     heartbeat_type = orchestrate._CycleHeartbeat
     original_write = heartbeat_type._write_locked
@@ -860,6 +861,7 @@ def test_a_heartbeat_write_failure_does_not_override_the_cycle_result(
         return 0
 
     monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+    monkeypatch.setattr(orchestrate, "events_path", lambda issue: log)
     monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
     monkeypatch.setattr(orchestrate, "_rounds_recorded", lambda issue: 0)
     monkeypatch.setattr(heartbeat_type, "_write_locked", fail_after_entry)
@@ -880,8 +882,10 @@ def test_an_orderly_cli_failure_is_recorded_and_clears_liveness(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     record = tmp_path / "qplus-cycle-101.json"
+    lock = tmp_path / "qplus-cycle-101.lock"
     notices: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+    monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
     monkeypatch.setattr(orchestrate, "_rounds_recorded", lambda issue: 0)
     monkeypatch.setattr(
         orchestrate,
