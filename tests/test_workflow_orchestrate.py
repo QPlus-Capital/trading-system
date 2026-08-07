@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
@@ -201,6 +202,35 @@ def test_the_round_cap_blocks_rather_than_looping(harness: dict[str, Any]) -> No
     kind, facts = harness["notices"][-1]
     assert kind == "blockiert"
     assert "entscheidung" in facts, "a decision event names options, never a bare status"
+
+
+@pytest.mark.parametrize(
+    ("failure", "expected"),
+    [
+        ("gates", "Gates rot: check"),
+        ("ci", "CI rot: quality"),
+        ("mutation", "Mutationsmessung rot (run 4242)"),
+        ("review", "2 blockierende Befunde"),
+    ],
+)
+def test_the_capped_exit_names_what_was_red(
+    harness: dict[str, Any], failure: str, expected: str
+) -> None:
+    if failure == "gates":
+        harness["state"]["gates"] = _red
+    elif failure == "ci":
+        harness["state"]["red_checks"] = ["quality"]
+    elif failure == "mutation":
+        harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
+        harness["state"]["mutation_targets"] = ["workflow-finish-teardown"]
+        harness["state"]["mutation_conclusion"] = "failure"
+    else:
+        harness["state"]["verdicts"] = [Verdict(blocking=2, advisory=0)]
+
+    assert orchestrate.cycle(101, max_rounds=1) == 1
+    kind, facts = harness["notices"][-1]
+    assert kind == "blockiert"
+    assert expected in str(facts["grund"])
 
 
 def test_a_failing_gate_never_reaches_the_reviewer(harness: dict[str, Any]) -> None:
@@ -746,9 +776,50 @@ def test_the_cli_takes_the_lock_before_the_cycle(
     monkeypatch.setattr(
         orchestrate, "cycle", lambda issue, **kwargs: pytest.fail("the cycle must not start")
     )
+    monkeypatch.setattr(orchestrate, "report", lambda *args, **kwargs: None)
 
     assert orchestrate.main(["run", "101"]) == 1
     assert "already running" in capsys.readouterr().out
+
+
+def test_cycle_heartbeat_continues_while_the_main_thread_waits(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = tmp_path / "qplus-cycle-101.json"
+    monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+
+    with orchestrate._CycleHeartbeat(101, round_number=7, phase="review", interval=0.01):
+        first = json.loads(record.read_text(encoding="utf-8"))
+        time.sleep(0.04)
+        second = json.loads(record.read_text(encoding="utf-8"))
+
+    assert second["updated_at"] > first["updated_at"]
+    assert second["pid"] == os.getpid()
+    assert second["round"] == 7 and second["phase"] == "review"
+    assert not record.exists(), "an orderly exit removes the liveness record"
+
+
+def test_an_orderly_cli_failure_is_recorded_and_clears_liveness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = tmp_path / "qplus-cycle-101.json"
+    notices: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+    monkeypatch.setattr(orchestrate, "_rounds_recorded", lambda issue: 0)
+    monkeypatch.setattr(
+        orchestrate,
+        "cycle",
+        lambda issue, **kwargs: (_ for _ in ()).throw(OrchestrationError("refused safely")),
+    )
+    monkeypatch.setattr(
+        orchestrate,
+        "report",
+        lambda issue, kind, facts, **kwargs: notices.append((kind, dict(facts))),
+    )
+
+    assert orchestrate.main(["run", "101"]) == 1
+    assert notices[-1] == ("gestoppt", {"grund": "refused safely"})
+    assert not record.exists()
 
 
 def test_a_clean_static_verdict_is_presented_never_certified(harness: dict[str, Any]) -> None:
@@ -816,6 +887,23 @@ def test_decision_blocks_are_extracted_from_the_certified_review(
     assert orchestrate.review_decisions(158, "0000000000") == (), (
         "decisions ride only on the review whose verdict names the head"
     )
+
+
+def test_forwarded_decisions_include_evidence_produced_after_the_review(
+    harness: dict[str, Any],
+) -> None:
+    decision = "**Decision.** Dispatch the mutation measurement?"
+    harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=1)]
+    harness["state"]["decisions"] = [decision]
+    harness["state"]["mutation_targets"] = ["workflow-finish-teardown"]
+
+    assert orchestrate.cycle(101) == 0
+    _, facts = harness["notices"][-1]
+    forwarded = str(facts["entscheidung"])
+    assert forwarded.startswith(decision), "the reviewer's text stays intact and first"
+    assert "---" in forwarded and "run 4242" in forwarded
+    comment = next(call for call in harness["runs"] if call[:3] == ["gh", "issue", "comment"])
+    assert decision in comment[-1] and "run 4242" in comment[-1]
 
 
 def test_a_builder_that_pushed_nothing_stops_the_loop(harness: dict[str, Any]) -> None:

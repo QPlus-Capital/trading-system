@@ -66,6 +66,30 @@ def test_snapshot_reads_the_event_log_and_shows_unreadable_sources(
     assert "urteil" in str(state["letztes_ereignis"])
 
 
+def test_liveness_distinguishes_absent_running_dead_and_wedged_without_a_clock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = tmp_path / "qplus-cycle-104.json"
+    monkeypatch.setattr(watch, "liveness_path", lambda issue: record)
+    alive, dead = (lambda pid: True), (lambda pid: False)
+    def beat(updated_at: float) -> None:
+        payload = {"updated_at": updated_at, "pid": 7, "round": 3, "phase": "review"}
+        record.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert watch.cycle_liveness(104, now=100.0, process_alive=dead) == {"status": "nicht aktiv"}
+    beat(90.0)
+    fresh = watch.cycle_liveness(104, now=100.0, process_alive=alive)
+    beat(95.0)
+    assert watch.cycle_liveness(104, now=100.0, process_alive=alive) == fresh, (
+        "a beat changes no reported clock and therefore wakes no narrator"
+    )
+    beat(0.0)
+    assert watch.cycle_liveness(104, now=100.0, process_alive=alive)["status"] == "festgefahren"
+    assert watch.cycle_liveness(104, now=100.0, process_alive=dead)["status"] == "tot"
+    beat(float("nan"))
+    assert watch.cycle_liveness(104, now=100.0, process_alive=alive)["status"] == "unbekannt"
+
+
 def test_the_cli_prints_one_machine_readable_snapshot(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

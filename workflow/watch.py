@@ -20,13 +20,20 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import subprocess
 import time
 from collections.abc import Callable, Sequence
 
 from workflow import board
 from workflow.classify import REPO_ROOT
-from workflow.orchestrate import events_path, issue_branch_matches
+from workflow.orchestrate import (
+    _HEARTBEAT_STALE_SECONDS,
+    _process_alive,
+    events_path,
+    issue_branch_matches,
+    liveness_path,
+)
 
 _POLL_SECONDS = 60
 
@@ -50,6 +57,39 @@ def _gh(args: Sequence[str]) -> str:
         # review count as 0 instead of "?". Unreadable must look unreadable.
         raise RuntimeError("gh returned empty output where JSON was expected")
     return output
+
+
+def cycle_liveness(
+    issue: int,
+    *,
+    now: float | None = None,
+    process_alive: Callable[[int], bool] | None = None,
+) -> dict[str, object]:
+    """Classify the replaceable beat without exposing its changing clock to the watcher."""
+
+    path = liveness_path(issue)
+    if not path.is_file():
+        return {"status": "nicht aktiv"}
+    try:
+        record = json.loads(path.read_text(encoding="utf-8"))
+        updated_at = float(record["updated_at"])
+        pid = int(record["pid"])
+        round_number = int(record["round"])
+        phase = str(record["phase"])
+        if not math.isfinite(updated_at) or pid <= 0 or round_number < 0 or not phase:
+            raise ValueError("invalid cycle liveness record")
+    except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return {"status": "unbekannt"}
+
+    alive = (process_alive or _process_alive)(pid)
+    stale = (time.time() if now is None else now) - updated_at > _HEARTBEAT_STALE_SECONDS
+    if not alive:
+        status = "tot"
+    elif stale:
+        status = "festgefahren"
+    else:
+        status = "läuft"
+    return {"status": status, "pid": pid, "runde": round_number, "phase": phase}
 
 
 def snapshot(issue: int) -> dict[str, object]:
@@ -108,6 +148,8 @@ def snapshot(issue: int) -> dict[str, object]:
             state["pr"] = None
     except (RuntimeError, json.JSONDecodeError):
         state["pr"] = "?"
+
+    state["zyklus"] = cycle_liveness(issue)
 
     log = events_path(issue)
     if log.is_file():
