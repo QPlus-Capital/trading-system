@@ -24,6 +24,7 @@ _CLAUDE = _ROOT / "CLAUDE.md"
 _AGENTS = _ROOT / "AGENTS.md"
 _WORKFLOW = _ROOT / "workflow" / "workflow.md"
 _CONTRACT = _ROOT / "workflow" / "workflow.toml"
+_CI = _ROOT / ".github" / "workflows" / "ci.yml"
 
 _CLASSES = ("R0", "R1", "R2", "R3")
 
@@ -195,6 +196,22 @@ def test_governance_documents_name_no_person() -> None:
         assert "operator" in text.lower(), (
             f"{path.relative_to(_ROOT)} must name the deciding human as the operator"
         )
+
+
+def test_the_document_and_ci_agree_on_the_runner() -> None:
+    """The CI contract names the configured runner and its isolation limits in one place."""
+    runner_variables = set(re.findall(r"vars\.([A-Z][A-Z0-9_]*)", _text(_CI)))
+    assert runner_variables == {"CI_LINUX_RUNNER"}
+
+    workflow = " ".join(_text(_WORKFLOW).split())
+    assert "CI_LINUX_RUNNER" in workflow
+    for limit in (
+        "holds no `.env`",
+        "holds no broker credentials",
+        "does not run as an administrator",
+        "does not run on the trading machine",
+    ):
+        assert limit in workflow
 
 
 # --------------------------------------------------------------- the contract parses and holds

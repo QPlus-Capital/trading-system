@@ -93,6 +93,29 @@ def test_the_windows_runner_is_conditional() -> None:
     assert "if" in jobs["mt5-boundary"], "an unconditional Windows job doubles the routine cost"
 
 
+def test_the_linux_jobs_fall_back_to_the_hosted_runner() -> None:
+    """Every Linux job uses one variable whose safe default remains GitHub-hosted."""
+    expected = "${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}"
+    jobs = _jobs()
+    assert {name for name, job in jobs.items() if job["runs-on"] == expected} == {
+        "quality",
+        "mutation",
+        "required-checks",
+    }
+
+
+def test_the_windows_boundary_job_is_pinned_to_the_hosted_runner() -> None:
+    """The MT5 boundary never shares the configurable Linux runner used by CI."""
+    boundary = _jobs()["mt5-boundary"]
+    assert boundary["runs-on"] == "windows-latest"
+    assert "CI_LINUX_RUNNER" not in str(boundary)
+
+
+def test_the_required_context_keeps_its_name() -> None:
+    """Branch protection and the review cycle both wait for this exact context."""
+    assert "required-checks" in _jobs()
+
+
 def test_every_ci_gate_invokes_a_recipe_the_justfile_defines() -> None:
     for job in _jobs().values():
         for recipe in _recipes(job):
