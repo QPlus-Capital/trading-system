@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -771,9 +772,16 @@ def test_the_cli_takes_the_lock_before_the_cycle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     lock = tmp_path / "qplus-cycle-101.lock"
+    record = tmp_path / "qplus-cycle-101.json"
+    active_liveness = json.dumps(
+        {"updated_at": 1.0, "pid": os.getpid(), "round": 7, "phase": "review"}
+    )
     notices: list[tuple[object, ...]] = []
     lock.write_text(str(os.getpid()), encoding="utf-8")
+    record.write_text(active_liveness, encoding="utf-8")
     monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
+    monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+    monkeypatch.setattr(orchestrate, "_rounds_recorded", lambda issue: 0)
     monkeypatch.setattr(
         orchestrate, "cycle", lambda issue, **kwargs: pytest.fail("the cycle must not start")
     )
@@ -784,6 +792,9 @@ def test_the_cli_takes_the_lock_before_the_cycle(
     assert orchestrate.main(["run", "101"]) == 1
     assert "already running" in capsys.readouterr().out
     assert notices == [], "a refused second CLI must not stop the cycle which owns the log"
+    assert record.read_text(encoding="utf-8") == active_liveness, (
+        "a refused second CLI must not alter the running cycle's liveness record"
+    )
 
 
 def test_a_dry_run_failure_records_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -826,23 +837,26 @@ def test_a_heartbeat_write_failure_does_not_override_the_cycle_result(
     heartbeat_type = orchestrate._CycleHeartbeat
     original_write = heartbeat_type._write_locked
     calls = 0
+    failed_beat = threading.Event()
+    recovered_beat = threading.Event()
 
     def fail_after_entry(heartbeat: orchestrate._CycleHeartbeat) -> None:
         nonlocal calls
         calls += 1
-        if calls > 1:
+        if calls == 2:
+            failed_beat.set()
             raise PermissionError("the observer file is briefly busy")
         original_write(heartbeat)
+        if calls > 2:
+            recovered_beat.set()
 
     def finish_after_failed_beat(issue: int, **kwargs: object) -> int:
         heartbeat = kwargs["heartbeat"]
         assert isinstance(heartbeat, heartbeat_type)
-        deadline = time.monotonic() + 1.0
-        while heartbeat._error is None and time.monotonic() < deadline:
-            time.sleep(0.001)
-        assert heartbeat._error is not None
-        heartbeat.update(phase="review")
-        assert heartbeat.phase == "review", "phase progress survives a failed observer write"
+        assert failed_beat.wait(timeout=1.0), "the periodic beat must encounter the transient error"
+        assert recovered_beat.wait(timeout=1.0), (
+            "the heartbeat thread must write another beat after a transient error"
+        )
         return 0
 
     monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
