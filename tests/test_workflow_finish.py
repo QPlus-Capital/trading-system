@@ -50,6 +50,11 @@ def _git(cwd: Path, *args: str, check: bool = True) -> str:
     return completed.stdout.strip()
 
 
+def _set_ref(git_dir: Path, ref: str, oid: str, *, delete: bool = False) -> None:
+    args = ("-d", ref, oid) if delete else (ref, oid)
+    _git(git_dir.parent, f"--git-dir={git_dir}", "update-ref", *args)
+
+
 def _card(*, open_state: bool = False, status: str = "Done") -> board.Card:
     return board.Card(
         issue=ISSUE,
@@ -65,7 +70,7 @@ def _card(*, open_state: bool = False, status: str = "Done") -> board.Card:
 
 
 @pytest.fixture
-def ticket_repository(tmp_path: Path) -> TicketRepository:
+def ticket_repository(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TicketRepository:
     remote = tmp_path / "origin.git"
     repository = tmp_path / "repository"
     worktree = tmp_path / "ticket-worktree"
@@ -94,8 +99,19 @@ def ticket_repository(tmp_path: Path) -> TicketRepository:
     )
     _git(repository, "add", "README.md", ".gitignore")
     _git(repository, "commit", "-m", "initial")
-    _git(repository, "remote", "add", "origin", str(remote))
-    _git(repository, "push", "-u", "origin", "main")
+    _git(repository, "config", "remote.origin.url", str(remote))
+    _git(
+        repository,
+        "config",
+        "remote.origin.fetch",
+        "+refs/heads/*:refs/remotes/origin/*",
+    )
+    (remote / "objects" / "info" / "alternates").write_bytes(
+        ((repository / ".git" / "objects").resolve().as_posix() + "\n").encode("utf-8")
+    )
+    main_tip = _git(repository, "rev-parse", "HEAD")
+    _set_ref(remote, "refs/heads/main", main_tip)
+    _set_ref(repository / ".git", "refs/remotes/origin/main", main_tip)
 
     _git(repository, "worktree", "add", "-b", BRANCH, str(worktree), "main")
     _git(worktree, "config", "user.email", "tests@example.invalid")
@@ -104,13 +120,17 @@ def ticket_repository(tmp_path: Path) -> TicketRepository:
     _git(worktree, "add", "ticket.txt")
     _git(worktree, "commit", "-m", "ticket")
     branch_tip = _git(worktree, "rev-parse", "HEAD")
-    _git(worktree, "push", "-u", "origin", BRANCH)
+    _set_ref(remote, f"refs/heads/{BRANCH}", branch_tip)
+    _set_ref(repository / ".git", f"refs/remotes/origin/{BRANCH}", branch_tip)
 
     _git(repository, "merge", "--squash", BRANCH)
     _git(repository, "commit", "-m", "squash ticket")
-    _git(repository, "push", "origin", "main")
-    _git(repository, "fetch", "origin")
-    return TicketRepository(repository, worktree, remote, branch_tip)
+    merged_tip = _git(repository, "rev-parse", "HEAD")
+    _set_ref(remote, "refs/heads/main", merged_tip)
+    _set_ref(repository / ".git", "refs/remotes/origin/main", merged_tip)
+    ticket = TicketRepository(repository, worktree, remote, branch_tip)
+    _record_commands(monkeypatch, ticket)
+    return ticket
 
 
 def _prepare(
@@ -150,13 +170,15 @@ def _tracking_ref(repository: Path, branch: str = BRANCH) -> str | None:
 
 def _remote_ref(ticket: TicketRepository, branch: str = BRANCH) -> str | None:
     value = _git(
-        ticket.repository,
-        "ls-remote",
-        "--heads",
-        "origin",
+        ticket.remote.parent,
+        f"--git-dir={ticket.remote}",
+        "show-ref",
+        "--verify",
+        "--hash",
         f"refs/heads/{branch}",
+        check=False,
     )
-    return value.split()[0] if value else None
+    return value or None
 
 
 def _artifact_snapshot(ticket: TicketRepository) -> tuple[bool, str | None, str | None, str | None]:
@@ -303,12 +325,15 @@ def _allowed_finish_command(command: tuple[str, ...], ticket: TicketRepository) 
         _board_read_command(),
         _pull_request_read_command(),
     }
-    return command in exact
+    local_ancestry_check = command[:3] == ("git", "merge-base", "--is-ancestor")
+    return command in exact or (local_ancestry_check and len(command) == 5)
 
 
 def _record_commands(
     monkeypatch: pytest.MonkeyPatch,
     ticket: TicketRepository,
+    *,
+    executions: list[tuple[tuple[str, ...], Path | None]] | None = None,
 ) -> list[tuple[str, ...]]:
     commands: list[tuple[str, ...]] = []
 
@@ -319,6 +344,8 @@ def _record_commands(
     ) -> subprocess.CompletedProcess[str]:
         command = tuple(str(part) for part in args)
         commands.append(command)
+        if executions is not None:
+            executions.append((command, keywords.get("cwd")))
         if command == _board_read_command():
             return subprocess.CompletedProcess(
                 list(args), 0, stdout=json.dumps(_card_payload()), stderr=""
@@ -328,6 +355,39 @@ def _record_commands(
                 list(args), 0, stdout=json.dumps(_pull_request_payload(ticket)), stderr=""
             )
         if not _allowed_finish_command(command, ticket):
+            return subprocess.CompletedProcess(list(args), 0, stdout="", stderr="")
+        if command == ("git", "fetch", "origin", "main"):
+            main_tip = _git(
+                ticket.remote.parent,
+                f"--git-dir={ticket.remote}",
+                "show-ref",
+                "--verify",
+                "--hash",
+                "refs/heads/main",
+            )
+            _set_ref(ticket.repository / ".git", "refs/remotes/origin/main", main_tip)
+            return subprocess.CompletedProcess(list(args), 0, stdout="", stderr="")
+        if command[:2] == ("git", "ls-remote"):
+            if len(command) == 5:
+                branch = command[4].removeprefix("refs/heads/")
+                tip = _remote_ref(ticket, branch)
+                stdout = f"{tip}\trefs/heads/{branch}\n" if tip is not None else ""
+            else:
+                stdout = _git(
+                    ticket.remote.parent,
+                    f"--git-dir={ticket.remote}",
+                    "for-each-ref",
+                    "--format=%(objectname)%09%(refname)",
+                    "refs/heads",
+                )
+                if stdout:
+                    stdout += "\n"
+            return subprocess.CompletedProcess(list(args), 0, stdout=stdout, stderr="")
+        if command[:2] == ("git", "push"):
+            expected = command[2].rsplit(":", maxsplit=1)[-1]
+            if _remote_ref(ticket) != expected:
+                return subprocess.CompletedProcess(list(args), 1, stdout="", stderr="stale info")
+            _set_ref(ticket.remote, f"refs/heads/{BRANCH}", expected, delete=True)
             return subprocess.CompletedProcess(list(args), 0, stdout="", stderr="")
         return _REAL_SUBPROCESS_RUN(args, *positional, **keywords)
 
@@ -345,6 +405,25 @@ def test_finishing_a_merged_ticket_removes_worktree_branch_and_both_remote_trace
 
     assert result.removed == ("worktree", "local branch", "remote branch", "remote-tracking ref")
     assert _artifact_snapshot(ticket_repository) == (False, None, None, None)
+
+
+def test_remote_commands_run_inside_the_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    _prepare(monkeypatch, ticket_repository)
+    executions: list[tuple[tuple[str, ...], Path | None]] = []
+    _record_commands(monkeypatch, ticket_repository, executions=executions)
+
+    _finish(ticket_repository)
+
+    remote_executions = [
+        (command, cwd)
+        for command, cwd in executions
+        if command[:2] in {("git", "ls-remote"), ("git", "push")}
+    ]
+    assert remote_executions
+    assert all(cwd == ticket_repository.repository for _, cwd in remote_executions)
 
 
 def test_an_open_issue_is_refused(
@@ -461,7 +540,18 @@ def test_ambiguous_branch_ownership_is_refused(
     if branch_count == 0:
         _git(ticket_repository.repository, "worktree", "remove", str(ticket_repository.worktree))
         _git(ticket_repository.repository, "branch", "-D", BRANCH)
-        _git(ticket_repository.repository, "push", "origin", "--delete", BRANCH)
+        _set_ref(
+            ticket_repository.remote,
+            f"refs/heads/{BRANCH}",
+            ticket_repository.branch_tip,
+            delete=True,
+        )
+        _set_ref(
+            ticket_repository.repository / ".git",
+            f"refs/remotes/origin/{BRANCH}",
+            ticket_repository.branch_tip,
+            delete=True,
+        )
         pull_requests: tuple[finish.MergedPullRequest, ...] = ()
     else:
         _git(ticket_repository.repository, "branch", "codex/152-other", "main")
@@ -481,21 +571,16 @@ def test_only_this_tickets_remote_tracking_reference_is_pruned(
 ) -> None:
     other = "codex/999-other"
     _git(ticket_repository.repository, "branch", other, "main")
-    _git(ticket_repository.repository, "push", "-u", "origin", other)
+    other_tip = _git(ticket_repository.repository, "rev-parse", other)
+    _set_ref(ticket_repository.remote, f"refs/heads/{other}", other_tip)
+    _set_ref(ticket_repository.repository / ".git", f"refs/remotes/origin/{other}", other_tip)
     other_tracking = _tracking_ref(ticket_repository.repository, other)
-    _git(
-        ticket_repository.repository,
-        f"--git-dir={ticket_repository.remote}",
-        "update-ref",
-        "-d",
-        f"refs/heads/{other}",
-    )
-    _git(
-        ticket_repository.repository,
-        f"--git-dir={ticket_repository.remote}",
-        "update-ref",
-        "-d",
+    _set_ref(ticket_repository.remote, f"refs/heads/{other}", other_tip, delete=True)
+    _set_ref(
+        ticket_repository.remote,
         f"refs/heads/{BRANCH}",
+        ticket_repository.branch_tip,
+        delete=True,
     )
     _prepare(monkeypatch, ticket_repository)
     commands = _record_commands(monkeypatch, ticket_repository)
@@ -703,13 +788,7 @@ def test_a_failure_after_the_first_removal_is_not_a_refusal(
         plan: finish.FinishPlan,
         repo_root: Path,
     ) -> finish.FinishResult:
-        _git(
-            ticket_repository.repository,
-            f"--git-dir={ticket_repository.remote}",
-            "update-ref",
-            f"refs/heads/{BRANCH}",
-            advanced_oid,
-        )
+        _set_ref(ticket_repository.remote, f"refs/heads/{BRANCH}", advanced_oid)
         return real_apply(plan, repo_root)
 
     monkeypatch.setattr(finish, "_apply", advance_remote_then_apply)
@@ -750,10 +829,8 @@ def test_a_legacy_branch_name_is_never_removed(
         _git(ticket_repository.worktree, "branch", "-m", legacy)
         pull_requests = (finish.MergedPullRequest(BRANCH, ticket_repository.branch_tip),)
     else:
-        _git(
-            ticket_repository.repository,
-            f"--git-dir={ticket_repository.remote}",
-            "update-ref",
+        _set_ref(
+            ticket_repository.remote,
             f"refs/heads/{legacy}",
             ticket_repository.branch_tip,
         )
@@ -778,7 +855,18 @@ def test_a_legacy_name_only_in_the_pull_request_record_does_not_refuse(
     legacy = "codex/111-152-review-path"
     _git(ticket_repository.repository, "worktree", "remove", str(ticket_repository.worktree))
     _git(ticket_repository.repository, "branch", "-D", BRANCH)
-    _git(ticket_repository.repository, "push", "origin", "--delete", BRANCH)
+    _set_ref(
+        ticket_repository.remote,
+        f"refs/heads/{BRANCH}",
+        ticket_repository.branch_tip,
+        delete=True,
+    )
+    _set_ref(
+        ticket_repository.repository / ".git",
+        f"refs/remotes/origin/{BRANCH}",
+        ticket_repository.branch_tip,
+        delete=True,
+    )
     _prepare(
         monkeypatch,
         ticket_repository,
@@ -799,7 +887,9 @@ def test_the_branch_is_deleted_only_when_its_tip_is_preserved(
 ) -> None:
     if preserved_by == "main":
         _git(ticket_repository.repository, "reset", "--hard", BRANCH)
-        _git(ticket_repository.repository, "push", "--force", "origin", "main")
+        main_tip = _git(ticket_repository.repository, "rev-parse", "main")
+        _set_ref(ticket_repository.remote, "refs/heads/main", main_tip)
+        _set_ref(ticket_repository.repository / ".git", "refs/remotes/origin/main", main_tip)
         requests: tuple[finish.MergedPullRequest, ...] = ()
     else:
         requests = (finish.MergedPullRequest(BRANCH, ticket_repository.branch_tip),)
@@ -818,7 +908,13 @@ def test_a_tip_ahead_of_main_without_a_pull_request_is_refused(
     (ticket_repository.worktree / "ahead.txt").write_text("ahead\n", encoding="utf-8")
     _git(ticket_repository.worktree, "add", "ahead.txt")
     _git(ticket_repository.worktree, "commit", "-m", "ahead of main")
-    _git(ticket_repository.worktree, "push", "--force", "origin", BRANCH)
+    ahead_tip = _git(ticket_repository.worktree, "rev-parse", BRANCH)
+    _set_ref(ticket_repository.remote, f"refs/heads/{BRANCH}", ahead_tip)
+    _set_ref(
+        ticket_repository.repository / ".git",
+        f"refs/remotes/origin/{BRANCH}",
+        ahead_tip,
+    )
     _prepare(monkeypatch, ticket_repository, pull_requests=())
     before = _artifact_snapshot(ticket_repository)
 
@@ -993,9 +1089,7 @@ def test_a_merged_pull_request_of_another_issue_never_resolves_to_a_branch(
     _prepare(
         monkeypatch,
         ticket_repository,
-        pull_requests=(
-            finish.MergedPullRequest(foreign, ticket_repository.branch_tip),
-        ),
+        pull_requests=(finish.MergedPullRequest(foreign, ticket_repository.branch_tip),),
     )
 
     result = _finish(ticket_repository)
