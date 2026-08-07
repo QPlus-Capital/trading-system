@@ -332,6 +332,8 @@ def _allowed_finish_command(command: tuple[str, ...], ticket: TicketRepository) 
 def _record_commands(
     monkeypatch: pytest.MonkeyPatch,
     ticket: TicketRepository,
+    *,
+    executions: list[tuple[tuple[str, ...], Path | None]] | None = None,
 ) -> list[tuple[str, ...]]:
     commands: list[tuple[str, ...]] = []
 
@@ -342,6 +344,8 @@ def _record_commands(
     ) -> subprocess.CompletedProcess[str]:
         command = tuple(str(part) for part in args)
         commands.append(command)
+        if executions is not None:
+            executions.append((command, keywords.get("cwd")))
         if command == _board_read_command():
             return subprocess.CompletedProcess(
                 list(args), 0, stdout=json.dumps(_card_payload()), stderr=""
@@ -401,6 +405,25 @@ def test_finishing_a_merged_ticket_removes_worktree_branch_and_both_remote_trace
 
     assert result.removed == ("worktree", "local branch", "remote branch", "remote-tracking ref")
     assert _artifact_snapshot(ticket_repository) == (False, None, None, None)
+
+
+def test_remote_commands_run_inside_the_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    ticket_repository: TicketRepository,
+) -> None:
+    _prepare(monkeypatch, ticket_repository)
+    executions: list[tuple[tuple[str, ...], Path | None]] = []
+    _record_commands(monkeypatch, ticket_repository, executions=executions)
+
+    _finish(ticket_repository)
+
+    remote_executions = [
+        (command, cwd)
+        for command, cwd in executions
+        if command[:2] in {("git", "ls-remote"), ("git", "push")}
+    ]
+    assert remote_executions
+    assert all(cwd == ticket_repository.repository for _, cwd in remote_executions)
 
 
 def test_an_open_issue_is_refused(
