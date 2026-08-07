@@ -37,7 +37,7 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 30
     env:
       # `metatrader5` has no Linux wheel, so any `uv run` that re-resolves the environment fails
@@ -145,7 +145,7 @@ jobs:
   mutation:
     needs: quality
     if: needs.quality.outputs.needs_mutation == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -180,7 +180,7 @@ jobs:
   required-checks:
     needs: [quality, mt5-boundary, mutation]
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_LINUX_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 5
     steps:
       - name: Fail if any needed job failed or was cancelled

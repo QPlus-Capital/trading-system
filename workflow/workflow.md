@@ -543,6 +543,12 @@ keeps the global baseline honest; within a scoped run the ratchet still fails cl
 directions, but only over what it measured. Mutation remains a CI job until the development
 platform moves to macOS (issue #150).
 
+The Linux jobs in `ci.yml` read their runner from the repository variable `CI_LINUX_RUNNER` and
+fall back to the GitHub-hosted runner when it is unset or empty. A self-hosted CI runner holds no
+`.env` and holds no broker credentials, does not run as an administrator, and does not run on the
+trading machine. Set the variable only after the repository is private, because a public
+repository's self-hosted runner executes code from fork pull requests.
+
 **No gate may be weakened to make a branch pass.** Prohibited: bypass or skip flags; broad
 `# type: ignore`, `# noqa`, or `pytest.mark.skip` introduced to hide a failure; widening a per-file
 ignore to cover new code; lowering a threshold or baseline in the change that would otherwise breach
