@@ -771,15 +771,34 @@ def test_the_cli_takes_the_lock_before_the_cycle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     lock = tmp_path / "qplus-cycle-101.lock"
+    notices: list[tuple[object, ...]] = []
     lock.write_text(str(os.getpid()), encoding="utf-8")
     monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
     monkeypatch.setattr(
         orchestrate, "cycle", lambda issue, **kwargs: pytest.fail("the cycle must not start")
     )
-    monkeypatch.setattr(orchestrate, "report", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        orchestrate, "report", lambda *args, **kwargs: notices.append((*args, kwargs))
+    )
 
     assert orchestrate.main(["run", "101"]) == 1
     assert "already running" in capsys.readouterr().out
+    assert notices == [], "a refused second CLI must not stop the cycle which owns the log"
+
+
+def test_a_dry_run_failure_records_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    notices: list[tuple[object, ...]] = []
+    monkeypatch.setattr(
+        orchestrate,
+        "cycle",
+        lambda issue, **kwargs: (_ for _ in ()).throw(OrchestrationError("dry refusal")),
+    )
+    monkeypatch.setattr(
+        orchestrate, "report", lambda *args, **kwargs: notices.append((*args, kwargs))
+    )
+
+    assert orchestrate.main(["run", "101", "--dry-run"]) == 1
+    assert notices == [], "--dry-run prints failures but does not append terminal events"
 
 
 def test_cycle_heartbeat_continues_while_the_main_thread_waits(
@@ -797,6 +816,50 @@ def test_cycle_heartbeat_continues_while_the_main_thread_waits(
     assert second["pid"] == os.getpid()
     assert second["round"] == 7 and second["phase"] == "review"
     assert not record.exists(), "an orderly exit removes the liveness record"
+
+
+def test_a_heartbeat_write_failure_does_not_override_the_cycle_result(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = tmp_path / "qplus-cycle-101.json"
+    lock = tmp_path / "qplus-cycle-101.lock"
+    heartbeat_type = orchestrate._CycleHeartbeat
+    original_write = heartbeat_type._write_locked
+    calls = 0
+
+    def fail_after_entry(heartbeat: orchestrate._CycleHeartbeat) -> None:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise PermissionError("the observer file is briefly busy")
+        original_write(heartbeat)
+
+    def finish_after_failed_beat(issue: int, **kwargs: object) -> int:
+        heartbeat = kwargs["heartbeat"]
+        assert isinstance(heartbeat, heartbeat_type)
+        deadline = time.monotonic() + 1.0
+        while heartbeat._error is None and time.monotonic() < deadline:
+            time.sleep(0.001)
+        assert heartbeat._error is not None
+        heartbeat.update(phase="review")
+        assert heartbeat.phase == "review", "phase progress survives a failed observer write"
+        return 0
+
+    monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+    monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: lock)
+    monkeypatch.setattr(orchestrate, "_rounds_recorded", lambda issue: 0)
+    monkeypatch.setattr(heartbeat_type, "_write_locked", fail_after_entry)
+    monkeypatch.setattr(
+        orchestrate,
+        "_CycleHeartbeat",
+        lambda issue, round_number, phase: heartbeat_type(
+            issue, round_number, phase, interval=0.001
+        ),
+    )
+    monkeypatch.setattr(orchestrate, "cycle", finish_after_failed_beat)
+
+    assert orchestrate.main(["run", "101"]) == 0
+    assert not record.exists()
 
 
 def test_an_orderly_cli_failure_is_recorded_and_clears_liveness(
@@ -819,6 +882,28 @@ def test_an_orderly_cli_failure_is_recorded_and_clears_liveness(
 
     assert orchestrate.main(["run", "101"]) == 1
     assert notices[-1] == ("gestoppt", {"grund": "refused safely"})
+    assert not record.exists()
+
+
+def test_an_unexpected_cli_failure_is_recorded_before_liveness_is_cleared(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    record = tmp_path / "qplus-cycle-101.json"
+    log = tmp_path / "qplus-events-101.jsonl"
+    monkeypatch.setattr(orchestrate, "liveness_path", lambda issue: record)
+    monkeypatch.setattr(orchestrate, "events_path", lambda issue: log)
+    monkeypatch.setattr(orchestrate, "_lock_path", lambda issue: tmp_path / "cycle.lock")
+    monkeypatch.setattr(orchestrate, "_rounds_recorded", lambda issue: 0)
+    monkeypatch.setattr(
+        orchestrate,
+        "cycle",
+        lambda issue, **kwargs: (_ for _ in ()).throw(KeyError("unexpected failure")),
+    )
+
+    assert orchestrate.main(["run", "101"]) == 1
+    terminal = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
+    assert terminal["ereignis"] == "gestoppt"
+    assert "KeyError" in terminal["grund"] and "unexpected failure" in terminal["grund"]
     assert not record.exists()
 
 

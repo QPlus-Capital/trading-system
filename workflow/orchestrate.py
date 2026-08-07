@@ -375,22 +375,23 @@ class _CycleHeartbeat:
             try:
                 with self._lock:
                     self._write_locked()
+                    self._error = None
             except OSError as error:
                 self._error = error
-                return
+                _say(f"WARNING: the cycle heartbeat could not be written: {error}")
 
     def update(self, *, round_number: int | None = None, phase: str) -> None:
         """Publish a meaningful phase change immediately; periodic beats preserve that state."""
-        if self._error is not None:
-            raise OrchestrationError(f"the cycle heartbeat stopped: {self._error}")
         try:
             with self._lock:
                 if round_number is not None:
                     self.round_number = round_number
                 self.phase = phase
                 self._write_locked()
+                self._error = None
         except OSError as error:
-            raise OrchestrationError(f"the cycle heartbeat cannot be written: {error}") from error
+            self._error = error
+            _say(f"WARNING: the cycle heartbeat could not be written: {error}")
 
     def __enter__(self) -> _CycleHeartbeat:
         self.update(round_number=self.round_number, phase=self.phase)
@@ -400,10 +401,9 @@ class _CycleHeartbeat:
     def __exit__(self, exc_type: object, _exc: object, _traceback: object) -> None:
         self._stop.set()
         self._thread.join()
-        with contextlib.suppress(OSError):
-            self.path.unlink()
-        if exc_type is None and self._error is not None:
-            raise OrchestrationError(f"the cycle heartbeat stopped: {self._error}")
+        if exc_type is None:
+            with contextlib.suppress(OSError):
+                self.path.unlink()
 
 
 def report(
@@ -1283,27 +1283,49 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    try:
-        if args.dry_run:
+    if args.dry_run:
+        try:
             return cycle(args.issue, max_rounds=args.max_rounds, dry_run=True, resume=args.resume)
-        with _cycle_lock(args.issue), _CycleHeartbeat(
-            args.issue,
-            round_number=_rounds_recorded(args.issue) + 1,
-            phase="start",
-        ) as heartbeat:
-            return cycle(
+        except KeyboardInterrupt:
+            _say("STOPPED: interrupted")
+            return 130
+        except Exception as error:
+            _say(f"STOPPED: {error}")
+            return 1
+
+    try:
+        with _cycle_lock(args.issue):
+            heartbeat = _CycleHeartbeat(
                 args.issue,
-                max_rounds=args.max_rounds,
-                dry_run=False,
-                resume=args.resume,
-                heartbeat=heartbeat,
+                round_number=_rounds_recorded(args.issue) + 1,
+                phase="start",
             )
+            with heartbeat:
+                try:
+                    return cycle(
+                        args.issue,
+                        max_rounds=args.max_rounds,
+                        dry_run=False,
+                        resume=args.resume,
+                        heartbeat=heartbeat,
+                    )
+                except KeyboardInterrupt:
+                    report(args.issue, "gestoppt", {"grund": "durch Interrupt beendet"})
+                    _say("STOPPED: interrupted")
+                    return 130
+                except (OrchestrationError, board.BoardError) as error:
+                    report(args.issue, "gestoppt", {"grund": str(error)})
+                    _say(f"STOPPED: {error}")
+                    return 1
+                except Exception as error:
+                    reason = f"unerwarteter Fehler ({type(error).__name__}): {error}"
+                    report(args.issue, "gestoppt", {"grund": reason})
+                    _say(f"STOPPED: {reason}")
+                    return 1
     except KeyboardInterrupt:
-        report(args.issue, "gestoppt", {"grund": "durch Interrupt beendet"})
         _say("STOPPED: interrupted")
         return 130
-    except (OrchestrationError, board.BoardError) as error:
-        report(args.issue, "gestoppt", {"grund": str(error)})
+    except Exception as error:
         _say(f"STOPPED: {error}")
         return 1
 
