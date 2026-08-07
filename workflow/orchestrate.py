@@ -32,6 +32,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -69,6 +70,7 @@ _MAX_ROUNDS = 2
 _CHECKS_TIMEOUT = 25 * 60
 _MUTATION_TIMEOUT = 60 * 60
 _POLL_SECONDS = 30
+_HEARTBEAT_STALE_SECONDS = 90.0
 
 
 class OrchestrationError(RuntimeError):
@@ -335,6 +337,75 @@ def events_path(issue: int) -> Path:
     return base / f"qplus-events-{issue}.jsonl"
 
 
+def liveness_path(issue: int) -> Path:
+    """The cycle's replaceable liveness record beside its append-only event log."""
+    return events_path(issue).with_name(f"qplus-cycle-{issue}.json")
+
+
+class _CycleHeartbeat:
+    """Refresh cycle liveness independently of whichever subprocess the main thread awaits."""
+
+    def __init__(self, issue: int, round_number: int, phase: str, interval: float = 30.0) -> None:
+        self.round_number, self.phase, self.interval = round_number, phase, interval
+        self.path = liveness_path(issue)
+        self._stop, self._lock = threading.Event(), threading.Lock()
+        self._error: OSError | None = None
+        self._thread = threading.Thread(target=self._beat, daemon=True)
+
+    def _write_locked(self) -> None:
+        payload = {
+            "updated_at": time.time(),
+            "pid": os.getpid(),
+            "round": self.round_number,
+            "phase": self.phase,
+        }
+        temporary = self.path.with_name(f".{self.path.name}.{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        for attempt in range(3):
+            try:
+                os.replace(temporary, self.path)
+                return
+            except PermissionError:
+                if attempt == 2:
+                    raise
+                time.sleep(0.01)
+
+    def _beat(self) -> None:
+        while not self._stop.wait(self.interval):
+            try:
+                with self._lock:
+                    self._write_locked()
+                    self._error = None
+            except OSError as error:
+                self._error = error
+                _say(f"WARNING: the cycle heartbeat could not be written: {error}")
+
+    def update(self, *, round_number: int | None = None, phase: str) -> None:
+        """Publish a meaningful phase change immediately; periodic beats preserve that state."""
+        try:
+            with self._lock:
+                if round_number is not None:
+                    self.round_number = round_number
+                self.phase = phase
+                self._write_locked()
+                self._error = None
+        except OSError as error:
+            self._error = error
+            _say(f"WARNING: the cycle heartbeat could not be written: {error}")
+
+    def __enter__(self) -> _CycleHeartbeat:
+        self.update(round_number=self.round_number, phase=self.phase)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type: object, _exc: object, _traceback: object) -> None:
+        self._stop.set()
+        self._thread.join()
+        if exc_type is None:
+            with contextlib.suppress(OSError):
+                self.path.unlink()
+
+
 def report(
     issue: int,
     kind: str,
@@ -395,7 +466,12 @@ def _rounds_recorded(issue: int) -> int:
 
 
 def _forward_decisions(
-    issue: int, pull_request: int, head: str, *, dry_run: bool = False
+    issue: int,
+    pull_request: int,
+    head: str,
+    *,
+    after_review: str | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Deliver the certified review's operator decisions as the closing event and a comment.
 
@@ -408,19 +484,20 @@ def _forward_decisions(
     decisions = () if dry_run else review_decisions(pull_request, head)
     if not decisions:
         return
+    forwarded = "\n\n".join(decisions)
+    if after_review:
+        forwarded += f"\n\n---\n\nSeit dem Review hat der Zyklus festgestellt:\n\n{after_review}"
     report(
         issue,
         "entscheidung",
         {
             "quelle": "das Review legt diese Entscheidungen dem Operator vor",
             "blockiert_den_merge": "nein",
-            "entscheidung": "\n\n".join(decisions),
+            "entscheidung": forwarded,
         },
         dry_run=dry_run,
     )
-    comment = "\n\n---\n\n".join(
-        ["The review left these decisions to the operator:", *decisions]
-    )
+    comment = f"The review left these decisions to the operator:\n\n{forwarded}"
     try:
         _run(["gh", "issue", "comment", str(issue), "--body", comment])
     except OrchestrationError:
@@ -797,6 +874,7 @@ def cycle(
     max_rounds: int = _MAX_ROUNDS,
     dry_run: bool = False,
     resume: bool = False,
+    heartbeat: _CycleHeartbeat | None = None,
 ) -> int:
     """One issue, from a pushed branch to a verdict the operator can act on.
 
@@ -823,6 +901,10 @@ def cycle(
         _ensure_pull_request_title(issue, pull_request)
     stale_head: str | None = None
 
+    def _phase(phase: str, round_number: int | None = None) -> None:
+        if heartbeat is not None:
+            heartbeat.update(round_number=round_number, phase=phase)
+
     # Rounds are ticket-lifetime, numbered continuously from the event log: a restart with a
     # fresh budget must not renumber history — round 6's narration said "round 1 of 2" while the
     # log already carried two rounds. A plain run brings a budget of ``max_rounds`` new rounds;
@@ -841,6 +923,7 @@ def cycle(
         started. A hand-back that did not run is the cycle's failure, not the builder's.
         """
 
+        _phase("builder")
         if hand_back(issue, reason, dry_run=dry_run):
             return True
         if not dry_run:
@@ -897,7 +980,10 @@ def cycle(
                 return 1
             stale_head = blocked_head
 
+    cap_reason: str | None = None
+    post_review_evidence: str | None = None
     for round_number in range(first_round, last_round + 1):
+        post_review_evidence = None
         head = "dry-run" if dry_run else _pushed_head(branch)
         if stale_head is not None and head == stale_head:
             if not dry_run:
@@ -925,6 +1011,7 @@ def cycle(
             {"runde": round_number, "max_runden": last_round, "head": head[:12]},
             dry_run=dry_run,
         )
+        _phase("gates", round_number)
         mutation_targets: list[MutationTarget] = []
         red_checks: list[str] = []
         reviewer_exit = 0
@@ -936,6 +1023,7 @@ def cycle(
             failed = [result for result in results if result.exit_status not in (0, None)]
             if not failed:
                 mutation_targets, selection_reason = _reachable_mutation_targets(tree)
+                _phase("ci")
                 red_checks = [] if dry_run else _await_settled_checks(pull_request, head)
                 if not red_checks:
                     if not dry_run:
@@ -953,10 +1041,12 @@ def cycle(
                         },
                         dry_run=dry_run,
                     )
+                    _phase("review")
                     reviewer_exit = review(issue, tree, head, lane=lane, dry_run=dry_run)
 
         if failed:
             if round_number == last_round:
+                cap_reason = f"Gates rot: {', '.join(result.name for result in failed)}"
                 break
             reason = (
                 f"The gates failed on {len(failed)} command(s) for #{issue}; reproduce with "
@@ -974,6 +1064,7 @@ def cycle(
             continue
         if red_checks:
             if round_number == last_round:
+                cap_reason = f"CI rot: {', '.join(red_checks)}"
                 break
             report(
                 issue,
@@ -1064,9 +1155,12 @@ def cycle(
                     },
                     dry_run=dry_run,
                 )
+                _phase("mutation")
                 conclusion, reference = _mutation_evidence(branch, head, dry_run=dry_run)
+                post_review_evidence = f"Mutationsmessung: {conclusion} ({reference})"
                 if conclusion != "success":
                     if round_number == last_round:
+                        cap_reason = f"Mutationsmessung rot ({reference})"
                         break
                     if not dry_run:
                         board.move(issue, "Implementing", actor="orchestrator")
@@ -1101,6 +1195,7 @@ def cycle(
                         _say("the mutation evidence comment did not reach the pull request")
             else:
                 mutation_status = "nicht nötig, kein Ziel erreichbar"
+                post_review_evidence = f"Mutationsmessung: {mutation_status}"
             report(
                 issue,
                 "fertig",
@@ -1115,10 +1210,17 @@ def cycle(
                 dry_run=dry_run,
             )
             # The operator's decisions close the run — after "fertig", never buried under it.
-            _forward_decisions(issue, pull_request, head, dry_run=dry_run)
+            _forward_decisions(
+                issue,
+                pull_request,
+                head,
+                after_review=post_review_evidence,
+                dry_run=dry_run,
+            )
             return 0
 
         if round_number == last_round:
+            cap_reason = f"{verdict.blocking} blockierende Befunde aus dem Review"
             break
         if not dry_run:
             board.move(issue, "Implementing", actor="orchestrator")
@@ -1144,7 +1246,7 @@ def cycle(
         issue,
         "blockiert",
         {
-            "grund": f"nach {last_round} Fix-Runden nicht sauber",
+            "grund": f"{cap_reason}; Deckel nach {last_round} Fix-Runden erreicht",
             "entscheidung": (
                 "Die Schleife hat ihren Deckel erreicht; was offen ist, steht im letzten Review "
                 "auf dem Pull Request und wird als Entscheidungs-Ereignis mitgeliefert. "
@@ -1157,7 +1259,13 @@ def cycle(
         },
         dry_run=dry_run,
     )
-    _forward_decisions(issue, pull_request, head, dry_run=dry_run)
+    _forward_decisions(
+        issue,
+        pull_request,
+        head,
+        after_review=post_review_evidence,
+        dry_run=dry_run,
+    )
     return 1
 
 
@@ -1175,14 +1283,49 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    try:
-        if args.dry_run:
+    if args.dry_run:
+        try:
             return cycle(args.issue, max_rounds=args.max_rounds, dry_run=True, resume=args.resume)
+        except KeyboardInterrupt:
+            _say("STOPPED: interrupted")
+            return 130
+        except Exception as error:
+            _say(f"STOPPED: {error}")
+            return 1
+
+    try:
         with _cycle_lock(args.issue):
-            return cycle(
-                args.issue, max_rounds=args.max_rounds, dry_run=False, resume=args.resume
+            heartbeat = _CycleHeartbeat(
+                args.issue,
+                round_number=_rounds_recorded(args.issue) + 1,
+                phase="start",
             )
-    except (OrchestrationError, board.BoardError) as error:
+            with heartbeat:
+                try:
+                    return cycle(
+                        args.issue,
+                        max_rounds=args.max_rounds,
+                        dry_run=False,
+                        resume=args.resume,
+                        heartbeat=heartbeat,
+                    )
+                except KeyboardInterrupt:
+                    report(args.issue, "gestoppt", {"grund": "durch Interrupt beendet"})
+                    _say("STOPPED: interrupted")
+                    return 130
+                except (OrchestrationError, board.BoardError) as error:
+                    report(args.issue, "gestoppt", {"grund": str(error)})
+                    _say(f"STOPPED: {error}")
+                    return 1
+                except Exception as error:
+                    reason = f"unerwarteter Fehler ({type(error).__name__}): {error}"
+                    report(args.issue, "gestoppt", {"grund": reason})
+                    _say(f"STOPPED: {reason}")
+                    return 1
+    except KeyboardInterrupt:
+        _say("STOPPED: interrupted")
+        return 130
+    except Exception as error:
         _say(f"STOPPED: {error}")
         return 1
 

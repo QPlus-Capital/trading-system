@@ -272,7 +272,7 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `workflow/classify.py` | Applies the authoritative risk model and the lean/full lane boundary to changed paths |
 | `workflow/board.py` | The single writer of the project board's Status field; refuses transitions the contract omits |
 | `workflow/gates.py` | Runs exactly the gates a risk class requires and prints the pull-request evidence table |
-| `workflow/orchestrate.py` | Drives the review cycle: gates in a branch worktree, fresh reviewer, fix rounds, cap |
+| `workflow/orchestrate.py` | Drives the review cycle and records its heartbeat, gates, review, fix rounds, and exact stop reason |
 | `workflow/watch.py` | Follows one ticket read-only and prints a snapshot when its state moves; the ticket chat's narration source |
 | `workflow/finish.py` | Verifies and removes one completed ticket's worktree and branch traces |
 | `workflow/impact.py` | Recommends focused tests from static dependencies plus explicit critical edges |
