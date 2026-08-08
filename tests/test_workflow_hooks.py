@@ -15,6 +15,7 @@ from workflow.hooks import pre_bash, pre_push
 from workflow.hooks.decisions import (
     bypass_decision,
     dangerous_command_decision,
+    executable_surface,
     main_branch_decision,
     secret_decision,
 )
@@ -48,6 +49,53 @@ def test_dangerous_command_decision_blocks_unsafe_and_allows_safe(unsafe: str, s
 def test_dangerous_command_decision_allows_offline_runner_tests_and_searches() -> None:
     assert dangerous_command_decision("uv run pytest tests/test_live_runner.py -k stop").allowed
     assert dangerous_command_decision('rg "place order" docs').allowed
+
+
+@pytest.mark.parametrize(
+    ("command", "branch", "reason"),
+    [
+        (
+            "just live-ttp-execute",
+            "",
+            "Blocked: live execution, runner control, and order operations are prohibited.",
+        ),
+        (
+            "git push --force origin HEAD:main",
+            "feature/safe",
+            "Blocked: force-pushing main is prohibited.",
+        ),
+    ],
+)
+def test_dangerous_command_decision_returns_the_fixed_refusal_reason(
+    command: str, branch: str, reason: str
+) -> None:
+    decision = dangerous_command_decision(command, branch=branch)
+
+    assert not decision.allowed
+    assert decision.reason == reason
+
+
+def test_force_push_of_current_head_on_a_feature_branch_is_allowed() -> None:
+    assert dangerous_command_decision(
+        "git push origin +HEAD", branch="feature/safe"
+    ).allowed
+
+
+def test_executable_surface_preserves_flags_around_written_text_and_heredocs() -> None:
+    command = (
+        "git commit -m note --amend && cat <<'EOF'\n"
+        "just live-ttp-execute\n"
+        "EOF\n"
+        "rg status"
+    )
+
+    assert executable_surface(command) == "git commit --amend\ncat\nrg status"
+
+
+def test_executable_surface_falls_back_to_the_raw_malformed_segment() -> None:
+    malformed = "git commit 'unterminated"
+
+    assert executable_surface(malformed) == malformed
 
 
 def test_text_that_mentions_a_live_command_is_not_an_invocation() -> None:
