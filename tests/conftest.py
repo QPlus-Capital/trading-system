@@ -5,8 +5,9 @@ import importlib.util
 import os
 import re
 import subprocess
+import sys
 import tempfile
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from types import ModuleType
 from typing import Any, NoReturn
@@ -14,6 +15,8 @@ from typing import Any, NoReturn
 import pytest
 from hypothesis import settings
 from hypothesis.configuration import set_hypothesis_home_dir
+from workflow import orchestrate as workflow_orchestrate
+from workflow import watch as workflow_watch
 
 # Hypothesis caches scraped constants under `.hypothesis/` in the working directory. The example
 # database is already off (see the profile below), so nothing here is load-bearing -- it is a cache
@@ -47,9 +50,22 @@ _REMOTE_GIT_SUBCOMMANDS = frozenset({"clone", "fetch", "ls-remote", "pull", "pus
 _REAL_SUBPROCESS_RUN = subprocess.run
 _REAL_SUBPROCESS_POPEN = subprocess.Popen
 _REAL_SUBPROCESS_CHECK_OUTPUT = subprocess.check_output
+_TESTS_ROOT = Path(__file__).resolve().parent
+_SHARED_GIT_DIRECTORY = workflow_orchestrate.events_path(0).parent
+_WORKFLOW_STATE_PATTERNS = (
+    "qplus-events-*.jsonl",
+    "qplus-cycle-*.json",
+    "qplus-cycle-*.lock",
+)
+_ORIGINAL_WORKFLOW_PATH_HELPERS = (
+    workflow_orchestrate.events_path,
+    workflow_orchestrate.liveness_path,
+    workflow_orchestrate._lock_path,
+)
 
 type _CommandPart = str | bytes | os.PathLike[str] | os.PathLike[bytes]
 type _Command = _CommandPart | Sequence[_CommandPart]
+type _RuntimePathHelper = Callable[[int], Path]
 
 
 def _command_parts(command: _Command) -> tuple[str, ...]:
@@ -98,6 +114,92 @@ def assert_test_spawn_allowed() -> Callable[[_Command], None]:
     """Expose the guard predicate without starting the allowed command."""
 
     return _assert_test_spawn_allowed
+
+
+def _workflow_state_files(directory: Path) -> frozenset[Path]:
+    return frozenset(
+        path
+        for pattern in _WORKFLOW_STATE_PATTERNS
+        for path in directory.glob(pattern)
+        if path.is_file()
+    )
+
+
+def _assert_no_shared_workflow_state(directory: Path, before: frozenset[Path]) -> None:
+    leaked = sorted(_workflow_state_files(directory) - before)
+    if leaked:
+        names = ", ".join(path.name for path in leaked)
+        raise AssertionError(
+            f"test wrote workflow runtime state into shared git directory: {names}"
+        )
+
+
+@pytest.fixture
+def assert_no_shared_workflow_state() -> Callable[[Path, frozenset[Path]], None]:
+    """Expose the shared-state guard without writing into the repository's real git directory."""
+
+    return _assert_no_shared_workflow_state
+
+
+def _is_test_module(module: ModuleType) -> bool:
+    source = getattr(module, "__file__", None)
+    if not source or module.__name__ == __name__:
+        return False
+    try:
+        return Path(source).resolve().is_relative_to(_TESTS_ROOT)
+    except OSError:
+        return False
+
+
+def _patch_imported_path_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+    replacements: tuple[_RuntimePathHelper, _RuntimePathHelper, _RuntimePathHelper],
+) -> None:
+    """Redirect helper references imported into test modules during collection."""
+
+    original_and_replacement = tuple(
+        zip(_ORIGINAL_WORKFLOW_PATH_HELPERS, replacements, strict=True)
+    )
+    for module in tuple(sys.modules.values()):
+        if not isinstance(module, ModuleType) or not _is_test_module(module):
+            continue
+        for name, value in tuple(vars(module).items()):
+            for original, replacement in original_and_replacement:
+                if value is original:
+                    monkeypatch.setattr(module, name, replacement)
+                    break
+
+
+@pytest.fixture(autouse=True)
+def _isolate_workflow_runtime_state(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    assert_no_shared_workflow_state: Callable[[Path, frozenset[Path]], None],
+) -> Iterator[None]:
+    """Keep test cycle state local and fail if a route still reaches the shared git directory."""
+
+    before = _workflow_state_files(_SHARED_GIT_DIRECTORY)
+
+    def isolated_events_path(issue: int) -> Path:
+        return tmp_path / f"qplus-events-{issue}.jsonl"
+
+    def isolated_liveness_path(issue: int) -> Path:
+        return tmp_path / f"qplus-cycle-{issue}.json"
+
+    def isolated_lock_path(issue: int) -> Path:
+        return tmp_path / f"qplus-cycle-{issue}.lock"
+
+    replacements = (isolated_events_path, isolated_liveness_path, isolated_lock_path)
+    _patch_imported_path_helpers(monkeypatch, replacements)
+    monkeypatch.setattr(workflow_orchestrate, "events_path", isolated_events_path)
+    monkeypatch.setattr(workflow_orchestrate, "liveness_path", isolated_liveness_path)
+    monkeypatch.setattr(workflow_orchestrate, "_lock_path", isolated_lock_path)
+    monkeypatch.setattr(workflow_watch, "events_path", isolated_events_path)
+    monkeypatch.setattr(workflow_watch, "liveness_path", isolated_liveness_path)
+
+    yield
+
+    assert_no_shared_workflow_state(_SHARED_GIT_DIRECTORY, before)
 
 
 @pytest.fixture(autouse=True)
