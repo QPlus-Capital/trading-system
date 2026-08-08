@@ -96,6 +96,31 @@ def test_the_scoped_check_fails_in_both_directions_within_what_it_measured() -> 
     assert mutation_module._check_scoped(clean, baseline) == []
 
 
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        (
+            "research.portfolio.drawdown.x_trailing_floor__mutmut_3",
+            "research.portfolio.drawdown.x_trailing_floor__mutmut_5",
+        ),
+        (
+            "research.stages.select.x_choose_automatic_candidate__mutmut_37",
+            "research.stages.select.x_choose_automatic_candidate__mutmut_182",
+        ),
+    ],
+)
+def test_semantically_identical_mutants_share_one_baseline_classification(
+    first: str, second: str
+) -> None:
+    baseline = load_baseline()
+    survivors = {item.name: item for item in baseline.survivors}
+
+    assert first in survivors
+    assert second in survivors
+    assert survivors[first].classification == survivors[second].classification
+    assert survivors[first].reason == survivors[second].reason
+
+
 def test_policy_names_every_required_critical_scope() -> None:
     policy = load_policy()
     paths = {target.path for target in policy.targets}

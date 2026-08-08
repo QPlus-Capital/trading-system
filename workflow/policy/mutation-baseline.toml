@@ -1,12 +1,12 @@
 # Measured on Linux/Python 3.13 with Mutmut 3.5.0. Every survivor has an exact-name
 # classification; the ratchet rejects any additional survivor.
-# Run 31078168287 measured #186's affected scope. Exact request-identity assertions kill seven new
-# board.move survivors, two prior move survivors, and six read_card identity survivors; one
-# message-only move mutant remains classified.
+# Run 31263178380 measured #202's all-target affected scope. Focused hook assertions kill fourteen
+# observed survivors, fifteen reproducible kills leave the ratchet, and five exact equivalents
+# enter; the survivor set tightens from 512 to 502.
 version = 1
 tool = "mutmut"
 tool_version = "3.5.0"
-change_explanation = "Linux CI run 31078168287 measured issue #186's affected scope on the reviewed head: 1,615 mutants, 1,427 killed, 188 survived, and every unhealthy status zero. The workflow.board.move change adds twelve mutants and renumbers its outcomes: seven prior baseline survivors are now killed, while seven request-identity mutations survived. Exact GraphQL and issue-comment identity assertions kill those seven plus two measured prior survivors that null the initial issue number or status field ID. The same assertions kill six classified read_card survivors that null item_id, project_id, or field_id; only the message-only move mutant remains classified. With all other critical targets unchanged, the critical baseline tightens to 5,910 mutants, 5,398 killed, and 512 survived; the target set and policy fingerprint stay unchanged. Prior explanation: Linux CI run 31006515016 measured issue #104's affected scope: 1,382 mutants, 1,218 killed, 164 survived, and every unhealthy status zero. It exposed seventeen new behavioral survivors in deals_to_trades, four renumbered equivalents around the total-order sort, and five prior survivors that the new tests now kill. The regression assertions cover the empty-result metadata, the complete no-IN exclusion record, and exact multi-reason text; the exact survivor ratchet removes the five killed outcomes and preserves only the four measured equivalents under their current names. Prior explanation: Linux CI run 30907419212 measured the loop-hardening branch after the actor-enforcement rewrite of workflow/board.py: 5,898 mutants, 5,362 killed, 536 survived, every unhealthy status zero, score 0.9088 -> 0.9091. The rewrite of move() and load_contract() renumbered their mutants: ten previously classified board survivors leave under their old names and eleven enter under new ones — the same message- and sequencing-level classes, net one additional survivor among roughly thirty new mutants, twenty-nine of which the new actor/reason tests kill. No other target's survivor set changed; the target set and policy fingerprint stayed unchanged. Prior explanation: Linux CI run 30886775774 measured issue #177 with warnings-as-errors copied into mutant runs by mutmut 3.5.0's also_copy mechanism: 5,868 mutants, 5,333 killed, 535 survived, and every unhealthy status zero. RuntimeWarning escalation killed research.portfolio.sizing.x__daily_diagnostics__mutmut_38 and research.portfolio.sizing.x_simulate__mutmut_96; no new survivor appeared, and the target set and policy fingerprint stayed unchanged. The exact survivor ratchet tightens by two and the mutation score rises from 0.9083 to 0.9090. Prior explanation: Linux CI run 30828253242 measured issue #172 after consolidating money-string parsing: 5,858 mutants, 5,321 killed, 537 survived, and every unhealthy status zero. The removed parser expression eliminated research.portfolio.trades.x_timed_trades_from_report__mutmut_27; no new survivor appeared, and the target set and policy fingerprint stayed unchanged. Prior explanation: Linux dispatch run 30815348927 measured the workflow-board-guards and workflow-hook-decisions targets: 5,497 mutants, 4,996 killed, 501 survived; the 91 workflow survivors are classified below as measured test-strength gaps per the operator's issue #166 decision, and no previously classified survivor changed state. The branch's Linux run then measured workflow-finish-teardown: 5,866 mutants, 5,328 killed, 538 survived; the 42 finish survivors are classified below, and the round-four regression tests killed five previously classified read_card survivors, which leave the ratchet. PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
+change_explanation = "Linux CI run 31263178380 measured issue #202's all-target affected scope on the reviewed head: 5,969 mutants, 5,455 killed, 514 survived, and every unhealthy status zero. The exact ratchet reported nineteen unexplained workflow-hook survivors and seventeen baseline survivors now killed. Focused behavioral assertions catch fourteen observable survivors covering fixed refusal reasons, a safe current-HEAD force refspec on a feature branch, heredoc normalization, malformed-shell fallback, and flags following written message text. The other five observed survivors are exact default-argument or false-truth-value equivalents and are classified by name. Individual verification showed the two reported kills outside decisions.py were non-reproducible equivalents of retained survivors, so they remain classified. Removing the fifteen reproducible kills and adding only those five equivalents tightens the critical baseline to 5,969 mutants, 5,467 killed, and 502 survivors; the target set and policy fingerprint stay unchanged. Prior explanation: Linux CI run 31078168287 measured issue #186's affected scope on the reviewed head: 1,615 mutants, 1,427 killed, 188 survived, and every unhealthy status zero. The workflow.board.move change adds twelve mutants and renumbers its outcomes: seven prior baseline survivors are now killed, while seven request-identity mutations survived. Exact GraphQL and issue-comment identity assertions kill those seven plus two measured prior survivors that null the initial issue number or status field ID. The same assertions kill six classified read_card survivors that null item_id, project_id, or field_id; only the message-only move mutant remains classified. With all other critical targets unchanged, the critical baseline tightens to 5,910 mutants, 5,398 killed, and 512 survived; the target set and policy fingerprint stay unchanged. Prior explanation: Linux CI run 31006515016 measured issue #104's affected scope: 1,382 mutants, 1,218 killed, 164 survived, and every unhealthy status zero. It exposed seventeen new behavioral survivors in deals_to_trades, four renumbered equivalents around the total-order sort, and five prior survivors that the new tests now kill. The regression assertions cover the empty-result metadata, the complete no-IN exclusion record, and exact multi-reason text; the exact survivor ratchet removes the five killed outcomes and preserves only the four measured equivalents under their current names. Prior explanation: Linux CI run 30907419212 measured the loop-hardening branch after the actor-enforcement rewrite of workflow/board.py: 5,898 mutants, 5,362 killed, 536 survived, every unhealthy status zero, score 0.9088 -> 0.9091. The rewrite of move() and load_contract() renumbered their mutants: ten previously classified board survivors leave under their old names and eleven enter under new ones — the same message- and sequencing-level classes, net one additional survivor among roughly thirty new mutants, twenty-nine of which the new actor/reason tests kill. No other target's survivor set changed; the target set and policy fingerprint stayed unchanged. Prior explanation: Linux CI run 30886775774 measured issue #177 with warnings-as-errors copied into mutant runs by mutmut 3.5.0's also_copy mechanism: 5,868 mutants, 5,333 killed, 535 survived, and every unhealthy status zero. RuntimeWarning escalation killed research.portfolio.sizing.x__daily_diagnostics__mutmut_38 and research.portfolio.sizing.x_simulate__mutmut_96; no new survivor appeared, and the target set and policy fingerprint stayed unchanged. The exact survivor ratchet tightens by two and the mutation score rises from 0.9083 to 0.9090. Prior explanation: Linux CI run 30828253242 measured issue #172 after consolidating money-string parsing: 5,858 mutants, 5,321 killed, 537 survived, and every unhealthy status zero. The removed parser expression eliminated research.portfolio.trades.x_timed_trades_from_report__mutmut_27; no new survivor appeared, and the target set and policy fingerprint stayed unchanged. Prior explanation: Linux dispatch run 30815348927 measured the workflow-board-guards and workflow-hook-decisions targets: 5,497 mutants, 4,996 killed, 501 survived; the 91 workflow survivors are classified below as measured test-strength gaps per the operator's issue #166 decision, and no previously classified survivor changed state. The branch's Linux run then measured workflow-finish-teardown: 5,866 mutants, 5,328 killed, 538 survived; the 42 finish survivors are classified below, and the round-four regression tests killed five previously classified read_card survivors, which leave the ratchet. PR #123 post-merge regeneration covers the merged tree for issues #103 and #121. Linux Critical mutation run 30452526580 measured 5,171 mutants: 4,761 killed and 410 survived, with every unhealthy status zero. Against #103/#105's predecessor baseline (5,113 total, 4,704 killed, 409 survived), the three #121 targets add 58 mutants, 57 killed, and the one already-classified Notifier trampoline-equivalent survivor. Against #121's predecessor baseline (4,704 total, 4,293 killed, 411 survived), the merged #103 live-runner-fail-closed target and ordering guard add 467 mutants and 468 kills while killing live.risk_control.x\u01c1RiskController\u01c1must_flatten__mutmut_3, so the exact survivor set tightens by one to 410. No survivor classification, test, target, threshold, comparison rule, production guard, risk limit, or valid live behavior was weakened."
 targets = [
     "workflow-finish-teardown",
     "workflow-board-guards",
@@ -42,9 +42,9 @@ targets = [
 policy_fingerprint = "fb5cdad3a56f2a87b989846a0ecfe4b1244f2e751977578e9f790633365c009f" # pragma: allowlist secret
 
 [summary]
-total = 5910
-killed = 5398
-survived = 512
+total = 5969
+killed = 5467
+survived = 502
 no_tests = 0
 skipped = 0
 suspicious = 0
@@ -833,33 +833,29 @@ names = [
 ]
 
 [[survivor_groups]]
-classification = "meaningful"
-reason = "Message-text and ordering mutations; the block/allow outcomes for live commands, runner control, order actions and forced main pushes are pinned. Retained as measured gaps."
+classification = "equivalent"
+reason = "Changing the omitted branch default from the empty string to another non-main string cannot alter branch targeting. Initializing the forced-main accumulator to None instead of False preserves its truth value before a match and produces the same bool after one."
 names = [
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_15",
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_16",
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_17",
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_18",
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_19",
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_20",
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_21",
-    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_22",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_1",
+    "workflow.hooks.decisions.x_dangerous_command_decision__mutmut_4",
 ]
 
 [[survivor_groups]]
 classification = "meaningful"
 reason = "Surface-narrowing mutations on flag bookkeeping the regression tests do not separate; the two load-bearing directions (text is not an invocation, a real invocation still refuses) are pinned by tests and their mutants are killed. Retained as measured gaps."
 names = [
-    "workflow.hooks.decisions.x_executable_surface__mutmut_10",
     "workflow.hooks.decisions.x_executable_surface__mutmut_15",
-    "workflow.hooks.decisions.x_executable_surface__mutmut_18",
-    "workflow.hooks.decisions.x_executable_surface__mutmut_19",
     "workflow.hooks.decisions.x_executable_surface__mutmut_24",
-    "workflow.hooks.decisions.x_executable_surface__mutmut_26",
-    "workflow.hooks.decisions.x_executable_surface__mutmut_27",
-    "workflow.hooks.decisions.x_executable_surface__mutmut_28",
-    "workflow.hooks.decisions.x_executable_surface__mutmut_37",
     "workflow.hooks.decisions.x_executable_surface__mutmut_6",
+]
+
+[[survivor_groups]]
+classification = "equivalent"
+reason = "Omitting posix=True from shlex.split keeps its True default. None has the same false truth value as False when initializing and clearing skip_next, so token retention, output, and exceptions are unchanged."
+names = [
+    "workflow.hooks.decisions.x_executable_surface__mutmut_20",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_29",
+    "workflow.hooks.decisions.x_executable_surface__mutmut_31",
 ]
 
 [[survivor_groups]]
