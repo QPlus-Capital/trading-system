@@ -800,12 +800,17 @@ def test_a_small_repeat_round_is_scoped_to_focused_tests(
 
     head = "feedc0ffee0123456789"  # pragma: allowlist secret
     orchestrate.review(
-        196, Path("some-worktree"), head, lane="lean", fix_base="abc1234def567890", fix_lines=3
+        196,
+        Path("some-worktree"),
+        head,
+        lane="lean",
+        fix_base="abc1234def567890",  # pragma: allowlist secret
+        fix_lines=3,
     )
 
     (argv,) = captured
     prompt = argv[2]
-    assert "repeat round" in prompt and "abc1234def56" in prompt, (
+    assert "repeat round" in prompt and "abc1234def56" in prompt, (  # pragma: allowlist secret
         "the reviewer is told which diff its round is scoped to"
     )
     assert "do not rerun the whole test suite" in prompt, (
@@ -815,7 +820,12 @@ def test_a_small_repeat_round_is_scoped_to_focused_tests(
 
     captured.clear()
     orchestrate.review(
-        196, Path("some-worktree"), head, lane="lean", fix_base="abc1234def567890", fix_lines=120
+        196,
+        Path("some-worktree"),
+        head,
+        lane="lean",
+        fix_base="abc1234def567890",  # pragma: allowlist secret
+        fix_lines=120,
     )
     (argv,) = captured
     assert "repeat round" in argv[2] and "do not rerun the whole test suite" not in argv[2], (
