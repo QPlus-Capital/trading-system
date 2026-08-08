@@ -302,7 +302,11 @@ full_paths = [
 blocking_severities = ["blocker", "defect"]
 # Severities collected and presented to the operator instead.
 advisory_severities = ["suspected-defect", "note"]
-max_fix_rounds = 2
+# Measured over five tickets: with a cap of 2, 85% of a ticket's wall-clock time was the loop
+# standing still at the cap waiting for the operator's "one more round" — #198 worked for three
+# machine-hours spread over twenty calendar-hours. Five rounds let an ordinary fix converge
+# unattended; the cap still exists so a ticket that is not converging stops burning rounds alone.
+max_fix_rounds = 5
 # After a fix, the full gate suite always reruns; the review rewalks the fix diff and the modules it
 # touches. A complete fresh review is required only under these conditions.
 full_rereview_when = ["touches-files-outside-original-diff", "R3-on-live-path"]

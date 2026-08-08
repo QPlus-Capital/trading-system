@@ -25,6 +25,14 @@ that cycle is still running and resumes on your push; a second one would race it
 **You never review your own work** and you never merge or enable auto-merge. The independent review
 is triggered automatically once the pull request is open.
 
+Two rules bind every fix round — each has cost a full round when violated:
+
+- **No push without green gates.** `just gates` in your worktree, green, before every push — a fix
+  round included, a formatting commit included.
+- **A hand-back that names a chosen option is built exactly as chosen** — not an equivalent, not an
+  improvement on it. If you are convinced the chosen direction is wrong, do not build a different
+  one: hand the card back with the reason and stop.
+
 ## This repository trades real money
 
 A defect is a loss. These override everything else:
