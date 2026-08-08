@@ -281,6 +281,9 @@ One line per file. If a docstring and this table disagree, one of them is a bug.
 | `workflow/operator_copy.py` | Resolves the dashboard operator-copy surface shared by copy review and the source-language ratchet |
 | `workflow/hooks/decisions.py` | Pure block/allow policy for Claude Code Bash boundaries |
 | `workflow/hooks/pre_bash.py` | Collects Git metadata and emits Claude Code hook responses |
+| `workflow/hooks/pre_push.py` | Classifies Git ref updates and refuses unsafe updates to `main` |
+| `workflow/hooks/install.py` | Installs the tracked hook path in repository-wide Git config |
+| `workflow/git-hooks/pre-push` | Git entry point that binds the push policy for every actor |
 
 The rules these tools enforce, the risk classes, and the gates each class requires are stated in
 `workflow/workflow.md` and carried machine-readably in `workflow/workflow.toml`.

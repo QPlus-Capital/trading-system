@@ -366,3 +366,23 @@ def test_every_workflow_subprocess_decode_names_utf8() -> None:
         "these subprocess calls decode with the platform codec; on Windows one typographic "
         f"quote returns empty text with returncode 0: {offenders}"
     )
+
+
+def test_the_document_states_what_protects_main_and_what_does_not() -> None:
+    document = _text(_WORKFLOW).lower()
+    match = re.search(
+        r"^### main branch protection\s+(?P<section>.*?)(?=^### |^## )",
+        document,
+        flags=re.MULTILINE | re.DOTALL,
+    )
+    assert match is not None, "the main-branch protection section is missing"
+    section = " ".join(match.group("section").split())
+
+    assert "enforces all four rules only while this is a public repository" in section
+    assert "does not enforce them while this is a private repository" in section
+    assert "resumes enforcing all four rules when the repository is public again" in section
+    assert "git push --no-verify` can skip it" in section
+    assert "squash-only merging and no merge while `required-checks` is red" in section
+    assert "have no local equivalent" in section
+    assert "a checkout on a revision that predates the tracked hook is not protected" in section
+    assert "rerunning `just install-hooks` cannot add content absent from that revision" in section

@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
-from workflow.classify import Classification
-from workflow.hooks import pre_bash
+from workflow.classify import Classification, load_model
+from workflow.hooks import pre_bash, pre_push
 from workflow.hooks.decisions import (
     bypass_decision,
     dangerous_command_decision,
@@ -171,9 +174,7 @@ def test_evaluate_classifies_the_paths_the_commit_actually_carries(
 
 
 def test_evaluate_blocks_an_r3_commit_that_targets_main(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        pre_bash, "_staged_paths", lambda root: ["workflow/hooks/pre_bash.py"]
-    )
+    monkeypatch.setattr(pre_bash, "_staged_paths", lambda root: ["workflow/hooks/pre_bash.py"])
     monkeypatch.setattr(pre_bash, "changed_paths", lambda base, root: [])
     monkeypatch.setattr(pre_bash, "_staged_diff", lambda root: "+safe = True\n")
     monkeypatch.setattr(pre_bash, "_branch_diff", lambda base, root: "")
@@ -205,3 +206,142 @@ def test_hook_main_fails_closed_on_malformed_bash_payload_without_echoing_it(
     output = capsys.readouterr().out
     assert json.loads(output)["hookSpecificOutput"]["permissionDecision"] == "deny"
     assert synthetic_fake_secret not in output
+
+
+def _git(root: Path, *args: str) -> str:
+    result = subprocess.run(
+        ["git", *args],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    )
+    return result.stdout.strip()
+
+
+def _commit(root: Path, relative: str, content: str) -> str:
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    _git(root, "add", relative)
+    _git(
+        root,
+        "-c",
+        "user.name=Test Operator",
+        "-c",
+        "user.email=test@example.invalid",
+        "commit",
+        "-m",
+        f"test: change {relative}",
+    )
+    return _git(root, "rev-parse", "HEAD")
+
+
+def _repository(tmp_path: Path) -> tuple[Path, str]:
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-b", "main")
+    return root, _commit(root, "README.md", "base\n")
+
+
+def test_the_push_hook_refuses_deleting_or_rewriting_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, base = _repository(tmp_path)
+    remote = _commit(root, "README.md", "remote\n")
+    _git(root, "switch", "-c", "side", base)
+    local = _commit(root, "README.md", "side\n")
+
+    monkeypatch.setattr(
+        sys, "stdin", io.StringIO(f"(delete) {'0' * 40} refs/heads/main {remote}\n")
+    )
+    deletion_status = pre_push.main(root=root)
+    rewrite = pre_push.evaluate_update(local, remote, "refs/heads/main", root=root)
+    unverifiable = pre_push.evaluate_update(local, "f" * 40, "refs/heads/main", root=root)
+
+    assert deletion_status == 1
+    assert not rewrite.allowed
+    assert not unverifiable.allowed
+
+    for malformed in ("garbage\n", "a b c\n", "a b c d e\n"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO(malformed))
+        assert pre_push.main(root=root) == 1
+
+
+def test_the_push_hook_lets_only_an_r0_change_reach_main_directly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, base = _repository(tmp_path)
+    r0 = _commit(root, "notes.md", "documentation only\n")
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {r0} refs/heads/main {base}\n"))
+    assert pre_push.main(root=root) == 0
+
+    model = load_model()
+    monkeypatch.setattr(pre_push, "load_model", lambda: replace(model, default_min_class="R1"))
+    r1 = _commit(root, "local_tool.py", "LOCAL_VALUE = 1\n")
+    decision = pre_push.evaluate_update(r1, r0, "refs/heads/main", root=root)
+    assert not decision.allowed
+    assert "R1" in decision.reason
+
+    r2 = _commit(root, "tests/test_guard.py", "def test_guard():\n    assert True\n")
+    decision = pre_push.evaluate_update(r2, r1, "refs/heads/main", root=root)
+    assert not decision.allowed
+    assert "R2" in decision.reason
+
+    r3 = _commit(root, "workflow/gates.py", "governance code\n")
+    decision = pre_push.evaluate_update(r3, r2, "refs/heads/main", root=root)
+    assert not decision.allowed
+    assert "R3" in decision.reason
+
+
+def test_the_force_push_guard_matches_the_refspec_and_the_implicit_branch() -> None:
+    assert not dangerous_command_decision("git push origin +main").allowed
+    assert not dangerous_command_decision("git push --force", branch="main").allowed
+    assert not dangerous_command_decision("git push -f \\" + "\norigin main").allowed
+    assert not dangerous_command_decision("git push -f \\" + "\r\norigin main").allowed
+    for refspec in ("+HEAD", "+@", "+HEAD:HEAD"):
+        assert not dangerous_command_decision(
+            f"git push origin {refspec}", branch="main"
+        ).allowed
+    assert not dangerous_command_decision(
+        "git push origin +main && git push origin +feature/safe"
+    ).allowed
+    assert dangerous_command_decision(
+        "git push origin +feature/safe", branch="feature/safe"
+    ).allowed
+    for ordinary_command in (
+        "chmod +x workflow/git-hooks/pre-push && git push origin main",
+        "git commit -m test && git push origin main && echo +1",
+        "echo +1 && git push origin main",
+    ):
+        assert dangerous_command_decision(ordinary_command).allowed
+
+
+@pytest.mark.parametrize(
+    ("command", "branch"),
+    [
+        ("git push origin '+refs/heads/*:refs/heads/*' main", "feature/safe"),
+        ("git push origin +feature refs/heads/main", "feature/safe"),
+        ("git push origin +refs/remotes/origin/main", "feature/safe"),
+        ("git push origin +feature/safe", "main"),
+        ("git push origin +HEAD:feature/safe", "main"),
+        ("git push origin +feature", "MAIN"),
+    ],
+)
+def test_force_push_refspec_is_refused_when_it_names_or_stands_on_main(
+    command: str, branch: str
+) -> None:
+    assert not dangerous_command_decision(command, branch=branch).allowed
+
+
+def test_heredoc_line_continuation_cannot_hide_a_force_push_to_main() -> None:
+    heredoc_before_force_push = (
+        "cat <<'EOF' > a.md\n"
+        "trailing\\\n"
+        "EOF\n"
+        "git push -f origin main\n"
+        "echo ok\n"
+        "EOF"
+    )
+    assert not dangerous_command_decision(heredoc_before_force_push).allowed

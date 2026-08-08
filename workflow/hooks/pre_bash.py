@@ -106,6 +106,7 @@ def evaluate(command: str, *, base: str = "origin/main", root: Path = REPO_ROOT)
     branch = _git(["branch", "--show-current"], root=root)
 
     checks = [
+        dangerous_command_decision(command, branch),
         secret_decision(staged_diff) if committing else Decision(True),
         main_branch_decision(command, branch, classification.risk_class),
         bypass_decision(command, diff),
