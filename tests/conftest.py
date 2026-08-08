@@ -140,7 +140,8 @@ def _assert_no_shared_workflow_state(directory: Path, before: frozenset[Path]) -
     if leaked:
         names = ", ".join(path.name for path in leaked)
         raise AssertionError(
-            f"test wrote workflow runtime state into shared git directory: {names}"
+            "workflow runtime state appeared in the shared git directory "
+            f"during this test: {names}"
         )
 
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -86,9 +85,13 @@ def test_a_new_shared_runtime_file_is_reported_and_not_deleted(
     leaked = tmp_path / filename
     leaked.touch()
 
-    with pytest.raises(AssertionError, match=re.escape(filename)):
+    with pytest.raises(AssertionError) as exc_info:
         assert_no_shared_workflow_state(tmp_path, before)
 
+    assert str(exc_info.value) == (
+        "workflow runtime state appeared in the shared git directory "
+        f"during this test: {filename}"
+    )
     assert leaked.exists(), "the guard reports operator state but never removes it"
 
 
