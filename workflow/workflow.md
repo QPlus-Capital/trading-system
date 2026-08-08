@@ -391,16 +391,39 @@ none survives, the number of counterexamples attempted is recorded.
 otherwise the board would report building while a review runs. Claude never edits the branch; if it
 did, it would afterwards be reviewing its own code.
 
+Two rules bind the fix round, because violating each has cost a full round:
+
+- **No push without green gates.** `just gates` in the ticket worktree, green, before every push —
+  a fix round included, a formatting commit included. A pushed commit that fails the gates burns
+  the round before the review even starts, on a red the builder would have seen locally in
+  minutes.
+- **A hand-back that names a chosen option is built exactly as chosen.** When the operator has
+  decided between options, the fix implements the decided option — not an equivalent, not an
+  improvement on it. Three consecutive rounds on one ticket built a plausible alternative to the
+  operator's stated direction, and each cost a full round. A builder convinced the chosen
+  direction is wrong does not build a different one: the card goes back with the reason, and the
+  operator decides again.
+
 **Repeat scope after a fix.** The deterministic gate suite always runs in full. **The review
 re-runs on the fix diff and the modules it touches, nothing more.** A complete fresh review runs
 only when the fix touches files outside the original diff, or at R3 on the live path. This binds
 the reviewer, not just the orchestrator: a repeat round that re-walks the whole change is the
-single largest time sink the previous process had.
+single largest time sink the previous process had. **The lane is measured the same way:** a repeat
+round's lean-or-full decision comes from the fix diff, never from the accumulated branch — a
+branch measurement only grows, and it once held a three-line fix at full strength for sixty-seven
+minutes because the branch had crossed the size bound rounds earlier. **A repeat round below
+fifty changed lines proves itself with the focused tests for the touched modules**, not a
+full-suite rerun: the gates have just run the full suite on the identical tree, and re-running it
+as review evidence measures nothing new.
 
-**Cap.** After two fix rounds without a clean result, the card moves to `Blocked` and the operator
+**Cap.** After five fix rounds without a clean result, the card moves to `Blocked` and the operator
 is notified with what remains — including, verbatim, every decision the last review left them. A
 finding that needs an operator decision moves the card to `Blocked` immediately, regardless of the
-round count.
+round count. The cap was two; measured over five tickets, that spent 85% of a ticket's wall-clock
+time standing still at the cap waiting for the operator's "one more round", one round at a time.
+Five lets an ordinary fix converge unattended; the cap still exists so a ticket that is not
+converging stops burning rounds alone. The number lives in `workflow.toml` and the orchestrator
+reads it from there.
 
 **The operator can grant exactly one more round** — a sentence in the ticket's chat, or:
 
@@ -408,12 +431,12 @@ round count.
 uv run python -m workflow.orchestrate run <issue> --resume
 ```
 
-The round counter continues from the ticket's event log: two consumed rounds resume as round 3
-**of 3**, never as a fresh 1 of 2 — restarting must extend the cap by one, not reset it. The
+The round counter continues from the ticket's event log: five consumed rounds resume as round 6
+**of 6**, never as a fresh 1 of 5 — restarting must extend the cap by one, not reset it. The
 resumed run begins with the hand-back the cap suppressed, so the builder gets the red evidence
 before anything is re-reviewed; if the extra round is not clean either, the card blocks again and
 the operator decides again. A plain restart continues the numbering too — it brings a fresh
-budget of two rounds (round 3 of 4 after two recorded), so the narration and the log can never
+budget of five rounds (round 6 of 10 after five recorded), so the narration and the log can never
 disagree about how many rounds a ticket has consumed.
 
 `Blocked` therefore has exactly three ways on, and each starts with the operator's decision: one

@@ -101,9 +101,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(orchestrate, "_ensure_pull_request_title", lambda issue, pr: None)
     # The fake head advances after every hand-back, as a builder that actually pushed would
     # advance it; the no-push test overrides this with a constant.
-    monkeypatch.setattr(
-        orchestrate, "_pushed_head", lambda branch: f"head-{len(log['handbacks'])}"
-    )
+    monkeypatch.setattr(orchestrate, "_pushed_head", lambda branch: f"head-{len(log['handbacks'])}")
 
     def settled_checks(pull_request: int, head: str) -> list[str]:
         log["sequence"].append("checks")
@@ -120,7 +118,11 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(orchestrate, "_await_settled_checks", settled_checks)
     monkeypatch.setattr(orchestrate, "_reachable_mutation_targets", reachable_targets)
     monkeypatch.setattr(orchestrate, "_mutation_evidence", mutation_evidence)
-    monkeypatch.setattr(orchestrate, "_review_lane", lambda tree: str(state.get("lane", "lean")))
+    monkeypatch.setattr(
+        orchestrate,
+        "_review_scope",
+        lambda tree, fix_base=None, risk_class="": (str(state.get("lane", "lean")), fix_base, 3),
+    )
 
     def review(
         issue: int,
@@ -128,12 +130,15 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         head: str,
         *,
         lane: str = "lean",
+        fix_base: str | None = None,
+        fix_lines: int = 0,
         dry_run: bool = False,
     ) -> int:
         log["reviews"] += 1
         log["sequence"].append("review")
         log.setdefault("review_trees", []).append(worktree)
         log.setdefault("lanes", []).append(lane)
+        log.setdefault("scope_bases", []).append(fix_base)
         return int(state.get("reviewer_exit", 0))
 
     def hand_back(issue: int, reason: str, *, dry_run: bool = False) -> bool:
@@ -602,11 +607,15 @@ def test_rounds_recorded_reads_the_event_log(
 
     assert orchestrate._rounds_recorded(101) == 0, "no log means no rounds consumed"
     log.write_text(
-        json.dumps({"ereignis": "runde", "runde": 1}) + "\n"
-        + json.dumps({"ereignis": "urteil", "runde": 1}) + "\n"
-        + json.dumps({"ereignis": "runde", "runde": 2}) + "\n"
+        json.dumps({"ereignis": "runde", "runde": 1})
+        + "\n"
+        + json.dumps({"ereignis": "urteil", "runde": 1})
+        + "\n"
+        + json.dumps({"ereignis": "runde", "runde": 2})
+        + "\n"
         + "not json\n"
-        + json.dumps({"ereignis": "runde", "runde": 1}) + "\n",
+        + json.dumps({"ereignis": "runde", "runde": 1})
+        + "\n",
         encoding="utf-8",
     )
     assert orchestrate._rounds_recorded(101) == 2, (
@@ -688,15 +697,130 @@ def test_the_review_lane_is_computed_from_the_carve_out_and_the_diff_size(
     monkeypatch.setattr(
         orchestrate, "changed_paths", lambda base, root=None: ["live/risk_control.py"]
     )
-    assert orchestrate._review_lane(Path("tree")) == "full", "the carve-out always reviews full"
+    assert orchestrate._review_scope(Path("tree"))[0] == "full", "the carve-out always reviews full"
 
     monkeypatch.setattr(orchestrate, "changed_paths", lambda base, root=None: ["tests/test_x.py"])
-    assert orchestrate._review_lane(Path("tree")) == "full", "296+45 crosses the size bound"
+    assert orchestrate._review_scope(Path("tree"))[0] == "full", "296+45 crosses the size bound"
 
     monkeypatch.setattr(
         orchestrate, "_run", lambda args, **kwargs: " 1 file changed, 9 insertions(+)"
     )
-    assert orchestrate._review_lane(Path("tree")) == "lean"
+    assert orchestrate._review_scope(Path("tree"))[0] == "lean"
+
+
+def test_a_repeat_round_measures_the_fix_diff_not_the_branch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round 5 of #196 reviewed a three-line fix at full strength for sixty-seven minutes because
+    the branch as a whole had crossed the size bound rounds earlier and could never come back."""
+
+    def shortstat(args: Sequence[str], **kwargs: Any) -> str:
+        base = str(args[3])
+        if base.startswith("prev-head"):
+            return " 1 file changed, 3 insertions(+)"
+        return " 5 files changed, 400 insertions(+), 20 deletions(-)"
+
+    monkeypatch.setattr(orchestrate, "_run", shortstat)
+    monkeypatch.setattr(
+        orchestrate,
+        "changed_paths",
+        lambda base, root=None: (
+            ["workflow/orchestrate.py", "tests/test_workflow_orchestrate.py"]
+            if base == "origin/main"
+            else ["tests/test_workflow_orchestrate.py"]
+        ),
+    )
+    lane, base, lines = orchestrate._review_scope(Path("tree"), fix_base="prev-head")
+    assert (lane, base, lines) == ("lean", "prev-head", 3), (
+        "a three-line fix inside the branch diff is measured as a three-line fix"
+    )
+
+    # A fix reaching outside the branch's own diff forfeits the narrow measurement.
+    monkeypatch.setattr(
+        orchestrate,
+        "changed_paths",
+        lambda base, root=None: (
+            ["workflow/orchestrate.py"] if base == "origin/main" else ["workflow/elsewhere.py"]
+        ),
+    )
+    lane, base, _ = orchestrate._review_scope(Path("tree"), fix_base="prev-head")
+    assert base is None and lane == "full", (
+        "a fix outside the original diff is a complete fresh review of the branch"
+    )
+
+    # R3 on the live path always re-reviews the whole branch, whatever the fix touched.
+    monkeypatch.setattr(orchestrate, "changed_paths", lambda base, root=None: ["live/runner.py"])
+    lane, base, _ = orchestrate._review_scope(Path("tree"), fix_base="prev-head", risk_class="R3")
+    assert base is None and lane == "full"
+
+
+def test_a_round_after_a_hand_back_is_scoped_to_the_fix_diff(harness: dict[str, Any]) -> None:
+    """The head the previous round reviewed becomes the next round's fix-diff base; the first
+    round has none and measures the whole branch."""
+
+    harness["state"]["verdicts"] = [
+        Verdict(blocking=1, advisory=0),
+        Verdict(blocking=0, advisory=0),
+    ]
+
+    assert orchestrate.cycle(101, max_rounds=2) == 0
+    assert harness["scope_bases"] == [None, "head-0"], (
+        "round one measures the branch; round two measures from the handed-back head"
+    )
+
+
+def test_the_round_cap_is_read_from_the_contract() -> None:
+    """The contract names itself the single source of the loop's cap; a literal in the
+    orchestrator drifted the day the operator changed the number."""
+
+    import tomllib
+
+    spec = tomllib.loads(
+        (Path(__file__).resolve().parents[1] / "workflow" / "workflow.toml").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert orchestrate._MAX_ROUNDS == spec["review"]["loop"]["max_fix_rounds"] == 5
+
+
+def test_a_small_repeat_round_is_scoped_to_focused_tests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A repeat round names its fix diff and, below the small-fix bound, forbids a full-suite
+    rerun — the gates ran the identical tree moments earlier."""
+
+    captured: list[list[str]] = []
+
+    def fake_run(argv: Sequence[str], **kwargs: Any) -> SimpleNamespace:
+        captured.append(list(argv))
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("workflow.orchestrate.subprocess.run", fake_run)
+    monkeypatch.setattr(orchestrate, "_executable", lambda name: name)
+
+    head = "feedc0ffee0123456789"  # pragma: allowlist secret
+    orchestrate.review(
+        196, Path("some-worktree"), head, lane="lean", fix_base="abc1234def567890", fix_lines=3
+    )
+
+    (argv,) = captured
+    prompt = argv[2]
+    assert "repeat round" in prompt and "abc1234def56" in prompt, (
+        "the reviewer is told which diff its round is scoped to"
+    )
+    assert "do not rerun the whole test suite" in prompt, (
+        "a three-line fix is proven by focused tests, not a full-suite rerun"
+    )
+    assert "workflow.impact" in prompt, "the focused selection is named, not left to guesswork"
+
+    captured.clear()
+    orchestrate.review(
+        196, Path("some-worktree"), head, lane="lean", fix_base="abc1234def567890", fix_lines=120
+    )
+    (argv,) = captured
+    assert "repeat round" in argv[2] and "do not rerun the whole test suite" not in argv[2], (
+        "a larger fix keeps the scope but not the focused-tests restriction"
+    )
 
 
 def test_a_reviewer_that_died_empty_is_named_not_guessed_at(harness: dict[str, Any]) -> None:
@@ -727,14 +851,14 @@ def test_a_crashed_reviewer_reports_its_exit_code(harness: dict[str, Any]) -> No
 
 def test_a_plain_restart_continues_the_numbering(harness: dict[str, Any]) -> None:
     """The narration must agree with the log: after two recorded rounds a plain restart runs
-    round 3 with a fresh budget of two, never a renumbered "round 1 of 2"."""
+    round 3 with a fresh full budget, never a renumbered "round 1"."""
 
     harness["state"]["rounds_recorded"] = 2
     harness["state"]["verdicts"] = [Verdict(blocking=0, advisory=0)]
 
     assert orchestrate.cycle(101) == 0
     runde = next(facts for kind, facts in harness["notices"] if kind == "runde")
-    assert runde["runde"] == 3 and runde["max_runden"] == 4
+    assert runde["runde"] == 3 and runde["max_runden"] == 2 + orchestrate._MAX_ROUNDS
 
 
 def test_the_hand_back_prompt_forbids_a_second_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1090,9 +1214,7 @@ def test_a_correct_title_is_left_alone(monkeypatch: pytest.MonkeyPatch) -> None:
     assert not any("edit" in call for call in calls), "no write when the contract already holds"
 
 
-def test_an_event_is_recorded_never_pushed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_an_event_is_recorded_never_pushed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The cycle records; the ticket's chat pulls. Spawning a narrator on the chat's session was
     tried and failed twice — the open window never showed the message. The payload still carries
     round, head and counts, because three context-free status lines on #177 read as
@@ -1106,9 +1228,7 @@ def test_an_event_is_recorded_never_pushed(
     )
 
     head = "a3c889f00123"  # pragma: allowlist secret
-    orchestrate.report(
-        177, "urteil", {"runde": 2, "blockierend": 0, "beratend": 3, "head": head}
-    )
+    orchestrate.report(177, "urteil", {"runde": 2, "blockierend": 0, "beratend": 3, "head": head})
     orchestrate.report(177, "fertig", {"runde": 2}, dry_run=True)
 
     lines = [line for line in log.read_text(encoding="utf-8").splitlines() if line]
@@ -1221,11 +1341,6 @@ def test_run_decodes_agent_output_as_utf8_on_any_platform() -> None:
     returncode 0 -- the cycle then read a posted, well-formed verdict as "no verdict at all"
     (#186)."""
 
-    script = (
-        "import sys; "
-        "sys.stdout.buffer.write('„Karte“ ist grün — ok'.encode('utf-8'))"
-    )
+    script = "import sys; sys.stdout.buffer.write('„Karte“ ist grün — ok'.encode('utf-8'))"
     out = orchestrate._run([sys.executable, "-c", script])
-    assert "„" in out and "—" in out, (
-        "UTF-8 agent output must survive the decode on every platform"
-    )
+    assert "„" in out and "—" in out, "UTF-8 agent output must survive the decode on every platform"

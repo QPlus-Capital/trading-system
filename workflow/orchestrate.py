@@ -17,7 +17,7 @@ would make the loop's exit condition a matter of phrasing.
 CLI::
 
     uv run python -m workflow.orchestrate run 101
-    uv run python -m workflow.orchestrate run 101 --max-rounds 2 --dry-run
+    uv run python -m workflow.orchestrate run 101 --max-rounds 5 --dry-run
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ import sys
 import tempfile
 import threading
 import time
+import tomllib
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -62,7 +63,26 @@ DECISION = re.compile(
     re.DOTALL,
 )
 
-_MAX_ROUNDS = 2
+
+def _contract_max_rounds() -> int:
+    """The fix-round cap, read from the contract instead of duplicated here.
+
+    ``workflow.toml`` names itself the single machine-readable source of "the review loop's
+    blocking severities and cap" — yet this module carried its own literal ``2``. One number,
+    one place; the two would have drifted the day the operator changed the cap.
+    """
+
+    spec = tomllib.loads(board.CONTRACT_PATH.read_text(encoding="utf-8"))
+    return int(spec["review"]["loop"]["max_fix_rounds"])
+
+
+_MAX_ROUNDS = _contract_max_rounds()
+
+#: Below this many changed lines, a repeat round proves itself with the focused tests for the
+#: touched modules instead of a full-suite rerun — round 5 of #196 spent sixty-seven minutes
+#: re-proving a three-line diff whose full suite the gates had just run on the identical tree.
+#: An instruction detail, not contract policy, so it lives here and not in ``workflow.toml``.
+_SMALL_FIX_LINES = 50
 
 #: How long the cycle waits before failing closed, in seconds. Checks: the push-triggered CI
 #: (quality is ~3 minutes plus queueing). Mutation: one dispatched scoped run, well under the
@@ -530,7 +550,14 @@ _REVIEWER_TOOLS = (
 
 
 def review(
-    issue: int, worktree: Path, head: str, *, lane: str = "lean", dry_run: bool = False
+    issue: int,
+    worktree: Path,
+    head: str,
+    *,
+    lane: str = "lean",
+    fix_base: str | None = None,
+    fix_lines: int = 0,
+    dry_run: bool = False,
 ) -> int:
     """Start the reviewer as a separate process, with nothing but the issue number and the lane.
 
@@ -546,8 +573,11 @@ def review(
 
     The **lane is computed by the cycle and stated as an instruction**, not left to the reviewer's
     judgement: two lean rounds in a row engaged the full agent panel anyway and died waiting for
-    it. Returns the reviewer's exit status, so the caller can tell a session that ended cleanly
-    but posted nothing from one that crashed.
+    it. On a repeat round ``fix_base`` names the head the previous round reviewed, and the task
+    states the fix diff explicitly — the contract scopes the round to that diff, and re-walking
+    the whole change was the single largest time sink the loop had. Returns the reviewer's exit
+    status, so the caller can tell a session that ended cleanly but posted nothing from one that
+    crashed.
     """
 
     if lane == "lean":
@@ -565,9 +595,25 @@ def review(
             "way, their verified findings stranded in transcripts. If a delegation cannot "
             "complete, review that area yourself and name the gap. "
         )
+    scope_instruction = ""
+    if fix_base is not None:
+        scope_instruction = (
+            f"This is a repeat round. The fix diff is {fix_base[:12]}..{head[:12]} "
+            f"({fix_lines} changed line(s)); review that diff and the modules it touches, "
+            "nothing more — the contract forbids re-walking what earlier rounds already "
+            "established. The full deterministic gate suite ran green on this exact tree "
+            "moments before you started. "
+        )
+        if fix_lines < _SMALL_FIX_LINES:
+            scope_instruction += (
+                "The fix is small: do not rerun the whole test suite as evidence — run the "
+                "tests for the touched modules and the specific counterexamples your findings "
+                f"need (`uv run --directory {worktree} python -m workflow.impact --base "
+                f"{fix_base[:12]}` names the focused selection). "
+            )
     prompt = (
         f"/review-change {issue}\n"
-        f"Review the open pull request for this issue. {lane_instruction}"
+        f"Review the open pull request for this issue. {lane_instruction}{scope_instruction}"
         "Posting the review is your LAST action and is never skipped: a session that ends with "
         "the review unposted has delivered nothing, whatever it verified — post with what you "
         "have rather than end holding evidence. "
@@ -778,8 +824,7 @@ def _await_settled_checks(pull_request: int, head: str) -> list[str]:
         remote = str(json.loads(raw or "{}").get("headRefOid") or "")
         if remote and remote != head:
             raise OrchestrationError(
-                f"the branch moved while the cycle ran: certifying {head[:12]}, "
-                f"found {remote[:12]}"
+                f"the branch moved while the cycle ran: certifying {head[:12]}, found {remote[:12]}"
             )
         runs_raw = _run(
             [
@@ -787,7 +832,7 @@ def _await_settled_checks(pull_request: int, head: str) -> list[str]:
                 "api",
                 f"repos/{{owner}}/{{repo}}/commits/{head}/check-runs?per_page=100",
                 "--jq",
-                '{check_runs: [.check_runs[] | {name, status, conclusion}]}',
+                "{check_runs: [.check_runs[] | {name, status, conclusion}]}",
             ]
         )
         check_runs = json.loads(runs_raw or "{}").get("check_runs") or []
@@ -798,22 +843,43 @@ def _await_settled_checks(pull_request: int, head: str) -> list[str]:
     raise OrchestrationError("CI did not settle in time; no verdict is issued while checks run")
 
 
-def _review_lane(tree: Path) -> str:
-    """The effective review lane for the branch in ``tree``: ``"lean"`` or ``"full"``.
+def _review_scope(
+    tree: Path, *, fix_base: str | None = None, risk_class: str = ""
+) -> tuple[str, str | None, int]:
+    """The effective review scope for the branch in ``tree``: lane, measured base, changed lines.
 
     The orchestrator computes the lane and states it in the reviewer's task, because leaving the
     call to the reviewer killed two rounds in a row: a lean R2 ticket was reviewed with the full
     agent panel, and the headless session died waiting for agents the lane forbade — twenty
     minutes of verification each time, posted nowhere.
+
+    A first look measures the whole branch against ``origin/main``. A repeat round measures the
+    **fix diff** — ``fix_base`` is the head the previous round reviewed — because the contract
+    scopes a repeat round to "the fix diff and the modules it touches, nothing more", while the
+    branch measurement only ever grows: on #196 a three-line fix was reviewed at full strength
+    for sixty-seven minutes because the branch as a whole had crossed the size bound rounds
+    earlier and could never come back. The narrow measurement is forfeited in exactly the two
+    cases the contract names for a complete fresh review: the fix reaches files outside the
+    branch's own diff, or the change is R3 on the live path.
+
+    Returns ``(lane, base, changed_lines)`` where ``base`` is ``None`` when the whole branch was
+    measured, so the caller can tell the reviewer which diff its round is scoped to.
     """
 
-    paths = changed_paths("origin/main", root=tree)
+    branch_paths = changed_paths("origin/main", root=tree)
+    paths, base = branch_paths, "origin/main"
+    if fix_base is not None:
+        fix_paths = changed_paths(fix_base, root=tree)
+        touches_live = risk_class == "R3" and any(path.startswith("live/") for path in branch_paths)
+        if not (set(fix_paths) - set(branch_paths)) and not touches_live:
+            paths, base = fix_paths, fix_base
     shortstat = _run(
-        ["git", "diff", "--shortstat", "origin/main...HEAD"],
+        ["git", "diff", "--shortstat", f"{base}...HEAD"],
         cwd=tree,
     )
     changed_lines = sum(int(n) for n in re.findall(r"(\d+) (?:insertion|deletion)", shortstat))
-    return "full" if needs_full_review(paths, changed_lines) else "lean"
+    lane = "full" if needs_full_review(paths, changed_lines) else "lean"
+    return lane, (base if base != "origin/main" else None), changed_lines
 
 
 def _reachable_mutation_targets(tree: Path) -> tuple[list[MutationTarget], str]:
@@ -1028,7 +1094,15 @@ def cycle(
                 if not red_checks:
                     if not dry_run:
                         board.move(issue, "Reviewing", actor="orchestrator")
-                    lane = "lean" if dry_run else _review_lane(tree)
+                    # A round that follows a hand-back is scoped to the fix diff: ``stale_head``
+                    # is exactly the head the previous round reviewed and handed back.
+                    lane, fix_base, fix_lines = (
+                        ("lean", None, 0)
+                        if dry_run
+                        else _review_scope(
+                            tree, fix_base=stale_head, risk_class=card.risk_class or ""
+                        )
+                    )
                     report(
                         issue,
                         "review",
@@ -1042,7 +1116,15 @@ def cycle(
                         dry_run=dry_run,
                     )
                     _phase("review")
-                    reviewer_exit = review(issue, tree, head, lane=lane, dry_run=dry_run)
+                    reviewer_exit = review(
+                        issue,
+                        tree,
+                        head,
+                        lane=lane,
+                        fix_base=fix_base,
+                        fix_lines=fix_lines,
+                        dry_run=dry_run,
+                    )
 
         if failed:
             if round_number == last_round:
