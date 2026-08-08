@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,6 +18,8 @@ from workflow.orchestrate import (
 from workflow.orchestrate import (
     liveness_path as imported_liveness_path,
 )
+
+from tests import conftest as test_config
 
 
 def test_workflow_runtime_paths_are_isolated_per_test(tmp_path: Path) -> None:
@@ -49,6 +52,21 @@ def test_bound_workflow_path_helpers_share_the_test_redirect(tmp_path: Path) -> 
         tmp_path / f"qplus-cycle-{issue}.json",
         tmp_path / f"qplus-cycle-{issue}.lock",
     }
+
+
+def test_per_test_runtime_redirect_does_not_rescan_loaded_modules(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ModuleRegistry:
+        def values(self) -> None:
+            raise AssertionError("per-test redirect rescanned loaded modules")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(sys, "modules", ModuleRegistry())
+        test_config._patch_imported_path_helpers(
+            patch,
+            test_config._ORIGINAL_WORKFLOW_PATH_HELPERS,
+        )
 
 
 @pytest.mark.parametrize(

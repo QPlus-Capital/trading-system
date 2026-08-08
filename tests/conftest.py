@@ -66,6 +66,16 @@ _ORIGINAL_WORKFLOW_PATH_HELPERS = (
 type _CommandPart = str | bytes | os.PathLike[str] | os.PathLike[bytes]
 type _Command = _CommandPart | Sequence[_CommandPart]
 type _RuntimePathHelper = Callable[[int], Path]
+type _RuntimePathBinding = tuple[ModuleType, str, int]
+
+_DIRECT_WORKFLOW_PATH_BINDINGS: tuple[_RuntimePathBinding, ...] = (
+    (workflow_orchestrate, "events_path", 0),
+    (workflow_orchestrate, "liveness_path", 1),
+    (workflow_orchestrate, "_lock_path", 2),
+    (workflow_watch, "events_path", 0),
+    (workflow_watch, "liveness_path", 1),
+)
+_WORKFLOW_PATH_BINDINGS: list[_RuntimePathBinding] = []
 
 
 def _command_parts(command: _Command) -> tuple[str, ...]:
@@ -151,23 +161,39 @@ def _is_test_module(module: ModuleType) -> bool:
         return False
 
 
-def _patch_imported_path_helpers(
-    monkeypatch: pytest.MonkeyPatch,
-    replacements: tuple[_RuntimePathHelper, _RuntimePathHelper, _RuntimePathHelper],
-) -> None:
-    """Redirect helper references imported into test modules during collection."""
+def _discover_imported_path_helpers() -> list[_RuntimePathBinding]:
+    """Find helper references imported into test modules during collection."""
 
-    original_and_replacement = tuple(
-        zip(_ORIGINAL_WORKFLOW_PATH_HELPERS, replacements, strict=True)
-    )
+    bindings: list[_RuntimePathBinding] = []
     for module in tuple(sys.modules.values()):
         if not isinstance(module, ModuleType) or not _is_test_module(module):
             continue
         for name, value in tuple(vars(module).items()):
-            for original, replacement in original_and_replacement:
+            for replacement_index, original in enumerate(_ORIGINAL_WORKFLOW_PATH_HELPERS):
                 if value is original:
-                    monkeypatch.setattr(module, name, replacement)
+                    bindings.append((module, name, replacement_index))
                     break
+    return bindings
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _collect_workflow_path_bindings() -> None:
+    """Cache workflow helper binding sites once after test collection."""
+
+    _WORKFLOW_PATH_BINDINGS[:] = [
+        *_DIRECT_WORKFLOW_PATH_BINDINGS,
+        *_discover_imported_path_helpers(),
+    ]
+
+
+def _patch_imported_path_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+    replacements: tuple[_RuntimePathHelper, _RuntimePathHelper, _RuntimePathHelper],
+) -> None:
+    """Redirect the workflow helper binding sites cached after collection."""
+
+    for module, name, replacement_index in _WORKFLOW_PATH_BINDINGS:
+        monkeypatch.setattr(module, name, replacements[replacement_index])
 
 
 @pytest.fixture(autouse=True)
@@ -191,11 +217,6 @@ def _isolate_workflow_runtime_state(
 
     replacements = (isolated_events_path, isolated_liveness_path, isolated_lock_path)
     _patch_imported_path_helpers(monkeypatch, replacements)
-    monkeypatch.setattr(workflow_orchestrate, "events_path", isolated_events_path)
-    monkeypatch.setattr(workflow_orchestrate, "liveness_path", isolated_liveness_path)
-    monkeypatch.setattr(workflow_orchestrate, "_lock_path", isolated_lock_path)
-    monkeypatch.setattr(workflow_watch, "events_path", isolated_events_path)
-    monkeypatch.setattr(workflow_watch, "liveness_path", isolated_liveness_path)
 
     yield
 
