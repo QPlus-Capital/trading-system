@@ -310,16 +310,38 @@ def test_the_force_push_guard_matches_the_refspec_and_the_implicit_branch() -> N
     assert dangerous_command_decision(
         "git push origin +feature/safe", branch="feature/safe"
     ).allowed
-    assert dangerous_command_decision(
-        "git push origin +feature/safe", branch="main"
-    ).allowed
-    assert dangerous_command_decision(
-        "git push origin +HEAD:feature/safe", branch="main"
-    ).allowed
-
     for ordinary_command in (
         "chmod +x workflow/git-hooks/pre-push && git push origin main",
         "git commit -m test && git push origin main && echo +1",
         "echo +1 && git push origin main",
     ):
         assert dangerous_command_decision(ordinary_command).allowed
+
+
+@pytest.mark.parametrize(
+    ("command", "branch"),
+    [
+        ("git push origin '+refs/heads/*:refs/heads/*' main", "feature/safe"),
+        ("git push origin +feature refs/heads/main", "feature/safe"),
+        ("git push origin +refs/remotes/origin/main", "feature/safe"),
+        ("git push origin +feature/safe", "main"),
+        ("git push origin +HEAD:feature/safe", "main"),
+        ("git push origin +feature", "MAIN"),
+    ],
+)
+def test_force_push_refspec_is_refused_when_it_names_or_stands_on_main(
+    command: str, branch: str
+) -> None:
+    assert not dangerous_command_decision(command, branch=branch).allowed
+
+
+def test_heredoc_line_continuation_cannot_hide_a_force_push_to_main() -> None:
+    heredoc_before_force_push = (
+        "cat <<'EOF' > a.md\n"
+        "trailing\\\n"
+        "EOF\n"
+        "git push -f origin main\n"
+        "echo ok\n"
+        "EOF"
+    )
+    assert not dangerous_command_decision(heredoc_before_force_push).allowed

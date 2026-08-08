@@ -104,7 +104,7 @@ def executable_surface(command: str) -> str:
     Falls back to the raw command when the text cannot be tokenised, which fails closed.
     """
 
-    stripped = _HEREDOC.sub(" ", _LINE_CONTINUATION.sub("", command))
+    stripped = _LINE_CONTINUATION.sub("", _HEREDOC.sub(" ", command))
     surfaces: list[str] = []
     for segment in _SEGMENT.split(stripped):
         if not segment.strip():
@@ -243,8 +243,8 @@ def dangerous_command_decision(command: str, branch: str = "") -> Decision:
         if _PUSH.search(segment) is None or not (has_force_option or has_force_refspec):
             continue
         forced_main = forced_main or bool(
-            (has_force_option and _MAIN_REF.search(segment))
-            or (has_force_option and branch.casefold() == "main")
+            _MAIN_REF.search(segment)
+            or branch.casefold() == "main"
             or (has_force_refspec and _force_refspec_targets_main(segment, branch))
         )
     if (
