@@ -6,10 +6,11 @@ import io
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from workflow.classify import Classification
+from workflow.classify import Classification, load_model
 from workflow.hooks import pre_bash, pre_push
 from workflow.hooks.decisions import (
     bypass_decision,
@@ -263,6 +264,10 @@ def test_the_push_hook_refuses_deleting_or_rewriting_main(
     assert not rewrite.allowed
     assert not unverifiable.allowed
 
+    for malformed in ("garbage\n", "a b c\n", "a b c d e\n"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO(malformed))
+        assert pre_push.main(root=root) == 1
+
 
 def test_the_push_hook_lets_only_an_r0_change_reach_main_directly(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -272,8 +277,15 @@ def test_the_push_hook_lets_only_an_r0_change_reach_main_directly(
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {r0} refs/heads/main {base}\n"))
     assert pre_push.main(root=root) == 0
 
+    model = load_model()
+    monkeypatch.setattr(pre_push, "load_model", lambda: replace(model, default_min_class="R1"))
+    r1 = _commit(root, "local_tool.py", "LOCAL_VALUE = 1\n")
+    decision = pre_push.evaluate_update(r1, r0, "refs/heads/main", root=root)
+    assert not decision.allowed
+    assert "R1" in decision.reason
+
     r2 = _commit(root, "tests/test_guard.py", "def test_guard():\n    assert True\n")
-    decision = pre_push.evaluate_update(r2, r0, "refs/heads/main", root=root)
+    decision = pre_push.evaluate_update(r2, r1, "refs/heads/main", root=root)
     assert not decision.allowed
     assert "R2" in decision.reason
 
@@ -286,11 +298,23 @@ def test_the_push_hook_lets_only_an_r0_change_reach_main_directly(
 def test_the_force_push_guard_matches_the_refspec_and_the_implicit_branch() -> None:
     assert not dangerous_command_decision("git push origin +main").allowed
     assert not dangerous_command_decision("git push --force", branch="main").allowed
+    assert not dangerous_command_decision("git push -f \\" + "\norigin main").allowed
+    assert not dangerous_command_decision("git push -f \\" + "\r\norigin main").allowed
+    for refspec in ("+HEAD", "+@", "+HEAD:HEAD"):
+        assert not dangerous_command_decision(
+            f"git push origin {refspec}", branch="main"
+        ).allowed
+    assert not dangerous_command_decision(
+        "git push origin +main && git push origin +feature/safe"
+    ).allowed
     assert dangerous_command_decision(
         "git push origin +feature/safe", branch="feature/safe"
     ).allowed
     assert dangerous_command_decision(
         "git push origin +feature/safe", branch="main"
+    ).allowed
+    assert dangerous_command_decision(
+        "git push origin +HEAD:feature/safe", branch="main"
     ).allowed
 
     for ordinary_command in (

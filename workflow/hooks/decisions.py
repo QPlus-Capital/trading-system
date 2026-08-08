@@ -43,7 +43,9 @@ _FORCE_OPTION = re.compile(
     re.IGNORECASE,
 )
 _FORCE_REFSPEC = re.compile(
-    r"(?:^|\s)\+(?:[^\s:]+(?::[^\s:]+)?|:[^\s:]+)(?:\s|$)", re.IGNORECASE
+    r"(?:^|\s)\+(?:(?P<source>[^\s:]+)(?::(?P<destination>[^\s:]+))?"
+    r"|:(?P<deletion>[^\s:]+))(?=\s|$)",
+    re.IGNORECASE,
 )
 _MAIN_REF = re.compile(r"(?:^|[\s:/'\"+])(?:refs/heads/)?main(?:$|[\s'\"])", re.IGNORECASE)
 _PRIVATE_KEY = re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----")
@@ -79,6 +81,7 @@ _TEXT_TAKING_PROGRAMS = frozenset({"git", "gh"})
 _HEREDOC = re.compile(
     r"<<-?\s*(['\"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)\1.*?^\s*(?P=tag)\s*$", re.DOTALL | re.MULTILINE
 )
+_LINE_CONTINUATION = re.compile(r"\\(?:\r\n|\n)")
 _SEGMENT = re.compile(r"(?:\|\||&&|[;|&\n])")
 
 
@@ -101,7 +104,7 @@ def executable_surface(command: str) -> str:
     Falls back to the raw command when the text cannot be tokenised, which fails closed.
     """
 
-    stripped = _HEREDOC.sub(" ", command)
+    stripped = _HEREDOC.sub(" ", _LINE_CONTINUATION.sub("", command))
     surfaces: list[str] = []
     for segment in _SEGMENT.split(stripped):
         if not segment.strip():
@@ -133,6 +136,20 @@ def _allow() -> Decision:
 
 def _deny(reason: str) -> Decision:
     return Decision(False, reason)
+
+
+def _force_refspec_targets_main(segment: str, branch: str) -> bool:
+    """Whether a forced refspec updates main, including current-branch shorthand."""
+
+    for match in _FORCE_REFSPEC.finditer(segment):
+        source = match.group("source") or ""
+        target = match.group("destination") or match.group("deletion") or source
+        normalized = target.casefold().removeprefix("refs/heads/")
+        if normalized == "main":
+            return True
+        if normalized in {"head", "@"} and branch.casefold() == "main":
+            return True
+    return False
 
 
 def _added_lines(diff: str) -> tuple[str, ...]:
@@ -225,12 +242,11 @@ def dangerous_command_decision(command: str, branch: str = "") -> Decision:
         has_force_refspec = _FORCE_REFSPEC.search(segment) is not None
         if _PUSH.search(segment) is None or not (has_force_option or has_force_refspec):
             continue
-        forced_main = bool(
-            _MAIN_REF.search(segment)
+        forced_main = forced_main or bool(
+            (has_force_option and _MAIN_REF.search(segment))
             or (has_force_option and branch.casefold() == "main")
+            or (has_force_refspec and _force_refspec_targets_main(segment, branch))
         )
-        if forced_main:
-            break
     if (
         _LIVE_COMMAND.search(surface)
         or _RUNNER_CONTROL.search(surface)

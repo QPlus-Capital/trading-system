@@ -48,8 +48,8 @@ def test_gates_refuse_when_the_push_hook_is_not_installed(tmp_path: Path) -> Non
 
     missing = gates.push_hook_setup_gate(root=root)
     assert not missing.passed
-    assert missing.command == INSTALL_COMMAND
-    assert INSTALL_COMMAND in missing.detail
+    assert missing.command == "just install-hooks"
+    assert "just install-hooks" in missing.detail
 
     install(root)
     assert gates.push_hook_setup_gate(root=root).passed
